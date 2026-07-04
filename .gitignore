@@ -156,3 +156,4 @@ ehthumbs.db
 .idea/
 *.swp
 *.swo
+.turbo/
