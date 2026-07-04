@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { UnitSettingsForm } from '@/components/dashboard/unit-settings-form'
+import { WhatsAppConnection } from '@/components/dashboard/whatsapp-connection'
 import type { DashboardSummaryRow, Unit } from '@/lib/types'
 
 export default async function UnitDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -62,6 +63,8 @@ export default async function UnitDetailPage({ params }: { params: Promise<{ id:
       </div>
 
       <UnitSettingsForm unit={unitRow} />
+
+      <WhatsAppConnection unitId={unitRow.id} />
 
       <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <div className="flex items-center justify-between">
