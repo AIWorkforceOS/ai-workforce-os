@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { UnitSettingsForm } from '@/components/dashboard/unit-settings-form'
 import type { DashboardSummaryRow, Unit } from '@/lib/types'
 
 export default async function UnitDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -56,27 +57,11 @@ export default async function UnitDetailPage({ params }: { params: Promise<{ id:
         ))}
       </div>
 
-      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-sm font-semibold text-gray-900">Dados da unidade</h2>
-        <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <dt className="text-xs text-gray-500">Slug</dt>
-            <dd className="text-sm text-gray-900">{unitRow.slug}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-gray-500">WhatsApp</dt>
-            <dd className="text-sm text-gray-900">{unitRow.whatsapp_phone ?? '—'}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-gray-500">Email de envio</dt>
-            <dd className="text-sm text-gray-900">{unitRow.email_from ?? '—'}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-gray-500">Email de resposta</dt>
-            <dd className="text-sm text-gray-900">{unitRow.email_reply_to ?? '—'}</dd>
-          </div>
-        </dl>
+      <div className="rounded-lg border border-gray-200 bg-white px-6 py-3 text-xs text-gray-500 shadow-sm">
+        Slug: <span className="text-gray-900">{unitRow.slug}</span>
       </div>
+
+      <UnitSettingsForm unit={unitRow} />
 
       <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <div className="flex items-center justify-between">

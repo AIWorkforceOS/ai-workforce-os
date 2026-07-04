@@ -22,6 +22,9 @@ export default function NewUnitPage() {
   const [state, setState] = useState('')
   const [whatsapp, setWhatsapp] = useState('')
   const [emailFrom, setEmailFrom] = useState('')
+  const [evolutionApiUrl, setEvolutionApiUrl] = useState('')
+  const [evolutionApiKey, setEvolutionApiKey] = useState('')
+  const [evolutionInstanceName, setEvolutionInstanceName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -61,6 +64,9 @@ export default function NewUnitPage() {
         region_state: state || null,
         whatsapp_phone: whatsapp || null,
         email_from: emailFrom || null,
+        evolution_api_url: evolutionApiUrl || null,
+        evolution_api_key: evolutionApiKey || null,
+        evolution_instance_name: evolutionInstanceName || null,
       })
       .select('id')
       .single()
@@ -170,6 +176,53 @@ export default function NewUnitPage() {
             onChange={(e) => setEmailFrom(e.target.value)}
             className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-400"
             placeholder="campinas@smarterestagios.com.br"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1 border-t border-gray-100 pt-4">
+          <span className="text-sm font-medium text-gray-700">Evolution API (WhatsApp)</span>
+          <p className="text-xs text-gray-500">
+            Opcional. Preencha para conectar o WhatsApp desta unidade.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label htmlFor="evolutionApiUrl" className="text-sm font-medium text-gray-700">
+            URL da instância
+          </label>
+          <input
+            id="evolutionApiUrl"
+            value={evolutionApiUrl}
+            onChange={(e) => setEvolutionApiUrl(e.target.value)}
+            className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-400"
+            placeholder="https://evolution.suaempresa.com"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label htmlFor="evolutionApiKey" className="text-sm font-medium text-gray-700">
+            API key
+          </label>
+          <input
+            id="evolutionApiKey"
+            type="password"
+            value={evolutionApiKey}
+            onChange={(e) => setEvolutionApiKey(e.target.value)}
+            className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-400"
+            placeholder="sua_api_key"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label htmlFor="evolutionInstanceName" className="text-sm font-medium text-gray-700">
+            Nome da instância
+          </label>
+          <input
+            id="evolutionInstanceName"
+            value={evolutionInstanceName}
+            onChange={(e) => setEvolutionInstanceName(e.target.value)}
+            className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-400"
+            placeholder="smarter-campinas"
           />
         </div>
 

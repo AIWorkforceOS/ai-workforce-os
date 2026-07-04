@@ -9,6 +9,9 @@ export type Unit = {
   email_reply_to: string | null
   region_city: string | null
   region_state: string | null
+  evolution_api_url: string | null
+  evolution_api_key: string | null
+  evolution_instance_name: string | null
   is_active: boolean
   created_at: string
   updated_at: string
@@ -60,3 +63,77 @@ export const SECTOR_OPTIONS = [
   'saude',
   'educacao',
 ] as const
+
+export type LeadStatus =
+  | 'new'
+  | 'contacted'
+  | 'replied'
+  | 'negotiating'
+  | 'won'
+  | 'lost'
+  | 'paused'
+
+export type Lead = {
+  id: string
+  unit_id: string
+  company_name: string
+  contact_name: string | null
+  phone: string | null
+  email: string | null
+  sector: string | null
+  city: string | null
+  state: string | null
+  source: string
+  status: LeadStatus
+  google_place_id: string | null
+  notes: string | null
+  last_contacted_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type ConversationChannel = 'whatsapp' | 'email'
+export type ConversationDirection = 'outbound' | 'inbound'
+export type ConversationStatus = 'sent' | 'delivered' | 'read' | 'failed'
+
+export type Conversation = {
+  id: string
+  lead_id: string
+  unit_id: string
+  channel: ConversationChannel
+  direction: ConversationDirection
+  content: string
+  template_key: string | null
+  external_message_id: string | null
+  status: ConversationStatus
+  sent_at: string
+  created_at: string
+}
+
+export type ProspectingJobStatus = 'pending' | 'running' | 'done' | 'failed'
+
+export type ProspectingJob = {
+  id: string
+  unit_id: string
+  city: string
+  state: string
+  keywords: string[]
+  status: ProspectingJobStatus
+  total_found: number
+  total_new: number
+  error_message: string | null
+  started_at: string | null
+  finished_at: string | null
+  created_at: string
+}
+
+export type Organization = {
+  id: string
+  name: string
+  slug: string
+  plan: string
+  is_active: boolean
+  owner_email: string | null
+  created_at: string
+  updated_at: string
+}
