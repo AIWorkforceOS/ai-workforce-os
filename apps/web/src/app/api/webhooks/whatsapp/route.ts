@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
+import { processInboundMessage } from '@/lib/conversation-engine'
 import type { Lead, Unit } from '@/lib/types'
 
 function normalizePhone(value: string | null | undefined) {
@@ -89,13 +90,18 @@ export async function POST(request: Request) {
     sent_at: sentAt,
   })
 
+  const updatedLead: Lead = {
+    ...lead,
+    status: lead.status === 'new' ? 'replied' : lead.status,
+    last_contacted_at: sentAt,
+  }
+
   await supabase
     .from('leads')
-    .update({ status: lead.status === 'new' ? 'replied' : lead.status, last_contacted_at: sentAt })
+    .update({ status: updatedLead.status, last_contacted_at: sentAt })
     .eq('id', lead.id)
 
-  // TODO(semana 3): disparar processamento do agente IA (persona, horário, limite
-  // diário) para gerar e enviar a resposta via Evolution API.
+  await processInboundMessage({ supabase, unit: unitRow, lead: updatedLead, incomingText: text })
 
   return NextResponse.json({ ok: true })
 }
