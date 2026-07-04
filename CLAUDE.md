@@ -44,11 +44,17 @@ ai-workforce-os/
 
 ## Regras de desenvolvimento
 
-- NÃO desenvolva funcionalidades do produto ainda — o projeto está em pré-desenvolvimento (RC0)
-- NÃO implemente regras de negócio
-- NÃO crie tabelas no banco
+- Projeto em desenvolvimento ativo (pós-RC0), em produção no Vercel. Funcionalidades de
+  produto (auth, units, agent config, WhatsApp/Evolution API, prospecção Google Maps,
+  motor de conversação IA, leads, conversas, dashboards) já foram implementadas —
+  consulte `supabase/migrations/` e o histórico de commits antes de assumir que algo
+  "ainda não existe"
+- Alterações de schema devem ser feitas via novas migrations em `supabase/migrations/`
+  (nunca editar migrations já aplicadas)
 - NÃO exponha tokens, senhas, API keys ou secrets no repositório
 - NÃO misture com o banco da Smarter
+- Integrações externas (OpenAI, Evolution API, Google Maps, Resend) devem falhar de
+  forma graciosa quando a env var correspondente não estiver configurada
 
 ## CI/CD
 
