@@ -1,31 +1,75 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { LeadsByDayChart } from '@/components/dashboard/leads-by-day-chart'
 import type { DashboardSummaryRow, Unit } from '@/lib/types'
+
+function startOfDay(date: Date) {
+  const copy = new Date(date)
+  copy.setHours(0, 0, 0, 0)
+  return copy
+}
+
+function toDateKey(date: Date) {
+  return date.toISOString().slice(0, 10)
+}
 
 export default async function DashboardPage() {
   const supabase = await createClient()
 
-  const [{ data: units }, { data: summary }] = await Promise.all([
+  const now = new Date()
+  const since24h = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+  const todayStart = startOfDay(now)
+  const sevenDaysAgo = startOfDay(new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000))
+
+  const [
+    { data: units },
+    { data: summary },
+    { count: totalLeads },
+    { count: newLeads24h },
+    { count: respondedLeads },
+    { count: conversationsToday },
+    { data: recentLeads },
+  ] = await Promise.all([
     supabase.from('units').select('*').order('created_at', { ascending: false }),
     supabase.from('dashboard_summary').select('*'),
+    supabase.from('leads').select('id', { count: 'exact', head: true }),
+    supabase.from('leads').select('id', { count: 'exact', head: true }).gte('created_at', since24h.toISOString()),
+    supabase
+      .from('leads')
+      .select('id', { count: 'exact', head: true })
+      .in('status', ['replied', 'negotiating', 'won']),
+    supabase
+      .from('conversations')
+      .select('id', { count: 'exact', head: true })
+      .gte('sent_at', todayStart.toISOString()),
+    supabase.from('leads').select('created_at').gte('created_at', sevenDaysAgo.toISOString()),
   ])
 
   const unitRows = (units ?? []) as Unit[]
   const summaryRows = (summary ?? []) as DashboardSummaryRow[]
-
   const leadsByUnit = new Map(summaryRows.map((row) => [row.unit_id, row]))
 
-  const activeUnits = unitRows.filter((unit) => unit.is_active).length
-  const totalLeads = summaryRows.reduce((sum, row) => sum + row.total_leads, 0)
-  const conversationsToday = summaryRows.reduce((sum, row) => sum + row.conversations_today, 0)
-  const wonLeads = summaryRows.reduce((sum, row) => sum + row.won_leads, 0)
+  const responseRate = totalLeads ? Math.round(((respondedLeads ?? 0) / totalLeads) * 100) : 0
 
   const metrics = [
-    { label: 'Unidades ativas', value: activeUnits },
-    { label: 'Total de leads', value: totalLeads },
-    { label: 'Conversas (24h)', value: conversationsToday },
-    { label: 'Leads convertidos', value: wonLeads },
+    { label: 'Total de leads', value: totalLeads ?? 0 },
+    { label: 'Leads novos (24h)', value: newLeads24h ?? 0 },
+    { label: 'Conversas hoje', value: conversationsToday ?? 0 },
+    { label: 'Taxa de resposta', value: `${responseRate}%` },
   ]
+
+  const dayBuckets = new Map<string, number>()
+  for (let i = 0; i < 7; i += 1) {
+    const day = new Date(sevenDaysAgo.getTime() + i * 24 * 60 * 60 * 1000)
+    dayBuckets.set(toDateKey(day), 0)
+  }
+  for (const lead of (recentLeads as { created_at: string }[] | null) ?? []) {
+    const key = toDateKey(new Date(lead.created_at))
+    if (dayBuckets.has(key)) {
+      dayBuckets.set(key, (dayBuckets.get(key) ?? 0) + 1)
+    }
+  }
+  const leadsByDay = Array.from(dayBuckets.entries()).map(([date, count]) => ({ date, count }))
 
   return (
     <div className="flex flex-col gap-8">
@@ -44,6 +88,11 @@ export default async function DashboardPage() {
             <p className="mt-2 text-2xl font-semibold text-gray-900">{metric.value}</p>
           </div>
         ))}
+      </div>
+
+      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <h2 className="mb-4 text-sm font-semibold text-gray-900">Leads por dia (últimos 7 dias)</h2>
+        <LeadsByDayChart counts={leadsByDay} />
       </div>
 
       <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
@@ -74,6 +123,7 @@ export default async function DashboardPage() {
                 <th className="px-5 py-3 font-medium">Nome</th>
                 <th className="px-5 py-3 font-medium">Cidade</th>
                 <th className="px-5 py-3 font-medium">Leads</th>
+                <th className="px-5 py-3 font-medium">Conversas</th>
                 <th className="px-5 py-3 font-medium">Status</th>
               </tr>
             </thead>
@@ -94,6 +144,9 @@ export default async function DashboardPage() {
                   </td>
                   <td className="px-5 py-3 text-gray-600">
                     {leadsByUnit.get(unit.id)?.total_leads ?? 0}
+                  </td>
+                  <td className="px-5 py-3 text-gray-600">
+                    {leadsByUnit.get(unit.id)?.total_conversations ?? 0}
                   </td>
                   <td className="px-5 py-3">
                     <span
