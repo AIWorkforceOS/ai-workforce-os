@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "/Users/viniciusmiranda/Library/pnpm/bin/pnpm",
+      "runtimeArgs": ["--filter", "web", "run", "dev"],
+      "port": 3000
+    }
+  ]
+}
