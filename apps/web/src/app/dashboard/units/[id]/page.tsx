@@ -3,15 +3,17 @@ import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { UnitSettingsForm } from '@/components/dashboard/unit-settings-form'
 import { WhatsAppConnection } from '@/components/dashboard/whatsapp-connection'
-import type { DashboardSummaryRow, Unit } from '@/lib/types'
+import { ProspectingPanel } from '@/components/dashboard/prospecting-panel'
+import type { AgentConfig, DashboardSummaryRow, Unit } from '@/lib/types'
 
 export default async function UnitDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
 
-  const [{ data: unit }, { data: summary }] = await Promise.all([
+  const [{ data: unit }, { data: summary }, { data: agentConfig }] = await Promise.all([
     supabase.from('units').select('*').eq('id', id).single(),
     supabase.from('dashboard_summary').select('*').eq('unit_id', id).maybeSingle(),
+    supabase.from('agent_configs').select('*').eq('unit_id', id).eq('agent_type', 'sdr').maybeSingle(),
   ])
 
   if (!unit) {
@@ -20,6 +22,7 @@ export default async function UnitDetailPage({ params }: { params: Promise<{ id:
 
   const unitRow = unit as Unit
   const summaryRow = summary as DashboardSummaryRow | null
+  const agentConfigRow = agentConfig as AgentConfig | null
 
   const metrics = [
     { label: 'Total de leads', value: summaryRow?.total_leads ?? 0 },
@@ -65,6 +68,13 @@ export default async function UnitDetailPage({ params }: { params: Promise<{ id:
       <UnitSettingsForm unit={unitRow} />
 
       <WhatsAppConnection unitId={unitRow.id} />
+
+      <ProspectingPanel
+        unitId={unitRow.id}
+        defaultCity={unitRow.region_city ?? ''}
+        defaultState={unitRow.region_state ?? ''}
+        availableSectors={agentConfigRow?.sectors ?? []}
+      />
 
       <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <div className="flex items-center justify-between">
