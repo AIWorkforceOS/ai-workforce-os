@@ -14,7 +14,7 @@ const WEEKDAY_MAP: Record<string, number> = {
   Sat: 6,
 }
 
-function isWithinActiveHours(activeHours: ActiveHours, timeZone = 'America/Sao_Paulo'): boolean {
+export function isWithinActiveHours(activeHours: ActiveHours, timeZone = 'America/Sao_Paulo'): boolean {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone,
     weekday: 'short',
@@ -51,6 +51,41 @@ function buildSystemPrompt(agentConfig: AgentConfig, unit: Unit): string {
     'Seu objetivo é qualificar o lead e conseguir agendar uma conversa com um vendedor humano.',
     'Responda sempre em português do Brasil, de forma breve (no máximo 3 frases curtas), sem usar markdown ou listas.',
   ].join(' ')
+}
+
+export async function countSentToday(supabase: SupabaseClient, unitId: string): Promise<number> {
+  const startOfDay = new Date()
+  startOfDay.setHours(0, 0, 0, 0)
+
+  const { count } = await supabase
+    .from('conversations')
+    .select('id', { count: 'exact', head: true })
+    .eq('unit_id', unitId)
+    .eq('direction', 'outbound')
+    .gte('sent_at', startOfDay.toISOString())
+
+  return count ?? 0
+}
+
+export async function generateFirstContactMessage(
+  agentConfig: AgentConfig,
+  unit: Unit,
+  lead: Lead,
+): Promise<string> {
+  const apiKey = getOpenAIApiKey()
+  if (!apiKey) throw new Error('OPENAI_API_KEY não está configurada.')
+
+  const systemPrompt = [
+    buildSystemPrompt(agentConfig, unit),
+    `Escreva a mensagem de primeiro contato para a empresa "${lead.company_name}"${lead.sector ? `, do setor de ${lead.sector}` : ''}.`,
+    'Apresente-se, explique brevemente o motivo do contato e pergunte se pode compartilhar mais informações.',
+  ].join(' ')
+
+  return generateChatReply({
+    apiKey,
+    systemPrompt,
+    history: [{ role: 'user', content: 'Inicie a conversa com este lead.' }],
+  })
 }
 
 async function findEscalationReason(
@@ -92,17 +127,8 @@ export async function processInboundMessage(params: {
 
   if (!isWithinActiveHours(config.active_hours)) return
 
-  const startOfDay = new Date()
-  startOfDay.setHours(0, 0, 0, 0)
-
-  const { count: sentToday } = await supabase
-    .from('conversations')
-    .select('id', { count: 'exact', head: true })
-    .eq('unit_id', unit.id)
-    .eq('direction', 'outbound')
-    .gte('sent_at', startOfDay.toISOString())
-
-  if ((sentToday ?? 0) >= config.daily_limit) return
+  const sentToday = await countSentToday(supabase, unit.id)
+  if (sentToday >= config.daily_limit) return
 
   const { data: history } = await supabase
     .from('conversations')
