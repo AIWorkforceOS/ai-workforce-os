@@ -64,19 +64,13 @@ export default async function DashboardPage() {
 
   const activeUnits = unitRows.filter((u) => u.is_active)
   const activeOrgs = orgRows.filter((o) => o.is_active)
-  const unitsWithWhatsApp = unitRows.filter((u) => u.whatsapp_phone)
   const unitsWithoutWhatsApp = activeUnits.filter((u) => !u.whatsapp_phone)
 
-  // Financial
   const financialRows = (financialRecords ?? []) as Array<{
     id: string; type: string; amount: number; status: string; description: string; due_date: string | null
   }>
   const totalReceivable = financialRows.filter(r => r.type === 'receivable' && r.status === 'pending').reduce((s, r) => s + Number(r.amount), 0)
   const totalPayable = financialRows.filter(r => r.type === 'payable' && r.status === 'pending').reduce((s, r) => s + Number(r.amount), 0)
-  const totalPaid = financialRows.filter(r => r.status === 'paid').reduce((s, r) => s + Number(r.amount), 0)
-
-  // System cost estimate (Evolution API + Supabase, rough monthly)
-  const systemCostEstimate = 0 // Will come from financial_records with category='system_cost'
   const systemCostRows = financialRows.filter(r => r.type === 'payable')
   const totalSystemCost = systemCostRows.reduce((s, r) => s + Number(r.amount), 0)
 
@@ -93,92 +87,199 @@ export default async function DashboardPage() {
 
   const monthName = now.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
 
+  // KPI cards config
+  const kpiCards = [
+    {
+      label: 'Empresas',
+      value: orgRows.length,
+      sub: `${activeOrgs.length} ativas`,
+      icon: Building2,
+      href: '/dashboard/organizations',
+      gradient: 'from-blue-500 to-indigo-600',
+      iconGrad: 'from-blue-400 to-indigo-500',
+      topBar: 'from-blue-400 to-indigo-500',
+    },
+    {
+      label: 'Unidades',
+      value: unitRows.length,
+      sub: `${activeUnits.length} ativas`,
+      icon: MapPin,
+      href: '/dashboard/units',
+      gradient: 'from-violet-500 to-purple-600',
+      iconGrad: 'from-violet-400 to-purple-500',
+      topBar: 'from-violet-400 to-purple-500',
+    },
+    {
+      label: 'Funcionários',
+      value: (employees ?? []).length,
+      sub: 'cadastrados',
+      icon: Users,
+      href: '/dashboard/employees',
+      gradient: 'from-orange-400 to-red-500',
+      iconGrad: 'from-orange-400 to-red-400',
+      topBar: 'from-orange-400 to-red-400',
+    },
+    {
+      label: 'Leads',
+      value: totalLeads ?? 0,
+      sub: `+${newLeads24h ?? 0} nas últimas 24h`,
+      icon: ArrowUpRight,
+      href: '/dashboard/leads',
+      gradient: 'from-emerald-400 to-green-600',
+      iconGrad: 'from-emerald-400 to-green-500',
+      topBar: 'from-emerald-400 to-green-500',
+    },
+    {
+      label: 'Fechamentos',
+      value: wonLeads ?? 0,
+      sub: 'contratos fechados',
+      icon: CheckCircle2,
+      href: '/dashboard/results',
+      gradient: 'from-green-500 to-teal-600',
+      iconGrad: 'from-green-500 to-teal-500',
+      topBar: 'from-green-500 to-teal-500',
+    },
+    {
+      label: 'Conversas hoje',
+      value: conversationsToday ?? 0,
+      sub: 'mensagens enviadas',
+      icon: MessageSquare,
+      href: '/dashboard/conversations',
+      gradient: 'from-sky-400 to-blue-500',
+      iconGrad: 'from-sky-400 to-blue-400',
+      topBar: 'from-sky-400 to-blue-400',
+    },
+  ]
+
+  // Supress unused var warning
+  void leadsByUnit
+
   return (
     <div className="flex flex-col gap-6">
-      {/* Header */}
+      {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
+          <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400">Visão geral</p>
+          <h1 className="mt-0.5 text-2xl font-black tracking-tight text-slate-900">Dashboard</h1>
           <p className="mt-0.5 text-sm capitalize text-slate-500">{monthName}</p>
         </div>
-        <div className="flex gap-2">
-          <Link
-            href="/dashboard/organizations/new"
-            className="flex items-center gap-1.5 rounded-lg bg-green-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-green-700"
-          >
-            <Building2 size={15} />
-            Nova empresa
-          </Link>
-        </div>
+        <Link
+          href="/dashboard/organizations/new"
+          className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
+          style={{
+            background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+            boxShadow: '0 4px 14px rgba(34,197,94,0.3)',
+          }}
+        >
+          <Building2 size={14} />
+          Nova empresa
+        </Link>
       </div>
 
-      {/* Primary KPI cards */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-        {[
-          { label: 'Empresas', value: orgRows.length, sub: `${activeOrgs.length} ativas`, icon: Building2, color: 'text-blue-600', bg: 'bg-blue-50', href: '/dashboard/organizations' },
-          { label: 'Unidades', value: unitRows.length, sub: `${activeUnits.length} ativas`, icon: MapPin, color: 'text-violet-600', bg: 'bg-violet-50', href: '/dashboard/units' },
-          { label: 'Funcionários', value: (employees ?? []).length, sub: 'cadastrados', icon: Users, color: 'text-orange-600', bg: 'bg-orange-50', href: '/dashboard/employees' },
-          { label: 'Leads', value: totalLeads ?? 0, sub: `+${newLeads24h ?? 0} (24h)`, icon: ArrowUpRight, color: 'text-emerald-600', bg: 'bg-emerald-50', href: '/dashboard/leads' },
-          { label: 'Fechamentos', value: wonLeads ?? 0, sub: 'contratos fechados', icon: CheckCircle2, color: 'text-green-700', bg: 'bg-green-50', href: '/dashboard/results' },
-          { label: 'Conversas hoje', value: conversationsToday ?? 0, sub: 'mensagens enviadas', icon: MessageSquare, color: 'text-sky-600', bg: 'bg-sky-50', href: '/dashboard/conversations' },
-        ].map(({ label, value, sub, icon: Icon, color, bg, href }) => (
+      {/* KPI Cards — next-gen */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        {kpiCards.map(({ label, value, sub, icon: Icon, href, topBar, iconGrad }) => (
           <Link
             key={label}
             href={href}
-            className="group flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
+            className="group relative overflow-hidden rounded-2xl bg-white transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg"
+            style={{
+              boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(226,232,240,0.7)',
+            }}
           >
-            <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${bg}`}>
-              <Icon size={18} className={color} />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-slate-900">{value}</p>
-              <p className="text-xs text-slate-500">{label}</p>
+            {/* Gradient top accent */}
+            <div className={`absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r ${topBar}`} />
+
+            <div className="p-4 pt-5">
+              {/* Icon */}
+              <div
+                className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br ${iconGrad}`}
+                style={{ boxShadow: '0 4px 10px rgba(0,0,0,0.12)' }}
+              >
+                <Icon size={16} className="text-white" />
+              </div>
+
+              {/* Value */}
+              <p className="mt-3 text-[30px] font-black leading-none tracking-tight text-slate-900">
+                {value}
+              </p>
+              <p className="mt-1.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-400">
+                {label}
+              </p>
               <p className="mt-0.5 text-[11px] text-slate-400">{sub}</p>
             </div>
           </Link>
         ))}
       </div>
 
-      {/* Financial + WhatsApp status row */}
+      {/* Financial + WhatsApp status */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Financial summary */}
-        <div className="col-span-1 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div
+          className="col-span-1 rounded-2xl bg-white p-5"
+          style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(226,232,240,0.7)' }}
+        >
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-900">Financeiro</h2>
-            <Link href="/dashboard/financial" className="text-xs text-green-600 hover:underline">Ver tudo</Link>
+            <div>
+              <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400">módulo</p>
+              <h2 className="text-sm font-bold text-slate-900">Financeiro</h2>
+            </div>
+            <Link href="/dashboard/financial" className="rounded-lg px-2.5 py-1 text-[11px] font-semibold text-green-600 transition-colors hover:bg-green-50">
+              Ver tudo →
+            </Link>
           </div>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between rounded-lg bg-green-50 px-4 py-3">
+
+          <div className="space-y-2.5">
+            {/* A receber */}
+            <div
+              className="flex items-center justify-between rounded-xl p-3.5"
+              style={{ background: 'linear-gradient(135deg, rgba(34,197,94,0.08) 0%, rgba(16,185,129,0.05) 100%)', border: '1px solid rgba(34,197,94,0.15)' }}
+            >
               <div>
-                <p className="text-xs text-green-700">A receber</p>
-                <p className="text-xl font-bold text-green-800">
+                <p className="text-[9px] font-black uppercase tracking-widest text-green-600">A receber</p>
+                <p className="mt-0.5 text-xl font-black text-green-800">
                   {totalReceivable > 0 ? `R$ ${totalReceivable.toLocaleString('pt-BR')}` : '—'}
                 </p>
               </div>
-              <Wallet size={20} className="text-green-500" />
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl" style={{ background: 'linear-gradient(135deg, #22c55e, #059669)', boxShadow: '0 4px 10px rgba(34,197,94,0.25)' }}>
+                <Wallet size={14} className="text-white" />
+              </div>
             </div>
-            <div className="flex items-center justify-between rounded-lg bg-red-50 px-4 py-3">
+
+            {/* A pagar */}
+            <div
+              className="flex items-center justify-between rounded-xl p-3.5"
+              style={{ background: 'linear-gradient(135deg, rgba(239,68,68,0.07) 0%, rgba(220,38,38,0.04) 100%)', border: '1px solid rgba(239,68,68,0.12)' }}
+            >
               <div>
-                <p className="text-xs text-red-700">A pagar</p>
-                <p className="text-xl font-bold text-red-800">
+                <p className="text-[9px] font-black uppercase tracking-widest text-red-500">A pagar</p>
+                <p className="mt-0.5 text-xl font-black text-red-800">
                   {totalPayable > 0 ? `R$ ${totalPayable.toLocaleString('pt-BR')}` : '—'}
                 </p>
               </div>
-              <TrendingUp size={20} className="text-red-400" />
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl" style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)', boxShadow: '0 4px 10px rgba(239,68,68,0.2)' }}>
+                <TrendingUp size={14} className="text-white" />
+              </div>
             </div>
-            <div className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3">
+
+            {/* Custo sistema */}
+            <div
+              className="flex items-center justify-between rounded-xl p-3.5"
+              style={{ background: 'rgba(248,250,252,0.8)', border: '1px solid rgba(226,232,240,0.8)' }}
+            >
               <div>
-                <p className="text-xs text-slate-500">Custo total do sistema</p>
-                <p className="text-lg font-bold text-slate-800">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Custo sistema</p>
+                <p className="mt-0.5 text-xl font-black text-slate-700">
                   {totalSystemCost > 0 ? `R$ ${totalSystemCost.toLocaleString('pt-BR')}` : '—'}
                 </p>
               </div>
             </div>
           </div>
+
           {financialRows.length === 0 && (
-            <div className="mt-3 rounded-lg border border-dashed border-slate-200 px-4 py-3 text-center">
+            <div className="mt-3 rounded-xl border border-dashed border-slate-200 px-4 py-3 text-center">
               <p className="text-xs text-slate-400">Nenhum registro financeiro ainda.</p>
-              <Link href="/dashboard/financial/new" className="mt-1 block text-xs text-green-600 hover:underline">
+              <Link href="/dashboard/financial/new" className="mt-1 block text-xs font-semibold text-green-600 hover:underline">
                 Adicionar cobrança
               </Link>
             </div>
@@ -186,40 +287,52 @@ export default async function DashboardPage() {
         </div>
 
         {/* WhatsApp status */}
-        <div className="col-span-1 rounded-xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
+        <div
+          className="col-span-1 rounded-2xl bg-white p-5 lg:col-span-2"
+          style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(226,232,240,0.7)' }}
+        >
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-900">Status WhatsApp por unidade</h2>
-            <Link href="/dashboard/units" className="text-xs text-green-600 hover:underline">Ver todas</Link>
+            <div>
+              <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400">integração</p>
+              <h2 className="text-sm font-bold text-slate-900">Status WhatsApp por unidade</h2>
+            </div>
+            <Link href="/dashboard/units" className="rounded-lg px-2.5 py-1 text-[11px] font-semibold text-green-600 transition-colors hover:bg-green-50">
+              Ver todas →
+            </Link>
           </div>
+
           {unitRows.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 py-8 text-center">
+            <div className="flex flex-col items-center gap-2 py-10 text-center">
               <p className="text-sm text-slate-500">Nenhuma unidade cadastrada.</p>
-              <Link href="/dashboard/units/new" className="text-sm text-green-600 hover:underline">Criar primeira unidade</Link>
+              <Link href="/dashboard/units/new" className="text-sm font-semibold text-green-600 hover:underline">Criar primeira unidade</Link>
             </div>
           ) : (
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-slate-50">
               {unitRows.slice(0, 6).map((unit) => (
                 <div key={unit.id} className="flex items-center justify-between py-2.5">
                   <div>
                     <Link
                       href={`/dashboard/units/${unit.id}`}
-                      className="text-sm font-medium text-slate-900 hover:text-green-600"
+                      className="text-sm font-semibold text-slate-900 hover:text-green-600"
                     >
                       {unit.name}
                     </Link>
-                    <p className="text-xs text-slate-400">
+                    <p className="text-[11px] text-slate-400">
                       {unit.region_city ?? '—'}
                       {unit.region_state ? `, ${unit.region_state}` : ''}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
                     {unit.whatsapp_phone ? (
-                      <span className="flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                      <span
+                        className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold"
+                        style={{ background: 'rgba(34,197,94,0.1)', color: '#15803d' }}
+                      >
                         <CheckCircle2 size={10} />
                         {unit.whatsapp_phone}
                       </span>
                     ) : (
-                      <span className="flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+                      <span className="flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-400">
                         <WifiOff size={10} />
                         Sem conexão
                       </span>
@@ -228,7 +341,7 @@ export default async function DashboardPage() {
                 </div>
               ))}
               {unitRows.length > 6 && (
-                <p className="pt-2 text-center text-xs text-slate-400">
+                <p className="pt-2.5 text-center text-xs text-slate-400">
                   +{unitRows.length - 6} outras unidades
                 </p>
               )}
@@ -237,97 +350,118 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* Leads chart + Alerts */}
+      {/* Chart + Alerts */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="col-span-2 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-4 text-sm font-semibold text-slate-900">Leads por dia (últimos 7 dias)</h2>
+        <div
+          className="col-span-2 rounded-2xl bg-white p-5"
+          style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(226,232,240,0.7)' }}
+        >
+          <div className="mb-4">
+            <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400">tendência</p>
+            <h2 className="text-sm font-bold text-slate-900">Leads por dia — últimos 7 dias</h2>
+          </div>
           <LeadsByDayChart counts={leadsByDay} />
         </div>
 
         {/* Alerts */}
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-4 text-sm font-semibold text-slate-900">Atenção</h2>
-          <div className="space-y-3">
+        <div
+          className="rounded-2xl bg-white p-5"
+          style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(226,232,240,0.7)' }}
+        >
+          <div className="mb-4">
+            <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400">sistema</p>
+            <h2 className="text-sm font-bold text-slate-900">Alertas</h2>
+          </div>
+          <div className="space-y-2.5">
             {unitsWithoutWhatsApp.length > 0 && (
-              <div className="flex gap-3 rounded-lg bg-amber-50 p-3">
-                <AlertCircle size={16} className="mt-0.5 flex-shrink-0 text-amber-600" />
+              <div className="flex gap-3 rounded-xl p-3" style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}>
+                <AlertCircle size={15} className="mt-0.5 flex-shrink-0 text-amber-500" />
                 <div>
-                  <p className="text-xs font-medium text-amber-800">
+                  <p className="text-xs font-bold text-amber-800">
                     {unitsWithoutWhatsApp.length} unidade{unitsWithoutWhatsApp.length > 1 ? 's' : ''} sem WhatsApp
                   </p>
-                  <p className="mt-0.5 text-xs text-amber-700">
+                  <p className="mt-0.5 text-[11px] text-amber-700">
                     {unitsWithoutWhatsApp.slice(0, 2).map(u => u.name).join(', ')}
                     {unitsWithoutWhatsApp.length > 2 ? '...' : ''}
                   </p>
-                  <Link href="/dashboard/units" className="mt-1 block text-xs text-amber-800 underline">Conectar agora</Link>
+                  <Link href="/dashboard/units" className="mt-1 block text-[11px] font-semibold text-amber-700 underline">Conectar agora</Link>
                 </div>
               </div>
             )}
             {orgRows.length === 0 && (
-              <div className="flex gap-3 rounded-lg bg-blue-50 p-3">
-                <AlertCircle size={16} className="mt-0.5 flex-shrink-0 text-blue-600" />
+              <div className="flex gap-3 rounded-xl p-3" style={{ background: 'rgba(59,130,246,0.07)', border: '1px solid rgba(59,130,246,0.15)' }}>
+                <AlertCircle size={15} className="mt-0.5 flex-shrink-0 text-blue-500" />
                 <div>
-                  <p className="text-xs font-medium text-blue-800">Nenhuma empresa cadastrada</p>
-                  <Link href="/dashboard/organizations/new" className="mt-1 block text-xs text-blue-700 underline">Cadastrar empresa</Link>
+                  <p className="text-xs font-bold text-blue-800">Nenhuma empresa cadastrada</p>
+                  <Link href="/dashboard/organizations/new" className="mt-1 block text-[11px] font-semibold text-blue-700 underline">Cadastrar empresa</Link>
                 </div>
               </div>
             )}
             {(employees ?? []).length === 0 && unitRows.length > 0 && (
-              <div className="flex gap-3 rounded-lg bg-orange-50 p-3">
-                <AlertCircle size={16} className="mt-0.5 flex-shrink-0 text-orange-600" />
+              <div className="flex gap-3 rounded-xl p-3" style={{ background: 'rgba(249,115,22,0.07)', border: '1px solid rgba(249,115,22,0.15)' }}>
+                <AlertCircle size={15} className="mt-0.5 flex-shrink-0 text-orange-500" />
                 <div>
-                  <p className="text-xs font-medium text-orange-800">Nenhum funcionário cadastrado</p>
-                  <Link href="/dashboard/employees/new" className="mt-1 block text-xs text-orange-700 underline">Adicionar funcionário</Link>
+                  <p className="text-xs font-bold text-orange-800">Nenhum funcionário cadastrado</p>
+                  <Link href="/dashboard/employees/new" className="mt-1 block text-[11px] font-semibold text-orange-700 underline">Adicionar funcionário</Link>
                 </div>
               </div>
             )}
             {unitsWithoutWhatsApp.length === 0 && orgRows.length > 0 && (employees ?? []).length > 0 && (
-              <div className="flex gap-3 rounded-lg bg-green-50 p-3">
-                <CheckCircle2 size={16} className="mt-0.5 flex-shrink-0 text-green-600" />
-                <p className="text-xs text-green-800">Tudo configurado e funcionando!</p>
+              <div className="flex gap-3 rounded-xl p-3" style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)' }}>
+                <CheckCircle2 size={15} className="mt-0.5 flex-shrink-0 text-green-500" />
+                <p className="text-xs font-bold text-green-800">Tudo configurado e funcionando!</p>
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* Recent companies table */}
+      {/* Recent companies */}
       {orgRows.length > 0 && (
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div
+          className="overflow-hidden rounded-2xl bg-white"
+          style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(226,232,240,0.7)' }}
+        >
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-            <h2 className="text-sm font-semibold text-slate-900">Empresas recentes</h2>
-            <Link href="/dashboard/organizations" className="text-xs text-green-600 hover:underline">Ver todas</Link>
+            <div>
+              <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400">cadastros</p>
+              <h2 className="text-sm font-bold text-slate-900">Empresas recentes</h2>
+            </div>
+            <Link href="/dashboard/organizations" className="rounded-lg px-2.5 py-1 text-[11px] font-semibold text-green-600 transition-colors hover:bg-green-50">
+              Ver todas →
+            </Link>
           </div>
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-3 font-medium">Empresa</th>
-                <th className="px-5 py-3 font-medium">Plano</th>
-                <th className="px-5 py-3 font-medium">Unidades</th>
-                <th className="px-5 py-3 font-medium">Status</th>
+              <tr style={{ background: 'rgba(248,250,252,0.8)', borderBottom: '1px solid rgba(226,232,240,0.8)' }}>
+                <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-[0.1em] text-slate-400">Empresa</th>
+                <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-[0.1em] text-slate-400">Plano</th>
+                <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-[0.1em] text-slate-400">Unidades</th>
+                <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-[0.1em] text-slate-400">Status</th>
               </tr>
             </thead>
             <tbody>
               {orgRows.slice(0, 5).map((org) => {
                 const unitCount = unitRows.filter(u => u.org_id === org.id).length
                 return (
-                  <tr key={org.id} className="border-b border-slate-50 last:border-0">
-                    <td className="px-5 py-3">
-                      <Link href="/dashboard/organizations" className="font-medium text-slate-900 hover:text-green-600">
+                  <tr key={org.id} className="border-b border-slate-50 last:border-0 transition-colors hover:bg-slate-50/60">
+                    <td className="px-5 py-3.5">
+                      <Link href="/dashboard/organizations" className="font-semibold text-slate-900 hover:text-green-600 transition-colors">
                         {org.name}
                       </Link>
-                      <p className="text-xs text-slate-400">{org.owner_email ?? '—'}</p>
+                      <p className="text-[11px] text-slate-400">{org.owner_email ?? '—'}</p>
                     </td>
-                    <td className="px-5 py-3">
-                      <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium capitalize text-violet-700">
+                    <td className="px-5 py-3.5">
+                      <span className="rounded-full px-2.5 py-1 text-[11px] font-bold capitalize" style={{ background: 'rgba(139,92,246,0.1)', color: '#7c3aed' }}>
                         {org.plan}
                       </span>
                     </td>
-                    <td className="px-5 py-3 text-slate-600">{unitCount}</td>
-                    <td className="px-5 py-3">
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        org.is_active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
-                      }`}>
+                    <td className="px-5 py-3.5 text-slate-600 font-medium">{unitCount}</td>
+                    <td className="px-5 py-3.5">
+                      <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold`}
+                        style={org.is_active
+                          ? { background: 'rgba(34,197,94,0.1)', color: '#15803d' }
+                          : { background: 'rgba(148,163,184,0.1)', color: '#64748b' }}>
                         {org.is_active ? 'Ativa' : 'Inativa'}
                       </span>
                     </td>
