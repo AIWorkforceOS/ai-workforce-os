@@ -33,6 +33,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           }}
         >
           <div className="flex items-center gap-2">
+            <img src="/branding/alizo-icon.png" alt="Alizo" className="h-6 w-auto" />
             <p className="text-[14px] font-black tracking-tight text-white">alizo</p>
             <span style={{ color: 'rgba(255,255,255,0.2)' }}>/</span>
             <span className="rounded-md px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider"

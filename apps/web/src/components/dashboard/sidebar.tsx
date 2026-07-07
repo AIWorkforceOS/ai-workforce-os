@@ -81,24 +81,7 @@ export function Sidebar({ userEmail }: { userEmail: string }) {
 
       {/* Logo */}
       <div className="px-5 pt-5 pb-4">
-        <div className="flex items-center gap-3">
-          {/* Alizo icon */}
-          <div className="relative flex h-9 w-9 items-center justify-center rounded-xl" style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 0 20px rgba(6,182,212,0.4), 0 4px 12px rgba(0,0,0,0.3)' }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M5 12C5 9.239 7.239 7 10 7C12.761 7 15 9.239 15 12C15 14.761 12.761 17 10 17C8.5 17 7.15 16.35 6.2 15.3" stroke="white" strokeWidth="2.2" strokeLinecap="round" fill="none"/>
-              <path d="M19 12C19 14.761 16.761 17 14 17C11.239 17 9 14.761 9 12C9 9.239 11.239 7 14 7C15.5 7 16.85 7.65 17.8 8.7" stroke="white" strokeWidth="2.2" strokeLinecap="round" fill="none"/>
-            </svg>
-            {/* Pulse ring */}
-            <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-40" />
-              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-cyan-400" />
-            </span>
-          </div>
-          <div>
-            <p className="text-sm font-black text-white leading-none tracking-tight">alizo</p>
-            <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: 'rgba(103,232,249,0.8)' }}>AI Workforce OS</p>
-          </div>
-        </div>
+        <img src="/branding/alizo-logo.png" alt="Alizo" className="h-8 w-auto" />
       </div>
 
       {/* Divider */}
