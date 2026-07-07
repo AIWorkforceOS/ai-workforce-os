@@ -154,7 +154,7 @@ export default async function ConversationDetailPage({
               })
               const prevDay =
                 idx > 0
-                  ? new Date(messages[idx - 1].sent_at).toLocaleDateString('pt-BR', {
+                  ? new Date(messages[idx - 1]!.sent_at).toLocaleDateString('pt-BR', {
                       weekday: 'long',
                       day: '2-digit',
                       month: 'long',
