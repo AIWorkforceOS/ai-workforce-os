@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/viniciusmiranda/Library/pnpm/**)",
+      "Bash(corepack enable *)",
+      "Bash(corepack prepare *)",
+      "Bash(pnpm -v)",
+      "Bash(\"/Users/viniciusmiranda/Library/pnpm/bin/pnpm\" -v)",
+      "Bash(echo \"exit:$?\")",
+      "Bash(/Users/viniciusmiranda/Library/pnpm/bin/pnpm add *)",
+      "Bash(mkdir -p /Users/viniciusmiranda/Desktop/ai-workforce-os/apps/web/src/app/dashboard/units/new \"/Users/viniciusmiranda/Desktop/ai-workforce-os/apps/web/src/app/dashboard/units/[id]/agent\")",
+      "Bash(python3 -c ' *)",
+      "Bash(/Users/viniciusmiranda/Library/pnpm/bin/pnpm --filter web tsc --noEmit)",
+      "Bash(/Users/viniciusmiranda/Library/pnpm/bin/pnpm --filter web run typecheck)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(/Users/viniciusmiranda/Library/pnpm/bin/pnpm --filter web run lint)",
+      "Bash(/Users/viniciusmiranda/Library/pnpm/bin/pnpm run *)",
+      "Bash(mkdir -p /Users/viniciusmiranda/Desktop/ai-workforce-os/.claude)",
+      "Bash(/Users/viniciusmiranda/Library/pnpm/bin/pnpm --filter web run dev)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/login)",
+      "Bash(kill %1)",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(curl -s http://localhost:3000/login)",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code} -> redirect: %{redirect_url}\\\\n\" http://localhost:3000/dashboard)",
+      "Bash(cat /tmp/next-dev.log | tail -60)",
+      "Bash(ls -la /Users/viniciusmiranda/Desktop/*.command 2>&1)",
+      "Bash(chmod +x /Users/viniciusmiranda/Desktop/push-semana1-ai-workforce.command)"
+    ]
+  }
+}
