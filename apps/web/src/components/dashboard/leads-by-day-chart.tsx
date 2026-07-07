@@ -10,14 +10,18 @@ export function LeadsByDayChart({ counts }: { counts: { date: string; count: num
         const heightPct = (day.count / max) * 100
         return (
           <div key={day.date} className="flex flex-1 flex-col items-center gap-2">
-            <span className="text-xs font-medium text-gray-700">{day.count}</span>
-            <div className="flex h-32 w-full items-end rounded bg-gray-50">
+            <span className="text-xs font-medium text-slate-400">{day.count}</span>
+            <div className="flex h-32 w-full items-end rounded" style={{ background: 'rgba(255,255,255,0.04)' }}>
               <div
-                className="w-full rounded bg-gray-900"
-                style={{ height: `${Math.max(4, heightPct)}%` }}
+                className="w-full rounded"
+                style={{
+                  height: `${Math.max(4, heightPct)}%`,
+                  background: 'linear-gradient(180deg, #06b6d4 0%, #4361ee 100%)',
+                  boxShadow: '0 0 8px rgba(6,182,212,0.3)',
+                }}
               />
             </div>
-            <span className="text-xs text-gray-400">{WEEKDAY_LABEL[date.getDay()]}</span>
+            <span className="text-xs text-slate-500">{WEEKDAY_LABEL[date.getDay()]}</span>
           </div>
         )
       })}

@@ -7,7 +7,6 @@ import {
   Building2,
   MapPin,
   Users,
-  Bot,
   MessageSquare,
   UserCircle,
   Wallet,
@@ -77,23 +76,26 @@ export function Sidebar({ userEmail }: { userEmail: string }) {
   }
 
   return (
-    <aside className="flex h-screen w-64 flex-shrink-0 flex-col overflow-hidden" style={{ background: 'linear-gradient(180deg, #080d14 0%, #0a1020 50%, #08111a 100%)' }}>
+    <aside className="flex h-screen w-64 flex-shrink-0 flex-col overflow-hidden" style={{ background: 'linear-gradient(180deg, #0a0f1e 0%, #0d1221 50%, #0a0f1e 100%)' }}>
 
       {/* Logo */}
       <div className="px-5 pt-5 pb-4">
         <div className="flex items-center gap-3">
-          {/* Glowing icon */}
-          <div className="relative flex h-9 w-9 items-center justify-center rounded-xl" style={{ background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)', boxShadow: '0 0 20px rgba(34,197,94,0.35), 0 4px 12px rgba(0,0,0,0.3)' }}>
-            <Bot size={16} className="text-white" />
+          {/* Alizo icon */}
+          <div className="relative flex h-9 w-9 items-center justify-center rounded-xl" style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 0 20px rgba(6,182,212,0.4), 0 4px 12px rgba(0,0,0,0.3)' }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M5 12C5 9.239 7.239 7 10 7C12.761 7 15 9.239 15 12C15 14.761 12.761 17 10 17C8.5 17 7.15 16.35 6.2 15.3" stroke="white" strokeWidth="2.2" strokeLinecap="round" fill="none"/>
+              <path d="M19 12C19 14.761 16.761 17 14 17C11.239 17 9 14.761 9 12C9 9.239 11.239 7 14 7C15.5 7 16.85 7.65 17.8 8.7" stroke="white" strokeWidth="2.2" strokeLinecap="round" fill="none"/>
+            </svg>
             {/* Pulse ring */}
             <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-40" />
-              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-green-500" />
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-40" />
+              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-cyan-400" />
             </span>
           </div>
           <div>
-            <p className="text-sm font-black text-white leading-none tracking-tight">AI Workforce</p>
-            <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: 'rgba(134,239,172,0.8)' }}>OS · Admin</p>
+            <p className="text-sm font-black text-white leading-none tracking-tight">alizo</p>
+            <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: 'rgba(103,232,249,0.8)' }}>AI Workforce OS</p>
           </div>
         </div>
       </div>
@@ -120,18 +122,18 @@ export function Sidebar({ userEmail }: { userEmail: string }) {
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                   style={active ? {
-                    background: 'linear-gradient(135deg, rgba(34,197,94,0.15) 0%, rgba(34,197,94,0.05) 100%)',
-                    boxShadow: 'inset 0 0 0 1px rgba(34,197,94,0.15)',
+                    background: 'linear-gradient(135deg, rgba(6,182,212,0.18) 0%, rgba(67,97,238,0.1) 100%)',
+                    boxShadow: 'inset 0 0 0 1px rgba(6,182,212,0.2)',
                   } : undefined}
                 >
                   <div className={`flex h-6 w-6 items-center justify-center rounded-lg transition-all ${
                     active ? '' : 'group-hover:bg-white/5'
-                  }`} style={active ? { background: 'rgba(34,197,94,0.2)' } : undefined}>
-                    <Icon size={13} className={active ? 'text-green-400' : 'text-slate-500 group-hover:text-slate-300'} />
+                  }`} style={active ? { background: 'rgba(6,182,212,0.2)' } : undefined}>
+                    <Icon size={13} className={active ? 'text-cyan-400' : 'text-slate-500 group-hover:text-slate-300'} />
                   </div>
                   <span className="flex-1">{label}</span>
                   {active && (
-                    <span className="h-1.5 w-1.5 rounded-full bg-green-400" style={{ boxShadow: '0 0 6px rgba(34,197,94,0.6)' }} />
+                    <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" style={{ boxShadow: '0 0 6px rgba(6,182,212,0.7)' }} />
                   )}
                 </Link>
               )
@@ -153,13 +155,13 @@ export function Sidebar({ userEmail }: { userEmail: string }) {
               : 'text-slate-400 hover:text-slate-200'
           }`}
           style={pathname.startsWith('/dashboard/settings') ? {
-            background: 'linear-gradient(135deg, rgba(34,197,94,0.15) 0%, rgba(34,197,94,0.05) 100%)',
-            boxShadow: 'inset 0 0 0 1px rgba(34,197,94,0.15)',
+            background: 'linear-gradient(135deg, rgba(6,182,212,0.18) 0%, rgba(67,97,238,0.1) 100%)',
+            boxShadow: 'inset 0 0 0 1px rgba(6,182,212,0.2)',
           } : undefined}
         >
           <div className={`flex h-6 w-6 items-center justify-center rounded-lg ${pathname.startsWith('/dashboard/settings') ? '' : 'group-hover:bg-white/5'}`}
-            style={pathname.startsWith('/dashboard/settings') ? { background: 'rgba(34,197,94,0.2)' } : undefined}>
-            <Settings size={13} className={pathname.startsWith('/dashboard/settings') ? 'text-green-400' : 'text-slate-500 group-hover:text-slate-300'} />
+            style={pathname.startsWith('/dashboard/settings') ? { background: 'rgba(6,182,212,0.2)' } : undefined}>
+            <Settings size={13} className={pathname.startsWith('/dashboard/settings') ? 'text-cyan-400' : 'text-slate-500 group-hover:text-slate-300'} />
           </div>
           Configurações
         </Link>
@@ -167,7 +169,7 @@ export function Sidebar({ userEmail }: { userEmail: string }) {
         {/* User row */}
         <div className="mt-2 flex items-center gap-2.5 rounded-xl px-2 py-2">
           <div className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-[11px] font-black text-white"
-            style={{ background: 'linear-gradient(135deg, #22c55e, #15803d)', boxShadow: '0 2px 8px rgba(34,197,94,0.25)' }}>
+            style={{ background: 'linear-gradient(135deg, #06b6d4, #4361ee)', boxShadow: '0 2px 8px rgba(6,182,212,0.3)' }}>
             {getInitials(userEmail)}
           </div>
           <div className="flex-1 min-w-0">

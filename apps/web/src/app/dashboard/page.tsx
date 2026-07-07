@@ -159,16 +159,16 @@ export default async function DashboardPage() {
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400">Visão geral</p>
-          <h1 className="mt-0.5 text-2xl font-black tracking-tight text-slate-900">Dashboard</h1>
-          <p className="mt-0.5 text-sm capitalize text-slate-500">{monthName}</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">Visão geral</p>
+          <h1 className="mt-0.5 text-2xl font-black tracking-tight text-white">Bom dia, Vinicius! 👋</h1>
+          <p className="mt-0.5 text-sm capitalize" style={{ color: 'rgba(148,163,184,0.7)' }}>Seu workforce de IA está trabalhando — {monthName}</p>
         </div>
         <Link
           href="/dashboard/organizations/new"
           className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
           style={{
-            background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
-            boxShadow: '0 4px 14px rgba(34,197,94,0.3)',
+            background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)',
+            boxShadow: '0 4px 14px rgba(6,182,212,0.3)',
           }}
         >
           <Building2 size={14} />
@@ -182,9 +182,10 @@ export default async function DashboardPage() {
           <Link
             key={label}
             href={href}
-            className="group relative overflow-hidden rounded-2xl bg-white transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg"
+            className="group relative overflow-hidden rounded-2xl transition-all duration-200 hover:-translate-y-0.5"
             style={{
-              boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(226,232,240,0.7)',
+              background: '#141a2b',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)',
             }}
           >
             {/* Gradient top accent */}
@@ -194,19 +195,19 @@ export default async function DashboardPage() {
               {/* Icon */}
               <div
                 className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br ${iconGrad}`}
-                style={{ boxShadow: '0 4px 10px rgba(0,0,0,0.12)' }}
+                style={{ boxShadow: '0 4px 10px rgba(0,0,0,0.3)' }}
               >
                 <Icon size={16} className="text-white" />
               </div>
 
               {/* Value */}
-              <p className="mt-3 text-[30px] font-black leading-none tracking-tight text-slate-900">
+              <p className="mt-3 text-[30px] font-black leading-none tracking-tight text-white">
                 {value}
               </p>
               <p className="mt-1.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-400">
                 {label}
               </p>
-              <p className="mt-0.5 text-[11px] text-slate-400">{sub}</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">{sub}</p>
             </div>
           </Link>
         ))}
@@ -216,15 +217,15 @@ export default async function DashboardPage() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Financial summary */}
         <div
-          className="col-span-1 rounded-2xl bg-white p-5"
-          style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(226,232,240,0.7)' }}
+          className="col-span-1 rounded-2xl p-5"
+          style={{ background: '#141a2b', boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}
         >
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400">módulo</p>
-              <h2 className="text-sm font-bold text-slate-900">Financeiro</h2>
+              <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-500">módulo</p>
+              <h2 className="text-sm font-bold text-white">Financeiro</h2>
             </div>
-            <Link href="/dashboard/financial" className="rounded-lg px-2.5 py-1 text-[11px] font-semibold text-green-600 transition-colors hover:bg-green-50">
+            <Link href="/dashboard/financial" className="rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors" style={{ color: '#06b6d4' }}>
               Ver tudo →
             </Link>
           </div>
@@ -277,9 +278,9 @@ export default async function DashboardPage() {
           </div>
 
           {financialRows.length === 0 && (
-            <div className="mt-3 rounded-xl border border-dashed border-slate-200 px-4 py-3 text-center">
-              <p className="text-xs text-slate-400">Nenhum registro financeiro ainda.</p>
-              <Link href="/dashboard/financial/new" className="mt-1 block text-xs font-semibold text-green-600 hover:underline">
+            <div className="mt-3 rounded-xl px-4 py-3 text-center" style={{ border: '1px dashed rgba(255,255,255,0.1)' }}>
+              <p className="text-xs text-slate-500">Nenhum registro financeiro ainda.</p>
+              <Link href="/dashboard/financial/new" className="mt-1 block text-xs font-semibold hover:underline" style={{ color: '#06b6d4' }}>
                 Adicionar cobrança
               </Link>
             </div>
@@ -288,15 +289,15 @@ export default async function DashboardPage() {
 
         {/* WhatsApp status */}
         <div
-          className="col-span-1 rounded-2xl bg-white p-5 lg:col-span-2"
-          style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(226,232,240,0.7)' }}
+          className="col-span-1 rounded-2xl p-5 lg:col-span-2"
+          style={{ background: '#141a2b', boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}
         >
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400">integração</p>
-              <h2 className="text-sm font-bold text-slate-900">Status WhatsApp por unidade</h2>
+              <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-500">integração</p>
+              <h2 className="text-sm font-bold text-white">Status WhatsApp por unidade</h2>
             </div>
-            <Link href="/dashboard/units" className="rounded-lg px-2.5 py-1 text-[11px] font-semibold text-green-600 transition-colors hover:bg-green-50">
+            <Link href="/dashboard/units" className="rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors" style={{ color: '#06b6d4' }}>
               Ver todas →
             </Link>
           </div>
@@ -304,20 +305,20 @@ export default async function DashboardPage() {
           {unitRows.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-10 text-center">
               <p className="text-sm text-slate-500">Nenhuma unidade cadastrada.</p>
-              <Link href="/dashboard/units/new" className="text-sm font-semibold text-green-600 hover:underline">Criar primeira unidade</Link>
+              <Link href="/dashboard/units/new" className="text-sm font-semibold hover:underline" style={{ color: '#06b6d4' }}>Criar primeira unidade</Link>
             </div>
           ) : (
-            <div className="divide-y divide-slate-50">
+            <div style={{ borderColor: 'rgba(255,255,255,0.05)' }} className="divide-y">
               {unitRows.slice(0, 6).map((unit) => (
                 <div key={unit.id} className="flex items-center justify-between py-2.5">
                   <div>
                     <Link
                       href={`/dashboard/units/${unit.id}`}
-                      className="text-sm font-semibold text-slate-900 hover:text-green-600"
+                      className="text-sm font-semibold text-white transition-colors hover:text-cyan-400"
                     >
                       {unit.name}
                     </Link>
-                    <p className="text-[11px] text-slate-400">
+                    <p className="text-[11px] text-slate-500">
                       {unit.region_city ?? '—'}
                       {unit.region_state ? `, ${unit.region_state}` : ''}
                     </p>
@@ -326,13 +327,13 @@ export default async function DashboardPage() {
                     {unit.whatsapp_phone ? (
                       <span
                         className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold"
-                        style={{ background: 'rgba(34,197,94,0.1)', color: '#15803d' }}
+                        style={{ background: 'rgba(34,197,94,0.12)', color: '#4ade80' }}
                       >
                         <CheckCircle2 size={10} />
                         {unit.whatsapp_phone}
                       </span>
                     ) : (
-                      <span className="flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-400">
+                      <span className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium text-slate-500" style={{ background: 'rgba(255,255,255,0.05)' }}>
                         <WifiOff size={10} />
                         Sem conexão
                       </span>
@@ -341,7 +342,7 @@ export default async function DashboardPage() {
                 </div>
               ))}
               {unitRows.length > 6 && (
-                <p className="pt-2.5 text-center text-xs text-slate-400">
+                <p className="pt-2.5 text-center text-xs text-slate-500">
                   +{unitRows.length - 6} outras unidades
                 </p>
               )}
@@ -353,24 +354,24 @@ export default async function DashboardPage() {
       {/* Chart + Alerts */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div
-          className="col-span-2 rounded-2xl bg-white p-5"
-          style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(226,232,240,0.7)' }}
+          className="col-span-2 rounded-2xl p-5"
+          style={{ background: '#141a2b', boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}
         >
           <div className="mb-4">
-            <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400">tendência</p>
-            <h2 className="text-sm font-bold text-slate-900">Leads por dia — últimos 7 dias</h2>
+            <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-500">tendência</p>
+            <h2 className="text-sm font-bold text-white">Leads por dia — últimos 7 dias</h2>
           </div>
           <LeadsByDayChart counts={leadsByDay} />
         </div>
 
         {/* Alerts */}
         <div
-          className="rounded-2xl bg-white p-5"
-          style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(226,232,240,0.7)' }}
+          className="rounded-2xl p-5"
+          style={{ background: '#141a2b', boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}
         >
           <div className="mb-4">
-            <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400">sistema</p>
-            <h2 className="text-sm font-bold text-slate-900">Alertas</h2>
+            <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-500">sistema</p>
+            <h2 className="text-sm font-bold text-white">Alertas</h2>
           </div>
           <div className="space-y-2.5">
             {unitsWithoutWhatsApp.length > 0 && (
@@ -407,9 +408,9 @@ export default async function DashboardPage() {
               </div>
             )}
             {unitsWithoutWhatsApp.length === 0 && orgRows.length > 0 && (employees ?? []).length > 0 && (
-              <div className="flex gap-3 rounded-xl p-3" style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)' }}>
-                <CheckCircle2 size={15} className="mt-0.5 flex-shrink-0 text-green-500" />
-                <p className="text-xs font-bold text-green-800">Tudo configurado e funcionando!</p>
+              <div className="flex gap-3 rounded-xl p-3" style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.2)' }}>
+                <CheckCircle2 size={15} className="mt-0.5 flex-shrink-0 text-cyan-400" />
+                <p className="text-xs font-bold text-cyan-300">Tudo configurado e funcionando!</p>
               </div>
             )}
           </div>
@@ -419,49 +420,49 @@ export default async function DashboardPage() {
       {/* Recent companies */}
       {orgRows.length > 0 && (
         <div
-          className="overflow-hidden rounded-2xl bg-white"
-          style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 0 0 1px rgba(226,232,240,0.7)' }}
+          className="overflow-hidden rounded-2xl"
+          style={{ background: '#141a2b', boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}
         >
-          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
             <div>
-              <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400">cadastros</p>
-              <h2 className="text-sm font-bold text-slate-900">Empresas recentes</h2>
+              <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-500">cadastros</p>
+              <h2 className="text-sm font-bold text-white">Empresas recentes</h2>
             </div>
-            <Link href="/dashboard/organizations" className="rounded-lg px-2.5 py-1 text-[11px] font-semibold text-green-600 transition-colors hover:bg-green-50">
+            <Link href="/dashboard/organizations" className="rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors" style={{ color: '#06b6d4' }}>
               Ver todas →
             </Link>
           </div>
           <table className="w-full text-sm">
             <thead>
-              <tr style={{ background: 'rgba(248,250,252,0.8)', borderBottom: '1px solid rgba(226,232,240,0.8)' }}>
-                <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-[0.1em] text-slate-400">Empresa</th>
-                <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-[0.1em] text-slate-400">Plano</th>
-                <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-[0.1em] text-slate-400">Unidades</th>
-                <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-[0.1em] text-slate-400">Status</th>
+              <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">Empresa</th>
+                <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">Plano</th>
+                <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">Unidades</th>
+                <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">Status</th>
               </tr>
             </thead>
             <tbody>
               {orgRows.slice(0, 5).map((org) => {
                 const unitCount = unitRows.filter(u => u.org_id === org.id).length
                 return (
-                  <tr key={org.id} className="border-b border-slate-50 last:border-0 transition-colors hover:bg-slate-50/60">
+                  <tr key={org.id} className="last:border-0 transition-colors hover:bg-white/[0.03]" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                     <td className="px-5 py-3.5">
-                      <Link href="/dashboard/organizations" className="font-semibold text-slate-900 hover:text-green-600 transition-colors">
+                      <Link href="/dashboard/organizations" className="font-semibold text-white transition-colors hover:text-cyan-400">
                         {org.name}
                       </Link>
-                      <p className="text-[11px] text-slate-400">{org.owner_email ?? '—'}</p>
+                      <p className="text-[11px] text-slate-500">{org.owner_email ?? '—'}</p>
                     </td>
                     <td className="px-5 py-3.5">
-                      <span className="rounded-full px-2.5 py-1 text-[11px] font-bold capitalize" style={{ background: 'rgba(139,92,246,0.1)', color: '#7c3aed' }}>
+                      <span className="rounded-full px-2.5 py-1 text-[11px] font-bold capitalize" style={{ background: 'rgba(139,92,246,0.15)', color: '#a78bfa' }}>
                         {org.plan}
                       </span>
                     </td>
-                    <td className="px-5 py-3.5 text-slate-600 font-medium">{unitCount}</td>
+                    <td className="px-5 py-3.5 text-slate-400 font-medium">{unitCount}</td>
                     <td className="px-5 py-3.5">
                       <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold`}
                         style={org.is_active
-                          ? { background: 'rgba(34,197,94,0.1)', color: '#15803d' }
-                          : { background: 'rgba(148,163,184,0.1)', color: '#64748b' }}>
+                          ? { background: 'rgba(34,197,94,0.12)', color: '#4ade80' }
+                          : { background: 'rgba(255,255,255,0.06)', color: '#64748b' }}>
                         {org.is_active ? 'Ativa' : 'Inativa'}
                       </span>
                     </td>
