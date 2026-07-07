@@ -16,6 +16,7 @@ import {
   LogOut,
   ShoppingCart,
   Rocket,
+  Kanban,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -33,7 +34,8 @@ const navGroups = [
     label: 'Operações',
     items: [
       { href: '/dashboard/agents', label: 'Agentes IA', icon: Bot },
-      { href: '/dashboard/leads', label: 'Leads', icon: UserCircle },
+      { href: '/dashboard/crm', label: 'CRM Pipeline', icon: Kanban },
+      { href: '/dashboard/leads', label: 'Leads (lista)', icon: UserCircle },
       { href: '/dashboard/conversations', label: 'Conversas', icon: MessageSquare },
     ],
   },
