@@ -53,8 +53,8 @@ export default async function DashboardPage() {
     supabase.from('leads').select('id', { count: 'exact', head: true }).eq('status', 'won'),
     supabase.from('conversations').select('id', { count: 'exact', head: true }).gte('sent_at', todayStart.toISOString()),
     supabase.from('leads').select('created_at').gte('created_at', sevenDaysAgo.toISOString()),
-    supabase.from('financial_records').select('*').order('created_at', { ascending: false }).limit(20).throwOnError().catch(() => ({ data: [] })),
-    supabase.from('employees').select('id').throwOnError().catch(() => ({ data: [] })),
+    supabase.from('financial_records').select('*').order('created_at', { ascending: false }).limit(20),
+    supabase.from('employees').select('id'),
   ])
 
   const unitRows = (units ?? []) as Unit[]
