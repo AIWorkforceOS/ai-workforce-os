@@ -53,51 +53,51 @@ export default function NewEmployeePage() {
   return (
     <div className="mx-auto max-w-lg">
       <div className="mb-6">
-        <Link href="/dashboard/employees" className="text-sm text-gray-500 hover:text-gray-700">← Funcionários</Link>
-        <h1 className="mt-2 text-2xl font-bold text-gray-900">Novo funcionário</h1>
+        <Link href="/dashboard/employees" className="text-sm text-slate-500 hover:text-slate-700">← Funcionários</Link>
+        <h1 className="mt-2 text-2xl font-bold text-slate-900">Novo funcionário</h1>
       </div>
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-gray-700">Nome completo *</label>
+          <label className="text-sm font-medium text-slate-700">Nome completo *</label>
           <input required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-            className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-gray-400" placeholder="João da Silva" />
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400" placeholder="João da Silva" />
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-gray-700">E-mail</label>
+            <label className="text-sm font-medium text-slate-700">E-mail</label>
             <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-              className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-gray-400" placeholder="joao@empresa.com" />
+              className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400" placeholder="joao@empresa.com" />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-gray-700">Telefone</label>
+            <label className="text-sm font-medium text-slate-700">Telefone</label>
             <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
-              className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-gray-400" placeholder="(11) 99999-9999" />
+              className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400" placeholder="(11) 99999-9999" />
           </div>
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-gray-700">Cargo</label>
+          <label className="text-sm font-medium text-slate-700">Cargo</label>
           <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
-            className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-gray-400">
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400">
             {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
           </select>
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-gray-700">Empresa</label>
+          <label className="text-sm font-medium text-slate-700">Empresa</label>
           <select value={form.org_id} onChange={e => setForm(f => ({ ...f, org_id: e.target.value, unit_id: '' }))}
-            className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-gray-400">
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400">
             <option value="">Selecionar empresa...</option>
             {orgs.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
           </select>
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-gray-700">Unidade</label>
+          <label className="text-sm font-medium text-slate-700">Unidade</label>
           <select value={form.unit_id} onChange={e => setForm(f => ({ ...f, unit_id: e.target.value }))}
-            className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-gray-400">
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400">
             <option value="">Selecionar unidade...</option>
             {filteredUnits.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
@@ -107,11 +107,11 @@ export default function NewEmployeePage() {
 
         <div className="flex gap-3 pt-2">
           <button type="submit" disabled={busy}
-            className="flex-1 rounded-lg bg-gray-900 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-50">
+            className="flex-1 rounded-lg bg-green-600 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50">
             {busy ? 'Salvando...' : 'Cadastrar funcionário'}
           </button>
           <Link href="/dashboard/employees"
-            className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
+            className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50">
             Cancelar
           </Link>
         </div>

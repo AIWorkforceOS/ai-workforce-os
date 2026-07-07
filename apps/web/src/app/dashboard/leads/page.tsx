@@ -15,13 +15,13 @@ const STATUS_OPTIONS: { value: string; label: string }[] = [
 ]
 
 const STATUS_COLOR: Record<string, string> = {
-  new: 'bg-gray-100 text-gray-600',
+  new: 'bg-slate-100 text-slate-600',
   contacted: 'bg-blue-100 text-blue-700',
   replied: 'bg-amber-100 text-amber-700',
   negotiating: 'bg-purple-100 text-purple-700',
   won: 'bg-green-100 text-green-700',
   lost: 'bg-red-100 text-red-700',
-  paused: 'bg-gray-100 text-gray-500',
+  paused: 'bg-slate-100 text-slate-500',
 }
 
 const SECTOR_LABELS: Record<string, string> = {
@@ -42,7 +42,7 @@ function daysSince(dateStr: string | null): number | null {
 }
 
 function DaysBadge({ days }: { days: number | null }) {
-  if (days === null) return <span className="text-gray-400">—</span>
+  if (days === null) return <span className="text-slate-400">—</span>
   const color =
     days > 7
       ? 'bg-red-100 text-red-700'
@@ -98,23 +98,23 @@ export default async function LeadsPage({
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold text-gray-900">Leads</h1>
-        <p className="mt-1 text-sm text-gray-500">
+        <h1 className="text-xl font-semibold text-slate-900">Leads</h1>
+        <p className="mt-1 text-sm text-slate-500">
           Leads prospectados pelo agente SDR em todas as unidades.{' '}
-          {total > 0 && <span className="font-medium text-gray-700">{total} no total.</span>}
+          {total > 0 && <span className="font-medium text-slate-700">{total} no total.</span>}
         </p>
       </div>
 
-      <form className="flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+      <form className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-1">
-          <label htmlFor="unit" className="text-xs font-medium text-gray-500">
+          <label htmlFor="unit" className="text-xs font-medium text-slate-500">
             Unidade
           </label>
           <select
             id="unit"
             name="unit"
             defaultValue={params.unit ?? ''}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-400"
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
           >
             <option value="">Todas</option>
             {unitRows.map((unit) => (
@@ -126,14 +126,14 @@ export default async function LeadsPage({
         </div>
 
         <div className="flex flex-col gap-1">
-          <label htmlFor="status" className="text-xs font-medium text-gray-500">
+          <label htmlFor="status" className="text-xs font-medium text-slate-500">
             Status
           </label>
           <select
             id="status"
             name="status"
             defaultValue={params.status ?? ''}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-400"
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
           >
             <option value="">Todos</option>
             {STATUS_OPTIONS.map((option) => (
@@ -145,14 +145,14 @@ export default async function LeadsPage({
         </div>
 
         <div className="flex flex-col gap-1">
-          <label htmlFor="sector" className="text-xs font-medium text-gray-500">
+          <label htmlFor="sector" className="text-xs font-medium text-slate-500">
             Setor
           </label>
           <select
             id="sector"
             name="sector"
             defaultValue={params.sector ?? ''}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-400"
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
           >
             <option value="">Todos</option>
             {SECTOR_OPTIONS.map((sector) => (
@@ -165,32 +165,32 @@ export default async function LeadsPage({
 
         <button
           type="submit"
-          className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700"
+          className="rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700"
         >
           Filtrar
         </button>
         {(params.unit || params.status || params.sector) && (
           <Link
             href="/dashboard/leads"
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
           >
             Limpar filtros
           </Link>
         )}
       </form>
 
-      <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+      <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
         {leadRows.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-5 py-12 text-center">
-            <p className="text-sm font-medium text-gray-900">Nenhum lead encontrado</p>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm font-medium text-slate-900">Nenhum lead encontrado</p>
+            <p className="text-sm text-slate-500">
               Ajuste os filtros ou prospecte novos leads em uma unidade.
             </p>
           </div>
         ) : (
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-gray-200 text-gray-500">
+              <tr className="border-b border-slate-200 text-slate-500">
                 <th className="px-5 py-3 font-medium">Empresa</th>
                 <th className="px-5 py-3 font-medium">Telefone</th>
                 <th className="px-5 py-3 font-medium">Cidade</th>
@@ -206,32 +206,32 @@ export default async function LeadsPage({
                 return (
                   <tr
                     key={lead.id}
-                    className="border-b border-gray-100 last:border-0 hover:bg-gray-50"
+                    className="border-b border-slate-100 last:border-0 hover:bg-slate-50"
                   >
-                    <td className="px-5 py-3 font-medium text-gray-900">
+                    <td className="px-5 py-3 font-medium text-slate-900">
                       <Link
                         href={`/dashboard/conversations/${lead.id}`}
-                        className="hover:text-blue-600 hover:underline"
+                        className="hover:text-green-600 hover:underline"
                       >
                         {lead.company_name}
                       </Link>
                     </td>
-                    <td className="px-5 py-3 text-gray-600">{lead.phone ?? '—'}</td>
-                    <td className="px-5 py-3 text-gray-600">
+                    <td className="px-5 py-3 text-slate-600">{lead.phone ?? '—'}</td>
+                    <td className="px-5 py-3 text-slate-600">
                       {lead.city ?? '—'}
                       {lead.state ? `, ${lead.state}` : ''}
                     </td>
-                    <td className="px-5 py-3 text-gray-600">{lead.unit?.name ?? '—'}</td>
+                    <td className="px-5 py-3 text-slate-600">{lead.unit?.name ?? '—'}</td>
                     <td className="px-5 py-3">
                       <span
                         className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                          STATUS_COLOR[lead.status] ?? 'bg-gray-100 text-gray-600'
+                          STATUS_COLOR[lead.status] ?? 'bg-slate-100 text-slate-600'
                         }`}
                       >
                         {STATUS_OPTIONS.find((s) => s.value === lead.status)?.label ?? lead.status}
                       </span>
                     </td>
-                    <td className="px-5 py-3 text-gray-600">
+                    <td className="px-5 py-3 text-slate-600">
                       {lead.last_contacted_at
                         ? new Date(lead.last_contacted_at).toLocaleDateString('pt-BR')
                         : new Date(lead.created_at).toLocaleDateString('pt-BR')}
@@ -248,7 +248,7 @@ export default async function LeadsPage({
       </div>
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-between text-sm text-gray-600">
+        <div className="flex items-center justify-between text-sm text-slate-600">
           <span>
             Página {page} de {totalPages} — {total} leads
           </span>
@@ -256,7 +256,7 @@ export default async function LeadsPage({
             {page > 1 && (
               <Link
                 href={pageHref(page - 1)}
-                className="rounded-md border border-gray-300 px-3 py-1.5 hover:bg-gray-100"
+                className="rounded-md border border-slate-300 px-3 py-1.5 hover:bg-slate-100"
               >
                 Anterior
               </Link>
@@ -264,7 +264,7 @@ export default async function LeadsPage({
             {page < totalPages && (
               <Link
                 href={pageHref(page + 1)}
-                className="rounded-md border border-gray-300 px-3 py-1.5 hover:bg-gray-100"
+                className="rounded-md border border-slate-300 px-3 py-1.5 hover:bg-slate-100"
               >
                 Próxima
               </Link>

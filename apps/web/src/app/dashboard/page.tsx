@@ -98,13 +98,13 @@ export default async function DashboardPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="mt-0.5 text-sm capitalize text-gray-500">{monthName}</p>
+          <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
+          <p className="mt-0.5 text-sm capitalize text-slate-500">{monthName}</p>
         </div>
         <div className="flex gap-2">
           <Link
             href="/dashboard/organizations/new"
-            className="flex items-center gap-1.5 rounded-lg bg-gray-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-gray-700"
+            className="flex items-center gap-1.5 rounded-lg bg-green-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-green-700"
           >
             <Building2 size={15} />
             Nova empresa
@@ -125,15 +125,15 @@ export default async function DashboardPage() {
           <Link
             key={label}
             href={href}
-            className="group flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
+            className="group flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
           >
             <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${bg}`}>
               <Icon size={18} className={color} />
             </div>
             <div>
-              <p className="text-2xl font-bold text-gray-900">{value}</p>
-              <p className="text-xs text-gray-500">{label}</p>
-              <p className="mt-0.5 text-[11px] text-gray-400">{sub}</p>
+              <p className="text-2xl font-bold text-slate-900">{value}</p>
+              <p className="text-xs text-slate-500">{label}</p>
+              <p className="mt-0.5 text-[11px] text-slate-400">{sub}</p>
             </div>
           </Link>
         ))}
@@ -142,10 +142,10 @@ export default async function DashboardPage() {
       {/* Financial + WhatsApp status row */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* Financial summary */}
-        <div className="col-span-1 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="col-span-1 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-gray-900">Financeiro</h2>
-            <Link href="/dashboard/financial" className="text-xs text-blue-600 hover:underline">Ver tudo</Link>
+            <h2 className="text-sm font-semibold text-slate-900">Financeiro</h2>
+            <Link href="/dashboard/financial" className="text-xs text-green-600 hover:underline">Ver tudo</Link>
           </div>
           <div className="space-y-3">
             <div className="flex items-center justify-between rounded-lg bg-green-50 px-4 py-3">
@@ -166,19 +166,19 @@ export default async function DashboardPage() {
               </div>
               <TrendingUp size={20} className="text-red-400" />
             </div>
-            <div className="flex items-center justify-between rounded-lg bg-gray-50 px-4 py-3">
+            <div className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3">
               <div>
-                <p className="text-xs text-gray-500">Custo total do sistema</p>
-                <p className="text-lg font-bold text-gray-800">
+                <p className="text-xs text-slate-500">Custo total do sistema</p>
+                <p className="text-lg font-bold text-slate-800">
                   {totalSystemCost > 0 ? `R$ ${totalSystemCost.toLocaleString('pt-BR')}` : '—'}
                 </p>
               </div>
             </div>
           </div>
           {financialRows.length === 0 && (
-            <div className="mt-3 rounded-lg border border-dashed border-gray-200 px-4 py-3 text-center">
-              <p className="text-xs text-gray-400">Nenhum registro financeiro ainda.</p>
-              <Link href="/dashboard/financial/new" className="mt-1 block text-xs text-blue-600 hover:underline">
+            <div className="mt-3 rounded-lg border border-dashed border-slate-200 px-4 py-3 text-center">
+              <p className="text-xs text-slate-400">Nenhum registro financeiro ainda.</p>
+              <Link href="/dashboard/financial/new" className="mt-1 block text-xs text-green-600 hover:underline">
                 Adicionar cobrança
               </Link>
             </div>
@@ -186,28 +186,28 @@ export default async function DashboardPage() {
         </div>
 
         {/* WhatsApp status */}
-        <div className="col-span-1 rounded-xl border border-gray-200 bg-white p-5 shadow-sm lg:col-span-2">
+        <div className="col-span-1 rounded-xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-gray-900">Status WhatsApp por unidade</h2>
-            <Link href="/dashboard/units" className="text-xs text-blue-600 hover:underline">Ver todas</Link>
+            <h2 className="text-sm font-semibold text-slate-900">Status WhatsApp por unidade</h2>
+            <Link href="/dashboard/units" className="text-xs text-green-600 hover:underline">Ver todas</Link>
           </div>
           {unitRows.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-8 text-center">
-              <p className="text-sm text-gray-500">Nenhuma unidade cadastrada.</p>
-              <Link href="/dashboard/units/new" className="text-sm text-blue-600 hover:underline">Criar primeira unidade</Link>
+              <p className="text-sm text-slate-500">Nenhuma unidade cadastrada.</p>
+              <Link href="/dashboard/units/new" className="text-sm text-green-600 hover:underline">Criar primeira unidade</Link>
             </div>
           ) : (
-            <div className="divide-y divide-gray-100">
+            <div className="divide-y divide-slate-100">
               {unitRows.slice(0, 6).map((unit) => (
                 <div key={unit.id} className="flex items-center justify-between py-2.5">
                   <div>
                     <Link
                       href={`/dashboard/units/${unit.id}`}
-                      className="text-sm font-medium text-gray-900 hover:text-blue-600"
+                      className="text-sm font-medium text-slate-900 hover:text-green-600"
                     >
                       {unit.name}
                     </Link>
-                    <p className="text-xs text-gray-400">
+                    <p className="text-xs text-slate-400">
                       {unit.region_city ?? '—'}
                       {unit.region_state ? `, ${unit.region_state}` : ''}
                     </p>
@@ -219,7 +219,7 @@ export default async function DashboardPage() {
                         {unit.whatsapp_phone}
                       </span>
                     ) : (
-                      <span className="flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
+                      <span className="flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
                         <WifiOff size={10} />
                         Sem conexão
                       </span>
@@ -228,7 +228,7 @@ export default async function DashboardPage() {
                 </div>
               ))}
               {unitRows.length > 6 && (
-                <p className="pt-2 text-center text-xs text-gray-400">
+                <p className="pt-2 text-center text-xs text-slate-400">
                   +{unitRows.length - 6} outras unidades
                 </p>
               )}
@@ -239,14 +239,14 @@ export default async function DashboardPage() {
 
       {/* Leads chart + Alerts */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="col-span-2 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-4 text-sm font-semibold text-gray-900">Leads por dia (últimos 7 dias)</h2>
+        <div className="col-span-2 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="mb-4 text-sm font-semibold text-slate-900">Leads por dia (últimos 7 dias)</h2>
           <LeadsByDayChart counts={leadsByDay} />
         </div>
 
         {/* Alerts */}
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-4 text-sm font-semibold text-gray-900">Atenção</h2>
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="mb-4 text-sm font-semibold text-slate-900">Atenção</h2>
           <div className="space-y-3">
             {unitsWithoutWhatsApp.length > 0 && (
               <div className="flex gap-3 rounded-lg bg-amber-50 p-3">
@@ -293,14 +293,14 @@ export default async function DashboardPage() {
 
       {/* Recent companies table */}
       {orgRows.length > 0 && (
-        <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
-            <h2 className="text-sm font-semibold text-gray-900">Empresas recentes</h2>
-            <Link href="/dashboard/organizations" className="text-xs text-blue-600 hover:underline">Ver todas</Link>
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+            <h2 className="text-sm font-semibold text-slate-900">Empresas recentes</h2>
+            <Link href="/dashboard/organizations" className="text-xs text-green-600 hover:underline">Ver todas</Link>
           </div>
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-100 text-left text-xs text-gray-400">
+              <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
                 <th className="px-5 py-3 font-medium">Empresa</th>
                 <th className="px-5 py-3 font-medium">Plano</th>
                 <th className="px-5 py-3 font-medium">Unidades</th>
@@ -311,22 +311,22 @@ export default async function DashboardPage() {
               {orgRows.slice(0, 5).map((org) => {
                 const unitCount = unitRows.filter(u => u.org_id === org.id).length
                 return (
-                  <tr key={org.id} className="border-b border-gray-50 last:border-0">
+                  <tr key={org.id} className="border-b border-slate-50 last:border-0">
                     <td className="px-5 py-3">
-                      <Link href="/dashboard/organizations" className="font-medium text-gray-900 hover:text-blue-600">
+                      <Link href="/dashboard/organizations" className="font-medium text-slate-900 hover:text-green-600">
                         {org.name}
                       </Link>
-                      <p className="text-xs text-gray-400">{org.owner_email ?? '—'}</p>
+                      <p className="text-xs text-slate-400">{org.owner_email ?? '—'}</p>
                     </td>
                     <td className="px-5 py-3">
                       <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium capitalize text-violet-700">
                         {org.plan}
                       </span>
                     </td>
-                    <td className="px-5 py-3 text-gray-600">{unitCount}</td>
+                    <td className="px-5 py-3 text-slate-600">{unitCount}</td>
                     <td className="px-5 py-3">
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        org.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                        org.is_active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
                       }`}>
                         {org.is_active ? 'Ativa' : 'Inativa'}
                       </span>

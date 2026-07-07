@@ -14,7 +14,6 @@ import {
   TrendingUp,
   Settings,
   LogOut,
-  ChevronRight,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -45,6 +44,12 @@ const navGroups = [
   },
 ]
 
+function getInitials(email: string): string {
+  const parts = email.split('@')[0]?.split(/[._-]/) ?? []
+  if (parts.length >= 2) return (parts[0]![0]! + parts[1]![0]!).toUpperCase()
+  return (parts[0]?.slice(0, 2) ?? 'AW').toUpperCase()
+}
+
 export function Sidebar({ userEmail }: { userEmail: string }) {
   const pathname = usePathname()
   const router = useRouter()
@@ -61,26 +66,26 @@ export function Sidebar({ userEmail }: { userEmail: string }) {
   }
 
   return (
-    <aside className="flex h-screen w-[220px] flex-shrink-0 flex-col bg-[#0c0c0c]">
+    <aside className="flex h-screen w-64 flex-shrink-0 flex-col bg-[#0f172a] border-r border-white/5">
       {/* Logo */}
-      <div className="px-5 py-5">
-        <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-green-500">
-            <Bot size={14} className="text-white" />
+      <div className="px-5 py-5 border-b border-white/5">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-green-500 shadow-lg shadow-green-500/20">
+            <Bot size={18} className="text-white" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-white leading-none">AI Workforce</p>
-            <p className="text-[10px] text-green-400 leading-none mt-0.5">OS</p>
+            <p className="text-sm font-bold text-white leading-tight">AI Workforce</p>
+            <p className="text-[11px] text-green-400 leading-tight font-medium">OS · Painel Admin</p>
           </div>
         </div>
-        <p className="mt-3 truncate text-[11px] text-zinc-500">{userEmail}</p>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto px-3 pb-4">
-        {navGroups.map((group) => (
-          <div key={group.label} className="mb-4">
-            <p className="mb-1 px-2 text-[10px] font-medium uppercase tracking-widest text-zinc-600">
+      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
+        {navGroups.map((group, gi) => (
+          <div key={group.label}>
+            {gi > 0 && <hr className="border-white/5 my-3" />}
+            <p className="mb-1.5 px-3 text-[11px] font-semibold uppercase tracking-widest text-slate-500">
               {group.label}
             </p>
             {group.items.map(({ href, label, icon: Icon, exact }) => {
@@ -89,17 +94,14 @@ export function Sidebar({ userEmail }: { userEmail: string }) {
                 <Link
                   key={href}
                   href={href}
-                  className={`group flex items-center justify-between rounded-md px-2 py-2 text-[13px] transition-colors ${
+                  className={`flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-all ${
                     active
-                      ? 'bg-zinc-800 text-white'
-                      : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200'
+                      ? 'bg-green-500/10 text-green-400 border-l-2 border-green-500 pl-[10px]'
+                      : 'text-slate-400 hover:bg-white/5 hover:text-white border-l-2 border-transparent pl-[10px]'
                   }`}
                 >
-                  <span className="flex items-center gap-2.5">
-                    <Icon size={15} />
-                    {label}
-                  </span>
-                  {active && <ChevronRight size={12} className="text-zinc-500" />}
+                  <Icon size={15} className={active ? 'text-green-400' : 'text-slate-500'} />
+                  {label}
                 </Link>
               )
             })}
@@ -108,25 +110,35 @@ export function Sidebar({ userEmail }: { userEmail: string }) {
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-zinc-800 px-3 py-3">
+      <div className="border-t border-white/5 px-3 py-3 space-y-1">
         <Link
           href="/dashboard/settings"
-          className={`flex items-center gap-2.5 rounded-md px-2 py-2 text-[13px] transition-colors ${
+          className={`flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-all border-l-2 ${
             pathname.startsWith('/dashboard/settings')
-              ? 'bg-zinc-800 text-white'
-              : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200'
-          }`}
+              ? 'bg-green-500/10 text-green-400 border-green-500'
+              : 'text-slate-400 hover:bg-white/5 hover:text-white border-transparent'
+          } pl-[10px]`}
         >
           <Settings size={15} />
           Configurações
         </Link>
-        <button
-          onClick={handleSignOut}
-          className="flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-[13px] text-zinc-600 transition-colors hover:bg-zinc-900 hover:text-zinc-300"
-        >
-          <LogOut size={15} />
-          Sair
-        </button>
+
+        <div className="flex items-center gap-3 px-3 py-2 mt-2">
+          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-green-500 text-[11px] font-black text-white shadow-sm">
+            {getInitials(userEmail)}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-white truncate">{userEmail.split('@')[0]}</p>
+            <p className="text-[11px] text-slate-500 truncate">{userEmail}</p>
+          </div>
+          <button
+            onClick={handleSignOut}
+            title="Sair"
+            className="text-slate-500 hover:text-white transition-colors p-1"
+          >
+            <LogOut size={14} />
+          </button>
+        </div>
       </div>
     </aside>
   )

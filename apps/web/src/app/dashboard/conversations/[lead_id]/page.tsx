@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import type { Conversation, Lead } from '@/lib/types'
 
 const STATUS_COLOR: Record<string, string> = {
-  new: 'bg-gray-100 text-gray-700',
+  new: 'bg-slate-100 text-slate-700',
   contacted: 'bg-blue-100 text-blue-700',
   replied: 'bg-amber-100 text-amber-700',
   negotiating: 'bg-purple-100 text-purple-700',
@@ -24,8 +24,8 @@ const STATUS_LABELS: Record<string, string> = {
 }
 
 const MSG_DELIVERY: Record<string, { icon: string; color: string; label: string }> = {
-  sent: { icon: '✓', color: 'text-gray-400', label: 'Enviado' },
-  delivered: { icon: '✓✓', color: 'text-gray-400', label: 'Entregue' },
+  sent: { icon: '✓', color: 'text-slate-400', label: 'Enviado' },
+  delivered: { icon: '✓✓', color: 'text-slate-400', label: 'Entregue' },
   read: { icon: '✓✓', color: 'text-blue-500', label: 'Lido' },
   failed: { icon: '✗', color: 'text-red-500', label: 'Falhou' },
 }
@@ -67,20 +67,20 @@ export default async function ConversationDetailPage({
       <div>
         <Link
           href="/dashboard/conversations"
-          className="mb-3 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
+          className="mb-3 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
         >
           ← Voltar para Conversas
         </Link>
 
-        <div className="flex flex-wrap items-start justify-between gap-4 rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-1">
-            <h1 className="text-xl font-semibold text-gray-900">{lead.company_name}</h1>
-            <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500">
+            <h1 className="text-xl font-semibold text-slate-900">{lead.company_name}</h1>
+            <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
               {lead.phone && (
                 <span className="font-mono">{lead.phone}</span>
               )}
               {lead.unit?.name && (
-                <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+                <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
                   {lead.unit.name}
                 </span>
               )}
@@ -91,7 +91,7 @@ export default async function ConversationDetailPage({
                 </span>
               )}
               {lead.sector && (
-                <span className="capitalize text-gray-400">{lead.sector}</span>
+                <span className="capitalize text-slate-400">{lead.sector}</span>
               )}
             </div>
           </div>
@@ -99,7 +99,7 @@ export default async function ConversationDetailPage({
           <div className="flex items-center gap-3">
             <span
               className={`rounded-full px-3 py-1 text-sm font-medium ${
-                STATUS_COLOR[lead.status] ?? 'bg-gray-100 text-gray-700'
+                STATUS_COLOR[lead.status] ?? 'bg-slate-100 text-slate-700'
               }`}
             >
               {STATUS_LABELS[lead.status] ?? lead.status}
@@ -108,9 +108,9 @@ export default async function ConversationDetailPage({
         </div>
 
         {/* Stats bar */}
-        <div className="mt-3 flex gap-4 text-sm text-gray-500">
+        <div className="mt-3 flex gap-4 text-sm text-slate-500">
           <span>
-            <span className="font-semibold text-gray-800">{messages.length}</span> mensagens
+            <span className="font-semibold text-slate-800">{messages.length}</span> mensagens
           </span>
           <span>
             <span className="font-semibold text-blue-600">{outboundCount}</span> enviadas pelo agente
@@ -132,11 +132,11 @@ export default async function ConversationDetailPage({
       </div>
 
       {/* Message thread */}
-      <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+      <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-5 py-16 text-center">
-            <p className="text-sm font-medium text-gray-900">Nenhuma mensagem ainda</p>
-            <p className="text-sm text-gray-400">
+            <p className="text-sm font-medium text-slate-900">Nenhuma mensagem ainda</p>
+            <p className="text-sm text-slate-400">
               As mensagens aparecem aqui quando o WhatsApp estiver conectado e o agente iniciar contato.
             </p>
           </div>
@@ -166,16 +166,16 @@ export default async function ConversationDetailPage({
                 <div key={msg.id}>
                   {showDayDivider && (
                     <div className="flex items-center gap-3 px-5 py-3">
-                      <div className="flex-1 border-t border-gray-100" />
-                      <span className="text-xs font-medium text-gray-400 capitalize">{currentDay}</span>
-                      <div className="flex-1 border-t border-gray-100" />
+                      <div className="flex-1 border-t border-slate-100" />
+                      <span className="text-xs font-medium text-slate-400 capitalize">{currentDay}</span>
+                      <div className="flex-1 border-t border-slate-100" />
                     </div>
                   )}
 
                   <div
                     className={`flex gap-3 px-5 py-3 ${
                       isInbound ? 'bg-amber-50/40' : ''
-                    } ${idx < messages.length - 1 ? 'border-b border-gray-100' : ''}`}
+                    } ${idx < messages.length - 1 ? 'border-b border-slate-100' : ''}`}
                   >
                     {/* Avatar */}
                     <div
@@ -193,10 +193,10 @@ export default async function ConversationDetailPage({
                     {/* Content */}
                     <div className="flex flex-1 flex-col gap-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold text-gray-700">
+                        <span className="text-xs font-semibold text-slate-700">
                           {isInbound ? lead.company_name : 'Agente SDR'}
                         </span>
-                        <span className="text-xs text-gray-400">
+                        <span className="text-xs text-slate-400">
                           {new Date(msg.sent_at).toLocaleTimeString('pt-BR', {
                             hour: '2-digit',
                             minute: '2-digit',
@@ -211,12 +211,12 @@ export default async function ConversationDetailPage({
                           </span>
                         )}
                         {msg.channel === 'email' && (
-                          <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500">
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">
                             e-mail
                           </span>
                         )}
                       </div>
-                      <p className="text-sm text-gray-800 whitespace-pre-wrap break-words leading-relaxed">
+                      <p className="text-sm text-slate-800 whitespace-pre-wrap break-words leading-relaxed">
                         {msg.content}
                       </p>
                     </div>

@@ -24,7 +24,8 @@
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code} -> redirect: %{redirect_url}\\\\n\" http://localhost:3000/dashboard)",
       "Bash(cat /tmp/next-dev.log | tail -60)",
       "Bash(ls -la /Users/viniciusmiranda/Desktop/*.command 2>&1)",
-      "Bash(chmod +x /Users/viniciusmiranda/Desktop/push-semana1-ai-workforce.command)"
+      "Bash(chmod +x /Users/viniciusmiranda/Desktop/push-semana1-ai-workforce.command)",
+      "Bash(xargs sed -i '' 's/gray-/slate-/g')"
     ]
   }
 }

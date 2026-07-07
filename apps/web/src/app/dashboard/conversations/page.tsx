@@ -13,13 +13,13 @@ const STATUS_OPTIONS: { value: string; label: string }[] = [
 ]
 
 const STATUS_COLOR: Record<string, string> = {
-  new: 'bg-gray-100 text-gray-600',
+  new: 'bg-slate-100 text-slate-600',
   contacted: 'bg-blue-100 text-blue-700',
   replied: 'bg-amber-100 text-amber-700',
   negotiating: 'bg-purple-100 text-purple-700',
   won: 'bg-green-100 text-green-700',
   lost: 'bg-red-100 text-red-700',
-  paused: 'bg-gray-100 text-gray-500',
+  paused: 'bg-slate-100 text-slate-500',
 }
 
 type ConversationRow = Conversation & {
@@ -87,25 +87,25 @@ export default async function ConversationsPage({
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold text-gray-900">Conversas</h1>
-        <p className="mt-1 text-sm text-gray-500">
+        <h1 className="text-xl font-semibold text-slate-900">Conversas</h1>
+        <p className="mt-1 text-sm text-slate-500">
           Última mensagem de cada conversa entre o agente e os leads.{' '}
           {threads.length > 0 && (
-            <span className="font-medium text-gray-700">{threads.length} threads ativas.</span>
+            <span className="font-medium text-slate-700">{threads.length} threads ativas.</span>
           )}
         </p>
       </div>
 
-      <form className="flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+      <form className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-1">
-          <label htmlFor="unit" className="text-xs font-medium text-gray-500">
+          <label htmlFor="unit" className="text-xs font-medium text-slate-500">
             Unidade
           </label>
           <select
             id="unit"
             name="unit"
             defaultValue={params.unit ?? ''}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-400"
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
           >
             <option value="">Todas</option>
             {unitRows.map((unit) => (
@@ -117,14 +117,14 @@ export default async function ConversationsPage({
         </div>
 
         <div className="flex flex-col gap-1">
-          <label htmlFor="status" className="text-xs font-medium text-gray-500">
+          <label htmlFor="status" className="text-xs font-medium text-slate-500">
             Status do lead
           </label>
           <select
             id="status"
             name="status"
             defaultValue={params.status ?? ''}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-400"
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
           >
             <option value="">Todos</option>
             {STATUS_OPTIONS.map((option) => (
@@ -137,32 +137,32 @@ export default async function ConversationsPage({
 
         <button
           type="submit"
-          className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700"
+          className="rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700"
         >
           Filtrar
         </button>
         {(params.unit || params.status) && (
           <Link
             href="/dashboard/conversations"
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
           >
             Limpar filtros
           </Link>
         )}
       </form>
 
-      <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+      <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
         {threads.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-5 py-12 text-center">
-            <p className="text-sm font-medium text-gray-900">Nenhuma conversa encontrada</p>
-            <p className="text-sm text-gray-400">
+            <p className="text-sm font-medium text-slate-900">Nenhuma conversa encontrada</p>
+            <p className="text-sm text-slate-400">
               As conversas aparecem aqui assim que o WhatsApp estiver conectado e leads responderem.
             </p>
           </div>
         ) : (
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-gray-200 text-gray-500">
+              <tr className="border-b border-slate-200 text-slate-500">
                 <th className="px-5 py-3 font-medium">Lead</th>
                 <th className="px-5 py-3 font-medium">Número</th>
                 <th className="px-5 py-3 font-medium">Unidade</th>
@@ -174,35 +174,35 @@ export default async function ConversationsPage({
             </thead>
             <tbody>
               {threads.map((thread) => (
-                <tr key={thread.lead_id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
-                  <td className="px-5 py-3 font-medium text-gray-900">
+                <tr key={thread.lead_id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
+                  <td className="px-5 py-3 font-medium text-slate-900">
                     <Link
                       href={`/dashboard/conversations/${thread.lead_id}`}
-                      className="hover:text-blue-600 hover:underline"
+                      className="hover:text-green-600 hover:underline"
                     >
                       {thread.company_name}
                     </Link>
                   </td>
-                  <td className="px-5 py-3 text-gray-600">{thread.phone ?? '—'}</td>
-                  <td className="px-5 py-3 text-gray-600">{thread.unit_name ?? '—'}</td>
-                  <td className="max-w-xs truncate px-5 py-3 text-gray-600">
-                    <span className="mr-1 text-gray-400">
+                  <td className="px-5 py-3 text-slate-600">{thread.phone ?? '—'}</td>
+                  <td className="px-5 py-3 text-slate-600">{thread.unit_name ?? '—'}</td>
+                  <td className="max-w-xs truncate px-5 py-3 text-slate-600">
+                    <span className="mr-1 text-slate-400">
                       {thread.last_direction === 'inbound' ? '←' : '→'}
                     </span>
                     {thread.last_message}
                   </td>
                   <td className="px-5 py-3 text-center">
-                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
                       {thread.msg_count}
                     </span>
                   </td>
-                  <td className="px-5 py-3 text-gray-600">
+                  <td className="px-5 py-3 text-slate-600">
                     {new Date(thread.last_at).toLocaleString('pt-BR')}
                   </td>
                   <td className="px-5 py-3">
                     <span
                       className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        STATUS_COLOR[thread.lead_status] ?? 'bg-gray-100 text-gray-600'
+                        STATUS_COLOR[thread.lead_status] ?? 'bg-slate-100 text-slate-600'
                       }`}
                     >
                       {STATUS_OPTIONS.find((s) => s.value === thread.lead_status)?.label ??
