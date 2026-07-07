@@ -34,7 +34,7 @@ export default function NewOrganizationPage() {
         const rows = (data ?? []) as Plan[]
         setPlans(rows)
         if (rows.length > 0) {
-          const pro = rows.find(p => p.name === 'Pro') ?? rows[0]
+          const pro = (rows.find(p => p.name === 'Pro') ?? rows[0])!
           setForm(f => ({ ...f, plan_id: pro.id, monthly_fee: String(pro.price_monthly) }))
         }
       })
