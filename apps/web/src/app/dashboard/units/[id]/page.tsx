@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { UnitSettingsForm } from '@/components/dashboard/unit-settings-form'
 import { WhatsAppConnection } from '@/components/dashboard/whatsapp-connection'
+import { CopyWhatsAppLink } from '@/components/dashboard/copy-whatsapp-link'
 import { ProspectingPanel } from '@/components/dashboard/prospecting-panel'
 import type { AgentConfig, DashboardSummaryRow, Unit } from '@/lib/types'
 
@@ -67,7 +68,13 @@ export default async function UnitDetailPage({ params }: { params: Promise<{ id:
 
       <UnitSettingsForm unit={unitRow} />
 
-      <WhatsAppConnection unitId={unitRow.id} />
+      <div className="flex items-center justify-between">
+        <WhatsAppConnection unitId={unitRow.id} />
+      </div>
+      <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-6 py-3 shadow-sm">
+        <span className="text-sm text-gray-500">Link para a unidade conectar o WhatsApp:</span>
+        <CopyWhatsAppLink unitId={unitRow.id} />
+      </div>
 
       <ProspectingPanel
         unitId={unitRow.id}

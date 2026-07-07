@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { CopyWhatsAppLink } from '@/components/dashboard/copy-whatsapp-link'
 import type { Unit } from '@/lib/types'
 
 export default async function UnitsPage() {
@@ -40,6 +41,7 @@ export default async function UnitsPage() {
                 <th className="px-5 py-3 font-medium">Cidade / Estado</th>
                 <th className="px-5 py-3 font-medium">WhatsApp</th>
                 <th className="px-5 py-3 font-medium">Status</th>
+                <th className="px-5 py-3 font-medium">Conexão</th>
               </tr>
             </thead>
             <tbody>
@@ -68,6 +70,9 @@ export default async function UnitsPage() {
                     >
                       {unit.is_active ? 'Ativa' : 'Inativa'}
                     </span>
+                  </td>
+                  <td className="px-5 py-3">
+                    <CopyWhatsAppLink unitId={unit.id} />
                   </td>
                 </tr>
               ))}
