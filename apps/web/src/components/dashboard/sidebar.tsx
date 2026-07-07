@@ -16,6 +16,7 @@ import {
   ShoppingCart,
   Rocket,
   Kanban,
+  Bot,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
