@@ -14,6 +14,8 @@ import {
   TrendingUp,
   Settings,
   LogOut,
+  ShoppingCart,
+  Rocket,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -40,6 +42,13 @@ const navGroups = [
     items: [
       { href: '/dashboard/financial', label: 'Cobranças', icon: Wallet },
       { href: '/dashboard/results', label: 'Resultados', icon: TrendingUp },
+      { href: '/dashboard/sales', label: 'Vendas', icon: ShoppingCart },
+    ],
+  },
+  {
+    label: 'Setup',
+    items: [
+      { href: '/dashboard/onboarding', label: 'Onboarding', icon: Rocket },
     ],
   },
 ]
