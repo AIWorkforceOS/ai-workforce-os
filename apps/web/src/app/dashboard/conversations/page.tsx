@@ -27,6 +27,18 @@ type ConversationRow = Conversation & {
   unit: { name: string } | null
 }
 
+type ThreadSummary = {
+  lead_id: string
+  company_name: string
+  phone: string | null
+  unit_name: string | null
+  lead_status: string
+  last_message: string
+  last_direction: 'inbound' | 'outbound'
+  last_at: string
+  msg_count: number
+}
+
 export default async function ConversationsPage({
   searchParams,
 }: {
@@ -42,7 +54,7 @@ export default async function ConversationsPage({
     .from('conversations')
     .select('*, lead:leads!inner(company_name, phone, status), unit:units(name)')
     .order('sent_at', { ascending: false })
-    .limit(300)
+    .limit(500)
 
   if (params.unit) query = query.eq('unit_id', params.unit)
   if (params.status) query = query.eq('lead.status', params.status)
@@ -50,19 +62,37 @@ export default async function ConversationsPage({
   const { data: conversations } = await query
   const rows = (conversations ?? []) as unknown as ConversationRow[]
 
-  const seenLeads = new Set<string>()
-  const threads = rows.filter((row) => {
-    if (seenLeads.has(row.lead_id)) return false
-    seenLeads.add(row.lead_id)
-    return true
-  })
+  // Group by lead_id and build thread summaries
+  const threadMap = new Map<string, ThreadSummary>()
+  for (const row of rows) {
+    if (!threadMap.has(row.lead_id)) {
+      threadMap.set(row.lead_id, {
+        lead_id: row.lead_id,
+        company_name: row.lead?.company_name ?? '—',
+        phone: row.lead?.phone ?? null,
+        unit_name: row.unit?.name ?? null,
+        lead_status: row.lead?.status ?? '',
+        last_message: row.content,
+        last_direction: row.direction,
+        last_at: row.sent_at,
+        msg_count: 1,
+      })
+    } else {
+      const t = threadMap.get(row.lead_id)!
+      t.msg_count += 1
+    }
+  }
+  const threads = Array.from(threadMap.values())
 
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Conversas</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Última mensagem de cada conversa entre o agente e os leads.
+          Última mensagem de cada conversa entre o agente e os leads.{' '}
+          {threads.length > 0 && (
+            <span className="font-medium text-gray-700">{threads.length} threads ativas.</span>
+          )}
         </p>
       </div>
 
@@ -137,33 +167,46 @@ export default async function ConversationsPage({
                 <th className="px-5 py-3 font-medium">Número</th>
                 <th className="px-5 py-3 font-medium">Unidade</th>
                 <th className="px-5 py-3 font-medium">Última mensagem</th>
+                <th className="px-5 py-3 font-medium">Msgs</th>
                 <th className="px-5 py-3 font-medium">Quando</th>
                 <th className="px-5 py-3 font-medium">Status</th>
               </tr>
             </thead>
             <tbody>
               {threads.map((thread) => (
-                <tr key={thread.id} className="border-b border-gray-100 last:border-0">
+                <tr key={thread.lead_id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
                   <td className="px-5 py-3 font-medium text-gray-900">
-                    {thread.lead?.company_name ?? '—'}
+                    <Link
+                      href={`/dashboard/conversations/${thread.lead_id}`}
+                      className="hover:text-blue-600 hover:underline"
+                    >
+                      {thread.company_name}
+                    </Link>
                   </td>
-                  <td className="px-5 py-3 text-gray-600">{thread.lead?.phone ?? '—'}</td>
-                  <td className="px-5 py-3 text-gray-600">{thread.unit?.name ?? '—'}</td>
+                  <td className="px-5 py-3 text-gray-600">{thread.phone ?? '—'}</td>
+                  <td className="px-5 py-3 text-gray-600">{thread.unit_name ?? '—'}</td>
                   <td className="max-w-xs truncate px-5 py-3 text-gray-600">
-                    {thread.direction === 'inbound' ? '← ' : '→ '}
-                    {thread.content}
+                    <span className="mr-1 text-gray-400">
+                      {thread.last_direction === 'inbound' ? '←' : '→'}
+                    </span>
+                    {thread.last_message}
+                  </td>
+                  <td className="px-5 py-3 text-center">
+                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                      {thread.msg_count}
+                    </span>
                   </td>
                   <td className="px-5 py-3 text-gray-600">
-                    {new Date(thread.sent_at).toLocaleString('pt-BR')}
+                    {new Date(thread.last_at).toLocaleString('pt-BR')}
                   </td>
                   <td className="px-5 py-3">
                     <span
                       className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        STATUS_COLOR[thread.lead?.status ?? ''] ?? 'bg-gray-100 text-gray-600'
+                        STATUS_COLOR[thread.lead_status] ?? 'bg-gray-100 text-gray-600'
                       }`}
                     >
-                      {STATUS_OPTIONS.find((s) => s.value === thread.lead?.status)?.label ??
-                        thread.lead?.status ??
+                      {STATUS_OPTIONS.find((s) => s.value === thread.lead_status)?.label ??
+                        thread.lead_status ??
                         '—'}
                     </span>
                   </td>

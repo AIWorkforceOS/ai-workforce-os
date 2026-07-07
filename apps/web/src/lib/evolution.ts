@@ -6,15 +6,22 @@ export type EvolutionUnitConfig = {
   instanceName: string
 }
 
+/**
+ * Returns Evolution API config for a unit.
+ * Per-unit fields take precedence; falls back to global env vars.
+ * Instance name auto-generated as `unit-{slug}` if not explicitly set.
+ */
 export function getEvolutionConfig(unit: Unit): EvolutionUnitConfig | null {
-  if (!unit.evolution_api_url || !unit.evolution_api_key || !unit.evolution_instance_name) {
-    return null
-  }
+  const apiUrl = unit.evolution_api_url || process.env.EVOLUTION_API_URL
+  const apiKey = unit.evolution_api_key || process.env.EVOLUTION_API_KEY
+  const instanceName = unit.evolution_instance_name || `unit-${unit.slug}`
+
+  if (!apiUrl || !apiKey) return null
 
   return {
-    apiUrl: unit.evolution_api_url.replace(/\/+$/, ''),
-    apiKey: unit.evolution_api_key,
-    instanceName: unit.evolution_instance_name,
+    apiUrl: apiUrl.replace(/\/+$/, ''),
+    apiKey,
+    instanceName,
   }
 }
 

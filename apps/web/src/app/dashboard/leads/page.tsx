@@ -35,6 +35,27 @@ const SECTOR_LABELS: Record<string, string> = {
 
 type LeadWithUnit = Lead & { unit: { name: string } | null }
 
+function daysSince(dateStr: string | null): number | null {
+  if (!dateStr) return null
+  const ms = Date.now() - new Date(dateStr).getTime()
+  return Math.floor(ms / (1000 * 60 * 60 * 24))
+}
+
+function DaysBadge({ days }: { days: number | null }) {
+  if (days === null) return <span className="text-gray-400">—</span>
+  const color =
+    days > 7
+      ? 'bg-red-100 text-red-700'
+      : days > 3
+        ? 'bg-amber-100 text-amber-700'
+        : 'bg-green-100 text-green-700'
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${color}`}>
+      {days === 0 ? 'hoje' : `${days}d`}
+    </span>
+  )
+}
+
 export default async function LeadsPage({
   searchParams,
 }: {
@@ -66,12 +87,12 @@ export default async function LeadsPage({
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   function pageHref(targetPage: number) {
-    const query = new URLSearchParams()
-    if (params.unit) query.set('unit', params.unit)
-    if (params.status) query.set('status', params.status)
-    if (params.sector) query.set('sector', params.sector)
-    query.set('page', String(targetPage))
-    return `/dashboard/leads?${query.toString()}`
+    const q = new URLSearchParams()
+    if (params.unit) q.set('unit', params.unit)
+    if (params.status) q.set('status', params.status)
+    if (params.sector) q.set('sector', params.sector)
+    q.set('page', String(targetPage))
+    return `/dashboard/leads?${q.toString()}`
   }
 
   return (
@@ -79,7 +100,8 @@ export default async function LeadsPage({
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Leads</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Leads prospectados pelo agente SDR em todas as unidades.
+          Leads prospectados pelo agente SDR em todas as unidades.{' '}
+          {total > 0 && <span className="font-medium text-gray-700">{total} no total.</span>}
         </p>
       </div>
 
@@ -161,7 +183,9 @@ export default async function LeadsPage({
         {leadRows.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-5 py-12 text-center">
             <p className="text-sm font-medium text-gray-900">Nenhum lead encontrado</p>
-            <p className="text-sm text-gray-500">Ajuste os filtros ou prospecte novos leads em uma unidade.</p>
+            <p className="text-sm text-gray-500">
+              Ajuste os filtros ou prospecte novos leads em uma unidade.
+            </p>
           </div>
         ) : (
           <table className="w-full text-left text-sm">
@@ -172,33 +196,52 @@ export default async function LeadsPage({
                 <th className="px-5 py-3 font-medium">Cidade</th>
                 <th className="px-5 py-3 font-medium">Unidade</th>
                 <th className="px-5 py-3 font-medium">Status</th>
-                <th className="px-5 py-3 font-medium">Criado em</th>
+                <th className="px-5 py-3 font-medium">Último contato</th>
+                <th className="px-5 py-3 font-medium">Sem resposta</th>
               </tr>
             </thead>
             <tbody>
-              {leadRows.map((lead) => (
-                <tr key={lead.id} className="border-b border-gray-100 last:border-0">
-                  <td className="px-5 py-3 font-medium text-gray-900">{lead.company_name}</td>
-                  <td className="px-5 py-3 text-gray-600">{lead.phone ?? '—'}</td>
-                  <td className="px-5 py-3 text-gray-600">
-                    {lead.city ?? '—'}
-                    {lead.state ? `, ${lead.state}` : ''}
-                  </td>
-                  <td className="px-5 py-3 text-gray-600">{lead.unit?.name ?? '—'}</td>
-                  <td className="px-5 py-3">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        STATUS_COLOR[lead.status] ?? 'bg-gray-100 text-gray-600'
-                      }`}
-                    >
-                      {STATUS_OPTIONS.find((s) => s.value === lead.status)?.label ?? lead.status}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3 text-gray-600">
-                    {new Date(lead.created_at).toLocaleDateString('pt-BR')}
-                  </td>
-                </tr>
-              ))}
+              {leadRows.map((lead) => {
+                const days = daysSince(lead.last_contacted_at ?? lead.created_at)
+                return (
+                  <tr
+                    key={lead.id}
+                    className="border-b border-gray-100 last:border-0 hover:bg-gray-50"
+                  >
+                    <td className="px-5 py-3 font-medium text-gray-900">
+                      <Link
+                        href={`/dashboard/conversations/${lead.id}`}
+                        className="hover:text-blue-600 hover:underline"
+                      >
+                        {lead.company_name}
+                      </Link>
+                    </td>
+                    <td className="px-5 py-3 text-gray-600">{lead.phone ?? '—'}</td>
+                    <td className="px-5 py-3 text-gray-600">
+                      {lead.city ?? '—'}
+                      {lead.state ? `, ${lead.state}` : ''}
+                    </td>
+                    <td className="px-5 py-3 text-gray-600">{lead.unit?.name ?? '—'}</td>
+                    <td className="px-5 py-3">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                          STATUS_COLOR[lead.status] ?? 'bg-gray-100 text-gray-600'
+                        }`}
+                      >
+                        {STATUS_OPTIONS.find((s) => s.value === lead.status)?.label ?? lead.status}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-gray-600">
+                      {lead.last_contacted_at
+                        ? new Date(lead.last_contacted_at).toLocaleDateString('pt-BR')
+                        : new Date(lead.created_at).toLocaleDateString('pt-BR')}
+                    </td>
+                    <td className="px-5 py-3">
+                      <DaysBadge days={days} />
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         )}

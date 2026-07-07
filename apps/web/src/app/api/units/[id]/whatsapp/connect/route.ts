@@ -7,9 +7,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const { id } = await params
   const supabase = await createClient()
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
     return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 })
   }
@@ -22,9 +20,17 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const config = getEvolutionConfig(unit as Unit)
   if (!config) {
     return NextResponse.json(
-      { error: 'Configure a URL, a API key e o nome da instância Evolution API desta unidade primeiro.' },
+      { error: 'Configure EVOLUTION_API_URL e EVOLUTION_API_KEY no servidor, ou preencha os dados da Evolution API nesta unidade.' },
       { status: 400 },
     )
+  }
+
+  // Save auto-generated instance name back to unit so the webhook can identify it
+  if (!unit.evolution_instance_name) {
+    await supabase
+      .from('units')
+      .update({ evolution_instance_name: config.instanceName })
+      .eq('id', id)
   }
 
   try {
