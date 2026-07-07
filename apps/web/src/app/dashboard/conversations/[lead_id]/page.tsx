@@ -121,7 +121,7 @@ export default async function ConversationDetailPage({
           {messages.length > 0 && (
             <span>
               Início em{' '}
-              {new Date(messages[0].sent_at).toLocaleDateString('pt-BR', {
+              {new Date(messages[0]!.sent_at).toLocaleDateString('pt-BR', {
                 day: '2-digit',
                 month: 'short',
                 year: 'numeric',
