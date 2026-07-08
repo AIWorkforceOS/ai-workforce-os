@@ -26,8 +26,8 @@ export default async function UnitAgentPage({ params }: { params: Promise<{ id: 
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">Agente SDR — {unitRow.name}</h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <h1 className="text-xl font-black tracking-tight text-white">Agente SDR — {unitRow.name}</h1>
+        <p className="mt-1 text-sm text-slate-400">
           Configure a persona, tom, horários e setores de atuação do agente.
         </p>
       </div>

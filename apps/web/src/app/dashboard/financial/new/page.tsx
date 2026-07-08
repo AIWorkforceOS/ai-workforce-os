@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { FormSection, Input, Label, Select, Textarea } from '@/components/ui/dashboard-ui'
 
 type Org = { id: string; name: string }
 type Unit = { id: string; name: string; org_id: string | null }
@@ -64,93 +65,94 @@ export default function NewFinancialPage() {
   return (
     <div className="mx-auto max-w-lg">
       <div className="mb-6">
-        <Link href="/dashboard/financial" className="text-sm text-slate-500 hover:text-slate-700">← Financeiro</Link>
-        <h1 className="mt-2 text-2xl font-bold text-slate-900">Novo lançamento</h1>
+        <Link href="/dashboard/financial" className="text-sm text-slate-400 hover:text-white">← Financeiro</Link>
+        <h1 className="mt-2 text-2xl font-black tracking-tight text-white">Novo lançamento</h1>
       </div>
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        {/* Type toggle */}
-        <div className="flex gap-2">
-          {(['receivable', 'payable'] as const).map((t) => (
-            <button key={t} type="button" onClick={() => setForm(f => ({ ...f, type: t }))}
-              className={`flex-1 rounded-lg py-2 text-sm font-medium transition-colors ${
-                form.type === t
-                  ? t === 'receivable' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
-                  : 'border border-slate-200 text-slate-600 hover:bg-slate-50'
-              }`}>
-              {t === 'receivable' ? '📥 A receber' : '📤 A pagar'}
+      <form onSubmit={handleSubmit}>
+        <FormSection title="Detalhes do lançamento">
+          {/* Type toggle */}
+          <div className="flex gap-2">
+            {(['receivable', 'payable'] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setForm(f => ({ ...f, type: t }))}
+                className="flex-1 rounded-xl py-2 text-sm font-semibold transition-all"
+                style={form.type === t
+                  ? { background: t === 'receivable' ? 'linear-gradient(135deg,#22c55e,#16a34a)' : 'linear-gradient(135deg,#ef4444,#dc2626)', color: '#fff' }
+                  : { border: '1px solid rgba(255,255,255,0.08)', color: '#cbd5e1' }}
+              >
+                {t === 'receivable' ? '📥 A receber' : '📤 A pagar'}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>Descrição *</Label>
+            <Input required value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Ex: Mensalidade Unidade SP - Julho 2026" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label>Valor (R$) *</Label>
+              <Input required value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="1500,00" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Vencimento</Label>
+              <Input type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>Categoria</Label>
+            <Select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
+              {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label>Empresa</Label>
+              <Select value={form.org_id} onChange={e => setForm(f => ({ ...f, org_id: e.target.value, unit_id: '' }))}>
+                <option value="">Todas / Geral</option>
+                {orgs.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Unidade</Label>
+              <Select value={form.unit_id} onChange={e => setForm(f => ({ ...f, unit_id: e.target.value }))}>
+                <option value="">Selecionar...</option>
+                {filteredUnits.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </Select>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>Observações</Label>
+            <Textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} placeholder="Informações adicionais..." />
+          </div>
+
+          {error && <p className="text-sm text-red-400">{error}</p>}
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="submit"
+              disabled={busy}
+              className="flex-1 rounded-xl py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+              style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
+            >
+              {busy ? 'Salvando...' : 'Registrar lançamento'}
             </button>
-          ))}
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-slate-700">Descrição *</label>
-          <input required value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
-            placeholder="Ex: Mensalidade Unidade SP - Julho 2026" />
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-slate-700">Valor (R$) *</label>
-            <input required value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
-              placeholder="1500,00" />
+            <Link
+              href="/dashboard/financial"
+              className="rounded-xl px-4 py-2 text-sm text-slate-300 hover:bg-white/5"
+              style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              Cancelar
+            </Link>
           </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-slate-700">Vencimento</label>
-            <input type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400" />
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-slate-700">Categoria</label>
-          <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400">
-            {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-          </select>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-slate-700">Empresa</label>
-            <select value={form.org_id} onChange={e => setForm(f => ({ ...f, org_id: e.target.value, unit_id: '' }))}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400">
-              <option value="">Todas / Geral</option>
-              {orgs.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
-            </select>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-slate-700">Unidade</label>
-            <select value={form.unit_id} onChange={e => setForm(f => ({ ...f, unit_id: e.target.value }))}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400">
-              <option value="">Selecionar...</option>
-              {filteredUnits.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </select>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-slate-700">Observações</label>
-          <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-            rows={2}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
-            placeholder="Informações adicionais..." />
-        </div>
-
-        {error && <p className="text-sm text-red-600">{error}</p>}
-
-        <div className="flex gap-3 pt-2">
-          <button type="submit" disabled={busy}
-            className="flex-1 rounded-lg bg-green-600 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50">
-            {busy ? 'Salvando...' : 'Registrar lançamento'}
-          </button>
-          <Link href="/dashboard/financial"
-            className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50">
-            Cancelar
-          </Link>
-        </div>
+        </FormSection>
       </form>
     </div>
   )

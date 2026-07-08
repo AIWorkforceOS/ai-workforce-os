@@ -4,6 +4,7 @@ import { useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Unit } from '@/lib/types'
+import { FormSection, Input, Label } from '@/components/ui/dashboard-ui'
 
 export function UnitSettingsForm({ unit }: { unit: Unit }) {
   const router = useRouter()
@@ -48,99 +49,80 @@ export function UnitSettingsForm({ unit }: { unit: Unit }) {
   }
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-6 shadow-sm"
-    >
-      <h2 className="text-sm font-semibold text-gray-900">Dados da unidade</h2>
+    <form onSubmit={handleSubmit}>
+      <FormSection title="Dados da unidade">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="whatsapp">WhatsApp</Label>
+            <Input
+              id="whatsapp"
+              value={whatsapp}
+              onChange={(e) => setWhatsapp(e.target.value)}
+              placeholder="+55 19 99999-9999"
+            />
+          </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-1">
-          <label htmlFor="whatsapp" className="text-sm font-medium text-gray-700">
-            WhatsApp
-          </label>
-          <input
-            id="whatsapp"
-            value={whatsapp}
-            onChange={(e) => setWhatsapp(e.target.value)}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-400"
-            placeholder="+55 19 99999-9999"
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="emailFrom">Email de envio</Label>
+            <Input
+              id="emailFrom"
+              type="email"
+              value={emailFrom}
+              onChange={(e) => setEmailFrom(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-1 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <span className="text-sm font-medium text-slate-300">Evolution API (WhatsApp)</span>
+          <p className="text-xs text-slate-500">Necessário para conectar o WhatsApp desta unidade.</p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="evolutionApiUrl">URL da instância</Label>
+            <Input
+              id="evolutionApiUrl"
+              value={evolutionApiUrl}
+              onChange={(e) => setEvolutionApiUrl(e.target.value)}
+              placeholder="https://evolution.suaempresa.com"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="evolutionInstanceName">Nome da instância</Label>
+            <Input
+              id="evolutionInstanceName"
+              value={evolutionInstanceName}
+              onChange={(e) => setEvolutionInstanceName(e.target.value)}
+              placeholder="alizo-campinas"
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="evolutionApiKey">API key</Label>
+          <Input
+            id="evolutionApiKey"
+            type="password"
+            value={evolutionApiKey}
+            onChange={(e) => setEvolutionApiKey(e.target.value)}
+            placeholder="sua_api_key"
           />
         </div>
 
-        <div className="flex flex-col gap-1">
-          <label htmlFor="emailFrom" className="text-sm font-medium text-gray-700">
-            Email de envio
-          </label>
-          <input
-            id="emailFrom"
-            type="email"
-            value={emailFrom}
-            onChange={(e) => setEmailFrom(e.target.value)}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-400"
-          />
-        </div>
-      </div>
+        {error && <p className="text-sm text-red-400">{error}</p>}
+        {saved && !error && <p className="text-sm text-emerald-400">Alterações salvas.</p>}
 
-      <div className="flex flex-col gap-1 border-t border-gray-100 pt-4">
-        <span className="text-sm font-medium text-gray-700">Evolution API (WhatsApp)</span>
-        <p className="text-xs text-gray-500">
-          Necessário para conectar o WhatsApp desta unidade.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-1">
-          <label htmlFor="evolutionApiUrl" className="text-sm font-medium text-gray-700">
-            URL da instância
-          </label>
-          <input
-            id="evolutionApiUrl"
-            value={evolutionApiUrl}
-            onChange={(e) => setEvolutionApiUrl(e.target.value)}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-400"
-            placeholder="https://evolution.suaempresa.com"
-          />
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label htmlFor="evolutionInstanceName" className="text-sm font-medium text-gray-700">
-            Nome da instância
-          </label>
-          <input
-            id="evolutionInstanceName"
-            value={evolutionInstanceName}
-            onChange={(e) => setEvolutionInstanceName(e.target.value)}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-400"
-            placeholder="smarter-campinas"
-          />
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-1">
-        <label htmlFor="evolutionApiKey" className="text-sm font-medium text-gray-700">
-          API key
-        </label>
-        <input
-          id="evolutionApiKey"
-          type="password"
-          value={evolutionApiKey}
-          onChange={(e) => setEvolutionApiKey(e.target.value)}
-          className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-400"
-          placeholder="sua_api_key"
-        />
-      </div>
-
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      {saved && !error && <p className="text-sm text-green-600">Alterações salvas.</p>}
-
-      <button
-        type="submit"
-        disabled={loading}
-        className="self-start rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700 disabled:opacity-50"
-      >
-        {loading ? 'Salvando...' : 'Salvar alterações'}
-      </button>
+        <button
+          type="submit"
+          disabled={loading}
+          className="self-start rounded-xl px-4 py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+          style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
+        >
+          {loading ? 'Salvando...' : 'Salvar alterações'}
+        </button>
+      </FormSection>
     </form>
   )
 }

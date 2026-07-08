@@ -3,12 +3,13 @@
 import { useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { FormSection, Input, Label } from '@/components/ui/dashboard-ui'
 
 function slugify(value: string) {
   return value
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '')
 }
@@ -85,156 +86,88 @@ export default function NewUnitPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">Nova unidade</h1>
-        <p className="mt-1 text-sm text-slate-500">Cadastre uma nova unidade.</p>
+        <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">gestão</p>
+        <h1 className="mt-0.5 text-2xl font-black tracking-tight text-white">Nova unidade</h1>
+        <p className="mt-0.5 text-sm text-slate-400">Cadastre uma nova unidade.</p>
       </div>
 
-      <form
-        onSubmit={handleSubmit}
-        className="flex max-w-xl flex-col gap-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm"
-      >
-        <div className="flex flex-col gap-1">
-          <label htmlFor="name" className="text-sm font-medium text-slate-700">
-            Nome
-          </label>
-          <input
-            id="name"
-            required
-            value={name}
-            onChange={(e) => handleNameChange(e.target.value)}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
-            placeholder="Smarter Campinas"
-          />
-        </div>
+      <form onSubmit={handleSubmit} className="max-w-xl">
+        <FormSection title="Dados da unidade">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="name">Nome</Label>
+            <Input id="name" required value={name} onChange={(e) => handleNameChange(e.target.value)} placeholder="Alizo Campinas" />
+          </div>
 
-        <div className="flex flex-col gap-1">
-          <label htmlFor="slug" className="text-sm font-medium text-slate-700">
-            Slug
-          </label>
-          <input
-            id="slug"
-            required
-            value={slug}
-            onChange={(e) => {
-              setSlugTouched(true)
-              setSlug(slugify(e.target.value))
-            }}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
-            placeholder="smarter-campinas"
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div className="flex flex-col gap-1">
-            <label htmlFor="city" className="text-sm font-medium text-slate-700">
-              Cidade
-            </label>
-            <input
-              id="city"
-              value={city}
-              onChange={(e) => setCity(e.target.value)}
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
-              placeholder="Campinas"
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="slug">Slug</Label>
+            <Input
+              id="slug"
+              required
+              value={slug}
+              onChange={(e) => { setSlugTouched(true); setSlug(slugify(e.target.value)) }}
+              placeholder="alizo-campinas"
             />
           </div>
 
-          <div className="flex flex-col gap-1">
-            <label htmlFor="state" className="text-sm font-medium text-slate-700">
-              Estado
-            </label>
-            <input
-              id="state"
-              value={state}
-              onChange={(e) => setState(e.target.value)}
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
-              placeholder="SP"
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="city">Cidade</Label>
+              <Input id="city" value={city} onChange={(e) => setCity(e.target.value)} placeholder="Campinas" />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="state">Estado</Label>
+              <Input id="state" value={state} onChange={(e) => setState(e.target.value)} placeholder="SP" />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="whatsapp">WhatsApp</Label>
+            <Input id="whatsapp" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="+55 19 99999-9999" />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="emailFrom">Email de envio</Label>
+            <Input
+              id="emailFrom"
+              type="email"
+              value={emailFrom}
+              onChange={(e) => setEmailFrom(e.target.value)}
+              placeholder="campinas@alizo.com.br"
             />
           </div>
-        </div>
 
-        <div className="flex flex-col gap-1">
-          <label htmlFor="whatsapp" className="text-sm font-medium text-slate-700">
-            WhatsApp
-          </label>
-          <input
-            id="whatsapp"
-            value={whatsapp}
-            onChange={(e) => setWhatsapp(e.target.value)}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
-            placeholder="+55 19 99999-9999"
-          />
-        </div>
+          <div className="flex flex-col gap-1 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            <span className="text-sm font-medium text-slate-300">Evolution API (WhatsApp)</span>
+            <p className="text-xs text-slate-500">Opcional. Preencha para conectar o WhatsApp desta unidade.</p>
+          </div>
 
-        <div className="flex flex-col gap-1">
-          <label htmlFor="emailFrom" className="text-sm font-medium text-slate-700">
-            Email de envio
-          </label>
-          <input
-            id="emailFrom"
-            type="email"
-            value={emailFrom}
-            onChange={(e) => setEmailFrom(e.target.value)}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
-            placeholder="campinas@smarterestagios.com.br"
-          />
-        </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="evolutionApiUrl">URL da instância</Label>
+            <Input id="evolutionApiUrl" value={evolutionApiUrl} onChange={(e) => setEvolutionApiUrl(e.target.value)} placeholder="https://evolution.suaempresa.com" />
+          </div>
 
-        <div className="flex flex-col gap-1 border-t border-slate-100 pt-4">
-          <span className="text-sm font-medium text-slate-700">Evolution API (WhatsApp)</span>
-          <p className="text-xs text-slate-500">
-            Opcional. Preencha para conectar o WhatsApp desta unidade.
-          </p>
-        </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="evolutionApiKey">API key</Label>
+            <Input id="evolutionApiKey" type="password" value={evolutionApiKey} onChange={(e) => setEvolutionApiKey(e.target.value)} placeholder="sua_api_key" />
+          </div>
 
-        <div className="flex flex-col gap-1">
-          <label htmlFor="evolutionApiUrl" className="text-sm font-medium text-slate-700">
-            URL da instância
-          </label>
-          <input
-            id="evolutionApiUrl"
-            value={evolutionApiUrl}
-            onChange={(e) => setEvolutionApiUrl(e.target.value)}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
-            placeholder="https://evolution.suaempresa.com"
-          />
-        </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="evolutionInstanceName">Nome da instância</Label>
+            <Input id="evolutionInstanceName" value={evolutionInstanceName} onChange={(e) => setEvolutionInstanceName(e.target.value)} placeholder="alizo-campinas" />
+          </div>
 
-        <div className="flex flex-col gap-1">
-          <label htmlFor="evolutionApiKey" className="text-sm font-medium text-slate-700">
-            API key
-          </label>
-          <input
-            id="evolutionApiKey"
-            type="password"
-            value={evolutionApiKey}
-            onChange={(e) => setEvolutionApiKey(e.target.value)}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
-            placeholder="sua_api_key"
-          />
-        </div>
+          {error && <p className="text-sm text-red-400">{error}</p>}
 
-        <div className="flex flex-col gap-1">
-          <label htmlFor="evolutionInstanceName" className="text-sm font-medium text-slate-700">
-            Nome da instância
-          </label>
-          <input
-            id="evolutionInstanceName"
-            value={evolutionInstanceName}
-            onChange={(e) => setEvolutionInstanceName(e.target.value)}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
-            placeholder="smarter-campinas"
-          />
-        </div>
-
-        {error && <p className="text-sm text-red-600">{error}</p>}
-
-        <button
-          type="submit"
-          disabled={loading}
-          className="mt-2 self-start rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50"
-        >
-          {loading ? 'Salvando...' : 'Salvar unidade'}
-        </button>
+          <button
+            type="submit"
+            disabled={loading}
+            className="mt-2 self-start rounded-xl px-4 py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+            style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
+          >
+            {loading ? 'Salvando...' : 'Salvar unidade'}
+          </button>
+        </FormSection>
       </form>
     </div>
   )

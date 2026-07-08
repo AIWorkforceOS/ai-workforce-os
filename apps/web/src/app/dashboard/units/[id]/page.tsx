@@ -6,6 +6,7 @@ import { WhatsAppConnection } from '@/components/dashboard/whatsapp-connection'
 import { CopyWhatsAppLink } from '@/components/dashboard/copy-whatsapp-link'
 import { ProspectingPanel } from '@/components/dashboard/prospecting-panel'
 import type { AgentConfig, DashboardSummaryRow, Unit } from '@/lib/types'
+import { Badge, Card } from '@/components/ui/dashboard-ui'
 
 export default async function UnitDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -35,46 +36,37 @@ export default async function UnitDetailPage({ params }: { params: Promise<{ id:
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">{unitRow.name}</h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <h1 className="text-xl font-black tracking-tight text-white">{unitRow.name}</h1>
+          <p className="mt-1 text-sm text-slate-400">
             {unitRow.region_city ?? '—'}
             {unitRow.region_state ? `, ${unitRow.region_state}` : ''}
           </p>
         </div>
-        <span
-          className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-            unitRow.is_active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'
-          }`}
-        >
-          {unitRow.is_active ? 'Ativa' : 'Inativa'}
-        </span>
+        <Badge variant={unitRow.is_active ? 'green' : 'slate'}>{unitRow.is_active ? 'Ativa' : 'Inativa'}</Badge>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {metrics.map((metric) => (
-          <div
-            key={metric.label}
-            className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"
-          >
-            <p className="text-sm text-slate-500">{metric.label}</p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900">{metric.value}</p>
-          </div>
+          <Card key={metric.label} className="p-5">
+            <p className="text-sm text-slate-400">{metric.label}</p>
+            <p className="mt-2 text-2xl font-black text-white">{metric.value}</p>
+          </Card>
         ))}
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white px-6 py-3 text-xs text-slate-500 shadow-sm">
-        Slug: <span className="text-slate-900">{unitRow.slug}</span>
-      </div>
+      <Card className="px-6 py-3 text-xs text-slate-400">
+        Slug: <span className="text-white">{unitRow.slug}</span>
+      </Card>
 
       <UnitSettingsForm unit={unitRow} />
 
       <div className="flex items-center justify-between">
         <WhatsAppConnection unitId={unitRow.id} />
       </div>
-      <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-6 py-3 shadow-sm">
-        <span className="text-sm text-slate-500">Link para a unidade conectar o WhatsApp:</span>
+      <Card className="flex items-center gap-2 px-6 py-3">
+        <span className="text-sm text-slate-400">Link para a unidade conectar o WhatsApp:</span>
         <CopyWhatsAppLink unitId={unitRow.id} />
-      </div>
+      </Card>
 
       <ProspectingPanel
         unitId={unitRow.id}
@@ -83,22 +75,23 @@ export default async function UnitDetailPage({ params }: { params: Promise<{ id:
         availableSectors={agentConfigRow?.sectors ?? []}
       />
 
-      <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <Card className="p-6">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-semibold text-slate-900">Agente SDR</h2>
-            <p className="mt-1 text-sm text-slate-500">
+            <h2 className="text-sm font-bold text-white">Agente SDR</h2>
+            <p className="mt-1 text-sm text-slate-400">
               Configure a persona, horários e limites do agente desta unidade.
             </p>
           </div>
           <Link
             href={`/dashboard/units/${unitRow.id}/agent`}
-            className="rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700"
+            className="rounded-xl px-4 py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
+            style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
           >
             Configurar agente
           </Link>
         </div>
-      </div>
+      </Card>
     </div>
   )
 }

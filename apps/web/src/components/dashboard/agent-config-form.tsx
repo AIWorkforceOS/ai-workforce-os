@@ -4,6 +4,7 @@ import { useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { SECTOR_OPTIONS, type AgentConfig, type AgentTone } from '@/lib/types'
+import { Input, Label, Select } from '@/components/ui/dashboard-ui'
 
 const TONE_OPTIONS: { value: AgentTone; label: string }[] = [
   { value: 'professional', label: 'Profissional' },
@@ -85,43 +86,25 @@ export function AgentConfigForm({
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex max-w-xl flex-col gap-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm"
+      className="flex max-w-xl flex-col gap-6 rounded-2xl p-6"
+      style={{ background: '#141a2b', boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}
     >
-      <div className="flex flex-col gap-1">
-        <label htmlFor="personaName" className="text-sm font-medium text-gray-700">
-          Nome da persona
-        </label>
-        <input
-          id="personaName"
-          required
-          value={personaName}
-          onChange={(e) => setPersonaName(e.target.value)}
-          className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-400"
-        />
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="personaName">Nome da persona</Label>
+        <Input id="personaName" required value={personaName} onChange={(e) => setPersonaName(e.target.value)} />
       </div>
 
-      <div className="flex flex-col gap-1">
-        <label htmlFor="tone" className="text-sm font-medium text-gray-700">
-          Tom
-        </label>
-        <select
-          id="tone"
-          value={tone}
-          onChange={(e) => setTone(e.target.value as AgentTone)}
-          className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-400"
-        >
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="tone">Tom</Label>
+        <Select id="tone" value={tone} onChange={(e) => setTone(e.target.value as AgentTone)}>
           {TONE_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
+            <option key={option.value} value={option.value}>{option.label}</option>
           ))}
-        </select>
+        </Select>
       </div>
 
-      <div className="flex flex-col gap-1">
-        <label htmlFor="dailyLimit" className="text-sm font-medium text-gray-700">
-          Limite diário: {dailyLimit}
-        </label>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="dailyLimit">Limite diário: {dailyLimit}</Label>
         <input
           id="dailyLimit"
           type="range"
@@ -129,45 +112,31 @@ export function AgentConfigForm({
           max={15}
           value={dailyLimit}
           onChange={(e) => setDailyLimit(Number(e.target.value))}
+          className="accent-cyan-500"
         />
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <div className="flex flex-col gap-1">
-          <label htmlFor="start" className="text-sm font-medium text-gray-700">
-            Início
-          </label>
-          <input
-            id="start"
-            type="time"
-            value={start}
-            onChange={(e) => setStart(e.target.value)}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-400"
-          />
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="start">Início</Label>
+          <Input id="start" type="time" value={start} onChange={(e) => setStart(e.target.value)} />
         </div>
-        <div className="flex flex-col gap-1">
-          <label htmlFor="end" className="text-sm font-medium text-gray-700">
-            Fim
-          </label>
-          <input
-            id="end"
-            type="time"
-            value={end}
-            onChange={(e) => setEnd(e.target.value)}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-gray-400"
-          />
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="end">Fim</Label>
+          <Input id="end" type="time" value={end} onChange={(e) => setEnd(e.target.value)} />
         </div>
       </div>
 
       <div className="flex flex-col gap-2">
-        <span className="text-sm font-medium text-gray-700">Setores</span>
+        <span className="text-xs font-bold uppercase tracking-wide text-slate-400">Setores</span>
         <div className="grid grid-cols-2 gap-2">
           {SECTOR_OPTIONS.map((sector) => (
-            <label key={sector} className="flex items-center gap-2 text-sm text-gray-700">
+            <label key={sector} className="flex items-center gap-2 text-sm text-slate-300">
               <input
                 type="checkbox"
                 checked={sectors.includes(sector)}
                 onChange={() => toggleSector(sector)}
+                className="accent-cyan-500"
               />
               {SECTOR_LABELS[sector]}
             </label>
@@ -175,22 +144,24 @@ export function AgentConfigForm({
         </div>
       </div>
 
-      <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+      <label className="flex items-center gap-2 text-sm font-medium text-slate-300">
         <input
           type="checkbox"
           checked={isActive}
           onChange={(e) => setIsActive(e.target.checked)}
+          className="accent-cyan-500"
         />
         Agente ativo
       </label>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      {saved && !error && <p className="text-sm text-green-600">Configuração salva.</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
+      {saved && !error && <p className="text-sm text-emerald-400">Configuração salva.</p>}
 
       <button
         type="submit"
         disabled={loading}
-        className="self-start rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700 disabled:opacity-50"
+        className="self-start rounded-xl px-4 py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+        style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
       >
         {loading ? 'Salvando...' : 'Salvar configuração'}
       </button>

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Plus, Trash2, Check } from 'lucide-react'
+import { FormSection, Input, Label, Select } from '@/components/ui/dashboard-ui'
 
 type Plan = { id: string; name: string; price_monthly: number; max_units: number; max_agents: number; features: string[] }
 type UnitDraft = { name: string; city: string; state: string }
@@ -123,16 +124,15 @@ export default function NewOrganizationPage() {
   return (
     <div className="mx-auto max-w-2xl">
       <div className="mb-6">
-        <Link href="/dashboard/organizations" className="text-sm text-slate-500 hover:text-slate-700">← Empresas</Link>
-        <h1 className="mt-2 text-2xl font-bold text-slate-900">Nova empresa</h1>
-        <p className="mt-0.5 text-sm text-slate-500">Cadastre a empresa, selecione o plano e adicione suas unidades.</p>
+        <Link href="/dashboard/organizations" className="text-sm text-slate-400 hover:text-white">← Empresas</Link>
+        <h1 className="mt-2 text-2xl font-black tracking-tight text-white">Nova empresa</h1>
+        <p className="mt-0.5 text-sm text-slate-400">Cadastre a empresa, selecione o plano e adicione suas unidades.</p>
       </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
         {/* Plan selection */}
         {plans.length > 0 && (
-          <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="mb-4 text-sm font-semibold text-slate-900">Plano contratado</h2>
+          <FormSection title="Plano contratado">
             <div className="grid grid-cols-3 gap-3">
               {plans.map((plan) => {
                 const isSelected = form.plan_id === plan.id
@@ -141,119 +141,119 @@ export default function NewOrganizationPage() {
                     key={plan.id}
                     type="button"
                     onClick={() => handlePlanSelect(plan)}
-                    className={`relative flex flex-col gap-2 rounded-xl border-2 p-4 text-left transition-all ${
-                      isSelected ? 'border-green-600 bg-green-600 text-white' : 'border-slate-200 hover:border-green-300'
-                    }`}
+                    className="relative flex flex-col gap-2 rounded-xl p-4 text-left transition-all"
+                    style={isSelected
+                      ? { border: '2px solid #06b6d4', background: 'rgba(6,182,212,0.1)' }
+                      : { border: '2px solid rgba(255,255,255,0.08)' }}
                   >
                     {isSelected && (
-                      <div className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-green-500">
+                      <div className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full" style={{ background: 'linear-gradient(135deg, #06b6d4, #4361ee)' }}>
                         <Check size={12} className="text-white" />
                       </div>
                     )}
-                    <p className="text-sm font-semibold">{plan.name}</p>
-                    <p className={`text-xs ${isSelected ? 'text-zinc-400' : 'text-slate-500'}`}>
+                    <p className="text-sm font-semibold text-white">{plan.name}</p>
+                    <p className="text-xs text-slate-400">
                       até {plan.max_units} unidade{plan.max_units > 1 ? 's' : ''} · {plan.max_agents} agente{plan.max_agents > 1 ? 's' : ''}
                     </p>
                   </button>
                 )
               })}
             </div>
-          </div>
+          </FormSection>
         )}
 
         {/* Company details */}
-        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="mb-4 text-sm font-semibold text-slate-900">Dados da empresa</h2>
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-slate-700">Nome da empresa *</label>
-              <input required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
-                placeholder="Smarter Estágios Recife" />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-slate-700">E-mail do responsável</label>
-              <input type="email" value={form.owner_email} onChange={e => setForm(f => ({ ...f, owner_email: e.target.value }))}
-                className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
-                placeholder="contato@empresa.com" />
-            </div>
-
-            {/* Financial */}
-            <div className="rounded-lg border border-slate-100 bg-slate-50 p-4">
-              <p className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500">Cobrança mensal</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-medium text-slate-700">Valor mensal (R$)</label>
-                  <input value={form.monthly_fee} onChange={e => setForm(f => ({ ...f, monthly_fee: e.target.value }))}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400"
-                    placeholder="1.500,00" />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-medium text-slate-700">Dia de vencimento</label>
-                  <select value={form.billing_day} onChange={e => setForm(f => ({ ...f, billing_day: e.target.value }))}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400">
-                    {[1,5,10,15,20,25].map(d => (
-                      <option key={d} value={d}>Dia {d}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              {parseFloat(form.monthly_fee.replace(',','.')) > 0 && (
-                <p className="mt-2 flex items-center gap-1.5 text-xs text-green-700">
-                  <Check size={11} />
-                  Uma cobrança de R$ {form.monthly_fee} será criada automaticamente em Financeiro → A receber
-                </p>
-              )}
-            </div>
+        <FormSection title="Dados da empresa">
+          <div className="flex flex-col gap-1.5">
+            <Label>Nome da empresa *</Label>
+            <Input required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Alizo Recife" />
           </div>
-        </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>E-mail do responsável</Label>
+            <Input type="email" value={form.owner_email} onChange={e => setForm(f => ({ ...f, owner_email: e.target.value }))} placeholder="contato@empresa.com" />
+          </div>
+
+          {/* Financial */}
+          <div className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Cobrança mensal</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <Label>Valor mensal (R$)</Label>
+                <Input value={form.monthly_fee} onChange={e => setForm(f => ({ ...f, monthly_fee: e.target.value }))} placeholder="1.500,00" />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>Dia de vencimento</Label>
+                <Select value={form.billing_day} onChange={e => setForm(f => ({ ...f, billing_day: e.target.value }))}>
+                  {[1,5,10,15,20,25].map(d => (
+                    <option key={d} value={d}>Dia {d}</option>
+                  ))}
+                </Select>
+              </div>
+            </div>
+            {parseFloat(form.monthly_fee.replace(',','.')) > 0 && (
+              <p className="mt-2 flex items-center gap-1.5 text-xs text-emerald-400">
+                <Check size={11} />
+                Uma cobrança de R$ {form.monthly_fee} será criada automaticamente em Financeiro → A receber
+              </p>
+            )}
+          </div>
+        </FormSection>
 
         {/* Units */}
-        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-900">
-              Unidades
-              <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">{units.length}</span>
-            </h2>
-            <button type="button" onClick={addUnit} className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800">
+        <FormSection
+          title="Unidades"
+          action={
+            <button type="button" onClick={addUnit} className="flex items-center gap-1 text-xs font-semibold" style={{ color: '#06b6d4' }}>
               <Plus size={13} /> Adicionar unidade
             </button>
-          </div>
+          }
+        >
           <div className="flex flex-col gap-3">
             {units.map((unit, i) => (
-              <div key={i} className="relative rounded-lg border border-slate-100 bg-slate-50 p-4">
+              <div key={i} className="relative rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-xs font-medium text-slate-500">Unidade {i + 1}</span>
                   {units.length > 1 && (
-                    <button type="button" onClick={() => removeUnit(i)} className="text-slate-400 hover:text-red-500">
+                    <button type="button" onClick={() => removeUnit(i)} className="text-slate-500 hover:text-red-400">
                       <Trash2 size={13} />
                     </button>
                   )}
                 </div>
                 <div className="grid grid-cols-3 gap-2">
-                  <input value={unit.name} onChange={e => updateUnit(i, 'name', e.target.value)}
-                    className="col-span-3 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-slate-400"
-                    placeholder="Nome da unidade *" />
-                  <input value={unit.city} onChange={e => updateUnit(i, 'city', e.target.value)}
-                    className="col-span-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-slate-400"
-                    placeholder="Cidade" />
-                  <input value={unit.state} onChange={e => updateUnit(i, 'state', e.target.value)} maxLength={2}
-                    className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm uppercase outline-none focus:border-slate-400"
-                    placeholder="UF" />
+                  <Input
+                    value={unit.name}
+                    onChange={e => updateUnit(i, 'name', e.target.value)}
+                    className="col-span-3"
+                    placeholder="Nome da unidade *"
+                  />
+                  <Input value={unit.city} onChange={e => updateUnit(i, 'city', e.target.value)} className="col-span-2" placeholder="Cidade" />
+                  <Input value={unit.state} onChange={e => updateUnit(i, 'state', e.target.value)} maxLength={2} className="uppercase" placeholder="UF" />
                 </div>
               </div>
             ))}
           </div>
-        </div>
+        </FormSection>
 
-        {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+        {error && (
+          <div className="rounded-xl px-4 py-3 text-sm text-red-400" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
+            {error}
+          </div>
+        )}
 
         <div className="flex gap-3">
-          <button type="submit" disabled={busy}
-            className="flex-1 rounded-lg bg-green-600 py-2.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50">
+          <button
+            type="submit"
+            disabled={busy}
+            className="flex-1 rounded-xl py-2.5 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+            style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
+          >
             {busy ? 'Criando empresa...' : 'Criar empresa e unidades'}
           </button>
-          <Link href="/dashboard/organizations" className="rounded-lg border border-slate-200 px-5 py-2.5 text-sm text-slate-600 hover:bg-slate-50">
+          <Link
+            href="/dashboard/organizations"
+            className="rounded-xl px-5 py-2.5 text-sm text-slate-300 hover:bg-white/5"
+            style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+          >
             Cancelar
           </Link>
         </div>

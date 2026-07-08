@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { Bot, MessageSquare, TrendingUp, Zap } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -24,42 +25,89 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen bg-[#0a0a0a]">
+    <main
+      className="flex min-h-screen"
+      style={{
+        background:
+          'radial-gradient(ellipse 80% 50% at 15% 0%, rgba(6,182,212,0.16) 0%, transparent 60%), radial-gradient(ellipse 60% 50% at 100% 100%, rgba(67,97,238,0.14) 0%, transparent 60%), #0a0f1e',
+      }}
+    >
       {/* Left panel — branding */}
-      <div className="hidden flex-col justify-between p-12 lg:flex lg:w-1/2">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-green-500">
-            <svg viewBox="0 0 24 24" className="h-5 w-5 fill-white">
-              <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm1-13h-2v5l4.25 2.55.75-1.23-3-1.82z" />
-            </svg>
-          </div>
-          <span className="text-lg font-semibold text-white">AI Workforce OS</span>
-        </div>
+      <div className="relative hidden flex-col justify-between overflow-hidden p-12 lg:flex lg:w-1/2">
+        {/* Decorative glow */}
+        <div
+          className="pointer-events-none absolute -left-24 -top-24 h-96 w-96 rounded-full blur-3xl"
+          style={{ background: 'radial-gradient(circle, rgba(6,182,212,0.25) 0%, transparent 70%)' }}
+        />
+        <div
+          className="pointer-events-none absolute -bottom-32 -right-10 h-96 w-96 rounded-full blur-3xl"
+          style={{ background: 'radial-gradient(circle, rgba(67,97,238,0.2) 0%, transparent 70%)' }}
+        />
 
-        <div>
-          <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-green-500/30 bg-green-500/10 px-3 py-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
-            <span className="text-xs font-medium text-green-400">Sistema ativo · 100% operacional</span>
+        <img src="/branding/alizo-logo.png" alt="Alizo" className="relative h-9 w-auto" />
+
+        <div className="relative">
+          <div
+            className="mb-8 inline-flex items-center gap-2 rounded-full px-3 py-1.5"
+            style={{ background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.25)' }}
+          >
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-50" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-cyan-400" />
+            </span>
+            <span className="text-xs font-semibold" style={{ color: '#67e8f9' }}>Sistema ativo · 100% operacional</span>
           </div>
-          <h1 className="text-4xl font-bold leading-tight text-white">
+          <h1 className="text-4xl font-black leading-tight tracking-tight text-white">
             A força de trabalho<br />
-            <span className="text-green-400">inteligente</span> que<br />
+            <span
+              style={{
+                background: 'linear-gradient(135deg, #22d3ee 0%, #818cf8 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+              }}
+            >
+              inteligente
+            </span> que<br />
             escala com você.
           </h1>
-          <p className="mt-4 text-base text-zinc-400">
+          <p className="mt-4 max-w-sm text-base text-slate-400">
             Gerencie agentes IA, unidades e resultados em tempo real. Uma plataforma para toda a sua rede de franquias.
           </p>
+
+          <div className="mt-8 grid grid-cols-2 gap-3 max-w-sm">
+            {[
+              { icon: Bot, label: 'Agentes IA 24/7' },
+              { icon: MessageSquare, label: 'WhatsApp integrado' },
+              { icon: TrendingUp, label: 'CRM em tempo real' },
+              { icon: Zap, label: 'Onboarding automático' },
+            ].map(({ icon: Icon, label }) => (
+              <div
+                key={label}
+                className="flex items-center gap-2.5 rounded-xl px-3.5 py-3"
+                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
+              >
+                <div
+                  className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg"
+                  style={{ background: 'linear-gradient(135deg, rgba(6,182,212,0.2), rgba(67,97,238,0.2))' }}
+                >
+                  <Icon size={13} className="text-cyan-400" />
+                </div>
+                <span className="text-xs font-semibold text-slate-300">{label}</span>
+              </div>
+            ))}
+          </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-4">
+        <div className="relative grid grid-cols-3 gap-4">
           {[
             { label: 'Leads gerados', value: '1.200+' },
             { label: 'Conversas/dia', value: '340' },
             { label: 'Taxa de resposta', value: '94%' },
           ].map(({ label, value }) => (
-            <div key={label} className="rounded-xl border border-white/10 bg-white/5 p-4">
-              <p className="text-2xl font-bold text-white">{value}</p>
-              <p className="mt-1 text-xs text-zinc-500">{label}</p>
+            <div key={label} className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <p className="text-2xl font-black text-white">{value}</p>
+              <p className="mt-1 text-xs text-slate-500">{label}</p>
             </div>
           ))}
         </div>
@@ -69,48 +117,46 @@ export default function LoginPage() {
       <div className="flex flex-1 items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
           {/* Mobile logo */}
-          <div className="mb-8 flex items-center gap-3 lg:hidden">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-500">
-              <svg viewBox="0 0 24 24" className="h-4 w-4 fill-white">
-                <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8zm1-13h-2v5l4.25 2.55.75-1.23-3-1.82z" />
-              </svg>
-            </div>
-            <span className="text-base font-semibold text-white">AI Workforce OS</span>
+          <div className="mb-8 flex justify-center lg:hidden">
+            <img src="/branding/alizo-logo.png" alt="Alizo" className="h-8 w-auto" />
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-8 backdrop-blur-sm">
-            <h2 className="text-xl font-semibold text-white">Bem-vindo de volta</h2>
-            <p className="mt-1 text-sm text-zinc-400">Entre com suas credenciais de acesso</p>
+          <div
+            className="rounded-2xl p-8 backdrop-blur-sm"
+            style={{ background: 'rgba(20,26,43,0.7)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}
+          >
+            <h2 className="text-xl font-black tracking-tight text-white">Bem-vindo de volta</h2>
+            <p className="mt-1 text-sm text-slate-400">Entre com suas credenciais de acesso</p>
 
             <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-zinc-300">E-mail</label>
+                <label className="text-sm font-medium text-slate-300">E-mail</label>
                 <input
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none transition-colors focus:border-green-500/50 focus:bg-white/8"
+                  className="rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors focus:border-cyan-500/50"
+                  style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
                   placeholder="voce@empresa.com"
                 />
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium text-zinc-300">Senha</label>
-                </div>
+                <label className="text-sm font-medium text-slate-300">Senha</label>
                 <input
                   type="password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none transition-colors focus:border-green-500/50"
+                  className="rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors focus:border-cyan-500/50"
+                  style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
                   placeholder="••••••••"
                 />
               </div>
 
               {error && (
-                <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-2.5">
+                <div className="rounded-lg px-4 py-2.5" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
                   <p className="text-sm text-red-400">{error}</p>
                 </div>
               )}
@@ -118,7 +164,8 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="mt-2 flex items-center justify-center gap-2 rounded-xl bg-green-500 py-3 text-sm font-semibold text-white transition-colors hover:bg-green-400 disabled:opacity-50"
+                className="mt-2 flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold text-white transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50"
+                style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
               >
                 {loading ? (
                   <>
@@ -130,9 +177,9 @@ export default function LoginPage() {
             </form>
           </div>
 
-          <p className="mt-6 text-center text-xs text-zinc-600">
+          <p className="mt-6 text-center text-xs text-slate-600">
             Ainda não tem acesso?{' '}
-            <a href="/#planos" className="text-zinc-400 hover:text-white">Ver planos disponíveis</a>
+            <a href="/#planos" className="text-slate-400 hover:text-cyan-400">Ver planos disponíveis</a>
           </p>
         </div>
       </div>

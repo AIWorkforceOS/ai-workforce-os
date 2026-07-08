@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { SECTOR_OPTIONS, type Lead, type Unit } from '@/lib/types'
+import { Badge, type BadgeVariant, Card, Label, PageHeader, Select, TableShell, Td, Th, Tr } from '@/components/ui/dashboard-ui'
 
 const PAGE_SIZE = 20
 
@@ -14,14 +15,14 @@ const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: 'paused', label: 'Pausado' },
 ]
 
-const STATUS_COLOR: Record<string, string> = {
-  new: 'bg-slate-100 text-slate-600',
-  contacted: 'bg-blue-100 text-blue-700',
-  replied: 'bg-amber-100 text-amber-700',
-  negotiating: 'bg-purple-100 text-purple-700',
-  won: 'bg-green-100 text-green-700',
-  lost: 'bg-red-100 text-red-700',
-  paused: 'bg-slate-100 text-slate-500',
+const STATUS_VARIANT: Record<string, BadgeVariant> = {
+  new: 'slate',
+  contacted: 'blue',
+  replied: 'amber',
+  negotiating: 'purple',
+  won: 'green',
+  lost: 'red',
+  paused: 'slate',
 }
 
 const SECTOR_LABELS: Record<string, string> = {
@@ -42,18 +43,9 @@ function daysSince(dateStr: string | null): number | null {
 }
 
 function DaysBadge({ days }: { days: number | null }) {
-  if (days === null) return <span className="text-slate-400">—</span>
-  const color =
-    days > 7
-      ? 'bg-red-100 text-red-700'
-      : days > 3
-        ? 'bg-amber-100 text-amber-700'
-        : 'bg-green-100 text-green-700'
-  return (
-    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${color}`}>
-      {days === 0 ? 'hoje' : `${days}d`}
-    </span>
-  )
+  if (days === null) return <span className="text-slate-500">—</span>
+  const variant: BadgeVariant = days > 7 ? 'red' : days > 3 ? 'amber' : 'green'
+  return <Badge variant={variant}>{days === 0 ? 'hoje' : `${days}d`}</Badge>
 }
 
 export default async function LeadsPage({
@@ -97,166 +89,126 @@ export default async function LeadsPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900">Leads</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Leads prospectados pelo agente SDR em todas as unidades.{' '}
-          {total > 0 && <span className="font-medium text-slate-700">{total} no total.</span>}
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="prospecção"
+        title="Leads"
+        subtitle={`Leads prospectados pelo agente SDR em todas as unidades.${total > 0 ? ` ${total} no total.` : ''}`}
+      />
 
-      <form className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-col gap-1">
-          <label htmlFor="unit" className="text-xs font-medium text-slate-500">
-            Unidade
-          </label>
-          <select
-            id="unit"
-            name="unit"
-            defaultValue={params.unit ?? ''}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
+      <Card className="p-4">
+        <form className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="unit">Unidade</Label>
+            <Select id="unit" name="unit" defaultValue={params.unit ?? ''}>
+              <option value="">Todas</option>
+              {unitRows.map((unit) => (
+                <option key={unit.id} value={unit.id}>{unit.name}</option>
+              ))}
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="status">Status</Label>
+            <Select id="status" name="status" defaultValue={params.status ?? ''}>
+              <option value="">Todos</option>
+              {STATUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="sector">Setor</Label>
+            <Select id="sector" name="sector" defaultValue={params.sector ?? ''}>
+              <option value="">Todos</option>
+              {SECTOR_OPTIONS.map((sector) => (
+                <option key={sector} value={sector}>{SECTOR_LABELS[sector]}</option>
+              ))}
+            </Select>
+          </div>
+
+          <button
+            type="submit"
+            className="rounded-xl px-4 py-2.5 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
+            style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
           >
-            <option value="">Todas</option>
-            {unitRows.map((unit) => (
-              <option key={unit.id} value={unit.id}>
-                {unit.name}
-              </option>
-            ))}
-          </select>
-        </div>
+            Filtrar
+          </button>
+          {(params.unit || params.status || params.sector) && (
+            <Link
+              href="/dashboard/leads"
+              className="rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-300 transition-colors hover:bg-white/5"
+              style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              Limpar filtros
+            </Link>
+          )}
+        </form>
+      </Card>
 
-        <div className="flex flex-col gap-1">
-          <label htmlFor="status" className="text-xs font-medium text-slate-500">
-            Status
-          </label>
-          <select
-            id="status"
-            name="status"
-            defaultValue={params.status ?? ''}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
-          >
-            <option value="">Todos</option>
-            {STATUS_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label htmlFor="sector" className="text-xs font-medium text-slate-500">
-            Setor
-          </label>
-          <select
-            id="sector"
-            name="sector"
-            defaultValue={params.sector ?? ''}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400"
-          >
-            <option value="">Todos</option>
-            {SECTOR_OPTIONS.map((sector) => (
-              <option key={sector} value={sector}>
-                {SECTOR_LABELS[sector]}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <button
-          type="submit"
-          className="rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700"
-        >
-          Filtrar
-        </button>
-        {(params.unit || params.status || params.sector) && (
-          <Link
-            href="/dashboard/leads"
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
-          >
-            Limpar filtros
-          </Link>
-        )}
-      </form>
-
-      <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+      <Card className="overflow-hidden">
         {leadRows.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 px-5 py-12 text-center">
-            <p className="text-sm font-medium text-slate-900">Nenhum lead encontrado</p>
-            <p className="text-sm text-slate-500">
-              Ajuste os filtros ou prospecte novos leads em uma unidade.
-            </p>
+          <div className="flex flex-col items-center gap-2 px-5 py-16 text-center">
+            <p className="text-sm font-bold text-white">Nenhum lead encontrado</p>
+            <p className="text-sm text-slate-400">Ajuste os filtros ou prospecte novos leads em uma unidade.</p>
           </div>
         ) : (
           <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-slate-500">
-                <th className="px-5 py-3 font-medium">Empresa</th>
-                <th className="px-5 py-3 font-medium">Telefone</th>
-                <th className="px-5 py-3 font-medium">Cidade</th>
-                <th className="px-5 py-3 font-medium">Unidade</th>
-                <th className="px-5 py-3 font-medium">Status</th>
-                <th className="px-5 py-3 font-medium">Último contato</th>
-                <th className="px-5 py-3 font-medium">Sem resposta</th>
-              </tr>
-            </thead>
+            <TableShell>
+              <Th>Empresa</Th>
+              <Th>Telefone</Th>
+              <Th>Cidade</Th>
+              <Th>Unidade</Th>
+              <Th>Status</Th>
+              <Th>Último contato</Th>
+              <Th>Sem resposta</Th>
+            </TableShell>
             <tbody>
               {leadRows.map((lead) => {
                 const days = daysSince(lead.last_contacted_at ?? lead.created_at)
                 return (
-                  <tr
-                    key={lead.id}
-                    className="border-b border-slate-100 last:border-0 hover:bg-slate-50"
-                  >
-                    <td className="px-5 py-3 font-medium text-slate-900">
-                      <Link
-                        href={`/dashboard/conversations/${lead.id}`}
-                        className="hover:text-green-600 hover:underline"
-                      >
+                  <Tr key={lead.id}>
+                    <Td>
+                      <Link href={`/dashboard/conversations/${lead.id}`} className="font-semibold text-white transition-colors hover:text-cyan-400">
                         {lead.company_name}
                       </Link>
-                    </td>
-                    <td className="px-5 py-3 text-slate-600">{lead.phone ?? '—'}</td>
-                    <td className="px-5 py-3 text-slate-600">
+                    </Td>
+                    <Td className="text-slate-400">{lead.phone ?? '—'}</Td>
+                    <Td className="text-slate-400">
                       {lead.city ?? '—'}
                       {lead.state ? `, ${lead.state}` : ''}
-                    </td>
-                    <td className="px-5 py-3 text-slate-600">{lead.unit?.name ?? '—'}</td>
-                    <td className="px-5 py-3">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                          STATUS_COLOR[lead.status] ?? 'bg-slate-100 text-slate-600'
-                        }`}
-                      >
+                    </Td>
+                    <Td className="text-slate-400">{lead.unit?.name ?? '—'}</Td>
+                    <Td>
+                      <Badge variant={STATUS_VARIANT[lead.status] ?? 'slate'}>
                         {STATUS_OPTIONS.find((s) => s.value === lead.status)?.label ?? lead.status}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 text-slate-600">
+                      </Badge>
+                    </Td>
+                    <Td className="text-slate-400">
                       {lead.last_contacted_at
                         ? new Date(lead.last_contacted_at).toLocaleDateString('pt-BR')
                         : new Date(lead.created_at).toLocaleDateString('pt-BR')}
-                    </td>
-                    <td className="px-5 py-3">
+                    </Td>
+                    <Td>
                       <DaysBadge days={days} />
-                    </td>
-                  </tr>
+                    </Td>
+                  </Tr>
                 )
               })}
             </tbody>
           </table>
         )}
-      </div>
+      </Card>
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-between text-sm text-slate-600">
-          <span>
-            Página {page} de {totalPages} — {total} leads
-          </span>
+        <div className="flex items-center justify-between text-sm text-slate-400">
+          <span>Página {page} de {totalPages} — {total} leads</span>
           <div className="flex gap-2">
             {page > 1 && (
               <Link
                 href={pageHref(page - 1)}
-                className="rounded-md border border-slate-300 px-3 py-1.5 hover:bg-slate-100"
+                className="rounded-xl px-3 py-1.5 transition-colors hover:bg-white/5"
+                style={{ border: '1px solid rgba(255,255,255,0.08)' }}
               >
                 Anterior
               </Link>
@@ -264,7 +216,8 @@ export default async function LeadsPage({
             {page < totalPages && (
               <Link
                 href={pageHref(page + 1)}
-                className="rounded-md border border-slate-300 px-3 py-1.5 hover:bg-slate-100"
+                className="rounded-xl px-3 py-1.5 transition-colors hover:bg-white/5"
+                style={{ border: '1px solid rgba(255,255,255,0.08)' }}
               >
                 Próxima
               </Link>

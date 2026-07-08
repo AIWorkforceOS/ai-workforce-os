@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { Card } from '@/components/ui/dashboard-ui'
 
 type Status = 'open' | 'connecting' | 'close' | 'not_configured' | 'error' | 'loading'
 
@@ -13,13 +14,13 @@ const STATUS_LABEL: Record<Status, string> = {
   loading: 'Verificando...',
 }
 
-const STATUS_COLOR: Record<Status, string> = {
-  open: 'bg-green-100 text-green-700',
-  connecting: 'bg-amber-100 text-amber-700',
-  close: 'bg-gray-100 text-gray-600',
-  not_configured: 'bg-gray-100 text-gray-500',
-  error: 'bg-red-100 text-red-700',
-  loading: 'bg-gray-100 text-gray-500',
+const STATUS_STYLE: Record<Status, { bg: string; color: string }> = {
+  open: { bg: 'rgba(34,197,94,0.12)', color: '#4ade80' },
+  connecting: { bg: 'rgba(245,158,11,0.12)', color: '#fbbf24' },
+  close: { bg: 'rgba(255,255,255,0.06)', color: '#94a3b8' },
+  not_configured: { bg: 'rgba(255,255,255,0.06)', color: '#64748b' },
+  error: { bg: 'rgba(239,68,68,0.12)', color: '#f87171' },
+  loading: { bg: 'rgba(255,255,255,0.06)', color: '#64748b' },
 }
 
 export function WhatsAppConnection({ unitId }: { unitId: string }) {
@@ -106,33 +107,33 @@ export function WhatsAppConnection({ unitId }: { unitId: string }) {
   }
 
   return (
-    <div className="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+    <Card className="flex w-full flex-col gap-4 p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-sm font-semibold text-gray-900">WhatsApp</h2>
-          <p className="mt-1 text-sm text-gray-500">Conecte o número desta unidade via Evolution API.</p>
+          <h2 className="text-sm font-bold text-white">WhatsApp</h2>
+          <p className="mt-1 text-sm text-slate-400">Conecte o número desta unidade via Evolution API.</p>
         </div>
-        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[status]}`}>
+        <span className="rounded-full px-2.5 py-1 text-xs font-bold" style={STATUS_STYLE[status]}>
           {STATUS_LABEL[status]}
         </span>
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
 
       {status === 'not_configured' && (
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-slate-500">
           Preencha os campos da Evolution API acima e salve para poder conectar o WhatsApp.
         </p>
       )}
 
       {qrCode && (
-        <div className="flex flex-col items-center gap-2 rounded-md border border-gray-100 bg-gray-50 p-4">
+        <div className="flex flex-col items-center gap-2 rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
           <img
             src={qrCode.startsWith('data:') ? qrCode : `data:image/png;base64,${qrCode}`}
             alt="QR Code do WhatsApp"
-            className="h-56 w-56"
+            className="h-56 w-56 rounded-lg"
           />
-          <p className="text-xs text-gray-500">Escaneie com o WhatsApp da unidade.</p>
+          <p className="text-xs text-slate-500">Escaneie com o WhatsApp da unidade.</p>
         </div>
       )}
 
@@ -141,7 +142,8 @@ export function WhatsAppConnection({ unitId }: { unitId: string }) {
           <button
             onClick={handleConnect}
             disabled={busy}
-            className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-700 disabled:opacity-50"
+            className="rounded-xl px-4 py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+            style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
           >
             {busy ? 'Gerando QR Code...' : 'Conectar'}
           </button>
@@ -150,12 +152,13 @@ export function WhatsAppConnection({ unitId }: { unitId: string }) {
           <button
             onClick={handleDisconnect}
             disabled={busy}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 disabled:opacity-50"
+            className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-300 transition-colors hover:bg-white/5 disabled:opacity-50"
+            style={{ border: '1px solid rgba(255,255,255,0.08)' }}
           >
             {busy ? 'Desconectando...' : 'Desconectar'}
           </button>
         )}
       </div>
-    </div>
+    </Card>
   )
 }

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { FormSection, Input, Label, Select } from '@/components/ui/dashboard-ui'
 
 type Org = { id: string; name: string }
 type Unit = { id: string; name: string; org_id: string | null }
@@ -53,68 +54,71 @@ export default function NewEmployeePage() {
   return (
     <div className="mx-auto max-w-lg">
       <div className="mb-6">
-        <Link href="/dashboard/employees" className="text-sm text-slate-500 hover:text-slate-700">← Funcionários</Link>
-        <h1 className="mt-2 text-2xl font-bold text-slate-900">Novo funcionário</h1>
+        <Link href="/dashboard/employees" className="text-sm text-slate-400 hover:text-white">← Funcionários</Link>
+        <h1 className="mt-2 text-2xl font-black tracking-tight text-white">Novo funcionário</h1>
       </div>
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-slate-700">Nome completo *</label>
-          <input required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400" placeholder="João da Silva" />
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
+      <form onSubmit={handleSubmit}>
+        <FormSection title="Dados do funcionário">
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-slate-700">E-mail</label>
-            <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400" placeholder="joao@empresa.com" />
+            <Label>Nome completo *</Label>
+            <Input required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="João da Silva" />
           </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label>E-mail</Label>
+              <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="joao@empresa.com" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Telefone</Label>
+              <Input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="(11) 99999-9999" />
+            </div>
+          </div>
+
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-slate-700">Telefone</label>
-            <input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400" placeholder="(11) 99999-9999" />
+            <Label>Cargo</Label>
+            <Select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
+              {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </Select>
           </div>
-        </div>
 
-        <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-slate-700">Cargo</label>
-          <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400">
-            {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-          </select>
-        </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>Empresa</Label>
+            <Select value={form.org_id} onChange={e => setForm(f => ({ ...f, org_id: e.target.value, unit_id: '' }))}>
+              <option value="">Selecionar empresa...</option>
+              {orgs.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </Select>
+          </div>
 
-        <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-slate-700">Empresa</label>
-          <select value={form.org_id} onChange={e => setForm(f => ({ ...f, org_id: e.target.value, unit_id: '' }))}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400">
-            <option value="">Selecionar empresa...</option>
-            {orgs.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
-          </select>
-        </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>Unidade</Label>
+            <Select value={form.unit_id} onChange={e => setForm(f => ({ ...f, unit_id: e.target.value }))}>
+              <option value="">Selecionar unidade...</option>
+              {filteredUnits.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </Select>
+          </div>
 
-        <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-slate-700">Unidade</label>
-          <select value={form.unit_id} onChange={e => setForm(f => ({ ...f, unit_id: e.target.value }))}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400">
-            <option value="">Selecionar unidade...</option>
-            {filteredUnits.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
-        </div>
+          {error && <p className="text-sm text-red-400">{error}</p>}
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
-
-        <div className="flex gap-3 pt-2">
-          <button type="submit" disabled={busy}
-            className="flex-1 rounded-lg bg-green-600 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50">
-            {busy ? 'Salvando...' : 'Cadastrar funcionário'}
-          </button>
-          <Link href="/dashboard/employees"
-            className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50">
-            Cancelar
-          </Link>
-        </div>
+          <div className="flex gap-3 pt-2">
+            <button
+              type="submit"
+              disabled={busy}
+              className="flex-1 rounded-xl py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+              style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
+            >
+              {busy ? 'Salvando...' : 'Cadastrar funcionário'}
+            </button>
+            <Link
+              href="/dashboard/employees"
+              className="rounded-xl px-4 py-2 text-sm text-slate-300 hover:bg-white/5"
+              style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              Cancelar
+            </Link>
+          </div>
+        </FormSection>
       </form>
     </div>
   )

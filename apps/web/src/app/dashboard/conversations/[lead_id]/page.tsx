@@ -2,15 +2,16 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import type { Conversation, Lead } from '@/lib/types'
+import { Badge, type BadgeVariant, Card } from '@/components/ui/dashboard-ui'
 
-const STATUS_COLOR: Record<string, string> = {
-  new: 'bg-slate-100 text-slate-700',
-  contacted: 'bg-blue-100 text-blue-700',
-  replied: 'bg-amber-100 text-amber-700',
-  negotiating: 'bg-purple-100 text-purple-700',
-  won: 'bg-green-100 text-green-700',
-  lost: 'bg-red-100 text-red-700',
-  paused: 'bg-orange-100 text-orange-700',
+const STATUS_VARIANT: Record<string, BadgeVariant> = {
+  new: 'slate',
+  contacted: 'blue',
+  replied: 'amber',
+  negotiating: 'purple',
+  won: 'green',
+  lost: 'red',
+  paused: 'amber',
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -24,10 +25,10 @@ const STATUS_LABELS: Record<string, string> = {
 }
 
 const MSG_DELIVERY: Record<string, { icon: string; color: string; label: string }> = {
-  sent: { icon: '✓', color: 'text-slate-400', label: 'Enviado' },
-  delivered: { icon: '✓✓', color: 'text-slate-400', label: 'Entregue' },
-  read: { icon: '✓✓', color: 'text-blue-500', label: 'Lido' },
-  failed: { icon: '✗', color: 'text-red-500', label: 'Falhou' },
+  sent: { icon: '✓', color: 'text-slate-500', label: 'Enviado' },
+  delivered: { icon: '✓✓', color: 'text-slate-500', label: 'Entregue' },
+  read: { icon: '✓✓', color: 'text-cyan-400', label: 'Lido' },
+  failed: { icon: '✗', color: 'text-red-400', label: 'Falhou' },
 }
 
 type LeadWithUnit = Lead & { unit: { name: string; whatsapp_phone: string | null } | null }
@@ -65,77 +66,49 @@ export default async function ConversationDetailPage({
     <div className="flex flex-col gap-6">
       {/* Header */}
       <div>
-        <Link
-          href="/dashboard/conversations"
-          className="mb-3 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
-        >
+        <Link href="/dashboard/conversations" className="mb-3 inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white">
           ← Voltar para Conversas
         </Link>
 
-        <div className="flex flex-wrap items-start justify-between gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <Card className="flex flex-wrap items-start justify-between gap-4 p-5">
           <div className="flex flex-col gap-1">
-            <h1 className="text-xl font-semibold text-slate-900">{lead.company_name}</h1>
-            <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
-              {lead.phone && (
-                <span className="font-mono">{lead.phone}</span>
-              )}
+            <h1 className="text-xl font-black tracking-tight text-white">{lead.company_name}</h1>
+            <div className="flex flex-wrap items-center gap-3 text-sm text-slate-400">
+              {lead.phone && <span className="font-mono">{lead.phone}</span>}
               {lead.unit?.name && (
-                <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                <span className="rounded px-2 py-0.5 text-xs text-slate-300" style={{ background: 'rgba(255,255,255,0.06)' }}>
                   {lead.unit.name}
                 </span>
               )}
               {(lead.city || lead.state) && (
-                <span>
-                  {lead.city ?? ''}
-                  {lead.state ? `, ${lead.state}` : ''}
-                </span>
+                <span>{lead.city ?? ''}{lead.state ? `, ${lead.state}` : ''}</span>
               )}
-              {lead.sector && (
-                <span className="capitalize text-slate-400">{lead.sector}</span>
-              )}
+              {lead.sector && <span className="capitalize text-slate-500">{lead.sector}</span>}
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <span
-              className={`rounded-full px-3 py-1 text-sm font-medium ${
-                STATUS_COLOR[lead.status] ?? 'bg-slate-100 text-slate-700'
-              }`}
-            >
-              {STATUS_LABELS[lead.status] ?? lead.status}
-            </span>
-          </div>
-        </div>
+          <Badge variant={STATUS_VARIANT[lead.status] ?? 'slate'}>{STATUS_LABELS[lead.status] ?? lead.status}</Badge>
+        </Card>
 
         {/* Stats bar */}
-        <div className="mt-3 flex gap-4 text-sm text-slate-500">
-          <span>
-            <span className="font-semibold text-slate-800">{messages.length}</span> mensagens
-          </span>
-          <span>
-            <span className="font-semibold text-blue-600">{outboundCount}</span> enviadas pelo agente
-          </span>
-          <span>
-            <span className="font-semibold text-amber-600">{inboundCount}</span> respostas do lead
-          </span>
+        <div className="mt-3 flex gap-4 text-sm text-slate-400">
+          <span><span className="font-semibold text-white">{messages.length}</span> mensagens</span>
+          <span><span className="font-semibold text-blue-400">{outboundCount}</span> enviadas pelo agente</span>
+          <span><span className="font-semibold text-amber-400">{inboundCount}</span> respostas do lead</span>
           {messages.length > 0 && (
             <span>
               Início em{' '}
-              {new Date(messages[0]!.sent_at).toLocaleDateString('pt-BR', {
-                day: '2-digit',
-                month: 'short',
-                year: 'numeric',
-              })}
+              {new Date(messages[0]!.sent_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
             </span>
           )}
         </div>
       </div>
 
       {/* Message thread */}
-      <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+      <Card className="overflow-hidden">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-5 py-16 text-center">
-            <p className="text-sm font-medium text-slate-900">Nenhuma mensagem ainda</p>
+            <p className="text-sm font-bold text-white">Nenhuma mensagem ainda</p>
             <p className="text-sm text-slate-400">
               As mensagens aparecem aqui quando o WhatsApp estiver conectado e o agente iniciar contato.
             </p>
@@ -146,19 +119,10 @@ export default async function ConversationDetailPage({
               const isInbound = msg.direction === 'inbound'
               const delivery = MSG_DELIVERY[msg.status]
 
-              // Date separator
-              const currentDay = new Date(msg.sent_at).toLocaleDateString('pt-BR', {
-                weekday: 'long',
-                day: '2-digit',
-                month: 'long',
-              })
+              const currentDay = new Date(msg.sent_at).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })
               const prevDay =
                 idx > 0
-                  ? new Date(messages[idx - 1]!.sent_at).toLocaleDateString('pt-BR', {
-                      weekday: 'long',
-                      day: '2-digit',
-                      month: 'long',
-                    })
+                  ? new Date(messages[idx - 1]!.sent_at).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })
                   : null
               const showDayDivider = currentDay !== prevDay
 
@@ -166,59 +130,48 @@ export default async function ConversationDetailPage({
                 <div key={msg.id}>
                   {showDayDivider && (
                     <div className="flex items-center gap-3 px-5 py-3">
-                      <div className="flex-1 border-t border-slate-100" />
-                      <span className="text-xs font-medium text-slate-400 capitalize">{currentDay}</span>
-                      <div className="flex-1 border-t border-slate-100" />
+                      <div className="flex-1" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }} />
+                      <span className="text-xs font-medium text-slate-500 capitalize">{currentDay}</span>
+                      <div className="flex-1" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }} />
                     </div>
                   )}
 
                   <div
-                    className={`flex gap-3 px-5 py-3 ${
-                      isInbound ? 'bg-amber-50/40' : ''
-                    } ${idx < messages.length - 1 ? 'border-b border-slate-100' : ''}`}
+                    className="flex gap-3 px-5 py-3"
+                    style={{
+                      background: isInbound ? 'rgba(245,158,11,0.04)' : undefined,
+                      borderBottom: idx < messages.length - 1 ? '1px solid rgba(255,255,255,0.05)' : undefined,
+                    }}
                   >
                     {/* Avatar */}
                     <div
-                      className={`mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                        isInbound
-                          ? 'bg-amber-100 text-amber-700'
-                          : 'bg-blue-100 text-blue-700'
-                      }`}
+                      className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold"
+                      style={isInbound
+                        ? { background: 'rgba(245,158,11,0.15)', color: '#fbbf24' }
+                        : { background: 'rgba(59,130,246,0.15)', color: '#60a5fa' }}
                     >
-                      {isInbound
-                        ? lead.company_name.slice(0, 2).toUpperCase()
-                        : 'SDR'}
+                      {isInbound ? lead.company_name.slice(0, 2).toUpperCase() : 'SDR'}
                     </div>
 
                     {/* Content */}
                     <div className="flex flex-1 flex-col gap-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold text-slate-700">
+                        <span className="text-xs font-semibold text-slate-200">
                           {isInbound ? lead.company_name : 'Agente SDR'}
                         </span>
-                        <span className="text-xs text-slate-400">
-                          {new Date(msg.sent_at).toLocaleTimeString('pt-BR', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
+                        <span className="text-xs text-slate-500">
+                          {new Date(msg.sent_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                         </span>
                         {!isInbound && delivery && (
-                          <span
-                            className={`text-xs ${delivery.color}`}
-                            title={delivery.label}
-                          >
-                            {delivery.icon}
-                          </span>
+                          <span className={`text-xs ${delivery.color}`} title={delivery.label}>{delivery.icon}</span>
                         )}
                         {msg.channel === 'email' && (
-                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">
+                          <span className="rounded px-1.5 py-0.5 text-xs text-slate-400" style={{ background: 'rgba(255,255,255,0.06)' }}>
                             e-mail
                           </span>
                         )}
                       </div>
-                      <p className="text-sm text-slate-800 whitespace-pre-wrap break-words leading-relaxed">
-                        {msg.content}
-                      </p>
+                      <p className="text-sm text-slate-300 whitespace-pre-wrap break-words leading-relaxed">{msg.content}</p>
                     </div>
                   </div>
                 </div>
@@ -226,13 +179,13 @@ export default async function ConversationDetailPage({
             })}
           </div>
         )}
-      </div>
+      </Card>
 
       {/* Notes */}
       {lead.notes && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Observações</p>
-          <p className="mt-1 text-sm text-amber-900 whitespace-pre-wrap">{lead.notes}</p>
+        <div className="rounded-2xl p-4" style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}>
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-400">Observações</p>
+          <p className="mt-1 text-sm text-amber-200 whitespace-pre-wrap">{lead.notes}</p>
         </div>
       )}
     </div>
