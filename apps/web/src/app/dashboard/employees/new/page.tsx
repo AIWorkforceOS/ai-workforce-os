@@ -27,7 +27,12 @@ export default function NewEmployeePage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    supabase.from('organizations').select('id, name').order('name').then(({ data }) => setOrgs(data ?? []))
+    supabase.from('organizations').select('id, name').order('name').then(({ data }) => {
+      const rows = data ?? []
+      setOrgs(rows)
+      // Cliente (RLS) só enxerga a própria empresa — pré-seleciona
+      if (rows.length === 1) setForm(f => ({ ...f, org_id: rows[0]!.id }))
+    })
     supabase.from('units').select('id, name, org_id').order('name').then(({ data }) => setUnits(data ?? []))
   }, [])
 

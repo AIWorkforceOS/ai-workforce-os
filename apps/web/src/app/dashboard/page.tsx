@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { getAppUser } from '@/lib/app-user'
 import { LeadsByDayChart } from '@/components/dashboard/leads-by-day-chart'
+import { IntegrationsStatusCard } from '@/components/dashboard/integrations-status'
 import {
   Building2,
   MapPin,
@@ -25,8 +27,20 @@ function toDateKey(date: Date) {
   return date.toISOString().slice(0, 10)
 }
 
+function greeting(now: Date): string {
+  const hour = Number(
+    new Intl.DateTimeFormat('en-US', { timeZone: 'America/Sao_Paulo', hour: 'numeric', hour12: false }).format(now),
+  )
+  if (hour < 12) return 'Bom dia'
+  if (hour < 18) return 'Boa tarde'
+  return 'Boa noite'
+}
+
 export default async function DashboardPage() {
   const supabase = await createClient()
+  const appUser = await getAppUser()
+  const isSuperAdmin = appUser?.isSuperAdmin ?? false
+  const firstName = (appUser?.name ?? appUser?.email ?? 'você').split(/[\s@]/)[0]
 
   const now = new Date()
   const since24h = new Date(now.getTime() - 24 * 60 * 60 * 1000)
@@ -87,18 +101,22 @@ export default async function DashboardPage() {
 
   const monthName = now.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
 
-  // KPI cards config
+  // KPI cards config — card de Empresas só para a equipe Alizo
   const kpiCards = [
-    {
-      label: 'Empresas',
-      value: orgRows.length,
-      sub: `${activeOrgs.length} ativas`,
-      icon: Building2,
-      href: '/dashboard/organizations',
-      gradient: 'from-blue-500 to-indigo-600',
-      iconGrad: 'from-blue-400 to-indigo-500',
-      topBar: 'from-blue-400 to-indigo-500',
-    },
+    ...(isSuperAdmin
+      ? [
+          {
+            label: 'Empresas',
+            value: orgRows.length,
+            sub: `${activeOrgs.length} ativas`,
+            icon: Building2,
+            href: '/dashboard/organizations',
+            gradient: 'from-blue-500 to-indigo-600',
+            iconGrad: 'from-blue-400 to-indigo-500',
+            topBar: 'from-blue-400 to-indigo-500',
+          },
+        ]
+      : []),
     {
       label: 'Unidades',
       value: unitRows.length,
@@ -160,20 +178,34 @@ export default async function DashboardPage() {
       <div className="flex items-center justify-between">
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">Visão geral</p>
-          <h1 className="mt-0.5 text-2xl font-black tracking-tight text-white">Bom dia, Vinicius! 👋</h1>
+          <h1 className="mt-0.5 text-2xl font-black tracking-tight text-white">{greeting(now)}, {firstName}! 👋</h1>
           <p className="mt-0.5 text-sm capitalize" style={{ color: 'rgba(148,163,184,0.7)' }}>Seu workforce de IA está trabalhando — {monthName}</p>
         </div>
-        <Link
-          href="/dashboard/organizations/new"
-          className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
-          style={{
-            background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)',
-            boxShadow: '0 4px 14px rgba(6,182,212,0.3)',
-          }}
-        >
-          <Building2 size={14} />
-          Nova empresa
-        </Link>
+        {isSuperAdmin ? (
+          <Link
+            href="/dashboard/organizations/new"
+            className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
+            style={{
+              background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)',
+              boxShadow: '0 4px 14px rgba(6,182,212,0.3)',
+            }}
+          >
+            <Building2 size={14} />
+            Nova empresa
+          </Link>
+        ) : (
+          <Link
+            href="/dashboard/units/new"
+            className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
+            style={{
+              background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)',
+              boxShadow: '0 4px 14px rgba(6,182,212,0.3)',
+            }}
+          >
+            <MapPin size={14} />
+            Nova unidade
+          </Link>
+        )}
       </div>
 
       {/* KPI Cards — next-gen */}
@@ -263,18 +295,20 @@ export default async function DashboardPage() {
               </div>
             </div>
 
-            {/* Custo sistema */}
-            <div
-              className="flex items-center justify-between rounded-xl p-3.5"
-              style={{ background: 'rgba(248,250,252,0.8)', border: '1px solid rgba(226,232,240,0.8)' }}
-            >
-              <div>
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Custo sistema</p>
-                <p className="mt-0.5 text-xl font-black text-slate-700">
-                  {totalSystemCost > 0 ? `R$ ${totalSystemCost.toLocaleString('pt-BR')}` : '—'}
-                </p>
+            {/* Custo sistema — visão interna Alizo */}
+            {isSuperAdmin && (
+              <div
+                className="flex items-center justify-between rounded-xl p-3.5"
+                style={{ background: 'rgba(248,250,252,0.8)', border: '1px solid rgba(226,232,240,0.8)' }}
+              >
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Custo sistema</p>
+                  <p className="mt-0.5 text-xl font-black text-slate-700">
+                    {totalSystemCost > 0 ? `R$ ${totalSystemCost.toLocaleString('pt-BR')}` : '—'}
+                  </p>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {financialRows.length === 0 && (
@@ -417,8 +451,11 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* Recent companies */}
-      {orgRows.length > 0 && (
+      {/* Saúde das integrações */}
+      <IntegrationsStatusCard isSuperAdmin={isSuperAdmin} />
+
+      {/* Recent companies — visão interna Alizo */}
+      {isSuperAdmin && orgRows.length > 0 && (
         <div
           className="overflow-hidden rounded-2xl"
           style={{ background: '#141a2b', boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}

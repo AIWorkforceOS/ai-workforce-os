@@ -28,6 +28,11 @@ export default function NewOrganizationPage() {
   const [units, setUnits] = useState<UnitDraft[]>([{ name: '', city: '', state: '' }])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [provisioned, setProvisioned] = useState<{
+    email: string
+    tempPassword: string | null
+    note?: string
+  } | null>(null)
 
   useEffect(() => {
     supabase.from('plans').select('*').eq('is_active', true).order('sort_order')
@@ -117,8 +122,80 @@ export default function NewOrganizationPage() {
       }
     }
 
+    // Provisiona o login do cliente (Supabase Auth + public.users)
+    if (form.owner_email) {
+      try {
+        const response = await fetch('/api/admin/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: form.owner_email, org_id: org.id, role: 'admin' }),
+        })
+        const data = await response.json()
+        if (response.ok) {
+          setProvisioned({ email: data.email, tempPassword: data.tempPassword ?? null, note: data.note })
+          setBusy(false)
+          return
+        }
+        setError(`Empresa criada, mas o acesso do cliente não foi provisionado: ${data?.error ?? 'erro desconhecido'}. Crie o usuário manualmente no Supabase.`)
+        setBusy(false)
+        return
+      } catch {
+        setError('Empresa criada, mas o acesso do cliente não foi provisionado. Crie o usuário manualmente no Supabase.')
+        setBusy(false)
+        return
+      }
+    }
+
     router.push('/dashboard/organizations')
     router.refresh()
+  }
+
+  if (provisioned) {
+    return (
+      <div className="mx-auto max-w-lg">
+        <div
+          className="rounded-2xl p-6"
+          style={{ background: '#141a2b', boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}
+        >
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: 'linear-gradient(135deg,#22c55e,#16a34a)' }}>
+              <Check size={18} className="text-white" />
+            </div>
+            <div>
+              <h1 className="text-lg font-black text-white">Empresa criada!</h1>
+              <p className="text-xs text-slate-400">Acesso do cliente provisionado com sucesso.</p>
+            </div>
+          </div>
+
+          <div className="space-y-3 rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">E-mail de acesso</p>
+              <p className="mt-0.5 font-mono text-sm text-white">{provisioned.email}</p>
+            </div>
+            {provisioned.tempPassword ? (
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Senha temporária</p>
+                <p className="mt-0.5 font-mono text-sm text-cyan-300">{provisioned.tempPassword}</p>
+                <p className="mt-1.5 text-[11px] text-amber-400">
+                  ⚠️ Anote agora — esta senha não será exibida novamente. Envie ao cliente por canal
+                  seguro e oriente a troca no primeiro acesso.
+                </p>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400">{provisioned.note ?? 'A conta de login já existia — a senha atual continua valendo.'}</p>
+            )}
+          </div>
+
+          <button
+            onClick={() => { router.push('/dashboard/organizations'); router.refresh() }}
+            className="mt-5 w-full rounded-xl py-2.5 text-sm font-bold text-white transition-all hover:scale-[1.01]"
+            style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
+          >
+            Ir para Empresas
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (
