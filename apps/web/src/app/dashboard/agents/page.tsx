@@ -9,7 +9,7 @@ import {
   ChevronRight,
   Sparkles,
 } from 'lucide-react'
-import { Card, CardHeader, PageHeader, PrimaryButton, TableShell, Td, Th, Tr } from '@/components/ui/dashboard-ui'
+import { Card, PageHeader, PrimaryButton, TableShell, Td, Th, Tr } from '@/components/ui/dashboard-ui'
 
 const CAPABILITIES = [
   {

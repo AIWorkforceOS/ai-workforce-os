@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 
 // ─── AI Sales Agent (Kai) — powered by Claude API ───────────────────────────
 // Set ANTHROPIC_API_KEY in your Vercel environment variables
