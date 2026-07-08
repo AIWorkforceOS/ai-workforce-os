@@ -49,6 +49,9 @@ export async function POST(request: Request) {
     .maybeSingle()
 
   if (!unit) {
+    console.error(
+      `[webhook_whatsapp] mensagem recebida para instância "${instanceName}" mas nenhuma unidade corresponde a ela — verifique units.evolution_instance_name.`,
+    )
     return NextResponse.json({ error: 'Unidade não encontrada para esta instância.' }, { status: 404 })
   }
 

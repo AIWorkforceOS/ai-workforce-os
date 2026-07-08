@@ -65,6 +65,28 @@ export async function sendEscalationEmail(params: {
   })
 }
 
+export async function sendTechnicalAlertEmail(params: {
+  to: string
+  unitName: string
+  problem: string
+  impact: string
+}): Promise<SendResult> {
+  const from = defaultFrom()
+  if (!from) return { ok: false, error: 'EMAIL_FROM_DOMAIN não está configurada.' }
+
+  return sendEmail({
+    to: params.to,
+    from,
+    subject: `[${params.unitName}] ⚠️ Falha técnica no agente IA`,
+    html: `
+      <p>O agente IA da unidade <strong>${params.unitName}</strong> encontrou uma falha técnica e pode ter deixado de responder um lead.</p>
+      <p><strong>Problema:</strong> ${params.problem}</p>
+      <p><strong>Impacto:</strong> ${params.impact}</p>
+      <p>Verifique o painel (Dashboard → Saúde das integrações) para mais detalhes.</p>
+    `,
+  })
+}
+
 export async function sendNewLeadEmail(params: {
   to: string
   unitName: string
