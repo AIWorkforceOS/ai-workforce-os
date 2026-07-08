@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getGoogleMapsApiKey, placeDetails, textSearch, type PlaceDetails } from '@/lib/google-places'
+import { logSystemEvent } from '@/lib/system-events'
 import type { Lead } from '@/lib/types'
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -22,7 +23,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     )
   }
 
-  const { data: unit } = await supabase.from('units').select('id').eq('id', id).single()
+  // Com RLS ativo, unidades de outras orgs simplesmente não aparecem aqui
+  const { data: unit } = await supabase.from('units').select('id, org_id, name').eq('id', id).single()
   if (!unit) {
     return NextResponse.json({ error: 'Unidade não encontrada.' }, { status: 404 })
   }
@@ -120,6 +122,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       .from('prospecting_jobs')
       .update({ status: 'failed', error_message: message, finished_at: new Date().toISOString() })
       .eq('id', job.id)
+
+    await logSystemEvent(supabase, {
+      level: 'error',
+      source: 'google_maps',
+      eventType: 'prospecting_failed',
+      message: `Prospecção falhou na unidade "${unit.name}": ${message}`,
+      orgId: unit.org_id,
+      unitId: unit.id,
+      metadata: { job_id: job.id, city, state },
+    })
 
     return NextResponse.json({ error: message }, { status: 502 })
   }

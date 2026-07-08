@@ -12,6 +12,7 @@ export type Unit = {
   evolution_api_url: string | null
   evolution_api_key: string | null
   evolution_instance_name: string | null
+  intake_token: string | null
   is_active: boolean
   created_at: string
   updated_at: string
@@ -132,6 +133,9 @@ export type Organization = {
   name: string
   slug: string
   plan: string
+  plan_id: string | null
+  monthly_fee: number | null
+  billing_day: number
   is_active: boolean
   owner_email: string | null
   created_at: string

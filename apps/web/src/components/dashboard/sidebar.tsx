@@ -20,12 +20,21 @@ import {
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
-const navGroups = [
+type NavItem = {
+  href: string
+  label: string
+  icon: typeof LayoutDashboard
+  exact?: boolean
+  /** visível apenas para super_admin (equipe Alizo) */
+  superOnly?: boolean
+}
+
+const navGroups: { label: string; items: NavItem[] }[] = [
   {
     label: 'Principal',
     items: [
       { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, exact: true },
-      { href: '/dashboard/organizations', label: 'Empresas', icon: Building2 },
+      { href: '/dashboard/organizations', label: 'Empresas', icon: Building2, superOnly: true },
       { href: '/dashboard/units', label: 'Unidades', icon: MapPin },
       { href: '/dashboard/employees', label: 'Funcionários', icon: Users },
     ],
@@ -44,7 +53,7 @@ const navGroups = [
     items: [
       { href: '/dashboard/financial', label: 'Cobranças', icon: Wallet },
       { href: '/dashboard/results', label: 'Resultados', icon: TrendingUp },
-      { href: '/dashboard/sales', label: 'Vendas', icon: ShoppingCart },
+      { href: '/dashboard/sales', label: 'Vendas', icon: ShoppingCart, superOnly: true },
     ],
   },
   {
@@ -61,9 +70,17 @@ function getInitials(email: string): string {
   return (parts[0]?.slice(0, 2) ?? 'AW').toUpperCase()
 }
 
-export function Sidebar({ userEmail }: { userEmail: string }) {
+export function Sidebar({ userEmail, role = 'admin' }: { userEmail: string; role?: string }) {
   const pathname = usePathname()
   const router = useRouter()
+  const isSuperAdmin = role === 'super_admin'
+
+  const visibleGroups = navGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => isSuperAdmin || !item.superOnly),
+    }))
+    .filter((group) => group.items.length > 0)
 
   async function handleSignOut() {
     const supabase = createClient()
@@ -89,7 +106,7 @@ export function Sidebar({ userEmail }: { userEmail: string }) {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-0.5">
-        {navGroups.map((group, gi) => (
+        {visibleGroups.map((group, gi) => (
           <div key={group.label} className={gi > 0 ? 'mt-4' : ''}>
             <p className="mb-1 px-2 text-[9px] font-black uppercase tracking-[0.15em]" style={{ color: 'rgba(148,163,184,0.4)' }}>
               {group.label}
