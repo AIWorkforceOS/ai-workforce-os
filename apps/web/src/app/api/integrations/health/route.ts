@@ -48,7 +48,6 @@ export async function POST() {
   }
 
   const openaiKey = process.env.OPENAI_API_KEY
-  const anthropicKey = process.env.ANTHROPIC_API_KEY
   const evolutionUrl = process.env.EVOLUTION_API_URL?.replace(/\/+$/, '')
   const evolutionKey = process.env.EVOLUTION_API_KEY
   const resendKey = process.env.RESEND_API_KEY
@@ -57,11 +56,6 @@ export async function POST() {
     check('openai', 'OpenAI', Boolean(openaiKey), () =>
       fetchWithTimeout('https://api.openai.com/v1/models?limit=1', {
         headers: { Authorization: `Bearer ${openaiKey}` },
-      }),
-    ),
-    check('anthropic', 'Anthropic', Boolean(anthropicKey), () =>
-      fetchWithTimeout('https://api.anthropic.com/v1/models?limit=1', {
-        headers: { 'x-api-key': anthropicKey!, 'anthropic-version': '2023-06-01' },
       }),
     ),
     check('evolution', 'Evolution API', Boolean(evolutionUrl && evolutionKey), () =>

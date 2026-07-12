@@ -3,7 +3,6 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 export type SystemEventLevel = 'info' | 'warning' | 'error'
 export type SystemEventSource =
   | 'openai'
-  | 'anthropic'
   | 'evolution'
   | 'google_maps'
   | 'resend'

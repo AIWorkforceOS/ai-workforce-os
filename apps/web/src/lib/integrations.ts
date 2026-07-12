@@ -4,7 +4,6 @@
 export type IntegrationKey =
   | 'supabase_service'
   | 'openai'
-  | 'anthropic'
   | 'evolution'
   | 'google_maps'
   | 'resend'
@@ -33,16 +32,9 @@ export function getIntegrationsConfigStatus(): IntegrationConfigStatus[] {
     },
     {
       key: 'openai',
-      label: 'OpenAI (agente SDR)',
+      label: 'OpenAI (agente SDR + chat Kai)',
       configured: has('OPENAI_API_KEY'),
-      detail: 'Gera as respostas do agente SDR no WhatsApp. Env: OPENAI_API_KEY',
-      testable: true,
-    },
-    {
-      key: 'anthropic',
-      label: 'Anthropic (chat do site)',
-      configured: has('ANTHROPIC_API_KEY'),
-      detail: 'Alimenta o consultor Kai na landing page. Env: ANTHROPIC_API_KEY',
+      detail: 'Gera as respostas do agente SDR no WhatsApp e do consultor Kai na landing page. Env: OPENAI_API_KEY',
       testable: true,
     },
     {

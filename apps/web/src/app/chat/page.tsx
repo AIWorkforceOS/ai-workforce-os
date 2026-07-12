@@ -132,7 +132,7 @@ export default function ChatPage() {
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#52525b' }}>
           <Sparkles size={10} />
-          Claude AI
+          OpenAI
         </div>
       </div>
 

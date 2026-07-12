@@ -1,7 +1,8 @@
 import { type NextRequest, NextResponse } from 'next/server'
+import { generateChatReply, getOpenAIApiKey, type ChatMessage } from '@/lib/openai'
 
-// ─── AI Sales Agent (Kai) — powered by Claude API ───────────────────────────
-// Set ANTHROPIC_API_KEY in your Vercel environment variables
+// ─── AI Sales Agent (Kai) — powered by OpenAI ───────────────────────────────
+// Set OPENAI_API_KEY in your Vercel environment variables
 
 const SYSTEM_PROMPT_SALES = `Você é Kai, o consultor de vendas virtual do AI Workforce OS.
 Sua missão: tirar dúvidas, quebrar objeções e ajudar o visitante a tomar a decisão certa agora.
@@ -40,52 +41,36 @@ SEU ESTILO:
 - Responda no idioma do cliente (PT ou EN)
 - Máximo 3 parágrafos, use lista numerada quando for passo a passo`
 
-type Message = { role: 'user' | 'assistant'; content: string }
-
 export async function POST(req: NextRequest) {
   try {
     const { messages, mode = 'sales' } = await req.json() as {
-      messages: Message[]
+      messages: ChatMessage[]
       mode?: 'sales' | 'support'
     }
 
-    const apiKey = process.env.ANTHROPIC_API_KEY
+    const apiKey = getOpenAIApiKey()
     if (!apiKey) {
       return NextResponse.json(
-        { error: 'ANTHROPIC_API_KEY not configured' },
+        { error: 'OPENAI_API_KEY not configured' },
         { status: 503 }
       )
     }
 
     const systemPrompt = mode === 'support' ? SYSTEM_PROMPT_SUPPORT : SYSTEM_PROMPT_SALES
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 600,
-        system: systemPrompt,
-        messages: messages.slice(-10), // keep last 10 messages for context
-      }),
-    })
-
-    if (!response.ok) {
-      const err = await response.text()
-      console.error('Anthropic API error:', err)
+    let reply: string
+    try {
+      reply = await generateChatReply({
+        apiKey,
+        systemPrompt,
+        history: messages.slice(-10), // keep last 10 messages for context
+      })
+    } catch (err) {
+      console.error('OpenAI API error:', err instanceof Error ? err.message : err)
       return NextResponse.json({ error: 'AI unavailable' }, { status: 502 })
     }
 
-    const data = await response.json() as {
-      content: Array<{ type: string; text: string }>
-    }
-    const text = data.content.find(c => c.type === 'text')?.text ?? ''
-
-    return NextResponse.json({ reply: text })
+    return NextResponse.json({ reply })
   } catch (err) {
     console.error('Chat API error:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
