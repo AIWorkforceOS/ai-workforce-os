@@ -11,6 +11,7 @@ export type IntegrationKey =
   | 'cron'
   | 'meta_ads'
   | 'google_ads'
+  | 'smarter_candidates'
 
 export type IntegrationConfigStatus = {
   key: IntegrationKey
@@ -86,6 +87,13 @@ export function getIntegrationsConfigStatus(): IntegrationConfigStatus[] {
       label: 'Google Ads (Traffic Specialist)',
       configured: has('GOOGLE_ADS_DEVELOPER_TOKEN') && has('GOOGLE_ADS_CLIENT_ID') && has('GOOGLE_ADS_CLIENT_SECRET'),
       detail: 'Developer token + OAuth do Google Ads (refresh token por conta no painel). Env: GOOGLE_ADS_DEVELOPER_TOKEN + GOOGLE_ADS_CLIENT_ID + GOOGLE_ADS_CLIENT_SECRET (+ GOOGLE_ADS_LOGIN_CUSTOMER_ID p/ MCC) — ver docs/setup/traffic-apis-setup.md',
+      testable: false,
+    },
+    {
+      key: 'smarter_candidates',
+      label: 'API de candidatos Smarter (Recruiter)',
+      configured: has('SMARTER_CANDIDATES_API_URL') && has('SMARTER_CANDIDATES_API_TOKEN'),
+      detail: 'Banco de currículos da Smarter via API de parceiro autorizada. Sem ela, o sourcing usa só a base própria. Env: SMARTER_CANDIDATES_API_URL + SMARTER_CANDIDATES_API_TOKEN',
       testable: false,
     },
   ]

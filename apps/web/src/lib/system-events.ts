@@ -11,6 +11,8 @@ export type SystemEventSource =
   | 'meta_ads'
   | 'google_ads'
   | 'traffic'
+  | 'recruiter'
+  | 'job_board'
 
 export type SystemEventInput = {
   level: SystemEventLevel

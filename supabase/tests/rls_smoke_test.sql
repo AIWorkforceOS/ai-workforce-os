@@ -23,6 +23,13 @@ values ('00000000-0000-4000-a000-000000000002', '00000000-0000-4000-a000-0000000
 insert into leads (id, unit_id, company_name, source, status)
 values ('00000000-0000-4000-a000-000000000003', '00000000-0000-4000-a000-000000000002', 'Lead da Org B', 'manual', 'new');
 
+-- Dados do Recruiter (migration 8): vaga + candidato da Org B
+insert into job_openings (id, org_id, unit_id, lead_id, title)
+values ('00000000-0000-4000-a000-000000000004', '00000000-0000-4000-a000-000000000001', '00000000-0000-4000-a000-000000000002', '00000000-0000-4000-a000-000000000003', 'Vaga da Org B');
+
+insert into candidates (id, org_id, name, source)
+values ('00000000-0000-4000-a000-000000000005', '00000000-0000-4000-a000-000000000001', 'Candidato da Org B', 'manual');
+
 -- 2. Simula um usuário autenticado da Org B
 set local role authenticated;
 set local request.jwt.claims = '{"email": "cliente-b@teste.dev", "role": "authenticated"}';
@@ -58,6 +65,41 @@ begin
   end if;
 
   raise notice 'OK: isolamento multi-tenant funcionando — Org B só enxerga os próprios dados.';
+end $$;
+
+-- 3b. Verificações do Recruiter (job_openings / candidates)
+do $$
+declare
+  foreign_jobs int;
+  own_jobs int;
+  foreign_candidates int;
+  own_candidates int;
+begin
+  select count(*) into foreign_jobs
+  from job_openings where org_id <> '00000000-0000-4000-a000-000000000001';
+  if foreign_jobs <> 0 then
+    raise exception 'FALHA: usuário da Org B enxerga % vagas de outras orgs', foreign_jobs;
+  end if;
+
+  select count(*) into own_jobs
+  from job_openings where org_id = '00000000-0000-4000-a000-000000000001';
+  if own_jobs <> 1 then
+    raise exception 'FALHA: usuário da Org B deveria ver a própria vaga (viu %)', own_jobs;
+  end if;
+
+  select count(*) into foreign_candidates
+  from candidates where org_id <> '00000000-0000-4000-a000-000000000001';
+  if foreign_candidates <> 0 then
+    raise exception 'FALHA: usuário da Org B enxerga % candidatos de outras orgs', foreign_candidates;
+  end if;
+
+  select count(*) into own_candidates
+  from candidates where org_id = '00000000-0000-4000-a000-000000000001';
+  if own_candidates <> 1 then
+    raise exception 'FALHA: usuário da Org B deveria ver o próprio candidato (viu %)', own_candidates;
+  end if;
+
+  raise notice 'OK: isolamento do Recruiter funcionando — vagas e candidatos não vazam entre orgs.';
 end $$;
 
 -- 4. Limpa tudo (nada é persistido)

@@ -428,6 +428,34 @@ function LeadCard({
           </svg>
         </button>
       </div>
+
+      {/* Handoff Sales → Recruiter: lead convertido pode abrir vaga (§7.1) */}
+      {lead.status === 'won' && (
+        <div className="px-3 pb-2.5">
+          <button
+            onClick={async (e) => {
+              e.stopPropagation()
+              const title = window.prompt(`Abrir vaga para ${lead.company_name}.\n\nTítulo da vaga (ex.: Estágio em Marketing):`)
+              if (!title?.trim()) return
+              const response = await fetch('/api/jobs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ unit_id: lead.unit_id, lead_id: lead.id, title: title.trim(), source: 'manual' }),
+              })
+              const data = await response.json().catch(() => null)
+              if (response.ok && data?.job?.id) {
+                window.location.href = `/dashboard/recruiter/jobs/${data.job.id}`
+              } else {
+                window.alert(data?.error ?? 'Não foi possível criar a vaga.')
+              }
+            }}
+            className="w-full rounded-lg py-1.5 text-[11px] font-bold text-white transition-all hover:scale-[1.01]"
+            style={{ background: 'linear-gradient(135deg, #16a34a, #22c55e)' }}
+          >
+            💼 Abrir vaga (Recrutador IA)
+          </button>
+        </div>
+      )}
     </div>
   )
 }

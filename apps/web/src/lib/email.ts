@@ -87,6 +87,21 @@ export async function sendTechnicalAlertEmail(params: {
   })
 }
 
+/**
+ * E-mail genérico do Recruiter Employee (handoff, briefing de busca
+ * externa, escalações de processo). Mesmo Resend/from dos demais.
+ */
+export async function sendRecruiterEmail(params: {
+  to: string
+  subject: string
+  html: string
+}): Promise<SendResult> {
+  const from = defaultFrom()
+  if (!from) return { ok: false, error: 'EMAIL_FROM_DOMAIN não está configurada.' }
+
+  return sendEmail({ to: params.to, from, subject: params.subject, html: params.html })
+}
+
 export async function sendNewLeadEmail(params: {
   to: string
   unitName: string

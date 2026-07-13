@@ -24,9 +24,12 @@ const SECTOR_LABELS: Record<string, string> = {
 export function AgentConfigForm({
   unitId,
   initialConfig,
+  agentType = 'sdr',
 }: {
   unitId: string
   initialConfig: AgentConfig | null
+  /** 'sdr' (padrão) ou 'recruiter' — setores só se aplicam ao SDR */
+  agentType?: 'sdr' | 'recruiter'
 }) {
   const router = useRouter()
   const [personaName, setPersonaName] = useState(initialConfig?.persona_name ?? 'Assistente')
@@ -58,7 +61,7 @@ export function AgentConfigForm({
     const supabase = createClient()
     const payload = {
       unit_id: unitId,
-      agent_type: 'sdr',
+      agent_type: agentType,
       persona_name: personaName,
       persona_tone: tone,
       daily_limit: dailyLimit,
@@ -127,6 +130,7 @@ export function AgentConfigForm({
         </div>
       </div>
 
+      {agentType === 'sdr' && (
       <div className="flex flex-col gap-2">
         <span className="text-xs font-bold uppercase tracking-wide text-slate-400">Setores</span>
         <div className="grid grid-cols-2 gap-2">
@@ -143,6 +147,7 @@ export function AgentConfigForm({
           ))}
         </div>
       </div>
+      )}
 
       <label className="flex items-center gap-2 text-sm font-medium text-slate-300">
         <input

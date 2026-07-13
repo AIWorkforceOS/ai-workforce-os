@@ -2,8 +2,8 @@
 
 **Plataforma:** Alizo AI Workforce OS
 **Tipo:** Digital Employee (`agent_type = 'recruiter'`)
-**Status:** Especificação aprovada para desenvolvimento — nenhum código implementado ainda
-**Versão do documento:** 1.1 (revisada 2026-07-08)
+**Status:** V1 implementado (2026-07-13) — ver [`recruiter-employee-implementation.md`](./recruiter-employee-implementation.md) para o que é automático vs. assistido e o checklist de produção
+**Versão do documento:** 1.2 (revisada 2026-07-13)
 **Autor:** Arquitetura Alizo
 
 > **Nota de revisão (2026-07-08):** todas as referências técnicas deste documento foram
