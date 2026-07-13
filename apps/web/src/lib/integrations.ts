@@ -9,6 +9,8 @@ export type IntegrationKey =
   | 'resend'
   | 'intake'
   | 'cron'
+  | 'meta_ads'
+  | 'google_ads'
 
 export type IntegrationConfigStatus = {
   key: IntegrationKey
@@ -70,6 +72,20 @@ export function getIntegrationsConfigStatus(): IntegrationConfigStatus[] {
       label: 'Cron de follow-up',
       configured: has('CRON_SECRET'),
       detail: 'Protege /api/cron/follow-up (Vercel envia automaticamente quando CRON_SECRET está definido). Env: CRON_SECRET',
+      testable: false,
+    },
+    {
+      key: 'meta_ads',
+      label: 'Meta Ads (Traffic Specialist)',
+      configured: has('META_SYSTEM_USER_TOKEN'),
+      detail: 'Token global de system user do Meta Business (tokens por conta funcionam mesmo sem ele). Env: META_SYSTEM_USER_TOKEN — ver docs/setup/traffic-apis-setup.md',
+      testable: false,
+    },
+    {
+      key: 'google_ads',
+      label: 'Google Ads (Traffic Specialist)',
+      configured: has('GOOGLE_ADS_DEVELOPER_TOKEN') && has('GOOGLE_ADS_CLIENT_ID') && has('GOOGLE_ADS_CLIENT_SECRET'),
+      detail: 'Developer token + OAuth do Google Ads (refresh token por conta no painel). Env: GOOGLE_ADS_DEVELOPER_TOKEN + GOOGLE_ADS_CLIENT_ID + GOOGLE_ADS_CLIENT_SECRET (+ GOOGLE_ADS_LOGIN_CUSTOMER_ID p/ MCC) — ver docs/setup/traffic-apis-setup.md',
       testable: false,
     },
   ]

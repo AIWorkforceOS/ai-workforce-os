@@ -17,6 +17,7 @@ import {
   Rocket,
   Kanban,
   Bot,
+  Megaphone,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -43,6 +44,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     label: 'Operações',
     items: [
       { href: '/dashboard/agents', label: 'Agentes IA', icon: Bot },
+      { href: '/dashboard/traffic', label: 'Tráfego Pago', icon: Megaphone },
       { href: '/dashboard/crm', label: 'CRM Pipeline', icon: Kanban },
       { href: '/dashboard/leads', label: 'Leads (lista)', icon: UserCircle },
       { href: '/dashboard/conversations', label: 'Conversas', icon: MessageSquare },

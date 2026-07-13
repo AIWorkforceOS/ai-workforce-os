@@ -8,6 +8,9 @@ export type SystemEventSource =
   | 'resend'
   | 'cron'
   | 'system'
+  | 'meta_ads'
+  | 'google_ads'
+  | 'traffic'
 
 export type SystemEventInput = {
   level: SystemEventLevel
