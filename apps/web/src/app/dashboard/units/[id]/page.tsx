@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { getAppUser } from '@/lib/app-user'
 import { UnitSettingsForm } from '@/components/dashboard/unit-settings-form'
 import { WhatsAppConnection } from '@/components/dashboard/whatsapp-connection'
 import { CopyWhatsAppLink } from '@/components/dashboard/copy-whatsapp-link'
@@ -11,6 +12,8 @@ import { Badge, Card } from '@/components/ui/dashboard-ui'
 export default async function UnitDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
+  const appUser = await getAppUser()
+  const isSuperAdmin = appUser?.isSuperAdmin ?? false
 
   const [{ data: unit }, { data: summary }, { data: agentConfig }] = await Promise.all([
     supabase.from('units').select('*').eq('id', id).single(),
@@ -27,9 +30,9 @@ export default async function UnitDetailPage({ params }: { params: Promise<{ id:
   const agentConfigRow = agentConfig as AgentConfig | null
 
   const metrics = [
-    { label: 'Total de leads', value: summaryRow?.total_leads ?? 0 },
+    { label: 'Contatos (leads)', value: summaryRow?.total_leads ?? 0 },
     { label: 'Conversas', value: summaryRow?.total_conversations ?? 0 },
-    { label: 'Convertidos', value: summaryRow?.won_leads ?? 0 },
+    { label: 'Negócios fechados', value: summaryRow?.won_leads ?? 0 },
   ]
 
   return (
@@ -54,19 +57,37 @@ export default async function UnitDetailPage({ params }: { params: Promise<{ id:
         ))}
       </div>
 
-      <Card className="px-6 py-3 text-xs text-slate-400">
-        Slug: <span className="text-white">{unitRow.slug}</span>
-      </Card>
+      {/* WhatsApp primeiro: é a configuração que destrava o atendimento */}
+      <WhatsAppConnection unitId={unitRow.id} />
 
-      <UnitSettingsForm unit={unitRow} />
-
-      <div className="flex items-center justify-between">
-        <WhatsAppConnection unitId={unitRow.id} />
-      </div>
-      <Card className="flex items-center gap-2 px-6 py-3">
-        <span className="text-sm text-slate-400">Link para a unidade conectar o WhatsApp:</span>
+      <Card className="flex flex-wrap items-center gap-2 px-6 py-3">
+        <span className="text-sm text-slate-400">
+          Prefere que outra pessoa conecte o WhatsApp? Mande esse link pra ela:
+        </span>
         <CopyWhatsAppLink unitId={unitRow.id} />
       </Card>
+
+      <Card className="p-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-bold text-white">Funcionário digital (vendedor)</h2>
+            <p className="mt-1 text-sm text-slate-400">
+              {agentConfigRow
+                ? `${agentConfigRow.persona_name} atende por esta unidade — ajuste nome, jeito de falar e horários.`
+                : 'Monte o funcionário que vai atender os clientes desta unidade.'}
+            </p>
+          </div>
+          <Link
+            href={agentConfigRow ? `/dashboard/units/${unitRow.id}/agent` : '/dashboard/onboarding'}
+            className="rounded-xl px-4 py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
+            style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
+          >
+            {agentConfigRow ? 'Ajustar funcionário' : 'Configurar agora'}
+          </Link>
+        </div>
+      </Card>
+
+      <UnitSettingsForm unit={unitRow} showAdvanced={isSuperAdmin} />
 
       <ProspectingPanel
         unitId={unitRow.id}
@@ -75,23 +96,16 @@ export default async function UnitDetailPage({ params }: { params: Promise<{ id:
         availableSectors={agentConfigRow?.sectors ?? []}
       />
 
-      <Card className="p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-bold text-white">Agente SDR</h2>
-            <p className="mt-1 text-sm text-slate-400">
-              Configure a persona, horários e limites do agente desta unidade.
-            </p>
-          </div>
-          <Link
-            href={`/dashboard/units/${unitRow.id}/agent`}
-            className="rounded-xl px-4 py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
-            style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
-          >
-            Configurar agente
-          </Link>
-        </div>
-      </Card>
+      {isSuperAdmin && (
+        <Card className="px-6 py-3 text-xs text-slate-400">
+          Slug: <span className="text-white">{unitRow.slug}</span>
+          {unitRow.evolution_instance_name && (
+            <>
+              {' '}· Instância: <span className="text-white">{unitRow.evolution_instance_name}</span>
+            </>
+          )}
+        </Card>
+      )}
     </div>
   )
 }

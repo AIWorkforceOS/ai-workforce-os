@@ -19,8 +19,10 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
   const config = getEvolutionConfig(unit as Unit)
   if (!config) {
+    // Sem Evolution central (env) nem dedicada (unidade): situação de
+    // infra que o cliente não resolve sozinho — mensagem em linguagem leiga.
     return NextResponse.json(
-      { error: 'Configure EVOLUTION_API_URL e EVOLUTION_API_KEY no servidor, ou preencha os dados da Evolution API nesta unidade.' },
+      { error: 'O serviço de WhatsApp ainda não está habilitado pra sua conta. Fale com a gente em suporte@alizo.com.br que resolvemos rapidinho.' },
       { status: 400 },
     )
   }

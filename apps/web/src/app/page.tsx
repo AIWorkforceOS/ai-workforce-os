@@ -98,11 +98,7 @@ export default async function HomePage() {
         style={{ background: 'rgba(6,9,15,0.85)', backdropFilter: 'blur(16px)' }}>
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg"
-              style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)', boxShadow: '0 0 14px rgba(34,197,94,0.35)' }}>
-              <Bot size={15} className="text-white" />
-            </div>
-            <span className="font-black tracking-tight text-white">AI Workforce <span style={{ color: '#22c55e' }}>OS</span></span>
+            <img src="/branding/alizo-logo.png" alt="Alizo" className="h-8 w-auto" />
           </div>
           <div className="hidden items-center gap-6 md:flex">
             <a href="#como-funciona" className="text-sm text-zinc-400 transition-colors hover:text-white">Como funciona</a>
@@ -113,7 +109,7 @@ export default async function HomePage() {
           <Link
             href="#planos"
             className="rounded-xl px-4 py-2 text-sm font-bold text-white"
-            style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)', boxShadow: '0 4px 14px rgba(34,197,94,0.3)' }}
+            style={{ background: 'linear-gradient(135deg, #06b6d4, #4361ee)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
           >
             Começar agora
           </Link>
@@ -125,20 +121,20 @@ export default async function HomePage() {
         {/* bg glows */}
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute left-1/2 top-0 h-[600px] w-[900px] -translate-x-1/2 rounded-full opacity-20"
-            style={{ background: 'radial-gradient(ellipse, #22c55e 0%, transparent 70%)', filter: 'blur(80px)' }} />
+            style={{ background: 'radial-gradient(ellipse, #06b6d4 0%, transparent 70%)', filter: 'blur(80px)' }} />
           <div className="absolute -left-40 top-40 h-72 w-72 rounded-full opacity-10"
             style={{ background: 'radial-gradient(ellipse, #3b82f6 0%, transparent 70%)', filter: 'blur(60px)' }} />
         </div>
 
         <div className="relative mx-auto max-w-5xl px-6 text-center">
           {/* Eyebrow */}
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-green-500/30 px-4 py-1.5"
-            style={{ background: 'rgba(34,197,94,0.08)' }}>
+          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-cyan-500/30 px-4 py-1.5"
+            style={{ background: 'rgba(6,182,212,0.08)' }}>
             <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-60" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-green-400" />
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-400" />
             </span>
-            <span className="text-xs font-bold text-green-400">Sistema ao vivo · Mais de 1.200 conversas automatizadas hoje</span>
+            <span className="text-xs font-bold text-cyan-400">Sistema ao vivo · Mais de 1.200 conversas automatizadas hoje</span>
           </div>
 
           {/* Main headline — DOR → SOLUÇÃO */}
@@ -149,22 +145,22 @@ export default async function HomePage() {
             </span>
             {' '}todo dia<br />
             enquanto sua equipe<br />
-            <span style={{ background: 'linear-gradient(135deg, #4ade80, #22c55e)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+            <span style={{ background: 'linear-gradient(135deg, #22d3ee, #818cf8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
               faz tarefas manuais.
             </span>
           </h1>
 
           <p className="mx-auto mt-8 max-w-2xl text-lg leading-relaxed text-zinc-400">
-            O <strong className="text-white">AI Workforce OS</strong> coloca funcionários de IA trabalhando 24h/7 por você —
+            A <strong className="text-white">Alizo</strong> coloca funcionários digitais de IA trabalhando 24h/7 por você —
             atendendo, qualificando leads e fechando vendas enquanto você dorme.
-            <strong className="text-green-400"> Sem contratar. Sem folha de pagamento. Sem limite de escala.</strong>
+            <strong className="text-cyan-400"> Sem contratar. Sem folha de pagamento. Sem limite de escala.</strong>
           </p>
 
           <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
             <a
               href="#planos"
               className="flex items-center gap-2 rounded-2xl px-8 py-4 text-base font-black text-white transition-all hover:scale-105 active:scale-95"
-              style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)', boxShadow: '0 6px 30px rgba(34,197,94,0.4)' }}
+              style={{ background: 'linear-gradient(135deg, #06b6d4, #4361ee)', boxShadow: '0 6px 30px rgba(6,182,212,0.4)' }}
             >
               Quero meu funcionário IA agora
               <ArrowRight size={16} />
@@ -189,7 +185,7 @@ export default async function HomePage() {
               <div key={label} className="flex flex-col items-center px-4 py-6">
                 <p className="text-3xl font-black text-white">{value}</p>
                 <p className="mt-1 text-xs font-semibold text-zinc-300">{label}</p>
-                <p className="mt-0.5 text-[10px] text-green-400">{sub}</p>
+                <p className="mt-0.5 text-[10px] text-cyan-400">{sub}</p>
               </div>
             ))}
           </div>
@@ -234,7 +230,7 @@ export default async function HomePage() {
             </div>
             <p className="mt-8 text-lg font-bold text-white">
               A pergunta não é <em className="text-zinc-400">se</em> você vai automatizar.
-              É <span className="text-green-400">quando</span> — e se vai ser antes ou depois da concorrência.
+              É <span className="text-cyan-400">quando</span> — e se vai ser antes ou depois da concorrência.
             </p>
           </div>
         </div>
@@ -244,10 +240,10 @@ export default async function HomePage() {
       <section id="como-funciona" className="py-20">
         <div className="mx-auto max-w-5xl px-6">
           <div className="mb-14 text-center">
-            <p className="text-[11px] font-black uppercase tracking-[0.2em] text-green-400">Simples assim</p>
+            <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-400">Simples assim</p>
             <h2 className="mt-3 text-3xl font-black md:text-4xl">
               Em menos de 10 minutos seu funcionário<br />
-              <span style={{ color: '#22c55e' }}>IA já está trabalhando por você</span>
+              <span style={{ color: '#22d3ee' }}>IA já está trabalhando por você</span>
             </h2>
           </div>
 
@@ -269,7 +265,7 @@ export default async function HomePage() {
                 step: '03',
                 title: 'Configure o funcionário',
                 desc: 'Nosso wizard guiado configura tudo: nome do agente, script de vendas, tom de voz e WhatsApp.',
-                color: '#22c55e',
+                color: '#22d3ee',
               },
               {
                 step: '04',
@@ -298,7 +294,7 @@ export default async function HomePage() {
       <section className="py-20">
         <div className="mx-auto max-w-6xl px-6">
           <div className="mb-14 text-center">
-            <p className="text-[11px] font-black uppercase tracking-[0.2em] text-green-400">O que você recebe</p>
+            <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-400">O que você recebe</p>
             <h2 className="mt-3 text-3xl font-black md:text-4xl">
               Uma força de trabalho completa<br />que nunca cansa, nunca falta, nunca pede aumento
             </h2>
@@ -311,7 +307,7 @@ export default async function HomePage() {
                 title: 'Atendimento 24/7 no WhatsApp',
                 desc: 'Responde em segundos. Qualifica o lead. Agenda. Tira dúvidas. Tudo automaticamente enquanto você descansa.',
                 badge: 'Mais vendido',
-                color: '#22c55e',
+                color: '#22d3ee',
               },
               {
                 icon: TrendingUp,
@@ -353,7 +349,7 @@ export default async function HomePage() {
                 style={{ background: 'rgba(255,255,255,0.03)' }}>
                 {badge && (
                   <span className="absolute right-4 top-4 rounded-full px-2.5 py-0.5 text-[10px] font-black"
-                    style={{ background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}>
+                    style={{ background: 'rgba(6,182,212,0.15)', color: '#22d3ee' }}>
                     {badge}
                   </span>
                 )}
@@ -372,12 +368,12 @@ export default async function HomePage() {
       {/* ─── ROI SECTION ─── */}
       <section className="py-20">
         <div className="mx-auto max-w-5xl px-6">
-          <div className="overflow-hidden rounded-3xl border border-green-500/20"
-            style={{ background: 'linear-gradient(135deg, rgba(34,197,94,0.08) 0%, rgba(6,9,15,0.5) 100%)' }}>
+          <div className="overflow-hidden rounded-3xl border border-cyan-500/20"
+            style={{ background: 'linear-gradient(135deg, rgba(6,182,212,0.08) 0%, rgba(6,9,15,0.5) 100%)' }}>
             <div className="grid grid-cols-1 md:grid-cols-2">
               {/* Left */}
               <div className="border-b border-white/10 p-10 md:border-b-0 md:border-r">
-                <p className="text-[11px] font-black uppercase tracking-[0.2em] text-green-400">Sem o AI Workforce OS</p>
+                <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-400">Sem a Alizo</p>
                 <h3 className="mt-3 text-2xl font-black text-red-400">Você gasta R$8.400/mês</h3>
                 <ul className="mt-6 space-y-3">
                   {[
@@ -397,8 +393,8 @@ export default async function HomePage() {
               </div>
               {/* Right */}
               <div className="p-10">
-                <p className="text-[11px] font-black uppercase tracking-[0.2em] text-green-400">Com o AI Workforce OS</p>
-                <h3 className="mt-3 text-2xl font-black text-green-400">Você investe R$297/mês</h3>
+                <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-400">Com a Alizo</p>
+                <h3 className="mt-3 text-2xl font-black text-cyan-400">Você investe R$297/mês</h3>
                 <ul className="mt-6 space-y-3">
                   {[
                     'Funcionário IA ativo 24h por dia, 7 dias por semana',
@@ -409,13 +405,13 @@ export default async function HomePage() {
                     'ROI positivo no 1º mês garantido ou reembolso',
                   ].map(item => (
                     <li key={item} className="flex items-start gap-2.5 text-sm text-zinc-300">
-                      <Check size={14} className="mt-0.5 flex-shrink-0 text-green-400" />
+                      <Check size={14} className="mt-0.5 flex-shrink-0 text-cyan-400" />
                       {item}
                     </li>
                   ))}
                 </ul>
                 <a href="#planos" className="mt-8 flex items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-black text-white transition-all hover:scale-105"
-                  style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)', boxShadow: '0 6px 20px rgba(34,197,94,0.3)' }}>
+                  style={{ background: 'linear-gradient(135deg, #06b6d4, #4361ee)', boxShadow: '0 6px 20px rgba(6,182,212,0.3)' }}>
                   Quero economizar agora
                   <ArrowRight size={14} />
                 </a>
@@ -429,7 +425,7 @@ export default async function HomePage() {
       <section className="py-20">
         <div className="mx-auto max-w-6xl px-6">
           <div className="mb-14 text-center">
-            <p className="text-[11px] font-black uppercase tracking-[0.2em] text-green-400">Resultados reais</p>
+            <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-400">Resultados reais</p>
             <h2 className="mt-3 text-3xl font-black">O que nossos clientes estão falando</h2>
           </div>
 
@@ -444,7 +440,7 @@ export default async function HomePage() {
               {
                 name: 'Amanda S.',
                 role: 'CEO — Rede de Cursos Online (RJ)',
-                text: 'Reduzi minha equipe de atendimento de 4 para 1 pessoa. O AI Workforce cuida de tudo — qualificação, agendamento, follow-up. Meu custo caiu 60% e as vendas subiram.',
+                text: 'Reduzi minha equipe de atendimento de 4 para 1 pessoa. A Alizo cuida de tudo — qualificação, agendamento, follow-up. Meu custo caiu 60% e as vendas subiram.',
                 result: '−60% custo operacional',
               },
               {
@@ -466,7 +462,7 @@ export default async function HomePage() {
                   <p className="text-sm font-black text-white">{name}</p>
                   <p className="text-xs text-zinc-500">{role}</p>
                   <span className="mt-2 inline-block rounded-full px-2.5 py-0.5 text-[11px] font-black"
-                    style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>
+                    style={{ background: 'rgba(6,182,212,0.12)', color: '#22d3ee' }}>
                     {result}
                   </span>
                 </div>
@@ -480,7 +476,7 @@ export default async function HomePage() {
       <section id="planos" className="py-20">
         <div className="mx-auto max-w-6xl px-6">
           <div className="mb-14 text-center">
-            <p className="text-[11px] font-black uppercase tracking-[0.2em] text-green-400">Investimento</p>
+            <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-400">Investimento</p>
             <h2 className="mt-3 text-3xl font-black md:text-4xl">
               Escolha o plano para sua operação
             </h2>
@@ -502,7 +498,7 @@ export default async function HomePage() {
               { icon: Sparkles, text: 'Configuração feita por nós' },
             ].map(({ icon: Icon, text }) => (
               <div key={text} className="flex items-center gap-2">
-                <Icon size={14} className="text-green-400" />
+                <Icon size={14} className="text-cyan-400" />
                 <span className="text-xs text-zinc-400">{text}</span>
               </div>
             ))}
@@ -514,7 +510,7 @@ export default async function HomePage() {
       <section id="faq" className="py-20">
         <div className="mx-auto max-w-3xl px-6">
           <div className="mb-14 text-center">
-            <p className="text-[11px] font-black uppercase tracking-[0.2em] text-green-400">Perguntas frequentes</p>
+            <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-400">Perguntas frequentes</p>
             <h2 className="mt-3 text-3xl font-black">Tudo que você precisa saber</h2>
           </div>
 
@@ -562,14 +558,14 @@ export default async function HomePage() {
       <section className="py-20">
         <div className="mx-auto max-w-4xl px-6">
           <div className="overflow-hidden rounded-3xl text-center"
-            style={{ background: 'linear-gradient(135deg, rgba(34,197,94,0.15) 0%, rgba(6,9,15,1) 100%)', border: '1px solid rgba(34,197,94,0.25)' }}>
+            style={{ background: 'linear-gradient(135deg, rgba(6,182,212,0.15) 0%, rgba(6,9,15,1) 100%)', border: '1px solid rgba(6,182,212,0.25)' }}>
             <div className="relative p-12 md:p-16">
               <div className="pointer-events-none absolute inset-0">
                 <div className="absolute left-1/2 top-1/2 h-[400px] w-[600px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-30"
-                  style={{ background: 'radial-gradient(ellipse, #22c55e 0%, transparent 70%)', filter: 'blur(80px)' }} />
+                  style={{ background: 'radial-gradient(ellipse, #06b6d4 0%, transparent 70%)', filter: 'blur(80px)' }} />
               </div>
               <div className="relative">
-                <p className="text-[11px] font-black uppercase tracking-[0.2em] text-green-400">Última chance</p>
+                <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-400">Última chance</p>
                 <h2 className="mt-3 text-4xl font-black md:text-5xl">
                   Cada dia sem IA é<br />
                   <span className="text-red-400">dinheiro jogado fora.</span>
@@ -581,7 +577,7 @@ export default async function HomePage() {
                 <a
                   href="#planos"
                   className="mt-10 inline-flex items-center gap-2 rounded-2xl px-10 py-4 text-base font-black text-white transition-all hover:scale-105 active:scale-95"
-                  style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)', boxShadow: '0 8px 40px rgba(34,197,94,0.4)' }}
+                  style={{ background: 'linear-gradient(135deg, #06b6d4, #4361ee)', boxShadow: '0 8px 40px rgba(6,182,212,0.4)' }}
                 >
                   Quero começar agora — 7 dias de garantia
                   <ArrowRight size={16} />
@@ -601,10 +597,10 @@ export default async function HomePage() {
           <div className="flex flex-col items-center justify-between gap-6 md:flex-row">
             <div className="flex items-center gap-2.5">
               <div className="flex h-7 w-7 items-center justify-center rounded-lg"
-                style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>
+                style={{ background: 'linear-gradient(135deg, #06b6d4, #4361ee)' }}>
                 <Bot size={13} className="text-white" />
               </div>
-              <span className="font-black text-white text-sm">AI Workforce <span style={{ color: '#22c55e' }}>OS</span></span>
+              <span className="font-black text-white text-sm">alizo</span>
             </div>
             <div className="flex items-center gap-6 text-xs text-zinc-500">
               <a href="#como-funciona" className="hover:text-white transition-colors">Como funciona</a>
@@ -612,7 +608,7 @@ export default async function HomePage() {
               <a href="#faq" className="hover:text-white transition-colors">FAQ</a>
               <Link href="/login" className="hover:text-white transition-colors">Entrar</Link>
             </div>
-            <p className="text-xs text-zinc-600">© 2026 AI Workforce OS · Todos os direitos reservados</p>
+            <p className="text-xs text-zinc-600">© 2026 Alizo · AI Workforce OS · Todos os direitos reservados</p>
           </div>
         </div>
       </footer>
@@ -633,19 +629,19 @@ function PlanCard({
       featured ? '' : 'border border-white/10'
     }`}
       style={featured ? {
-        border: '1px solid rgba(34,197,94,0.4)',
-        background: 'linear-gradient(160deg, rgba(34,197,94,0.1) 0%, rgba(6,9,15,0.9) 100%)',
-        boxShadow: '0 0 60px rgba(34,197,94,0.15)',
+        border: '1px solid rgba(6,182,212,0.4)',
+        background: 'linear-gradient(160deg, rgba(6,182,212,0.1) 0%, rgba(6,9,15,0.9) 100%)',
+        boxShadow: '0 0 60px rgba(6,182,212,0.15)',
       } : { background: 'rgba(255,255,255,0.03)' }}>
 
       {featured && (
         <div className="absolute inset-x-0 top-0 h-[2px]"
-          style={{ background: 'linear-gradient(90deg, #22c55e, #4ade80)' }} />
+          style={{ background: 'linear-gradient(90deg, #06b6d4, #4361ee)' }} />
       )}
 
       {featured && (
         <div className="absolute right-5 top-5 rounded-full px-3 py-1 text-[10px] font-black"
-          style={{ background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}>
+          style={{ background: 'rgba(6,182,212,0.15)', color: '#22d3ee' }}>
           ⚡ Mais popular
         </div>
       )}
@@ -674,8 +670,8 @@ function PlanCard({
             featured ? '' : 'border border-white/15 hover:border-white/30 hover:bg-white/5'
           }`}
           style={featured ? {
-            background: 'linear-gradient(135deg, #22c55e, #16a34a)',
-            boxShadow: '0 6px 20px rgba(34,197,94,0.3)',
+            background: 'linear-gradient(135deg, #06b6d4, #4361ee)',
+            boxShadow: '0 6px 20px rgba(6,182,212,0.3)',
           } : {}}
         >
           Começar com {name}
@@ -685,7 +681,7 @@ function PlanCard({
         <ul className="space-y-2.5">
           {features.map((f) => (
             <li key={f} className="flex items-start gap-2.5 text-sm text-zinc-300">
-              <Check size={13} className="mt-0.5 flex-shrink-0 text-green-400" />
+              <Check size={13} className="mt-0.5 flex-shrink-0 text-cyan-400" />
               {f}
             </li>
           ))}
@@ -717,7 +713,7 @@ function SalesChatWidget() {
           id="chat-bubble"
           style={{
             background: 'rgba(6,9,15,0.95)',
-            border: '1px solid rgba(34,197,94,0.3)',
+            border: '1px solid rgba(6,182,212,0.3)',
             borderRadius: '16px',
             padding: '12px 16px',
             maxWidth: '240px',
@@ -727,7 +723,7 @@ function SalesChatWidget() {
           }}
         >
           <p style={{ margin: 0, fontSize: '13px', color: '#d1fae5', fontWeight: 700 }}>
-            Olá! Sou o <span style={{ color: '#22c55e' }}>Kai</span>, seu consultor IA 👋
+            Olá! Sou o <span style={{ color: '#22d3ee' }}>Kai</span>, seu consultor IA 👋
           </p>
           <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#71717a' }}>
             Tire suas dúvidas antes de assinar!
@@ -746,8 +742,8 @@ function SalesChatWidget() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            background: 'linear-gradient(135deg, #22c55e, #16a34a)',
-            boxShadow: '0 8px 24px rgba(34,197,94,0.4)',
+            background: 'linear-gradient(135deg, #06b6d4, #4361ee)',
+            boxShadow: '0 8px 24px rgba(6,182,212,0.4)',
             transition: 'transform 0.2s',
           }}
           aria-label="Falar com consultor IA"

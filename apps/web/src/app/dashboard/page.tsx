@@ -1,21 +1,27 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { getAppUser } from '@/lib/app-user'
+import { computeSetupStatus } from '@/lib/setup-status'
 import { LeadsByDayChart } from '@/components/dashboard/leads-by-day-chart'
 import { IntegrationsStatusCard } from '@/components/dashboard/integrations-status'
+import { Badge, Card, PrimaryButton } from '@/components/ui/dashboard-ui'
 import {
-  Building2,
-  MapPin,
-  Users,
-  TrendingUp,
-  MessageSquare,
-  Wallet,
-  AlertCircle,
+  ArrowRight,
   ArrowUpRight,
+  Bot,
+  Briefcase,
+  Building2,
+  Check,
   CheckCircle2,
+  Megaphone,
+  MessageSquare,
+  Rocket,
+  Users,
   WifiOff,
 } from 'lucide-react'
-import type { DashboardSummaryRow, Unit, Organization } from '@/lib/types'
+import type { AgentConfig, DashboardSummaryRow, Organization, Unit } from '@/lib/types'
+
+export const dynamic = 'force-dynamic'
 
 function startOfDay(date: Date) {
   const copy = new Date(date)
@@ -37,57 +43,53 @@ function greeting(now: Date): string {
 }
 
 export default async function DashboardPage() {
-  const supabase = await createClient()
   const appUser = await getAppUser()
-  const isSuperAdmin = appUser?.isSuperAdmin ?? false
-  const firstName = (appUser?.name ?? appUser?.email ?? 'você').split(/[\s@]/)[0]
+  if (appUser?.isSuperAdmin) {
+    return <AdminHome firstName={(appUser.name ?? appUser.email).split(/[\s@]/)[0] ?? 'time'} />
+  }
+  return <ClientHome firstName={(appUser?.name ?? appUser?.email ?? 'você').split(/[\s@]/)[0] ?? 'você'} />
+}
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Visão da EMPRESA CLIENTE — linguagem de dono de negócio, foco em
+// "o que está acontecendo" e "o que fazer agora".
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function ClientHome({ firstName }: { firstName: string }) {
+  const supabase = await createClient()
   const now = new Date()
   const since24h = new Date(now.getTime() - 24 * 60 * 60 * 1000)
   const todayStart = startOfDay(now)
   const sevenDaysAgo = startOfDay(new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000))
 
   const [
-    { data: organizations },
     { data: units },
-    { data: summary },
+    { data: agentConfigs },
     { count: totalLeads },
     { count: newLeads24h },
     { count: wonLeads },
     { count: conversationsToday },
     { data: recentLeads },
-    { data: financialRecords },
-    { data: employees },
+    { count: openJobs },
+    { count: adAccounts },
   ] = await Promise.all([
-    supabase.from('organizations').select('*').order('created_at', { ascending: false }),
-    supabase.from('units').select('*').order('created_at', { ascending: false }),
-    supabase.from('dashboard_summary').select('*'),
+    supabase.from('units').select('*').order('created_at', { ascending: true }),
+    supabase.from('agent_configs').select('*'),
     supabase.from('leads').select('id', { count: 'exact', head: true }),
     supabase.from('leads').select('id', { count: 'exact', head: true }).gte('created_at', since24h.toISOString()),
     supabase.from('leads').select('id', { count: 'exact', head: true }).eq('status', 'won'),
     supabase.from('conversations').select('id', { count: 'exact', head: true }).gte('sent_at', todayStart.toISOString()),
     supabase.from('leads').select('created_at').gte('created_at', sevenDaysAgo.toISOString()),
-    supabase.from('financial_records').select('*').order('created_at', { ascending: false }).limit(20),
-    supabase.from('employees').select('id'),
+    supabase.from('job_openings').select('id', { count: 'exact', head: true }),
+    supabase.from('ad_accounts').select('id', { count: 'exact', head: true }),
   ])
 
   const unitRows = (units ?? []) as Unit[]
-  const orgRows = (organizations ?? []) as Organization[]
-  const summaryRows = (summary ?? []) as DashboardSummaryRow[]
-  const leadsByUnit = new Map(summaryRows.map((row) => [row.unit_id, row]))
+  const configRows = (agentConfigs ?? []) as AgentConfig[]
+  const setup = computeSetupStatus(unitRows, configRows)
+  const unitsWithoutWhatsApp = unitRows.filter((u) => u.is_active && !u.whatsapp_phone)
 
-  const activeUnits = unitRows.filter((u) => u.is_active)
-  const activeOrgs = orgRows.filter((o) => o.is_active)
-  const unitsWithoutWhatsApp = activeUnits.filter((u) => !u.whatsapp_phone)
-
-  const financialRows = (financialRecords ?? []) as Array<{
-    id: string; type: string; amount: number; status: string; description: string; due_date: string | null
-  }>
-  const totalReceivable = financialRows.filter(r => r.type === 'receivable' && r.status === 'pending').reduce((s, r) => s + Number(r.amount), 0)
-  const totalPayable = financialRows.filter(r => r.type === 'payable' && r.status === 'pending').reduce((s, r) => s + Number(r.amount), 0)
-  const systemCostRows = financialRows.filter(r => r.type === 'payable')
-  const totalSystemCost = systemCostRows.reduce((s, r) => s + Number(r.amount), 0)
-
+  // Leads por dia (7 dias)
   const dayBuckets = new Map<string, number>()
   for (let i = 0; i < 7; i += 1) {
     const day = new Date(sevenDaysAgo.getTime() + i * 24 * 60 * 60 * 1000)
@@ -99,417 +101,410 @@ export default async function DashboardPage() {
   }
   const leadsByDay = Array.from(dayBuckets.entries()).map(([date, count]) => ({ date, count }))
 
-  const monthName = now.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+  const sdrConfig = configRows.find((c) => c.agent_type === 'sdr')
+  const whatsappConnected = unitRows.some((u) => u.whatsapp_phone)
+  const sdrActive = !!sdrConfig?.is_active && whatsappConnected
+  const sdrStateLabel = sdrActive
+    ? 'Trabalhando'
+    : sdrConfig?.is_active
+      ? 'Falta conectar o WhatsApp'
+      : sdrConfig
+        ? 'Configurado — falta ligar'
+        : 'Não configurado'
 
-  // KPI cards config — card de Empresas só para a equipe Alizo
-  const kpiCards = [
-    ...(isSuperAdmin
-      ? [
-          {
-            label: 'Empresas',
-            value: orgRows.length,
-            sub: `${activeOrgs.length} ativas`,
-            icon: Building2,
-            href: '/dashboard/organizations',
-            gradient: 'from-blue-500 to-indigo-600',
-            iconGrad: 'from-blue-400 to-indigo-500',
-            topBar: 'from-blue-400 to-indigo-500',
-          },
-        ]
-      : []),
-    {
-      label: 'Unidades',
-      value: unitRows.length,
-      sub: `${activeUnits.length} ativas`,
-      icon: MapPin,
-      href: '/dashboard/units',
-      gradient: 'from-violet-500 to-purple-600',
-      iconGrad: 'from-violet-400 to-purple-500',
-      topBar: 'from-violet-400 to-purple-500',
-    },
-    {
-      label: 'Funcionários',
-      value: (employees ?? []).length,
-      sub: 'cadastrados',
-      icon: Users,
-      href: '/dashboard/employees',
-      gradient: 'from-orange-400 to-red-500',
-      iconGrad: 'from-orange-400 to-red-400',
-      topBar: 'from-orange-400 to-red-400',
-    },
-    {
-      label: 'Leads',
-      value: totalLeads ?? 0,
-      sub: `+${newLeads24h ?? 0} nas últimas 24h`,
-      icon: ArrowUpRight,
-      href: '/dashboard/leads',
-      gradient: 'from-emerald-400 to-green-600',
-      iconGrad: 'from-emerald-400 to-green-500',
-      topBar: 'from-emerald-400 to-green-500',
-    },
-    {
-      label: 'Fechamentos',
-      value: wonLeads ?? 0,
-      sub: 'contratos fechados',
-      icon: CheckCircle2,
-      href: '/dashboard/results',
-      gradient: 'from-green-500 to-teal-600',
-      iconGrad: 'from-green-500 to-teal-500',
-      topBar: 'from-green-500 to-teal-500',
-    },
-    {
-      label: 'Conversas hoje',
-      value: conversationsToday ?? 0,
-      sub: 'mensagens enviadas',
-      icon: MessageSquare,
-      href: '/dashboard/conversations',
-      gradient: 'from-sky-400 to-blue-500',
-      iconGrad: 'from-sky-400 to-blue-400',
-      topBar: 'from-sky-400 to-blue-400',
-    },
+  const kpis = [
+    { label: 'Novos contatos (24h)', value: newLeads24h ?? 0, sub: 'pessoas que chegaram até você', icon: ArrowUpRight, href: '/dashboard/leads', grad: 'from-emerald-400 to-green-500' },
+    { label: 'Conversas hoje', value: conversationsToday ?? 0, sub: 'mensagens trocadas', icon: MessageSquare, href: '/dashboard/conversations', grad: 'from-sky-400 to-blue-400' },
+    { label: 'Negócios fechados', value: wonLeads ?? 0, sub: 'desde o início', icon: CheckCircle2, href: '/dashboard/crm', grad: 'from-green-500 to-teal-500' },
+    { label: 'Contatos no total', value: totalLeads ?? 0, sub: 'na sua base', icon: Users, href: '/dashboard/leads', grad: 'from-violet-400 to-purple-500' },
   ]
-
-  // Supress unused var warning
-  void leadsByUnit
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Page header */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">Visão geral</p>
           <h1 className="mt-0.5 text-2xl font-black tracking-tight text-white">{greeting(now)}, {firstName}! 👋</h1>
-          <p className="mt-0.5 text-sm capitalize" style={{ color: 'rgba(148,163,184,0.7)' }}>Seu workforce de IA está trabalhando — {monthName}</p>
+          <p className="mt-0.5 text-sm" style={{ color: 'rgba(148,163,184,0.7)' }}>
+            {setup.complete
+              ? 'Seu funcionário digital está trabalhando por você.'
+              : 'Falta pouco pra colocar seu funcionário digital pra trabalhar.'}
+          </p>
         </div>
-        {isSuperAdmin ? (
-          <Link
-            href="/dashboard/organizations/new"
-            className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
-            style={{
-              background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)',
-              boxShadow: '0 4px 14px rgba(6,182,212,0.3)',
-            }}
-          >
-            <Building2 size={14} />
-            Nova empresa
-          </Link>
-        ) : (
-          <Link
-            href="/dashboard/units/new"
-            className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
-            style={{
-              background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)',
-              boxShadow: '0 4px 14px rgba(6,182,212,0.3)',
-            }}
-          >
-            <MapPin size={14} />
-            Nova unidade
-          </Link>
-        )}
       </div>
 
-      {/* KPI Cards — next-gen */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        {kpiCards.map(({ label, value, sub, icon: Icon, href, topBar, iconGrad }) => (
+      {/* Próxima ação — só aparece enquanto o setup não terminou */}
+      {!setup.complete && setup.nextAction && (
+        <div
+          className="overflow-hidden rounded-2xl"
+          style={{
+            background: 'linear-gradient(135deg, rgba(6,182,212,0.12) 0%, rgba(67,97,238,0.08) 100%)',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(6,182,212,0.25)',
+          }}
+        >
+          <div className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl" style={{ background: 'linear-gradient(135deg, #06b6d4, #4361ee)', boxShadow: '0 4px 14px rgba(6,182,212,0.35)' }}>
+                <Rocket size={20} className="text-white" />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-cyan-300">o que fazer agora</p>
+                <h2 className="mt-0.5 text-lg font-black text-white">{setup.nextAction.label}</h2>
+                <p className="mt-0.5 text-sm text-slate-300">{setup.nextAction.description}</p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {setup.steps.map((s) => (
+                    <span
+                      key={s.id}
+                      className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold"
+                      style={s.done ? { background: 'rgba(34,197,94,0.15)', color: '#4ade80' } : { background: 'rgba(255,255,255,0.06)', color: '#94a3b8' }}
+                    >
+                      {s.done && <Check size={10} />}
+                      {s.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <Link
+              href={setup.nextAction.href}
+              className="flex flex-shrink-0 items-center gap-2 rounded-xl px-6 py-3 text-sm font-black text-white transition-all hover:scale-[1.02]"
+              style={{ background: 'linear-gradient(135deg, #06b6d4, #4361ee)', boxShadow: '0 4px 14px rgba(6,182,212,0.35)' }}
+            >
+              Continuar configuração
+              <ArrowRight size={14} />
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* KPIs — linguagem de dono de negócio */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {kpis.map(({ label, value, sub, icon: Icon, href, grad }) => (
           <Link
             key={label}
             href={href}
             className="group relative overflow-hidden rounded-2xl transition-all duration-200 hover:-translate-y-0.5"
-            style={{
-              background: '#141a2b',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)',
-            }}
+            style={{ background: '#141a2b', boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}
           >
-            {/* Gradient top accent */}
-            <div className={`absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r ${topBar}`} />
-
+            <div className={`absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r ${grad}`} />
             <div className="p-4 pt-5">
-              {/* Icon */}
-              <div
-                className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br ${iconGrad}`}
-                style={{ boxShadow: '0 4px 10px rgba(0,0,0,0.3)' }}
-              >
+              <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br ${grad}`} style={{ boxShadow: '0 4px 10px rgba(0,0,0,0.3)' }}>
                 <Icon size={16} className="text-white" />
               </div>
-
-              {/* Value */}
-              <p className="mt-3 text-[30px] font-black leading-none tracking-tight text-white">
-                {value}
-              </p>
-              <p className="mt-1.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-400">
-                {label}
-              </p>
+              <p className="mt-3 text-[30px] font-black leading-none tracking-tight text-white">{value}</p>
+              <p className="mt-1.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-400">{label}</p>
               <p className="mt-0.5 text-[11px] text-slate-500">{sub}</p>
             </div>
           </Link>
         ))}
       </div>
 
-      {/* Financial + WhatsApp status */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        {/* Financial summary */}
-        <div
-          className="col-span-1 rounded-2xl p-5"
-          style={{ background: '#141a2b', boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}
-        >
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-500">módulo</p>
-              <h2 className="text-sm font-bold text-white">Financeiro</h2>
-            </div>
-            <Link href="/dashboard/financial" className="rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors" style={{ color: '#06b6d4' }}>
-              Ver tudo →
-            </Link>
-          </div>
-
-          <div className="space-y-2.5">
-            {/* A receber */}
-            <div
-              className="flex items-center justify-between rounded-xl p-3.5"
-              style={{ background: 'linear-gradient(135deg, rgba(34,197,94,0.08) 0%, rgba(16,185,129,0.05) 100%)', border: '1px solid rgba(34,197,94,0.15)' }}
-            >
-              <div>
-                <p className="text-[9px] font-black uppercase tracking-widest text-green-600">A receber</p>
-                <p className="mt-0.5 text-xl font-black text-green-800">
-                  {totalReceivable > 0 ? `R$ ${totalReceivable.toLocaleString('pt-BR')}` : '—'}
-                </p>
-              </div>
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl" style={{ background: 'linear-gradient(135deg, #22c55e, #059669)', boxShadow: '0 4px 10px rgba(34,197,94,0.25)' }}>
-                <Wallet size={14} className="text-white" />
-              </div>
-            </div>
-
-            {/* A pagar */}
-            <div
-              className="flex items-center justify-between rounded-xl p-3.5"
-              style={{ background: 'linear-gradient(135deg, rgba(239,68,68,0.07) 0%, rgba(220,38,38,0.04) 100%)', border: '1px solid rgba(239,68,68,0.12)' }}
-            >
-              <div>
-                <p className="text-[9px] font-black uppercase tracking-widest text-red-500">A pagar</p>
-                <p className="mt-0.5 text-xl font-black text-red-800">
-                  {totalPayable > 0 ? `R$ ${totalPayable.toLocaleString('pt-BR')}` : '—'}
-                </p>
-              </div>
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl" style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)', boxShadow: '0 4px 10px rgba(239,68,68,0.2)' }}>
-                <TrendingUp size={14} className="text-white" />
-              </div>
-            </div>
-
-            {/* Custo sistema — visão interna Alizo */}
-            {isSuperAdmin && (
-              <div
-                className="flex items-center justify-between rounded-xl p-3.5"
-                style={{ background: 'rgba(248,250,252,0.8)', border: '1px solid rgba(226,232,240,0.8)' }}
-              >
-                <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Custo sistema</p>
-                  <p className="mt-0.5 text-xl font-black text-slate-700">
-                    {totalSystemCost > 0 ? `R$ ${totalSystemCost.toLocaleString('pt-BR')}` : '—'}
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {financialRows.length === 0 && (
-            <div className="mt-3 rounded-xl px-4 py-3 text-center" style={{ border: '1px dashed rgba(255,255,255,0.1)' }}>
-              <p className="text-xs text-slate-500">Nenhum registro financeiro ainda.</p>
-              <Link href="/dashboard/financial/new" className="mt-1 block text-xs font-semibold hover:underline" style={{ color: '#06b6d4' }}>
-                Adicionar cobrança
-              </Link>
-            </div>
-          )}
-        </div>
-
-        {/* WhatsApp status */}
-        <div
-          className="col-span-1 rounded-2xl p-5 lg:col-span-2"
-          style={{ background: '#141a2b', boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}
-        >
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-500">integração</p>
-              <h2 className="text-sm font-bold text-white">Status WhatsApp por unidade</h2>
-            </div>
-            <Link href="/dashboard/units" className="rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors" style={{ color: '#06b6d4' }}>
-              Ver todas →
-            </Link>
-          </div>
-
-          {unitRows.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 py-10 text-center">
-              <p className="text-sm text-slate-500">Nenhuma unidade cadastrada.</p>
-              <Link href="/dashboard/units/new" className="text-sm font-semibold hover:underline" style={{ color: '#06b6d4' }}>Criar primeira unidade</Link>
-            </div>
-          ) : (
-            <div style={{ borderColor: 'rgba(255,255,255,0.05)' }} className="divide-y">
-              {unitRows.slice(0, 6).map((unit) => (
-                <div key={unit.id} className="flex items-center justify-between py-2.5">
-                  <div>
-                    <Link
-                      href={`/dashboard/units/${unit.id}`}
-                      className="text-sm font-semibold text-white transition-colors hover:text-cyan-400"
-                    >
-                      {unit.name}
-                    </Link>
-                    <p className="text-[11px] text-slate-500">
-                      {unit.region_city ?? '—'}
-                      {unit.region_state ? `, ${unit.region_state}` : ''}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {unit.whatsapp_phone ? (
-                      <span
-                        className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold"
-                        style={{ background: 'rgba(34,197,94,0.12)', color: '#4ade80' }}
-                      >
-                        <CheckCircle2 size={10} />
-                        {unit.whatsapp_phone}
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium text-slate-500" style={{ background: 'rgba(255,255,255,0.05)' }}>
-                        <WifiOff size={10} />
-                        Sem conexão
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-              {unitRows.length > 6 && (
-                <p className="pt-2.5 text-center text-xs text-slate-500">
-                  +{unitRows.length - 6} outras unidades
-                </p>
-              )}
-            </div>
-          )}
+      {/* Funcionários digitais — estado de cada um */}
+      <div>
+        <p className="mb-3 text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">Seus funcionários digitais</p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <EmployeeCard
+            icon={Bot}
+            name={sdrConfig?.persona_name ? `${sdrConfig.persona_name} · Vendedor` : 'Vendedor (SDR)'}
+            desc="Atende seus clientes no WhatsApp, responde dúvidas e agenda conversas."
+            state={sdrActive ? 'active' : sdrConfig ? 'partial' : 'off'}
+            stateLabel={sdrStateLabel}
+            href={sdrActive ? '/dashboard/agents' : '/dashboard/onboarding'}
+            cta={sdrActive ? 'Ver detalhes' : 'Configurar'}
+          />
+          <EmployeeCard
+            icon={Briefcase}
+            name="Recrutador (RH)"
+            desc="Divulga vagas, faz triagem de candidatos e entrega os melhores pra você."
+            state={(openJobs ?? 0) > 0 ? 'active' : 'off'}
+            stateLabel={(openJobs ?? 0) > 0 ? `${openJobs} vaga(s) em andamento` : 'Nenhuma vaga aberta'}
+            href="/dashboard/recruiter"
+            cta={(openJobs ?? 0) > 0 ? 'Acompanhar vagas' : 'Abrir primeira vaga'}
+          />
+          <EmployeeCard
+            icon={Megaphone}
+            name="Tráfego pago"
+            desc="Cuida dos seus anúncios no Instagram/Facebook e Google, otimizando o investimento."
+            state={(adAccounts ?? 0) > 0 ? 'active' : 'off'}
+            stateLabel={(adAccounts ?? 0) > 0 ? `${adAccounts} conta(s) de anúncio` : 'Contas não conectadas'}
+            href="/dashboard/traffic"
+            cta={(adAccounts ?? 0) > 0 ? 'Ver desempenho' : 'Saber mais'}
+          />
         </div>
       </div>
 
-      {/* Chart + Alerts */}
+      {/* Gráfico + WhatsApp */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div
-          className="col-span-2 rounded-2xl p-5"
-          style={{ background: '#141a2b', boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}
-        >
+        <div className="col-span-2 rounded-2xl p-5" style={{ background: '#141a2b', boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}>
           <div className="mb-4">
             <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-500">tendência</p>
-            <h2 className="text-sm font-bold text-white">Leads por dia — últimos 7 dias</h2>
+            <h2 className="text-sm font-bold text-white">Novos contatos por dia — últimos 7 dias</h2>
           </div>
           <LeadsByDayChart counts={leadsByDay} />
         </div>
 
-        {/* Alerts */}
-        <div
-          className="rounded-2xl p-5"
-          style={{ background: '#141a2b', boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}
-        >
-          <div className="mb-4">
-            <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-500">sistema</p>
-            <h2 className="text-sm font-bold text-white">Alertas</h2>
+        <div className="rounded-2xl p-5" style={{ background: '#141a2b', boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}>
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-500">conexão</p>
+              <h2 className="text-sm font-bold text-white">WhatsApp</h2>
+            </div>
+            <Link href="/dashboard/units" className="rounded-lg px-2.5 py-1 text-[11px] font-semibold" style={{ color: '#06b6d4' }}>
+              Ver tudo →
+            </Link>
           </div>
           <div className="space-y-2.5">
+            {unitRows.slice(0, 4).map((unit) => (
+              <div key={unit.id} className="flex items-center justify-between rounded-xl px-3 py-2.5" style={{ background: 'rgba(255,255,255,0.03)' }}>
+                <div className="min-w-0">
+                  <Link href={`/dashboard/units/${unit.id}`} className="block truncate text-sm font-semibold text-white hover:text-cyan-400">
+                    {unit.name}
+                  </Link>
+                </div>
+                {unit.whatsapp_phone ? (
+                  <span className="flex flex-shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold" style={{ background: 'rgba(34,197,94,0.12)', color: '#4ade80' }}>
+                    <CheckCircle2 size={10} /> Conectado
+                  </span>
+                ) : (
+                  <Link href="/dashboard/onboarding" className="flex flex-shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold" style={{ background: 'rgba(245,158,11,0.12)', color: '#fbbf24' }}>
+                    <WifiOff size={10} /> Conectar
+                  </Link>
+                )}
+              </div>
+            ))}
+            {unitRows.length === 0 && (
+              <p className="py-6 text-center text-xs text-slate-500">Nenhuma unidade ainda.</p>
+            )}
             {unitsWithoutWhatsApp.length > 0 && (
-              <div className="flex gap-3 rounded-xl p-3" style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}>
-                <AlertCircle size={15} className="mt-0.5 flex-shrink-0 text-amber-500" />
-                <div>
-                  <p className="text-xs font-bold text-amber-800">
-                    {unitsWithoutWhatsApp.length} unidade{unitsWithoutWhatsApp.length > 1 ? 's' : ''} sem WhatsApp
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-amber-700">
-                    {unitsWithoutWhatsApp.slice(0, 2).map(u => u.name).join(', ')}
-                    {unitsWithoutWhatsApp.length > 2 ? '...' : ''}
-                  </p>
-                  <Link href="/dashboard/units" className="mt-1 block text-[11px] font-semibold text-amber-700 underline">Conectar agora</Link>
-                </div>
-              </div>
-            )}
-            {orgRows.length === 0 && (
-              <div className="flex gap-3 rounded-xl p-3" style={{ background: 'rgba(59,130,246,0.07)', border: '1px solid rgba(59,130,246,0.15)' }}>
-                <AlertCircle size={15} className="mt-0.5 flex-shrink-0 text-blue-500" />
-                <div>
-                  <p className="text-xs font-bold text-blue-800">Nenhuma empresa cadastrada</p>
-                  <Link href="/dashboard/organizations/new" className="mt-1 block text-[11px] font-semibold text-blue-700 underline">Cadastrar empresa</Link>
-                </div>
-              </div>
-            )}
-            {(employees ?? []).length === 0 && unitRows.length > 0 && (
-              <div className="flex gap-3 rounded-xl p-3" style={{ background: 'rgba(249,115,22,0.07)', border: '1px solid rgba(249,115,22,0.15)' }}>
-                <AlertCircle size={15} className="mt-0.5 flex-shrink-0 text-orange-500" />
-                <div>
-                  <p className="text-xs font-bold text-orange-800">Nenhum funcionário cadastrado</p>
-                  <Link href="/dashboard/employees/new" className="mt-1 block text-[11px] font-semibold text-orange-700 underline">Adicionar funcionário</Link>
-                </div>
-              </div>
-            )}
-            {unitsWithoutWhatsApp.length === 0 && orgRows.length > 0 && (employees ?? []).length > 0 && (
-              <div className="flex gap-3 rounded-xl p-3" style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.2)' }}>
-                <CheckCircle2 size={15} className="mt-0.5 flex-shrink-0 text-cyan-400" />
-                <p className="text-xs font-bold text-cyan-300">Tudo configurado e funcionando!</p>
-              </div>
+              <p className="text-[11px] text-slate-500">
+                Sem WhatsApp conectado o funcionário digital não consegue atender.
+              </p>
             )}
           </div>
         </div>
       </div>
 
-      {/* Saúde das integrações */}
-      <IntegrationsStatusCard isSuperAdmin={isSuperAdmin} />
+      {/* Saúde das integrações (com linguagem simples no componente) */}
+      <IntegrationsStatusCard isSuperAdmin={false} />
+    </div>
+  )
+}
 
-      {/* Recent companies — visão interna Alizo */}
-      {isSuperAdmin && orgRows.length > 0 && (
-        <div
-          className="overflow-hidden rounded-2xl"
-          style={{ background: '#141a2b', boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}
-        >
-          <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            <div>
-              <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-500">cadastros</p>
-              <h2 className="text-sm font-bold text-white">Empresas recentes</h2>
-            </div>
-            <Link href="/dashboard/organizations" className="rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors" style={{ color: '#06b6d4' }}>
-              Ver todas →
-            </Link>
-          </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">Empresa</th>
-                <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">Plano</th>
-                <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">Unidades</th>
-                <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orgRows.slice(0, 5).map((org) => {
-                const unitCount = unitRows.filter(u => u.org_id === org.id).length
-                return (
-                  <tr key={org.id} className="last:border-0 transition-colors hover:bg-white/[0.03]" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                    <td className="px-5 py-3.5">
-                      <Link href="/dashboard/organizations" className="font-semibold text-white transition-colors hover:text-cyan-400">
-                        {org.name}
-                      </Link>
-                      <p className="text-[11px] text-slate-500">{org.owner_email ?? '—'}</p>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span className="rounded-full px-2.5 py-1 text-[11px] font-bold capitalize" style={{ background: 'rgba(139,92,246,0.15)', color: '#a78bfa' }}>
-                        {org.plan}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5 text-slate-400 font-medium">{unitCount}</td>
-                    <td className="px-5 py-3.5">
-                      <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold`}
-                        style={org.is_active
-                          ? { background: 'rgba(34,197,94,0.12)', color: '#4ade80' }
-                          : { background: 'rgba(255,255,255,0.06)', color: '#64748b' }}>
-                        {org.is_active ? 'Ativa' : 'Inativa'}
-                      </span>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+function EmployeeCard({
+  icon: Icon,
+  name,
+  desc,
+  state,
+  stateLabel,
+  href,
+  cta,
+}: {
+  icon: typeof Bot
+  name: string
+  desc: string
+  state: 'active' | 'partial' | 'off'
+  stateLabel: string
+  href: string
+  cta: string
+}) {
+  const stateStyle =
+    state === 'active'
+      ? { background: 'rgba(34,197,94,0.12)', color: '#4ade80' }
+      : state === 'partial'
+        ? { background: 'rgba(245,158,11,0.12)', color: '#fbbf24' }
+        : { background: 'rgba(255,255,255,0.06)', color: '#94a3b8' }
+
+  return (
+    <Card className="flex flex-col gap-3 p-5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: 'linear-gradient(135deg, #06b6d4, #4361ee)', boxShadow: '0 4px 10px rgba(6,182,212,0.25)' }}>
+          <Icon size={16} className="text-white" />
         </div>
+        <span className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold" style={stateStyle}>
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'currentColor' }} />
+          {stateLabel}
+        </span>
+      </div>
+      <div className="flex-1">
+        <p className="text-sm font-bold text-white">{name}</p>
+        <p className="mt-1 text-xs leading-relaxed text-slate-400">{desc}</p>
+      </div>
+      <Link
+        href={href}
+        className="flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold text-slate-200 transition-all hover:bg-white/5"
+        style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+      >
+        {cta}
+        <ArrowRight size={11} />
+      </Link>
+    </Card>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Visão do TIME ALIZO (super admin) — saúde de todos os clientes.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function AdminHome({ firstName }: { firstName: string }) {
+  const supabase = await createClient()
+  const now = new Date()
+
+  const [{ data: orgs }, { data: units }, { data: configs }, { data: summary }, { data: financial }] = await Promise.all([
+    supabase.from('organizations').select('*').order('created_at', { ascending: false }),
+    supabase.from('units').select('id, org_id, name, whatsapp_phone, is_active'),
+    supabase.from('agent_configs').select('unit_id, agent_type, is_active, persona_name'),
+    supabase.from('dashboard_summary').select('*'),
+    supabase.from('financial_records').select('type, amount, status'),
+  ])
+
+  const orgRows = (orgs ?? []) as Organization[]
+  const unitRows = (units ?? []) as Pick<Unit, 'id' | 'org_id' | 'name' | 'whatsapp_phone' | 'is_active'>[]
+  const configRows = (configs ?? []) as Pick<AgentConfig, 'unit_id' | 'agent_type' | 'is_active' | 'persona_name'>[]
+  const summaryRows = (summary ?? []) as DashboardSummaryRow[]
+  const financialRows = (financial ?? []) as { type: string; amount: number; status: string }[]
+
+  const unitsByOrg = new Map<string, typeof unitRows>()
+  for (const u of unitRows) {
+    if (!u.org_id) continue
+    unitsByOrg.set(u.org_id, [...(unitsByOrg.get(u.org_id) ?? []), u])
+  }
+  const configsByUnit = new Map<string, typeof configRows>()
+  for (const c of configRows) {
+    configsByUnit.set(c.unit_id, [...(configsByUnit.get(c.unit_id) ?? []), c])
+  }
+  const leadsByUnit = new Map(summaryRows.map((r) => [r.unit_id, r]))
+
+  const orgHealth = orgRows.map((org) => {
+    const orgUnits = unitsByOrg.get(org.id) ?? []
+    const orgConfigs = orgUnits.flatMap((u) => configsByUnit.get(u.id) ?? [])
+    const setup = computeSetupStatus(orgUnits, orgConfigs)
+    const totalLeads = orgUnits.reduce((s, u) => s + Number(leadsByUnit.get(u.id)?.total_leads ?? 0), 0)
+    return { org, setup, unitCount: orgUnits.length, whatsappCount: orgUnits.filter((u) => u.whatsapp_phone).length, totalLeads }
+  })
+
+  const activeOrgs = orgHealth.filter((o) => o.org.is_active)
+  const stuckOrgs = activeOrgs.filter((o) => !o.setup.complete)
+  const noWhatsApp = activeOrgs.filter((o) => o.whatsappCount === 0)
+  const mrrPaid = financialRows.filter((r) => r.type === 'receivable' && r.status === 'paid').reduce((s, r) => s + Number(r.amount), 0)
+  const mrrPending = financialRows.filter((r) => r.type === 'receivable' && r.status === 'pending').reduce((s, r) => s + Number(r.amount), 0)
+
+  const kpis = [
+    { label: 'Clientes ativos', value: String(activeOrgs.length), sub: `${orgRows.length} no total`, grad: 'from-cyan-400 to-blue-500' },
+    { label: 'Setup incompleto', value: String(stuckOrgs.length), sub: 'clientes que não terminaram', grad: 'from-amber-400 to-orange-500' },
+    { label: 'Sem WhatsApp', value: String(noWhatsApp.length), sub: 'clientes sem conexão', grad: 'from-red-400 to-rose-500' },
+    { label: 'Recebido', value: `R$ ${mrrPaid.toLocaleString('pt-BR')}`, sub: `R$ ${mrrPending.toLocaleString('pt-BR')} pendente`, grad: 'from-emerald-400 to-green-500' },
+  ]
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">Operação Alizo · visão interna</p>
+          <h1 className="mt-0.5 text-2xl font-black tracking-tight text-white">{greeting(now)}, {firstName}! 👋</h1>
+          <p className="mt-0.5 text-sm" style={{ color: 'rgba(148,163,184,0.7)' }}>
+            Saúde de todos os clientes da plataforma num lugar só.
+          </p>
+        </div>
+        <PrimaryButton href="/dashboard/organizations/new" icon={<Building2 size={14} />}>
+          Novo cliente
+        </PrimaryButton>
+      </div>
+
+      {/* KPIs internos */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {kpis.map(({ label, value, sub, grad }) => (
+          <div key={label} className="relative overflow-hidden rounded-2xl" style={{ background: '#141a2b', boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}>
+            <div className={`absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r ${grad}`} />
+            <div className="p-4 pt-5">
+              <p className="text-[26px] font-black leading-none tracking-tight text-white">{value}</p>
+              <p className="mt-1.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-400">{label}</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">{sub}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Clientes que precisam de atenção */}
+      {stuckOrgs.length > 0 && (
+        <Card className="p-5">
+          <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-500">precisam de atenção</p>
+          <h2 className="text-sm font-bold text-white">Clientes com configuração parada</h2>
+          <div className="mt-3 space-y-2">
+            {stuckOrgs.slice(0, 6).map(({ org, setup }) => (
+              <Link
+                key={org.id}
+                href={`/dashboard/organizations/${org.id}`}
+                className="flex items-center justify-between rounded-xl px-4 py-3 transition-colors hover:bg-white/[0.04]"
+                style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)' }}
+              >
+                <div>
+                  <p className="text-sm font-semibold text-white">{org.name}</p>
+                  <p className="text-[11px] text-slate-400">
+                    Parado em: <span className="font-semibold text-amber-400">{setup.nextAction?.label ?? '—'}</span>
+                  </p>
+                </div>
+                <span className="text-xs font-bold text-amber-400">{setup.progress}% →</span>
+              </Link>
+            ))}
+          </div>
+        </Card>
       )}
+
+      {/* Tabela de clientes */}
+      <Card className="overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          <div>
+            <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-500">todos os clientes</p>
+            <h2 className="text-sm font-bold text-white">Saúde por cliente</h2>
+          </div>
+          <Link href="/dashboard/organizations" className="rounded-lg px-2.5 py-1 text-[11px] font-semibold" style={{ color: '#06b6d4' }}>
+            Ver página completa →
+          </Link>
+        </div>
+        <table className="w-full text-sm">
+          <thead>
+            <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+              {['Cliente', 'Plano', 'Setup', 'WhatsApp', 'Leads', 'Status'].map((h) => (
+                <th key={h} className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {orgHealth.map(({ org, setup, unitCount, whatsappCount, totalLeads }) => (
+              <tr key={org.id} className="last:border-0 transition-colors hover:bg-white/[0.03]" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                <td className="px-5 py-3.5">
+                  <Link href={`/dashboard/organizations/${org.id}`} className="font-semibold text-white transition-colors hover:text-cyan-400">
+                    {org.name}
+                  </Link>
+                  <p className="text-[11px] text-slate-500">{org.owner_email ?? '—'}</p>
+                </td>
+                <td className="px-5 py-3.5"><Badge variant="purple">{org.plan}</Badge></td>
+                <td className="px-5 py-3.5">
+                  <div className="flex items-center gap-2">
+                    <div className="h-1.5 w-16 overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.08)' }}>
+                      <div className="h-full rounded-full" style={{ width: `${setup.progress}%`, background: setup.complete ? '#4ade80' : 'linear-gradient(90deg,#06b6d4,#4361ee)' }} />
+                    </div>
+                    <span className="text-[11px] font-bold text-slate-400">{setup.progress}%</span>
+                  </div>
+                </td>
+                <td className="px-5 py-3.5">
+                  <Badge variant={whatsappCount > 0 ? 'green' : 'amber'}>
+                    {whatsappCount}/{unitCount}
+                  </Badge>
+                </td>
+                <td className="px-5 py-3.5 font-medium text-slate-400">{totalLeads}</td>
+                <td className="px-5 py-3.5">
+                  <Badge variant={org.is_active ? 'green' : 'slate'}>{org.is_active ? 'Ativa' : 'Inativa'}</Badge>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+
+      {/* Saúde das integrações da plataforma */}
+      <IntegrationsStatusCard isSuperAdmin />
     </div>
   )
 }

@@ -5,12 +5,12 @@ import {
   Building2,
   Bot,
   Zap,
-  ShieldCheck,
   Bell,
   Webhook,
 } from 'lucide-react'
 import { Card, PageHeader } from '@/components/ui/dashboard-ui'
 import { CopyField } from '@/components/dashboard/copy-field'
+import { ChangePasswordCard } from '@/components/dashboard/change-password'
 import type { Unit } from '@/lib/types'
 
 const SECTIONS = [
@@ -42,16 +42,6 @@ const SECTIONS = [
     href: '/dashboard/units',
     cta: 'Ver unidades',
     badge: null,
-    superOnly: false,
-  },
-  {
-    icon: ShieldCheck,
-    iconGrad: 'from-violet-400 to-purple-500',
-    title: 'Segurança',
-    desc: 'Alteração de senha, autenticação e configurações de acesso à plataforma.',
-    href: '#',
-    cta: 'Em breve',
-    badge: 'Em breve',
     superOnly: false,
   },
   {
@@ -123,6 +113,9 @@ export default async function SettingsPage() {
           </span>
         </div>
       </Card>
+
+      {/* Segurança — troca de senha self-service */}
+      <ChangePasswordCard />
 
       {/* Webhook de intake — integração self-service com CRM externo */}
       <Card className="p-5">

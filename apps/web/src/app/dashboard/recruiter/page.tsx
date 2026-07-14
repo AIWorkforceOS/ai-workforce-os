@@ -113,11 +113,18 @@ export default async function RecruiterDashboardPage() {
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-black tracking-tight text-white">Recrutador IA</h1>
+          <h1 className="text-xl font-black tracking-tight text-white">Recrutador digital</h1>
           <p className="mt-1 text-sm text-slate-400">
-            Funcionário digital de R&S: da vaga aberta à shortlist entregue, com todas as decisões auditáveis.
+            Você abre a vaga; ele divulga, conversa com os candidatos, faz a triagem e te entrega os melhores.
           </p>
         </div>
+        <Link
+          href="/dashboard/recruiter/jobs/new"
+          className="rounded-xl px-4 py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
+          style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
+        >
+          + Abrir vaga
+        </Link>
       </div>
 
       {/* KPIs */}
@@ -168,9 +175,20 @@ export default async function RecruiterDashboardPage() {
           <tbody>
             {jobs.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-5 py-8 text-center text-slate-500">
-                  Nenhuma vaga ainda. Abra uma vaga a partir de um lead convertido no CRM Pipeline
-                  (botão &quot;Abrir vaga&quot;) ou via POST /api/jobs.
+                <td colSpan={7} className="px-5 py-10 text-center">
+                  <p className="text-sm font-bold text-white">Nenhuma vaga aberta ainda</p>
+                  <p className="mx-auto mt-1 max-w-md text-sm text-slate-500">
+                    Conte pro recrutador qual vaga você precisa preencher — cargo, cidade e o perfil
+                    da pessoa. Ele cuida da divulgação e da triagem, e te avisa quando tiver os
+                    melhores candidatos.
+                  </p>
+                  <Link
+                    href="/dashboard/recruiter/jobs/new"
+                    className="mt-4 inline-block rounded-xl px-5 py-2.5 text-sm font-black text-white"
+                    style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 12px rgba(6,182,212,0.25)' }}
+                  >
+                    Abrir minha primeira vaga
+                  </Link>
                 </td>
               </tr>
             )}

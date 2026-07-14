@@ -111,7 +111,9 @@ export function WhatsAppConnection({ unitId }: { unitId: string }) {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-sm font-bold text-white">WhatsApp</h2>
-          <p className="mt-1 text-sm text-slate-400">Conecte o número desta unidade via Evolution API.</p>
+          <p className="mt-1 text-sm text-slate-400">
+            Conecte o número desta unidade escaneando um QR code — igual ao WhatsApp Web.
+          </p>
         </div>
         <span className="rounded-full px-2.5 py-1 text-xs font-bold" style={STATUS_STYLE[status]}>
           {STATUS_LABEL[status]}
@@ -122,7 +124,8 @@ export function WhatsAppConnection({ unitId }: { unitId: string }) {
 
       {status === 'not_configured' && (
         <p className="text-sm text-slate-500">
-          Preencha os campos da Evolution API acima e salve para poder conectar o WhatsApp.
+          O serviço de WhatsApp ainda não está habilitado para esta unidade. Fale com a gente em
+          suporte@alizo.com.br que habilitamos rapidinho.
         </p>
       )}
 

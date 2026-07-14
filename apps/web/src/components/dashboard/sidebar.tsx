@@ -35,35 +35,35 @@ const navGroups: { label: string; items: NavItem[] }[] = [
   {
     label: 'Principal',
     items: [
-      { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, exact: true },
-      { href: '/dashboard/organizations', label: 'Empresas', icon: Building2, superOnly: true },
-      { href: '/dashboard/units', label: 'Unidades', icon: MapPin },
-      { href: '/dashboard/employees', label: 'Funcionários', icon: Users },
+      { href: '/dashboard', label: 'Visão geral', icon: LayoutDashboard, exact: true },
+      { href: '/dashboard/onboarding', label: 'Primeiros passos', icon: Rocket },
+      { href: '/dashboard/organizations', label: 'Clientes (empresas)', icon: Building2, superOnly: true },
     ],
   },
   {
-    label: 'Operações',
+    label: 'Funcionários digitais',
     items: [
-      { href: '/dashboard/agents', label: 'Agentes IA', icon: Bot },
-      { href: '/dashboard/recruiter', label: 'Recrutador IA', icon: Briefcase },
-      { href: '/dashboard/traffic', label: 'Tráfego Pago', icon: Megaphone },
-      { href: '/dashboard/crm', label: 'CRM Pipeline', icon: Kanban },
-      { href: '/dashboard/leads', label: 'Leads (lista)', icon: UserCircle },
+      { href: '/dashboard/agents', label: 'Vendedor (SDR)', icon: Bot },
+      { href: '/dashboard/recruiter', label: 'Recrutador (RH)', icon: Briefcase },
+      { href: '/dashboard/traffic', label: 'Tráfego pago', icon: Megaphone },
+    ],
+  },
+  {
+    label: 'Seus clientes',
+    items: [
       { href: '/dashboard/conversations', label: 'Conversas', icon: MessageSquare },
+      { href: '/dashboard/crm', label: 'Funil de vendas', icon: Kanban },
+      { href: '/dashboard/leads', label: 'Contatos (leads)', icon: UserCircle },
     ],
   },
   {
-    label: 'Financeiro',
+    label: 'Sua empresa',
     items: [
-      { href: '/dashboard/financial', label: 'Cobranças', icon: Wallet },
+      { href: '/dashboard/units', label: 'Unidades', icon: MapPin },
+      { href: '/dashboard/employees', label: 'Equipe (pessoas)', icon: Users },
       { href: '/dashboard/results', label: 'Resultados', icon: TrendingUp },
-      { href: '/dashboard/sales', label: 'Vendas', icon: ShoppingCart, superOnly: true },
-    ],
-  },
-  {
-    label: 'Setup',
-    items: [
-      { href: '/dashboard/onboarding', label: 'Onboarding', icon: Rocket },
+      { href: '/dashboard/financial', label: 'Cobranças', icon: Wallet, superOnly: true },
+      { href: '/dashboard/sales', label: 'Vendas Alizo', icon: ShoppingCart, superOnly: true },
     ],
   },
 ]

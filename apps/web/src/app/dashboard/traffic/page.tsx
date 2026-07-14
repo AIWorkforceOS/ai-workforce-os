@@ -154,15 +154,15 @@ export default async function TrafficPage() {
       <PageHeader
         eyebrow="funcionário digital"
         title="Especialista em Tráfego Pago"
-        subtitle="Meta Ads + Google Ads: monitoramento contínuo, otimização baseada em performance e auditoria de toda ação executada."
+        subtitle="Ele cuida dos seus anúncios no Instagram/Facebook e no Google: acompanha todo dia, sugere melhorias e registra tudo o que faz."
       />
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-        <KpiCard label="Investimento (7d)" value={formatCentsBRL(totals.spend)} />
-        <KpiCard label="Conversões (7d)" value={String(Math.round(totals.conversions))} />
-        <KpiCard label="ROAS (7d)" value={roas !== null ? roas.toFixed(2) : '—'} hint={roas !== null ? `${formatCentsBRL(totals.value)} atribuídos` : undefined} />
-        <KpiCard label="CPA (7d)" value={formatCentsBRL(cpa)} />
+        <KpiCard label="Investimento (7d)" value={formatCentsBRL(totals.spend)} hint="gasto em anúncios na semana" />
+        <KpiCard label="Conversões (7d)" value={String(Math.round(totals.conversions))} hint="pessoas que viraram contato/venda" />
+        <KpiCard label="Retorno (ROAS)" value={roas !== null ? `${roas.toFixed(2)}x` : '—'} hint={roas !== null ? `cada R$1 investido voltou R$${roas.toFixed(2)}` : 'retorno por real investido'} />
+        <KpiCard label="Custo por conversão" value={formatCentsBRL(cpa)} hint="quanto custa cada cliente" />
         <KpiCard
           label="Decisões pendentes"
           value={String(pendingDecisions.length)}
@@ -185,11 +185,19 @@ export default async function TrafficPage() {
         </div>
         {accounts.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-5 py-12 text-center">
-            <p className="text-sm font-bold text-white">Nenhuma conta de anúncio conectada</p>
+            <p className="text-sm font-bold text-white">Suas contas de anúncio ainda não estão conectadas</p>
             <p className="max-w-lg text-sm text-slate-400">
-              Conecte contas via POST /api/traffic/accounts. As credenciais das plataformas (Meta
-              Business Manager e Google Ads) seguem o passo a passo em docs/setup/traffic-apis-setup.md.
+              Pra esse funcionário trabalhar, a equipe Alizo conecta com você as contas de anúncio da
+              sua empresa (Facebook/Instagram e Google). É uma configuração única, feita junto — leva
+              cerca de 15 minutos.
             </p>
+            <a
+              href="mailto:suporte@alizo.com.br?subject=Quero%20conectar%20minhas%20contas%20de%20an%C3%BAncio"
+              className="mt-2 rounded-xl px-5 py-2.5 text-sm font-black text-white"
+              style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 12px rgba(6,182,212,0.25)' }}
+            >
+              Agendar conexão com a equipe
+            </a>
           </div>
         ) : (
           <table className="w-full text-left text-sm">
@@ -243,7 +251,8 @@ export default async function TrafficPage() {
         </div>
         {decisions.length === 0 ? (
           <div className="px-6 pb-8 text-sm text-slate-400">
-            Nenhuma decisão registrada ainda — o motor roda no cron diário ou no sync manual.
+            Nada por aqui ainda. Assim que as contas estiverem conectadas, as recomendações do
+            especialista aparecem nesta lista todos os dias — e você aprova ou recusa cada uma.
           </div>
         ) : (
           <div className="flex flex-col">

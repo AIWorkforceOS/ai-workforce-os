@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import type { Unit } from '@/lib/types'
 import { FormSection, Input, Label } from '@/components/ui/dashboard-ui'
 
-export function UnitSettingsForm({ unit }: { unit: Unit }) {
+export function UnitSettingsForm({ unit, showAdvanced = false }: { unit: Unit; showAdvanced?: boolean }) {
   const router = useRouter()
   const [whatsapp, setWhatsapp] = useState(unit.whatsapp_phone ?? '')
   const [emailFrom, setEmailFrom] = useState(unit.email_from ?? '')
@@ -31,9 +31,15 @@ export function UnitSettingsForm({ unit }: { unit: Unit }) {
       .update({
         whatsapp_phone: whatsapp || null,
         email_from: emailFrom || null,
-        evolution_api_url: evolutionApiUrl || null,
-        evolution_api_key: evolutionApiKey || null,
-        evolution_instance_name: evolutionInstanceName || null,
+        // Campos técnicos: só o painel interno (equipe Alizo) mexe neles.
+        // Sem eles a unidade usa o servidor central de WhatsApp da Alizo.
+        ...(showAdvanced
+          ? {
+              evolution_api_url: evolutionApiUrl || null,
+              evolution_api_key: evolutionApiKey || null,
+              evolution_instance_name: evolutionInstanceName || null,
+            }
+          : {}),
       })
       .eq('id', unit.id)
 
@@ -73,43 +79,50 @@ export function UnitSettingsForm({ unit }: { unit: Unit }) {
           </div>
         </div>
 
-        <div className="flex flex-col gap-1 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-          <span className="text-sm font-medium text-slate-300">Evolution API (WhatsApp)</span>
-          <p className="text-xs text-slate-500">Necessário para conectar o WhatsApp desta unidade.</p>
-        </div>
+        {showAdvanced && (
+          <>
+            <div className="flex flex-col gap-1 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+              <span className="text-sm font-medium text-slate-300">Evolution API (interno Alizo)</span>
+              <p className="text-xs text-slate-500">
+                Deixe em branco para usar o servidor central de WhatsApp da Alizo. Preencha só para
+                apontar esta unidade pra uma instância dedicada.
+              </p>
+            </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="evolutionApiUrl">URL da instância</Label>
-            <Input
-              id="evolutionApiUrl"
-              value={evolutionApiUrl}
-              onChange={(e) => setEvolutionApiUrl(e.target.value)}
-              placeholder="https://evolution.suaempresa.com"
-            />
-          </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="evolutionApiUrl">URL da instância</Label>
+                <Input
+                  id="evolutionApiUrl"
+                  value={evolutionApiUrl}
+                  onChange={(e) => setEvolutionApiUrl(e.target.value)}
+                  placeholder="https://evolution.suaempresa.com"
+                />
+              </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="evolutionInstanceName">Nome da instância</Label>
-            <Input
-              id="evolutionInstanceName"
-              value={evolutionInstanceName}
-              onChange={(e) => setEvolutionInstanceName(e.target.value)}
-              placeholder="alizo-campinas"
-            />
-          </div>
-        </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="evolutionInstanceName">Nome da instância</Label>
+                <Input
+                  id="evolutionInstanceName"
+                  value={evolutionInstanceName}
+                  onChange={(e) => setEvolutionInstanceName(e.target.value)}
+                  placeholder="alizo-campinas"
+                />
+              </div>
+            </div>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="evolutionApiKey">API key</Label>
-          <Input
-            id="evolutionApiKey"
-            type="password"
-            value={evolutionApiKey}
-            onChange={(e) => setEvolutionApiKey(e.target.value)}
-            placeholder="sua_api_key"
-          />
-        </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="evolutionApiKey">API key</Label>
+              <Input
+                id="evolutionApiKey"
+                type="password"
+                value={evolutionApiKey}
+                onChange={(e) => setEvolutionApiKey(e.target.value)}
+                placeholder="sua_api_key"
+              />
+            </div>
+          </>
+        )}
 
         {error && <p className="text-sm text-red-400">{error}</p>}
         {saved && !error && <p className="text-sm text-emerald-400">Alterações salvas.</p>}

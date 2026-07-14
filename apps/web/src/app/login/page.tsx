@@ -72,7 +72,7 @@ export default function LoginPage() {
             escala com você.
           </h1>
           <p className="mt-4 max-w-sm text-base text-slate-400">
-            Gerencie agentes IA, unidades e resultados em tempo real. Uma plataforma para toda a sua rede de franquias.
+            Seus funcionários digitais atendem, vendem e recrutam por você — e aqui você acompanha tudo em tempo real.
           </p>
 
           <div className="mt-8 grid grid-cols-2 gap-3 max-w-sm">
