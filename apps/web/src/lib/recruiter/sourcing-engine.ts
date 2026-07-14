@@ -67,6 +67,20 @@ function normalizeContact(value: string | null | undefined): string {
 }
 
 /**
+ * Divide o curso do perfil em termos de busca individuais para o filtro
+ * duro SQL: "Marketing ou Publicidade" → ['Marketing', 'Publicidade'].
+ * Sem isso, um perfil com cursos alternativos não casaria com ninguém.
+ */
+export function courseSearchTerms(course: string | null | undefined): string[] | null {
+  if (!course) return null
+  const terms = course
+    .split(/\s*(?:,|\/|\bou\b|\be\b)\s*/i)
+    .map((term) => term.trim())
+    .filter((term) => term.length > 2)
+  return terms.length > 0 ? terms : null
+}
+
+/**
  * Sincroniza candidatos da API da Smarter para `candidates` (upsert por
  * org+source+external_ref, com dedupe adicional por telefone/e-mail —
  * exceção 8 da spec: mantém o registro existente e enriquece campos vazios).
@@ -291,7 +305,7 @@ export async function runSourcing(
   const { data: matches, error: matchError } = await supabase.rpc('match_candidates_for_job', {
     p_org_id: job.org_id,
     p_embedding: JSON.stringify(profileEmbedding),
-    p_courses: job.profile.course ? [job.profile.course] : null,
+    p_courses: courseSearchTerms(job.profile.course),
     p_city: job.profile.modality === 'remoto' ? null : (job.profile.city ?? null),
     p_semester_min: job.profile.semester_min ?? null,
     p_semester_max: job.profile.semester_max ?? null,

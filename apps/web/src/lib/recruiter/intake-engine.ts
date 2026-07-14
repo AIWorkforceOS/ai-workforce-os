@@ -210,8 +210,31 @@ export async function handleCompanyIntakeInbound(
     history: [{ role: 'user', content: text }],
   })
 
+  const previousMissing = job.profile_missing_fields ?? []
   const mergedProfile = mergeProfile({ ...job.profile, awaiting_confirmation: false }, extracted)
-  const missing = computeMissingFields(mergedProfile)
+  let missing = computeMissingFields(mergedProfile)
+
+  // Regra §7.2: máx. 1 re-pergunta sem progresso. Se dois turnos seguidos
+  // não preencherem nada novo, os campos restantes viram "confiança baixa"
+  // (a triagem valida depois) e o intake avança para a síntese — o
+  // processo nunca fica preso num campo que a empresa não sabe responder.
+  const progressed = previousMissing.length === 0 || missing.length < previousMissing.length
+  mergedProfile.intake_no_progress_count =
+    progressed || missing.length === 0 ? 0 : (job.profile.intake_no_progress_count ?? 0) + 1
+
+  if (missing.length > 0 && (mergedProfile.intake_no_progress_count ?? 0) >= 2) {
+    mergedProfile.low_confidence_fields = [
+      ...new Set([...(mergedProfile.low_confidence_fields ?? []), ...missing]),
+    ]
+    await logDecision(supabase, {
+      orgId: job.org_id,
+      unitId: job.unit_id,
+      jobId: job.id,
+      decisionType: 'resume',
+      reasoning: `Campos do perfil sem resposta clara após re-pergunta (${missing.join(', ')}) marcados como confiança baixa — seguindo para a síntese; a triagem valida esses pontos com os candidatos.`,
+    })
+    missing = []
+  }
 
   if (missing.length === 0) {
     // Perfil completo → sintetiza e pede confirmação

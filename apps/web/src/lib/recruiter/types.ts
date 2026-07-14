@@ -58,6 +58,8 @@ export type JobProfile = {
   ideal_profile_summary?: string | null
   /** flag interna: resumo enviado, aguardando "ok" da empresa */
   awaiting_confirmation?: boolean | null
+  /** flag interna: turnos seguidos do intake sem preencher nenhum campo novo */
+  intake_no_progress_count?: number | null
 }
 
 /**
