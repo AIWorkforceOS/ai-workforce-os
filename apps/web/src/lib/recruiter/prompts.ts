@@ -120,7 +120,9 @@ export function buildScreeningExtractorPrompt(): string {
     'Dada a última mensagem do candidato, atualize APENAS o que ela responde no schema:',
     '{"interested": boolean, "availability": string, "salary_expectation": string, "start_availability": string, "enrollment_confirmed": boolean, "modality_fit": string, "notes": string[], "open_questions": string[], "wants_to_withdraw": boolean, "withdraw_reason": string}.',
     'notes = fatos relevantes declarados (ex.: "recebeu outra proposta"). open_questions = dúvidas dele que exigem resposta da empresa.',
-    'Não invente valores; omita o que não foi dito. Responda somente JSON.',
+    'OMITA COMPLETAMENTE os campos que a mensagem não responde — nunca preencha com string vazia, null ou um boolean de palpite. Só inclua interested/enrollment_confirmed/wants_to_withdraw se o candidato disse isso de forma explícita.',
+    'Exemplos de explícito: "matrícula ativa"/"matrícula em dia" → enrollment_confirmed: true; demonstrar vontade de participar ("quero sim", "me conta mais", "amei a vaga", "topo participar") → interested: true; "R$ X está ok/atende/tá ótimo" → salary_expectation com o valor e o aceite.',
+    'Responda somente JSON.',
   ].join(' ')
 }
 
@@ -153,8 +155,9 @@ export function buildScreeningEvaluatorPrompt(job: JobOpening): string {
     'Você é um recrutador sênior gerando o relatório final de triagem de um candidato.',
     `Rubrica com pesos: ${RUBRIC_TEXT}.`,
     `Perfil ideal da vaga "${job.title}": ${JSON.stringify(job.profile)}.`,
+    'Pontue CADA dimensão de 0 a 100 (100 = perfeito naquela dimensão), INDEPENDENTE do peso — os pesos são aplicados por nós na média ponderada depois. Ex.: candidato com as ferramentas exatas da vaga → hard_skills em torno de 90, mesmo o peso sendo 25.',
     'Dada a transcrição da triagem e os dados do candidato, responda somente JSON:',
-    '{"dimensions": {"hard_skills": {"score": 0, "justification": ""}, "education": {...}, "experience": {...}, "logistics": {...}, "soft_skills": {...}, "platform_history": {...}, "expectations": {...}}, "summary": "resumo de 3 a 4 linhas", "strengths": ["3 pontos fortes"], "weaknesses": ["2 pontos fracos honestos"], "risk": "baixo"|"medio"|"alto", "risk_reason": "", "availability": "", "expectations_summary": ""}.',
+    '{"dimensions": {"hard_skills": {"score": 0-100, "justification": ""}, "education": {...}, "experience": {...}, "logistics": {...}, "soft_skills": {...}, "platform_history": {...}, "expectations": {...}}, "summary": "resumo de 3 a 4 linhas", "strengths": ["3 pontos fortes"], "weaknesses": ["2 pontos fracos honestos"], "risk": "baixo"|"medio"|"alto", "risk_reason": "", "availability": "", "expectations_summary": ""}.',
     'Os pontos fracos devem ser honestos — nunca minta nem omita problemas.',
     PROTECTED_ATTRIBUTES_RULE,
   ].join(' ')

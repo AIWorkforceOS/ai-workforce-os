@@ -352,11 +352,13 @@ export async function handleCandidateInbound(
   const screeningData: ScreeningData = { ...currentData }
   for (const { key } of SCREENING_TOPICS) {
     const value = extraction[key]
-    if (value !== null && value !== undefined) {
-      ;(screeningData as Record<string, unknown>)[key as string] = value
-    }
+    if (value === null || value === undefined) continue
+    // string vazia = o modelo preencheu sem resposta real — não conta
+    // como tópico coberto (senão a avaliação dispara cedo demais)
+    if (typeof value === 'string' && value.trim().length === 0) continue
+    ;(screeningData as Record<string, unknown>)[key as string] = value
   }
-  if (extraction.modality_fit) screeningData.modality_fit = extraction.modality_fit
+  if (extraction.modality_fit?.trim()) screeningData.modality_fit = extraction.modality_fit
   if (extraction.notes?.length) {
     screeningData.notes = [...(currentData.notes ?? []), ...extraction.notes]
   }
