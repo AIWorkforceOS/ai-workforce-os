@@ -1,4 +1,5 @@
 import type { Unit } from '@/lib/types'
+import { logEvolutionUsage } from '@/lib/api-usage'
 
 export type EvolutionUnitConfig = {
   apiUrl: string
@@ -85,11 +86,13 @@ export async function disconnectInstance(config: EvolutionUnitConfig) {
 }
 
 export async function sendWhatsAppMessage(config: EvolutionUnitConfig, phone: string, text: string) {
-  return evolutionFetch(config, `/message/sendText/${config.instanceName}`, {
+  const result = await evolutionFetch(config, `/message/sendText/${config.instanceName}`, {
     method: 'POST',
     body: JSON.stringify({
       number: phone,
       text,
     }),
   })
+  await logEvolutionUsage('message.sendText')
+  return result
 }

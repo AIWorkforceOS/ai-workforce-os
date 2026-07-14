@@ -1,3 +1,5 @@
+import { logResendUsage } from '@/lib/api-usage'
+
 export function getResendApiKey(): string | null {
   return process.env.RESEND_API_KEY || null
 }
@@ -34,6 +36,8 @@ async function sendEmail(params: {
       const data = await response.json().catch(() => null)
       return { ok: false, error: data?.message ?? `Resend retornou status ${response.status}` }
     }
+
+    await logResendUsage()
 
     return { ok: true }
   } catch (error) {

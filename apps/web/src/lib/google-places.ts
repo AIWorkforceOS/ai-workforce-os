@@ -1,3 +1,5 @@
+import { logGooglePlacesUsage } from '@/lib/api-usage'
+
 const PLACES_BASE = 'https://maps.googleapis.com/maps/api/place'
 
 export type PlaceSearchResult = {
@@ -24,6 +26,8 @@ export async function textSearch(query: string, apiKey: string): Promise<PlaceSe
     throw new Error(data.error_message ?? `Google Places retornou status ${data.status}`)
   }
 
+  await logGooglePlacesUsage('places.textsearch')
+
   return (data.results ?? []) as PlaceSearchResult[]
 }
 
@@ -35,6 +39,8 @@ export async function placeDetails(placeId: string, apiKey: string): Promise<Pla
   if (data.status !== 'OK') {
     return {}
   }
+
+  await logGooglePlacesUsage('places.details')
 
   return (data.result ?? {}) as PlaceDetails
 }

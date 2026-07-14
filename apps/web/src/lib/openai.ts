@@ -1,3 +1,5 @@
+import { logOpenAIUsage } from '@/lib/api-usage'
+
 export function getOpenAIApiKey(): string | null {
   return process.env.OPENAI_API_KEY || null
 }
@@ -29,6 +31,8 @@ export async function generateChatReply(params: {
   if (!response.ok) {
     throw new Error(data?.error?.message ?? `OpenAI retornou status ${response.status}`)
   }
+
+  await logOpenAIUsage({ endpoint: 'chat.completions', model: params.model ?? 'gpt-4o-mini', usage: data.usage })
 
   return (data.choices?.[0]?.message?.content ?? '').trim()
 }
@@ -66,6 +70,8 @@ export async function generateStructuredReply<T = Record<string, unknown>>(param
     throw new Error(data?.error?.message ?? `OpenAI retornou status ${response.status}`)
   }
 
+  await logOpenAIUsage({ endpoint: 'chat.completions', model: params.model ?? 'gpt-4o-mini', usage: data.usage })
+
   const content = (data.choices?.[0]?.message?.content ?? '').trim()
   return JSON.parse(content) as T
 }
@@ -94,6 +100,8 @@ export async function embedTexts(apiKey: string, texts: string[]): Promise<numbe
   if (!response.ok) {
     throw new Error(data?.error?.message ?? `OpenAI retornou status ${response.status}`)
   }
+
+  await logOpenAIUsage({ endpoint: 'embeddings', model: 'text-embedding-3-small', usage: data.usage })
 
   const rows = (data.data ?? []) as { index: number; embedding: number[] }[]
   return rows.sort((a, b) => a.index - b.index).map((row) => row.embedding)
