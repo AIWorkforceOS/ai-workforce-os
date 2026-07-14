@@ -46,6 +46,20 @@ drop policy if exists api_usage_events_select on api_usage_events;
 create policy api_usage_events_select on api_usage_events
   for select using (public.is_super_admin());
 
+-- View agregada por provider/dia — o painel consulta ela em vez de
+-- varrer os eventos crus. security_invoker: o RLS da tabela base vale
+-- para quem consulta (ou seja, continua exclusivo do super admin).
+create or replace view api_usage_daily
+  with (security_invoker = true) as
+select
+  provider,
+  date_trunc('day', created_at) as day,
+  sum(request_count)::int as requests,
+  sum(coalesce(total_tokens, 0))::bigint as total_tokens,
+  sum(estimated_cost_usd) as estimated_cost_usd
+from api_usage_events
+group by provider, date_trunc('day', created_at);
+
 -- ------------------------------------------------------------
 -- 2. ORGANIZATIONS: timestamp de cancelamento
 -- ------------------------------------------------------------

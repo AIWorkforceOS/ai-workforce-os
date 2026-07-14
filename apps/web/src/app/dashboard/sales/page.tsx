@@ -1,172 +1,294 @@
-import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase/server'
 import {
-  TrendingUp, DollarSign, ShoppingCart,
-  ArrowUpRight, BarChart3, Globe, Smartphone, Mail, Users,
+  MessageSquare, ShoppingCart, DollarSign, UserX, Rocket, Undo2,
+  Bot, Smartphone, MapPin, Mail, BarChart3,
 } from 'lucide-react'
-import { Badge, Card, CardHeader, PageHeader, PrimaryButton } from '@/components/ui/dashboard-ui'
+import { Badge, Card, CardHeader, PageHeader } from '@/components/ui/dashboard-ui'
+import { AutoRefresh } from '@/components/admin/auto-refresh'
+import {
+  getMonthApiCosts, getRealtimeOverview, getRecentApiIssues, looksLikeQuotaIssue,
+} from '@/lib/admin-metrics'
+import { fetchOpenAIRealCost } from '@/lib/openai-costs'
 
-function fmt(v: number) {
+export const dynamic = 'force-dynamic'
+
+function fmtBrl(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
-function fmtShort(v: number) {
-  if (v >= 1000) return `R$ ${(v / 1000).toFixed(1)}k`
-  return fmt(v)
+function fmtUsd(v: number) {
+  return v.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: v < 1 ? 4 : 2 })
 }
 
-type FinancialRecord = {
-  id: string; type: string; amount: number; status: string
-  created_at: string; category: string
+function fmtMoney(brl: number, usd: number) {
+  if (usd > 0 && brl > 0) return `${fmtBrl(brl)} + ${fmtUsd(usd)}`
+  if (usd > 0) return fmtUsd(usd)
+  return fmtBrl(brl)
 }
 
-type Organization = {
-  id: string; name: string; plan: string; created_at: string; is_active: boolean
-}
-
-type Lead = {
-  id: string; created_at: string; status: string; source: string | null
-  organizations?: { name: string } | null
+type ApiCardDef = {
+  key: 'openai' | 'evolution' | 'google_maps' | 'resend'
+  label: string
+  icon: typeof Bot
+  configured: boolean
+  costNote: string
 }
 
 export default async function SalesPage() {
   const supabase = await createClient()
   const now = new Date()
 
-  const startOfDay = new Date(now); startOfDay.setHours(0, 0, 0, 0)
-  const startOfWeek = new Date(now); startOfWeek.setDate(now.getDate() - 7)
-  const startOfMonth = new Date(now); startOfMonth.setDate(1); startOfMonth.setHours(0, 0, 0, 0)
-
-  const [
-    { data: allFinancial },
-    { data: allOrgs },
-    { data: allLeads },
-    { count: newToday },
-    { count: newThisWeek },
-    { count: newThisMonth },
-  ] = await Promise.all([
-    supabase.from('financial_records').select('*').order('created_at', { ascending: false }),
-    supabase.from('organizations').select('*').order('created_at', { ascending: false }),
-    supabase.from('leads').select('*, organizations(name)').order('created_at', { ascending: false }),
-    supabase.from('organizations').select('id', { count: 'exact', head: true }).gte('created_at', startOfDay.toISOString()),
-    supabase.from('organizations').select('id', { count: 'exact', head: true }).gte('created_at', startOfWeek.toISOString()),
-    supabase.from('organizations').select('id', { count: 'exact', head: true }).gte('created_at', startOfMonth.toISOString()),
+  const [overview, apiCosts, issues, openaiReal, orgsRes] = await Promise.all([
+    getRealtimeOverview(supabase),
+    getMonthApiCosts(supabase),
+    getRecentApiIssues(supabase),
+    fetchOpenAIRealCost({ from: new Date(now.getFullYear(), now.getMonth(), 1) }),
+    supabase.from('organizations').select('id, name, plan, is_active, created_at').order('created_at', { ascending: false }),
   ])
 
-  const financial = (allFinancial ?? []) as FinancialRecord[]
-  const orgs = (allOrgs ?? []) as Organization[]
-  const leads = (allLeads ?? []) as Lead[]
+  const orgs = (orgsRes.data ?? []) as { id: string; name: string; plan: string; is_active: boolean; created_at: string }[]
 
-  const revenueDay = financial
-    .filter(r => r.type === 'receivable' && r.status === 'paid' && new Date(r.created_at) >= startOfDay)
-    .reduce((s, r) => s + Number(r.amount), 0)
-  const revenueWeek = financial
-    .filter(r => r.type === 'receivable' && r.status === 'paid' && new Date(r.created_at) >= startOfWeek)
-    .reduce((s, r) => s + Number(r.amount), 0)
-  const revenueMonth = financial
-    .filter(r => r.type === 'receivable' && r.status === 'paid' && new Date(r.created_at) >= startOfMonth)
-    .reduce((s, r) => s + Number(r.amount), 0)
-  const revenueTotal = financial
-    .filter(r => r.type === 'receivable' && r.status === 'paid')
-    .reduce((s, r) => s + Number(r.amount), 0)
+  // ─── Cards do dia/semana ───
+  const kpis = [
+    {
+      label: 'Conversas hoje',
+      value: String(overview.conversationsToday.leads),
+      sub: `${overview.conversationsToday.messages} mensagens em todas as unidades`,
+      icon: MessageSquare,
+      grad: 'from-cyan-400 to-blue-500',
+    },
+    {
+      label: 'Vendas na semana',
+      value: String(overview.salesWeek.count),
+      sub: `checkouts fechados · ${fmtMoney(overview.salesWeek.totalBrl, overview.salesWeek.totalUsd)} vendidos`,
+      icon: ShoppingCart,
+      grad: 'from-violet-400 to-purple-500',
+    },
+    {
+      label: 'Arrecadado na semana',
+      value: fmtMoney(overview.collectedWeek.totalBrl, overview.collectedWeek.totalUsd),
+      sub: 'só o que foi marcado como pago',
+      icon: DollarSign,
+      grad: 'from-emerald-400 to-green-500',
+    },
+    {
+      label: 'Cancelamentos na semana',
+      value: overview.cancellationsWeek === null ? '—' : String(overview.cancellationsWeek),
+      sub: overview.cancellationsWeek === null ? 'aplique a migration 010 para habilitar' : 'empresas desativadas',
+      icon: UserX,
+      grad: 'from-rose-400 to-red-500',
+    },
+    {
+      label: 'Onboardings na semana',
+      value: String(overview.onboardingsWeek),
+      sub: 'unidades que ativaram o 1º agente (aprox.)',
+      icon: Rocket,
+      grad: 'from-amber-400 to-orange-500',
+    },
+    {
+      label: 'A devolver (garantia 7d)',
+      value: fmtMoney(overview.refundsDue.totalBrl, overview.refundsDue.totalUsd),
+      sub: overview.refundsDue.orgs.length > 0
+        ? `${overview.refundsDue.orgs.length} cancelamento(s) dentro da garantia`
+        : 'nenhum reembolso pendente',
+      icon: Undo2,
+      grad: 'from-slate-400 to-slate-500',
+    },
+  ]
 
-  const pendingMRR = financial
-    .filter(r => r.type === 'receivable' && r.status === 'pending')
-    .reduce((s, r) => s + Number(r.amount), 0)
+  // ─── Cards por API ───
+  const costByProvider = new Map((apiCosts ?? []).map((c) => [c.provider, c]))
+  const issuesBySource = (source: string, extra: string[] = []) =>
+    issues.filter((i) => i.source === source || extra.includes(i.source))
 
-  const planCounts = orgs.reduce((acc, o) => {
-    acc[o.plan] = (acc[o.plan] ?? 0) + 1
-    return acc
-  }, {} as Record<string, number>)
+  const apiCards: ApiCardDef[] = [
+    {
+      key: 'openai',
+      label: 'OpenAI',
+      icon: Bot,
+      configured: Boolean(process.env.OPENAI_API_KEY),
+      costNote: openaiReal ? 'custo real (Costs API)' : 'estimado por tokens registrados',
+    },
+    {
+      key: 'evolution',
+      label: 'Evolution (WhatsApp)',
+      icon: Smartphone,
+      configured: Boolean(process.env.EVOLUTION_API_URL && process.env.EVOLUTION_API_KEY),
+      costNote: 'self-hosted — custo por mensagem R$ 0 (infra fixa)',
+    },
+    {
+      key: 'google_maps',
+      label: 'Google Maps',
+      icon: MapPin,
+      configured: Boolean(process.env.GOOGLE_MAPS_API_KEY),
+      costNote: 'estimado por requests registrados',
+    },
+    {
+      key: 'resend',
+      label: 'Resend (e-mail)',
+      icon: Mail,
+      configured: Boolean(process.env.RESEND_API_KEY),
+      costNote: 'estimado por e-mails enviados',
+    },
+  ]
 
-  const sourceCounts = leads.reduce((acc, l) => {
-    const src = l.source ?? 'direto'
-    acc[src] = (acc[src] ?? 0) + 1
-    return acc
-  }, {} as Record<string, number>)
-
+  // ─── Novos clientes 7 dias (mantido do painel anterior) ───
   const dayBuckets: { date: string; count: number }[] = []
   for (let i = 6; i >= 0; i--) {
     const day = new Date(now)
     day.setDate(now.getDate() - i)
     day.setHours(0, 0, 0, 0)
-    const nextDay = new Date(day); nextDay.setDate(day.getDate() + 1)
-    const count = orgs.filter(o => {
+    const nextDay = new Date(day)
+    nextDay.setDate(day.getDate() + 1)
+    const count = orgs.filter((o) => {
       const d = new Date(o.created_at)
       return d >= day && d < nextDay
     }).length
-    dayBuckets.push({
-      date: day.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit' }),
-      count,
-    })
+    dayBuckets.push({ date: day.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit' }), count })
   }
-
-  const maxCount = Math.max(...dayBuckets.map(d => d.count), 1)
-
-  const sourceIcons: Record<string, typeof Globe> = {
-    organico: Globe,
-    social: Smartphone,
-    email: Mail,
-    direto: Users,
-  }
-
-  const planColors: Record<string, string> = {
-    starter: '#60a5fa', pro: '#a78bfa', enterprise: '#fbbf24', basico: '#60a5fa',
-  }
-
-  const kpis = [
-    { label: 'Receita hoje', value: fmtShort(revenueDay), sub: `${newToday ?? 0} novos clientes`, icon: DollarSign, iconGrad: 'from-emerald-400 to-green-500' },
-    { label: 'Receita na semana', value: fmtShort(revenueWeek), sub: `${newThisWeek ?? 0} novos clientes`, icon: TrendingUp, iconGrad: 'from-blue-400 to-indigo-500' },
-    { label: 'Receita no mês', value: fmtShort(revenueMonth), sub: `${newThisMonth ?? 0} novos clientes`, icon: ShoppingCart, iconGrad: 'from-violet-400 to-purple-500' },
-    { label: 'MRR pendente', value: fmtShort(pendingMRR), sub: `Total acumulado: ${fmtShort(revenueTotal)}`, icon: ArrowUpRight, iconGrad: 'from-amber-400 to-orange-500' },
-  ]
+  const maxCount = Math.max(...dayBuckets.map((d) => d.count), 1)
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        eyebrow="vendas"
-        title="Dashboard de Vendas"
+        eyebrow="operação alizo"
+        title="Visão geral da plataforma"
         subtitle={now.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-        action={
-          <PrimaryButton href="/dashboard/financial/new" icon={<DollarSign size={14} />}>
-            Novo lançamento
-          </PrimaryButton>
-        }
+        action={<AutoRefresh intervalSeconds={30} />}
       />
 
-      {/* KPI row */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {kpis.map(({ label, value, sub, icon: Icon, iconGrad }) => (
-          <div key={label} className="relative overflow-hidden rounded-2xl bg-[#141a2b]" style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}>
-            <div className={`absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r ${iconGrad}`} />
+      {/* KPIs do dia / semana */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+        {kpis.map(({ label, value, sub, icon: Icon, grad }) => (
+          <div
+            key={label}
+            className="relative overflow-hidden rounded-2xl bg-[#141a2b]"
+            style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}
+          >
+            <div className={`absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r ${grad}`} />
             <div className="p-4 pt-5">
-              <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br ${iconGrad}`} style={{ boxShadow: '0 4px 10px rgba(0,0,0,0.3)' }}>
-                <Icon size={16} className="text-white" />
+              <div
+                className={`flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br ${grad}`}
+                style={{ boxShadow: '0 4px 10px rgba(0,0,0,0.3)' }}
+              >
+                <Icon size={15} className="text-white" />
               </div>
               <p className="mt-3 text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">{label}</p>
-              <p className="mt-1 text-2xl font-black tracking-tight text-white">{value}</p>
-              <p className="mt-0.5 text-[11px] text-slate-500">{sub}</p>
+              <p className="mt-1 text-xl font-black tracking-tight text-white">{value}</p>
+              <p className="mt-0.5 text-[11px] leading-snug text-slate-500">{sub}</p>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Chart + Plans */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        {/* Daily signups chart */}
-        <Card className="col-span-2 p-5">
+      {/* Reembolsos da garantia, quando existirem */}
+      {overview.refundsDue.orgs.length > 0 && (
+        <Card className="p-5">
+          <CardHeader eyebrow="garantia de 7 dias" title="Reembolsos a fazer (manual)" />
+          <div className="space-y-2">
+            {overview.refundsDue.orgs.map((org) => (
+              <div key={org.name} className="flex items-center justify-between text-sm">
+                <span className="font-semibold text-white">{org.name}</span>
+                <span className="font-black text-rose-400">{fmtMoney(org.amountBrl, org.amountUsd)}</span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-[11px] text-slate-500">
+            Valor derivado das datas de cadastro e cancelamento (pago dentro de 7 dias da compra). O estorno em si ainda é manual na processadora.
+          </p>
+        </Card>
+      )}
+
+      {/* Saúde e custo por API */}
+      <div>
+        <div className="mb-3 flex items-baseline justify-between">
+          <div>
+            <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-500">integrações</p>
+            <h2 className="text-sm font-bold text-white">Custo e saúde das APIs — mês atual</h2>
+          </div>
+          <p className="text-[11px] text-slate-500">
+            valores estimados a partir do uso registrado pelo sistema{openaiReal ? ' · OpenAI: custo real' : ''}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {apiCards.map(({ key, label, icon: Icon, configured, costNote }) => {
+            const cost = costByProvider.get(key)
+            const cardIssues = issuesBySource(key === 'google_maps' ? 'google_maps' : key)
+            const errors = cardIssues.filter((i) => i.level === 'error')
+            const quotaIssue = cardIssues.some((i) => looksLikeQuotaIssue(i.message))
+
+            const status = !configured
+              ? { label: 'Ação: configurar', color: '#f87171', dot: '#f87171' }
+              : quotaIssue
+                ? { label: 'Ação: verificar créditos', color: '#fbbf24', dot: '#fbbf24' }
+                : errors.length > 0
+                  ? { label: `${errors.length} erro(s) em 24h`, color: '#fbbf24', dot: '#fbbf24' }
+                  : { label: 'Operacional', color: '#4ade80', dot: '#4ade80' }
+
+            const costValue =
+              key === 'openai' && openaiReal
+                ? fmtUsd(openaiReal.amountUsd)
+                : key === 'evolution'
+                  ? 'R$ 0,00'
+                  : cost
+                    ? fmtUsd(cost.estimatedCostUsd)
+                    : apiCosts === null
+                      ? '—'
+                      : fmtUsd(0)
+
+            return (
+              <Card key={key} className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div
+                      className="flex h-8 w-8 items-center justify-center rounded-lg"
+                      style={{ background: 'rgba(6,182,212,0.12)' }}
+                    >
+                      <Icon size={14} className="text-cyan-400" />
+                    </div>
+                    <span className="text-sm font-bold text-white">{label}</span>
+                  </div>
+                  <span className="flex items-center gap-1.5 text-[10px] font-bold" style={{ color: status.color }}>
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: status.dot }} />
+                    {status.label}
+                  </span>
+                </div>
+
+                <p className="mt-3 text-2xl font-black tracking-tight text-white">{costValue}</p>
+                <p className="text-[11px] text-slate-500">{costNote}</p>
+
+                <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                  {cost && <span>{cost.requests.toLocaleString('pt-BR')} chamadas</span>}
+                  {cost && cost.totalTokens > 0 && <span>{cost.totalTokens.toLocaleString('pt-BR')} tokens</span>}
+                  {!configured && <span className="text-rose-400">env var não configurada</span>}
+                  {apiCosts === null && configured && (
+                    <span className="text-amber-400">migration 010 pendente — sem registro de uso</span>
+                  )}
+                </div>
+              </Card>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Tendência + últimos clientes */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card className="p-5">
           <CardHeader eyebrow="tendência" title="Novos clientes — últimos 7 dias" />
-          <div className="flex items-end gap-3 h-32">
+          <div className="flex h-32 items-end gap-3">
             {dayBuckets.map(({ date, count }) => (
               <div key={date} className="flex flex-1 flex-col items-center gap-1.5">
-                <div className="w-full rounded-t-lg transition-all duration-500"
+                <div
+                  className="w-full rounded-t-lg transition-all duration-500"
                   style={{
                     height: `${count === 0 ? 8 : (count / maxCount) * 100}%`,
-                    background: count > 0
-                      ? 'linear-gradient(180deg, #22d3ee 0%, #4361ee 100%)'
-                      : 'rgba(255,255,255,0.06)',
+                    background:
+                      count > 0 ? 'linear-gradient(180deg, #22d3ee 0%, #4361ee 100%)' : 'rgba(255,255,255,0.06)',
                     minHeight: 8,
-                  }} />
+                  }}
+                />
                 <span className="text-[10px] font-bold text-slate-400">{count}</span>
                 <span className="text-[9px] text-slate-600">{date}</span>
               </div>
@@ -174,84 +296,11 @@ export default async function SalesPage() {
           </div>
         </Card>
 
-        {/* Plan breakdown */}
-        <Card className="p-5">
-          <CardHeader eyebrow="produtos" title="Planos ativos" />
-
-          {Object.keys(planCounts).length === 0 ? (
-            <p className="text-sm text-slate-500">Nenhum cliente ativo ainda.</p>
-          ) : (
-            <div className="space-y-3">
-              {Object.entries(planCounts).map(([plan, count]) => {
-                const total = orgs.length || 1
-                const pct = Math.round((count / total) * 100)
-                const color = planColors[plan] ?? '#22d3ee'
-                return (
-                  <div key={plan}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-bold text-slate-300 capitalize">{plan}</span>
-                      <span className="text-xs font-black text-white">{count} cliente{count > 1 ? 's' : ''}</span>
-                    </div>
-                    <div className="h-1.5 overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }}>
-                      <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: color }} />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          <div className="mt-5 pt-4" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-500">Total de clientes</span>
-              <span className="text-xl font-black text-white">{orgs.length}</span>
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      {/* Lead sources + recent clients */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {/* Lead sources */}
-        <Card className="p-5">
-          <CardHeader eyebrow="aquisição" title="Origem dos clientes" />
-
-          {Object.keys(sourceCounts).length === 0 ? (
-            <p className="text-sm text-slate-500">Sem dados de origem ainda.</p>
-          ) : (
-            <div className="space-y-3">
-              {Object.entries(sourceCounts)
-                .sort(([, a], [, b]) => b - a)
-                .slice(0, 6)
-                .map(([source, count]) => {
-                  const total = leads.length || 1
-                  const pct = Math.round((count / total) * 100)
-                  const SrcIcon = sourceIcons[source] ?? Globe
-                  return (
-                    <div key={source} className="flex items-center gap-3">
-                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg" style={{ background: 'rgba(6,182,212,0.12)' }}>
-                        <SrcIcon size={13} className="text-cyan-400" />
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs font-bold text-slate-300 capitalize">{source}</span>
-                          <span className="text-xs font-black text-white">{pct}%</span>
-                        </div>
-                        <div className="h-1.5 overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }}>
-                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'linear-gradient(90deg, #06b6d4, #4ade80)' }} />
-                        </div>
-                      </div>
-                      <span className="text-xs text-slate-500 w-8 text-right">{count}</span>
-                    </div>
-                  )
-                })}
-            </div>
-          )}
-        </Card>
-
-        {/* Recent signups */}
         <Card className="overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          <div
+            className="flex items-center justify-between px-5 py-4"
+            style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+          >
             <div>
               <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-500">recentes</p>
               <h2 className="text-sm font-bold text-white">Últimos clientes</h2>
@@ -269,12 +318,14 @@ export default async function SalesPage() {
             </div>
           ) : (
             <div className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
-              {orgs.slice(0, 6).map(org => (
+              {orgs.slice(0, 6).map((org) => (
                 <div key={org.id} className="flex items-center justify-between px-5 py-3">
                   <div>
                     <p className="text-sm font-semibold text-white">{org.name}</p>
                     <p className="text-[11px] text-slate-500">
-                      {new Date(org.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      {new Date(org.created_at).toLocaleDateString('pt-BR', {
+                        day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+                      })}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -287,6 +338,14 @@ export default async function SalesPage() {
           )}
         </Card>
       </div>
+
+      <p className="text-[11px] leading-relaxed text-slate-600">
+        <strong className="text-slate-500">O que é exato e o que é estimado:</strong> conversas, vendas, valores
+        arrecadados e cancelamentos vêm direto do banco (exatos). Onboardings usam a ativação do 1º agente como
+        aproximação da conclusão. Custos de API são estimados pela nossa contagem de tokens/chamadas com preço público
+        de tabela — a fatura real pode divergir. Com a env <code>OPENAI_ADMIN_KEY</code>, o card da OpenAI mostra o
+        custo real da Costs API.
+      </p>
     </div>
   )
 }

@@ -19,7 +19,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
 
   const supabase = await createClient()
-  const { error } = await supabase.from('organizations').update({ is_active: body.is_active }).eq('id', id)
+  // Desativar = cancelamento (grava o timestamp que alimenta as métricas
+  // de churn e o cálculo de reembolso da garantia de 7 dias); reativar limpa.
+  const update: Record<string, unknown> = body.is_active
+    ? { is_active: true, cancelled_at: null, cancellation_reason: null }
+    : { is_active: false, cancelled_at: new Date().toISOString(), cancellation_reason: body.reason ?? null }
+  let { error } = await supabase.from('organizations').update(update).eq('id', id)
+  // cancelled_at existe a partir da migration 20260714000010; se ela ainda
+  // não tiver sido aplicada, mantém o comportamento antigo (só is_active).
+  if (error && /cancelled_at|cancellation_reason/.test(error.message)) {
+    ;({ error } = await supabase.from('organizations').update({ is_active: body.is_active }).eq('id', id))
+  }
   if (error) {
     return NextResponse.json({ error: `Erro ao atualizar: ${error.message}` }, { status: 500 })
   }
