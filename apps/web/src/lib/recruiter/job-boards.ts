@@ -107,9 +107,58 @@ export class ManualBriefingProvider implements JobBoardProvider {
   }
 }
 
+/**
+ * Placeholder para Indeed. V2: ativar quando houver parceria comercial com Indeed.
+ * Estado: Indeed descontinuou a Publisher API de busca em 2023. Sem API pública viável.
+ * Alternativa: produto pago "Indeed Smart Sourcing" (UI) ou parceria vendas-led.
+ * Docs: https://docs.indeed.com/
+ */
+export class IndeedProvider implements JobBoardProvider {
+  readonly name = 'indeed'
+
+  isAvailable(): boolean {
+    const apiKey = process.env.INDEED_API_KEY
+    return Boolean(apiKey?.trim())
+  }
+
+  async searchCandidates(job: JobOpening): Promise<JobBoardSearchOutcome> {
+    if (!this.isAvailable()) {
+      return { kind: 'manual_briefing', provider: this.name, briefing: buildSourcingBriefing(job) }
+    }
+    throw new Error('Indeed API integration not implemented yet (V2)')
+  }
+}
+
+/**
+ * Placeholder para Infojobs Brasil. V2: ativar quando houver parceria comercial com Infojobs.
+ * Estado: Infojobs não expõe API pública de busca de candidatos. Acesso à base de talentos
+ * exige acordo comercial/parceria direto com Infojobs Brasil.
+ * Docs: https://developer.infojobs.net/ (somente para candidatos, não employer)
+ */
+export class InfojobsProvider implements JobBoardProvider {
+  readonly name = 'infojobs'
+
+  isAvailable(): boolean {
+    const apiUrl = process.env.INFOJOBS_API_URL
+    const apiKey = process.env.INFOJOBS_API_KEY
+    return Boolean(apiUrl?.trim() && apiKey?.trim())
+  }
+
+  async searchCandidates(job: JobOpening): Promise<JobBoardSearchOutcome> {
+    if (!this.isAvailable()) {
+      return { kind: 'manual_briefing', provider: this.name, briefing: buildSourcingBriefing(job) }
+    }
+    throw new Error('Infojobs API integration not implemented yet (V2)')
+  }
+}
+
 /** Providers registrados, em ordem de preferência. V2 pluga APIs oficiais aqui. */
 export function getJobBoardProviders(): JobBoardProvider[] {
-  return [new ManualBriefingProvider()]
+  return [
+    new IndeedProvider(),
+    new InfojobsProvider(),
+    new ManualBriefingProvider(), // fallback final
+  ]
 }
 
 export function briefingToHtml(briefing: SourcingBriefing): string {
