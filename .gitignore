@@ -162,3 +162,6 @@ ehthumbs.db
 
 # Scripts locais de E2E (carregam .env.local; não versionar)
 .e2e-tmp/
+
+# Config local do Claude Code (histórico de permissões pode conter dados sensíveis)
+.claude/settings.local.json
