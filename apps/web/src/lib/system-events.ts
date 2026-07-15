@@ -13,6 +13,7 @@ export type SystemEventSource =
   | 'traffic'
   | 'recruiter'
   | 'job_board'
+  | 'sales'
 
 export type SystemEventInput = {
   level: SystemEventLevel

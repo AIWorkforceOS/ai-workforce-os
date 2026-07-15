@@ -48,10 +48,11 @@ export const INTERVIEW_PLAYBOOKS: Record<InterviewAgentType, InterviewPlaybook> 
       'se a empresa vende para outras empresas (B2B), para consumidor final (B2C) ou os dois',
       'se atender empresas (B2B): que tipo de empresa e em qual região você deve prospectar no Google Maps',
       'se você deve conduzir a venda até o fechamento completo sozinho ou apenas qualificar o interessado e passar para um vendedor humano',
+      'se você fecha sozinho: quando o cliente confirmar o fechamento, isso significa preencher uma vaga de emprego/estágio para essa empresa (ela é uma agência de recrutamento, estágios ou similar) ou é uma venda comum de produto/serviço (sem vaga nenhuma envolvida)',
       'quando o cliente fechar de verdade, se ele quer que você deixe registrado algum documento ou informação específica para enviar depois',
     ],
     profileSchema:
-      '{"sobre_a_empresa": string, "produtos": [{"nome": string, "preco": string, "detalhes": string}], "politica_desconto": string, "tipo_cliente": "b2b"|"b2c"|"ambos", "prospeccao": {"tipos_empresa": string[], "regioes": string[]}, "fechamento": "fecha_sozinho"|"qualifica_e_passa_para_humano", "documento_fechamento": string, "observacoes": string[]}',
+      '{"sobre_a_empresa": string, "produtos": [{"nome": string, "preco": string, "detalhes": string}], "politica_desconto": string, "tipo_cliente": "b2b"|"b2c"|"ambos", "prospeccao": {"tipos_empresa": string[], "regioes": string[]}, "fechamento": "fecha_sozinho"|"qualifica_e_passa_para_humano", "fechamento_natureza": "vaga_recrutamento"|"venda_ou_servico", "documento_fechamento": string, "observacoes": string[]}',
   },
   traffic_specialist: {
     roleLabel: 'gestor de tráfego pago',

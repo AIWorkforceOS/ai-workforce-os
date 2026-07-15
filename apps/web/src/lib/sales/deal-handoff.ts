@@ -1,10 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { isWithinActiveHours } from '@/lib/conversation-engine'
+import { isRecruitmentDeal, isWithinActiveHours } from '@/lib/conversation-engine'
 import { getRecruiterConfig } from '@/lib/recruiter/guardrails'
 import { runSourcing } from '@/lib/recruiter/sourcing-engine'
 import { logRecruiterEvent } from '@/lib/recruiter/log'
 import { logSystemEvent } from '@/lib/system-events'
-import type { Lead, Unit } from '@/lib/types'
+import type { AgentConfig, Lead, Unit } from '@/lib/types'
 import type { JobOpening, JobProfile } from '@/lib/recruiter/types'
 
 // Handoff Sales → Recrutador (item 2c): quando o Sales Rep (AI) fecha um
@@ -13,6 +13,12 @@ import type { JobOpening, JobProfile } from '@/lib/recruiter/types'
 // sourcing — sem passar pela etapa manual de "Abrir vaga" nem pelo
 // intake assíncrono do Recrutador, que continua existindo para vagas
 // abertas manualmente.
+//
+// Este handoff só faz sentido para negócios de recrutamento/estágio —
+// o único vertical em que "fechar negócio" significa "preencher uma
+// vaga". Para qualquer outro tipo de negócio (venda de produto/serviço
+// etc., aprendido na entrevista via `fechamento_natureza`), fechar um
+// negócio não deve criar vaga nenhuma: só registra o ganho.
 
 function toStr(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value : null
@@ -30,6 +36,14 @@ function clampShortlistSize(value: unknown): number {
   return Math.min(5, Math.max(3, Math.round(n)))
 }
 
+/**
+ * Ponto de entrada único do handoff de fechamento (chamado pelo webhook
+ * do WhatsApp). Decide, a partir do que a empresa ensinou na entrevista
+ * (`business_profile.fechamento_natureza`), se este fechamento é uma
+ * vaga de recrutamento/estágio (cria job_opening e aciona o Recrutador)
+ * ou um negócio genérico (só registra o ganho — sem inventar vaga nem
+ * nenhuma outra automação para o vertical).
+ */
 export async function handleSalesDealHandoff(
   supabase: SupabaseClient,
   params: { leadId: string; unit: Unit },
@@ -40,6 +54,28 @@ export async function handleSalesDealHandoff(
   const { data: leadRow } = await supabase.from('leads').select('*').eq('id', leadId).maybeSingle()
   const lead = leadRow as Lead | null
   if (!lead) return
+
+  const { data: sdrConfigRow } = await supabase
+    .from('agent_configs')
+    .select('*')
+    .eq('unit_id', unit.id)
+    .eq('agent_type', 'sdr')
+    .maybeSingle()
+  const sdrConfig = sdrConfigRow as AgentConfig | null
+  const businessProfile = (sdrConfig?.business_profile ?? {}) as Record<string, unknown>
+
+  if (!isRecruitmentDeal(businessProfile)) {
+    await logSystemEvent(supabase, {
+      level: 'info',
+      source: 'sales',
+      eventType: 'deal_won',
+      message: `Sales Rep fechou negócio com "${lead.company_name}" — marcado como ganho (negócio não é de recrutamento/estágio, nenhuma vaga foi criada).`,
+      orgId: unit.org_id,
+      unitId: unit.id,
+      leadId: lead.id,
+    })
+    return
+  }
 
   // Idempotência: se já existe vaga criada por este fechamento (retry de
   // webhook, corrida entre mensagens), não duplica.

@@ -13,6 +13,10 @@ import type { JobOpening } from '@/lib/recruiter/types'
 // sinaliza o handoff, e que handleSalesDealHandoff cria a job_opening
 // automaticamente com os dados certos — sem formulário nem etapa manual.
 //
+// Cobre também o caso de negócio genérico (não recrutamento): o
+// handoff não pode inventar uma vaga que não faz sentido para uma
+// empresa que só vende produto/serviço — só marca o lead como ganho.
+//
 // Supabase e Evolution API são fakes (in-memory / mock) — só a decisão
 // do modelo é de verdade. Não roda no `pnpm test` normal (custa chamada
 // de API): habilite com
@@ -78,6 +82,7 @@ describe.skipIf(!apiKey)('handoff Sales → Recrutador no fechamento (live)', ()
       business_profile: {
         sobre_a_empresa: 'Agência de estágios que coloca estudantes em empresas parceiras.',
         fechamento: 'fecha_sozinho',
+        fechamento_natureza: 'vaga_recrutamento',
         documento_fechamento: 'nome completo e RG do responsável pela vaga na empresa',
       },
       interview_status: 'completed',
@@ -147,5 +152,101 @@ describe.skipIf(!apiKey)('handoff Sales → Recrutador no fechamento (live)', ()
     // Idempotência: fechar de novo (ex.: retry de webhook) não duplica a vaga.
     await handleSalesDealHandoff(supabase, { leadId: lead.id, unit })
     expect((db.job_openings ?? []).length).toBe(1)
+  }, 60_000)
+
+  it('negócio genérico (não recrutamento) fecha marcando ganho, sem criar job_opening', async () => {
+    if (apiKey) process.env.OPENAI_API_KEY = apiKey
+
+    const unit: Unit = {
+      id: 'unit-2',
+      org_id: 'org-1',
+      name: 'Unidade Teste Genérica',
+      slug: 'unidade-teste-generica',
+      whatsapp_instance_id: null,
+      whatsapp_phone: '5511999999998',
+      email_from: null,
+      email_reply_to: null,
+      region_city: 'São Paulo',
+      region_state: 'SP',
+      evolution_api_url: null,
+      evolution_api_key: null,
+      evolution_instance_name: null,
+      intake_token: null,
+      is_active: true,
+      created_at: '',
+      updated_at: '',
+    }
+
+    const sdrConfig: AgentConfig = {
+      id: 'cfg-sdr-2',
+      unit_id: unit.id,
+      agent_type: 'sdr',
+      persona_name: 'Kai',
+      persona_tone: 'friendly',
+      daily_limit: 50,
+      active_hours: { start: '00:00', end: '23:59', days: [0, 1, 2, 3, 4, 5, 6] },
+      escalation_rules: { after_messages: 999, keywords: [] },
+      sectors: [],
+      is_active: true,
+      business_profile: {
+        sobre_a_empresa: 'Empresa de manutenção de ar-condicionado para clínicas e escritórios.',
+        produtos: [{ nome: 'Contrato de manutenção mensal', preco: 'R$ 450/mês' }],
+        fechamento: 'fecha_sozinho',
+        fechamento_natureza: 'venda_ou_servico',
+      },
+      interview_status: 'completed',
+      interview_transcript: [],
+      created_at: '',
+      updated_at: '',
+    }
+
+    const lead: Lead = {
+      id: 'lead-2',
+      unit_id: unit.id,
+      company_name: 'Clínica Vida Plena',
+      contact_name: 'Renata',
+      phone: '5511988887776',
+      email: null,
+      sector: 'saude',
+      city: null,
+      state: null,
+      source: 'google_maps',
+      status: 'replied',
+      google_place_id: null,
+      notes: null,
+      last_contacted_at: new Date().toISOString(),
+      deal_profile: {},
+      deal_closed_at: null,
+      created_at: '',
+      updated_at: '',
+    }
+
+    const { supabase, db } = createFakeSupabase({
+      agent_configs: [sdrConfig as unknown as Record<string, unknown>],
+      leads: [lead as unknown as Record<string, unknown>],
+    })
+
+    const { processInboundMessage } = await import('@/lib/conversation-engine')
+
+    const incomingText = 'Fechado, pode seguir com o contrato de manutenção mensal para a nossa clínica!'
+
+    const result = await processInboundMessage({ supabase, unit, lead, incomingText })
+
+    expect(result.dealHandoffReady).toBe(true)
+
+    const updatedLead = db.leads?.find((row) => row.id === lead.id) as unknown as Lead
+    expect(updatedLead.status).toBe('won')
+    expect(updatedLead.deal_closed_at).toBeTruthy()
+
+    const { handleSalesDealHandoff } = await import('@/lib/sales/deal-handoff')
+    await handleSalesDealHandoff(supabase, { leadId: lead.id, unit })
+
+    // Não deve tentar criar vaga nenhuma — não faz sentido pra esse negócio.
+    const jobs = (db.job_openings ?? []) as unknown as JobOpening[]
+    expect(jobs).toHaveLength(0)
+
+    // Idempotência: fechar de novo não gera vaga nem quebra.
+    await handleSalesDealHandoff(supabase, { leadId: lead.id, unit })
+    expect((db.job_openings ?? []).length).toBe(0)
   }, 60_000)
 })
