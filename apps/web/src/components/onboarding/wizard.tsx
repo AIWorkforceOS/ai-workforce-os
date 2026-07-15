@@ -708,6 +708,13 @@ function ActivateStep({
             <ChevronRight size={14} />
           </Link>
         </div>
+        <p className="text-xs text-slate-500">
+          Sabia que ele tem colegas? Você também pode ativar o{' '}
+          <Link href="/dashboard/equipe-digital" className="font-semibold text-cyan-400 hover:underline">
+            Recrutador (RH) e o Gestor de tráfego
+          </Link>
+          .
+        </p>
       </div>
     )
   }

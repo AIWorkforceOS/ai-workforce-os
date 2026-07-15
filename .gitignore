@@ -157,3 +157,8 @@ ehthumbs.db
 *.swp
 *.swo
 .turbo/
+.vercel
+.env*
+
+# Scripts locais de E2E (carregam .env.local; não versionar)
+.e2e-tmp/

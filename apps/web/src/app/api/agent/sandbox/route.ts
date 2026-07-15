@@ -2,16 +2,11 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getAppUser } from '@/lib/app-user'
 import { generateChatReply, getOpenAIApiKey, type ChatMessage } from '@/lib/openai'
-import type { AgentConfig, AgentTone, Unit } from '@/lib/types'
+import { buildSystemPrompt } from '@/lib/conversation-engine'
+import type { AgentConfig, Unit } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
-
-const TONE_LABEL: Record<AgentTone, string> = {
-  professional: 'profissional e direto',
-  friendly: 'amigável e caloroso',
-  formal: 'formal e cortês',
-}
 
 /**
  * POST /api/agent/sandbox — conversa de teste com o funcionário digital
@@ -49,8 +44,6 @@ export async function POST(request: Request) {
 
   const unitRow = unit as Unit
   const configRow = config as AgentConfig | null
-  const personaName = configRow?.persona_name ?? 'Assistente'
-  const tone = TONE_LABEL[configRow?.persona_tone ?? 'friendly']
 
   const apiKey = getOpenAIApiKey()
   if (!apiKey) {
@@ -60,13 +53,13 @@ export async function POST(request: Request) {
     )
   }
 
-  // Mesmo prompt do motor real (conversation-engine.buildSystemPrompt),
-  // com um adendo de contexto de simulação.
+  // Mesmo prompt do motor real, com um adendo de contexto de simulação.
+  const fallbackConfig = {
+    persona_name: 'Assistente',
+    persona_tone: 'friendly',
+  } as AgentConfig
   const systemPrompt = [
-    `Você é ${personaName}, um agente de SDR (pré-vendas) que atende pelo WhatsApp em nome da unidade ${unitRow.name}${unitRow.region_city ? ` (${unitRow.region_city})` : ''}.`,
-    `Seu tom de comunicação deve ser ${tone}.`,
-    'Seu objetivo é qualificar o lead e conseguir agendar uma conversa com um vendedor humano.',
-    'Responda sempre em português do Brasil, de forma breve (no máximo 3 frases curtas), sem usar markdown ou listas.',
+    buildSystemPrompt(configRow ?? fallbackConfig, unitRow),
     'Esta é uma conversa de TESTE feita pelo dono da empresa para ver como você responde — atenda normalmente, como se fosse um cliente real.',
   ].join(' ')
 

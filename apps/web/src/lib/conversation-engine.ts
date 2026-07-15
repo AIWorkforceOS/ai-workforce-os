@@ -3,6 +3,7 @@ import { getEvolutionConfig, sendWhatsAppMessage } from '@/lib/evolution'
 import { generateChatReply, getOpenAIApiKey, type ChatMessage } from '@/lib/openai'
 import { sendEscalationEmail, sendTechnicalAlertEmail } from '@/lib/email'
 import { logSystemEvent, shouldNotifyForEvent, type SystemEventSource } from '@/lib/system-events'
+import { IDENTITY_AND_HANDOFF_RULES } from '@/lib/agent-identity'
 import type { AgentConfig, AgentTone, Conversation, Lead, Unit, ActiveHours } from '@/lib/types'
 
 const WEEKDAY_MAP: Record<string, number> = {
@@ -45,12 +46,13 @@ const TONE_LABEL: Record<AgentTone, string> = {
   formal: 'formal e cortês',
 }
 
-function buildSystemPrompt(agentConfig: AgentConfig, unit: Unit): string {
+export function buildSystemPrompt(agentConfig: AgentConfig, unit: Unit): string {
   return [
     `Você é ${agentConfig.persona_name}, um agente de SDR (pré-vendas) que atende pelo WhatsApp em nome da unidade ${unit.name}${unit.region_city ? ` (${unit.region_city})` : ''}.`,
     `Seu tom de comunicação deve ser ${TONE_LABEL[agentConfig.persona_tone]}.`,
     'Seu objetivo é qualificar o lead e conseguir agendar uma conversa com um vendedor humano.',
     'Responda sempre em português do Brasil, de forma breve (no máximo 3 frases curtas), sem usar markdown ou listas.',
+    IDENTITY_AND_HANDOFF_RULES,
   ].join(' ')
 }
 

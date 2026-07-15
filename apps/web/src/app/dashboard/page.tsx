@@ -202,7 +202,12 @@ async function ClientHome({ firstName }: { firstName: string }) {
 
       {/* Funcionários digitais — estado de cada um */}
       <div>
-        <p className="mb-3 text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">Seus funcionários digitais</p>
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">Seus funcionários digitais</p>
+          <Link href="/dashboard/equipe-digital" className="text-[11px] font-semibold" style={{ color: '#06b6d4' }}>
+            Contratar & ativar funcionários →
+          </Link>
+        </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <EmployeeCard
             icon={Bot}
@@ -219,8 +224,8 @@ async function ClientHome({ firstName }: { firstName: string }) {
             desc="Divulga vagas, faz triagem de candidatos e entrega os melhores pra você."
             state={(openJobs ?? 0) > 0 ? 'active' : 'off'}
             stateLabel={(openJobs ?? 0) > 0 ? `${openJobs} vaga(s) em andamento` : 'Nenhuma vaga aberta'}
-            href="/dashboard/recruiter"
-            cta={(openJobs ?? 0) > 0 ? 'Acompanhar vagas' : 'Abrir primeira vaga'}
+            href={(openJobs ?? 0) > 0 ? '/dashboard/recruiter' : '/dashboard/equipe-digital'}
+            cta={(openJobs ?? 0) > 0 ? 'Acompanhar vagas' : 'Ativar e configurar'}
           />
           <EmployeeCard
             icon={Megaphone}
@@ -228,8 +233,8 @@ async function ClientHome({ firstName }: { firstName: string }) {
             desc="Cuida dos seus anúncios no Instagram/Facebook e Google, otimizando o investimento."
             state={(adAccounts ?? 0) > 0 ? 'active' : 'off'}
             stateLabel={(adAccounts ?? 0) > 0 ? `${adAccounts} conta(s) de anúncio` : 'Contas não conectadas'}
-            href="/dashboard/traffic"
-            cta={(adAccounts ?? 0) > 0 ? 'Ver desempenho' : 'Saber mais'}
+            href={(adAccounts ?? 0) > 0 ? '/dashboard/traffic' : '/dashboard/equipe-digital'}
+            cta={(adAccounts ?? 0) > 0 ? 'Ver desempenho' : 'Ativar e configurar'}
           />
         </div>
       </div>

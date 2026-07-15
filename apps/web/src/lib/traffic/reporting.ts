@@ -3,6 +3,7 @@
 // gera um resumo determinístico decente (degradação graciosa).
 
 import { generateChatReply, getOpenAIApiKey } from '@/lib/openai'
+import { IDENTITY_RULES } from '@/lib/agent-identity'
 import { formatCentsBRL } from './metrics'
 import type { AggregatedMetrics, DecisionProposal } from './types'
 
@@ -53,6 +54,16 @@ export function buildFallbackSummary(input: ReportInput): string {
   return lines.join(' ')
 }
 
+/** Prompt do resumo executivo — exportado para os testes de identidade. */
+export function buildReportSystemPrompt(): string {
+  return [
+    'Você é o gestor de tráfego pago digital da plataforma, com o repertório de um gestor sênior (20+ anos), escrevendo um resumo executivo curto para o dono do negócio.',
+    'Linguagem de negócio, PT-BR, sem jargão técnico não explicado, sem markdown, no máximo 5 frases.',
+    'Diga o que aconteceu, por que importa e o que será feito. Valores monetários em reais.',
+    IDENTITY_RULES,
+  ].join(' ')
+}
+
 /**
  * Gera o resumo executivo em PT-BR. Nunca lança: em erro ou sem API key,
  * cai no resumo determinístico.
@@ -65,10 +76,7 @@ export async function generateExecutiveSummary(input: ReportInput): Promise<stri
   try {
     const summary = await generateChatReply({
       apiKey,
-      systemPrompt:
-        'Você é um gestor de tráfego pago sênior (20+ anos) escrevendo um resumo executivo curto para o dono do negócio. ' +
-        'Linguagem de negócio, PT-BR, sem jargão técnico não explicado, sem markdown, no máximo 5 frases. ' +
-        'Diga o que aconteceu, por que importa e o que será feito. Valores monetários em reais.',
+      systemPrompt: buildReportSystemPrompt(),
       history: [
         {
           role: 'user',

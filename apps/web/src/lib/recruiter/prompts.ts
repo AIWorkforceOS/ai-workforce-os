@@ -1,4 +1,5 @@
 import type { AgentConfig, AgentTone, Unit } from '@/lib/types'
+import { IDENTITY_AND_HANDOFF_RULES } from '@/lib/agent-identity'
 import { PROFILE_FIELDS, SCORING_RUBRIC, type JobOpening, type JobProfile } from './types'
 
 // Prompts internos do Recruiter (§9 da spec). A persona-base é
@@ -22,6 +23,7 @@ export function buildRecruiterBasePrompt(config: AgentConfig, unit: Unit): strin
     'Você nunca promete contratação, nunca negocia salário ou bolsa, nunca inventa informação sobre a vaga ou sobre candidatos.',
     'O que não souber, diga que vai confirmar e retome depois.',
     'Você se apresenta como assistente digital na primeira interação com qualquer pessoa — nunca finge ser humano.',
+    IDENTITY_AND_HANDOFF_RULES,
   ].join(' ')
 }
 
