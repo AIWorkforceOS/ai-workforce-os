@@ -1,8 +1,28 @@
 # Setup de credenciais — Meta Ads + Google Ads (Traffic Specialist)
 
-Este é o passo a passo do que **só o Vinicius (ou o dono da conta de anúncio)** pode fazer
-para liberar as integrações reais. Todo o código já está pronto e validado com mocks —
-quando as envs abaixo existirem, o pipeline passa a operar contas reais sem mudança de código.
+Este documento cobre a configuração **global** (Business Manager/MCC da Alizo, developer token,
+app OAuth). Para conectar a conta de anúncio **de um cliente específico**, use o fluxo
+self-service em `/dashboard/traffic/connect` (implementado em
+`src/app/api/traffic/accounts/connect/route.ts` +
+`src/lib/traffic/connection-test.ts`) — o próprio cliente cola as credenciais e o sistema testa
+com uma chamada real antes de salvar. Este passo a passo abaixo é o que **só o Vinicius (ou o
+dono da conta de anúncio)** precisa fazer uma vez para liberar as integrações reais.
+
+## Diferença de complexidade entre as duas plataformas (self-service)
+
+- **Meta Ads — o cliente sempre precisa gerar uma credencial** (token de usuário do sistema).
+  Não tem como o cliente conectar a conta sem gerar esse token, então o formulário sempre pede
+  ID da conta + token.
+- **Google Ads — o caminho padrão não pede nenhum token do cliente.** Como a Alizo já opera uma
+  MCC (conta gerenciadora), o cliente só precisa (1) aceitar o convite de vínculo da MCC dentro
+  do próprio Google Ads e (2) colar o Customer ID. `getGoogleAdsConfig` (`lib/traffic/google-ads.ts`)
+  já cai nos fallbacks globais (`GOOGLE_ADS_REFRESH_TOKEN`, `GOOGLE_ADS_DEVELOPER_TOKEN`,
+  `GOOGLE_ADS_CLIENT_ID/SECRET`, `GOOGLE_ADS_LOGIN_CUSTOMER_ID`) quando a conta não tem
+  overrides próprios — por isso o fluxo self-service de Google é o mais simples dos dois, apesar
+  da API ser mais complexa por baixo do capô. Os campos `google_developer_token` /
+  `google_client_id` / `google_client_secret` em `ad_accounts` só existem para o caso avançado
+  (raro) de um cliente que já opera sua própria credencial de app OAuth da Google Ads API e não
+  quer depender do vínculo com a MCC da Alizo.
 
 > Enquanto não houver credenciais: `TRAFFIC_USE_MOCK=1` roda tudo com dados de demonstração
 > e `TRAFFIC_DRY_RUN=1` impede qualquer escrita nas plataformas (útil nas primeiras semanas).

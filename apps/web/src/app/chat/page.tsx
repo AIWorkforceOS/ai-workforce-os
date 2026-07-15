@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { Suspense, useState, useRef, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Send, Bot, Sparkles } from 'lucide-react'
 
 type Message = {
@@ -10,11 +11,15 @@ type Message = {
   ts: number
 }
 
-const INITIAL_MESSAGE: Message = {
-  id: 'init',
-  role: 'assistant',
-  content: 'Olá! Sou o **Kai**, seu consultor virtual do AI Workforce OS 👋\n\nEstou aqui para tirar todas as suas dúvidas e ajudar você a escolher o plano ideal para o seu negócio.\n\nComo posso te ajudar hoje?',
-  ts: Date.now(),
+type ChatMode = 'sales' | 'support' | 'traffic'
+
+const INITIAL_MESSAGES: Record<ChatMode, string> = {
+  sales:
+    'Olá! Sou o **Kai**, seu consultor virtual do AI Workforce OS 👋\n\nEstou aqui para tirar todas as suas dúvidas e ajudar você a escolher o plano ideal para o seu negócio.\n\nComo posso te ajudar hoje?',
+  support:
+    'Olá! Sou o **Kai**, do suporte do AI Workforce OS 👋\n\nConte o que você está tentando fazer que eu te guio passo a passo.',
+  traffic:
+    'Olá! Sou o **Kai** e vou te ajudar a conectar suas contas de anúncio 👋\n\nVocê está travado no **Meta Ads** (Facebook/Instagram) ou no **Google Ads**?',
 }
 
 function renderMarkdown(text: string) {
@@ -25,10 +30,22 @@ function renderMarkdown(text: string) {
 }
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE])
+  return (
+    <Suspense fallback={null}>
+      <ChatPageInner />
+    </Suspense>
+  )
+}
+
+function ChatPageInner() {
+  const searchParams = useSearchParams()
+  const modeParam = searchParams.get('mode')
+  const mode: ChatMode = modeParam === 'support' || modeParam === 'traffic' ? modeParam : 'sales'
+
+  const initialMessage: Message = { id: 'init', role: 'assistant', content: INITIAL_MESSAGES[mode], ts: Date.now() }
+  const [messages, setMessages] = useState<Message[]>([initialMessage])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [mode] = useState<'sales' | 'support'>('sales')
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -36,8 +53,8 @@ export default function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
 
-  async function send() {
-    const text = input.trim()
+  async function send(overrideText?: string) {
+    const text = (overrideText ?? input).trim()
     if (!text || loading) return
 
     const userMsg: Message = { id: Date.now().toString(), role: 'user', content: text, ts: Date.now() }
@@ -53,7 +70,7 @@ export default function ChatPage() {
       // Include initial message as context
       const payload = [
         { role: 'user' as const, content: '(sistema: início da conversa)' },
-        { role: 'assistant' as const, content: INITIAL_MESSAGE.content },
+        { role: 'assistant' as const, content: initialMessage.content },
         ...apiMessages,
       ]
 
@@ -92,7 +109,12 @@ export default function ChatPage() {
     }
   }
 
-  const quickReplies = ['Como funciona?', 'Quanto custa?', 'Tem garantia?', 'Aceita PIX?']
+  const quickReplies =
+    mode === 'traffic'
+      ? ['Estou travado no Meta Ads', 'Estou travado no Google Ads', 'Deu erro ao testar a conexão']
+      : mode === 'support'
+        ? ['Como conecto o WhatsApp?', 'Como troco minha senha?', 'Como adiciono uma unidade?']
+        : ['Como funciona?', 'Quanto custa?', 'Tem garantia?', 'Aceita PIX?']
 
   return (
     <div
@@ -205,7 +227,7 @@ export default function ChatPage() {
           {quickReplies.map(q => (
             <button
               key={q}
-              onClick={() => { setInput(q); send() }}
+              onClick={() => send(q)}
               style={{
                 padding: '6px 12px',
                 borderRadius: 20,
@@ -250,7 +272,7 @@ export default function ChatPage() {
           }}
         />
         <button
-          onClick={send}
+          onClick={() => send()}
           disabled={loading || !input.trim()}
           style={{
             width: 38, height: 38, borderRadius: 10, border: 'none', cursor: 'pointer',

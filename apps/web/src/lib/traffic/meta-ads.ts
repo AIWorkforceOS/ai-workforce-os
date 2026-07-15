@@ -49,7 +49,7 @@ export function getMetaConfig(account: {
 
 type MetaErrorBody = { error?: { message?: string; type?: string; code?: number } }
 
-async function metaFetch<T>(path: string, config: MetaConfig, params?: Record<string, string>): Promise<T> {
+export async function metaFetch<T>(path: string, config: MetaConfig, params?: Record<string, string>): Promise<T> {
   const url = new URL(`${META_BASE_URL}/${path}`)
   url.searchParams.set('access_token', config.accessToken)
   for (const [key, value] of Object.entries(params ?? {})) url.searchParams.set(key, value)
@@ -222,6 +222,21 @@ export function normalizeMetaInsights(
 // ---------------------------------------------------------------------------
 // Chamadas à API
 // ---------------------------------------------------------------------------
+
+export type MetaAccountInfo = {
+  id: string
+  name: string
+  /** 1 = ACTIVE; ver developers.facebook.com/docs/marketing-api/reference/ad-account#fields */
+  account_status: number
+  currency: string
+}
+
+/** Chamada leve usada para validar credenciais no fluxo de conexão self-service. */
+export async function getMetaAccountInfo(config: MetaConfig): Promise<MetaAccountInfo> {
+  return metaFetch<MetaAccountInfo>(config.adAccountId, config, {
+    fields: 'name,account_status,currency',
+  })
+}
 
 const CAMPAIGN_FIELDS = 'id,name,status,effective_status,objective,daily_budget,bid_strategy'
 const ADSET_FIELDS = `${CAMPAIGN_FIELDS},campaign_id`

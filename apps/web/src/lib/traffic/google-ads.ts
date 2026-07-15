@@ -34,14 +34,23 @@ export type GoogleAdsConfig = {
  * Resolve as credenciais Google Ads de uma conta conectada: refresh token
  * por conta (ad_accounts.refresh_token) + credenciais de app/developer
  * token globais por env. Retorna null quando algo essencial falta.
+ *
+ * Contas que aceitaram o vínculo com a MCC da Alizo (fluxo padrão do
+ * self-service) não precisam de refresh_token nem developer token
+ * próprios — tudo cai nos fallbacks globais e só o Customer ID
+ * (external_account_id) é necessário. Os campos google_* só importam
+ * para clientes com sua própria credencial de app OAuth (avançado).
  */
 export function getGoogleAdsConfig(account: {
   external_account_id: string
   refresh_token: string | null
+  google_developer_token?: string | null
+  google_client_id?: string | null
+  google_client_secret?: string | null
 }): GoogleAdsConfig | null {
-  const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN
-  const clientId = process.env.GOOGLE_ADS_CLIENT_ID
-  const clientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET
+  const developerToken = account.google_developer_token || process.env.GOOGLE_ADS_DEVELOPER_TOKEN
+  const clientId = account.google_client_id || process.env.GOOGLE_ADS_CLIENT_ID
+  const clientSecret = account.google_client_secret || process.env.GOOGLE_ADS_CLIENT_SECRET
   const refreshToken = account.refresh_token || process.env.GOOGLE_ADS_REFRESH_TOKEN
 
   if (!developerToken || !clientId || !clientSecret || !refreshToken) return null
@@ -130,6 +139,12 @@ export async function searchGAQL(
 // ---------------------------------------------------------------------------
 
 export type GoogleAdsSearchRow = {
+  customer?: {
+    resourceName?: string
+    id?: string
+    descriptiveName?: string
+    currencyCode?: string
+  }
   campaign?: {
     resourceName?: string
     id?: string
@@ -218,6 +233,29 @@ export function normalizeGoogleMetrics(row: GoogleAdsSearchRow): PlatformMetrics
 // ---------------------------------------------------------------------------
 // Consultas e mutações
 // ---------------------------------------------------------------------------
+
+export type GoogleCustomerInfo = { id: string; descriptiveName: string | null; currencyCode: string | null }
+
+/** Chamada leve usada para validar credenciais no fluxo de conexão self-service. */
+export async function getGoogleCustomerInfo(
+  config: GoogleAdsConfig,
+  accessToken: string,
+): Promise<GoogleCustomerInfo> {
+  const rows = await searchGAQL(
+    config,
+    accessToken,
+    'SELECT customer.id, customer.descriptive_name, customer.currency_code FROM customer LIMIT 1',
+  )
+  const customer = rows[0]?.customer
+  if (!customer?.id) {
+    throw new Error('Google Ads não retornou dados da conta — confira o Customer ID informado.')
+  }
+  return {
+    id: String(customer.id),
+    descriptiveName: customer.descriptiveName ?? null,
+    currencyCode: customer.currencyCode ?? null,
+  }
+}
 
 export async function listGoogleCampaigns(
   config: GoogleAdsConfig,

@@ -79,6 +79,10 @@ export type AdAccount = {
   timezone: string
   access_token: string | null
   refresh_token: string | null
+  /** Overrides opcionais por conta do app OAuth do Google Ads (self-service avançado). Null = usa envs globais da MCC Alizo. */
+  google_developer_token: string | null
+  google_client_id: string | null
+  google_client_secret: string | null
   connection_status: AdAccountConnectionStatus
   connection_error: string | null
   optimization_mode: OptimizationMode

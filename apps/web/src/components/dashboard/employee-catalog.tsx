@@ -70,7 +70,7 @@ export function EmployeeCatalog({
 
   const trafficSteps: Step[] = [
     { label: 'Ativar o gestor de tráfego', desc: 'Um clique — ele já fica de prontidão.', done: !!traffic?.is_active, inline: true },
-    { label: 'Conectar suas contas de anúncio', desc: 'A equipe Alizo conecta com você (Facebook/Instagram e Google). Leva uns 15 minutos, uma vez só.', done: adAccounts > 0, href: 'mailto:suporte@alizo.com.br?subject=Quero%20conectar%20minhas%20contas%20de%20an%C3%BAncio' },
+    { label: 'Conectar suas contas de anúncio', desc: 'Você mesmo conecta pelo painel (Facebook/Instagram e Google) — testamos e confirmamos na hora.', done: adAccounts > 0, href: '/dashboard/traffic/connect' },
     { label: 'Acompanhar as recomendações', desc: 'Ele sugere melhorias todo dia — você aprova ou recusa cada uma.', done: adAccounts > 0, href: '/dashboard/traffic' },
   ]
 

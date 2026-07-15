@@ -16,12 +16,14 @@ import {
   Card,
   CardHeader,
   PageHeader,
+  PrimaryButton,
   TableShell,
   Td,
   Th,
   Tr,
 } from '@/components/ui/dashboard-ui'
 import { TrafficDecisionActions } from '@/components/dashboard/traffic-decision-actions'
+import { Plus } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -155,6 +157,11 @@ export default async function TrafficPage() {
         eyebrow="funcionário digital"
         title="Especialista em Tráfego Pago"
         subtitle="Ele cuida dos seus anúncios no Instagram/Facebook e no Google: acompanha todo dia, sugere melhorias e registra tudo o que faz."
+        action={
+          <PrimaryButton href="/dashboard/traffic/connect" icon={<Plus size={14} />}>
+            Conectar conta
+          </PrimaryButton>
+        }
       />
 
       {/* KPIs */}
@@ -187,16 +194,21 @@ export default async function TrafficPage() {
           <div className="flex flex-col items-center gap-2 px-5 py-12 text-center">
             <p className="text-sm font-bold text-white">Suas contas de anúncio ainda não estão conectadas</p>
             <p className="max-w-lg text-sm text-slate-400">
-              Pra esse funcionário trabalhar, a equipe Alizo conecta com você as contas de anúncio da
-              sua empresa (Facebook/Instagram e Google). É uma configuração única, feita junto — leva
-              cerca de 15 minutos.
+              Conecte você mesmo, em poucos minutos: cole as credenciais da sua conta Meta Ads ou
+              Google Ads e o sistema testa e confirma a conexão na hora. O Kai te guia passo a passo.
             </p>
             <a
-              href="mailto:suporte@alizo.com.br?subject=Quero%20conectar%20minhas%20contas%20de%20an%C3%BAncio"
+              href="/dashboard/traffic/connect"
               className="mt-2 rounded-xl px-5 py-2.5 text-sm font-black text-white"
               style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 12px rgba(6,182,212,0.25)' }}
             >
-              Agendar conexão com a equipe
+              Conectar minhas contas
+            </a>
+            <a
+              href="mailto:suporte@alizo.com.br?subject=Quero%20conectar%20minhas%20contas%20de%20an%C3%BAncio"
+              className="text-xs text-slate-500 underline hover:text-slate-300"
+            >
+              prefiro pedir ajuda da equipe
             </a>
           </div>
         ) : (
