@@ -104,7 +104,7 @@ export function ProvisionUserForm({ orgId }: { orgId: string }) {
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<{ email: string; tempPassword: string | null } | null>(null)
+  const [result, setResult] = useState<{ email: string; emailSent: boolean; setupLink: string | null; note?: string } | null>(null)
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -121,7 +121,7 @@ export function ProvisionUserForm({ orgId }: { orgId: string }) {
       setError(data?.error ?? 'Erro ao provisionar acesso.')
       return
     }
-    setResult({ email, tempPassword: data.tempPassword ?? null })
+    setResult({ email, emailSent: !!data.emailSent, setupLink: data.setupLink ?? null, note: data.note })
     router.refresh()
   }
 
@@ -129,15 +129,17 @@ export function ProvisionUserForm({ orgId }: { orgId: string }) {
     return (
       <div className="rounded-xl p-4 text-sm" style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)' }}>
         <p className="font-bold text-emerald-400">Acesso liberado para {result.email}</p>
-        {result.tempPassword ? (
-          <p className="mt-1 text-xs text-slate-300">
-            Senha temporária (aparece só uma vez):{' '}
-            <code className="rounded-lg px-2 py-0.5 font-mono text-cyan-300" style={{ background: 'rgba(6,182,212,0.1)' }}>
-              {result.tempPassword}
+        {result.emailSent ? (
+          <p className="mt-1 text-xs text-slate-300">E-mail de boas-vindas enviado com o link de primeiro acesso.</p>
+        ) : result.setupLink ? (
+          <div className="mt-1 text-xs text-slate-300">
+            <p className="text-amber-400">O e-mail automático não pôde ser enviado — repasse este link por canal seguro:</p>
+            <code className="mt-1 block break-all rounded-lg px-2 py-1 font-mono text-cyan-300" style={{ background: 'rgba(6,182,212,0.1)' }}>
+              {result.setupLink}
             </code>
-          </p>
+          </div>
         ) : (
-          <p className="mt-1 text-xs text-slate-400">A conta de login já existia — a senha atual continua valendo.</p>
+          <p className="mt-1 text-xs text-slate-400">{result.note ?? 'A conta de login já existia — a senha atual continua valendo.'}</p>
         )}
       </div>
     )

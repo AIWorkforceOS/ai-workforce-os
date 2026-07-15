@@ -156,8 +156,15 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ id: 
 
       {/* Unidades */}
       <Card className="overflow-hidden">
-        <div className="px-5 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
           <h2 className="text-sm font-bold text-white">Unidades</h2>
+          <Link
+            href={`/dashboard/units/new?org_id=${orgRow.id}`}
+            className="flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold text-slate-200 transition-all hover:bg-white/5"
+            style={{ border: '1px solid rgba(255,255,255,0.1)' }}
+          >
+            + Nova unidade
+          </Link>
         </div>
         {unitRows.length === 0 ? (
           <p className="px-5 py-8 text-center text-sm text-slate-500">Nenhuma unidade — o cliente não vai conseguir usar nada até ter uma.</p>

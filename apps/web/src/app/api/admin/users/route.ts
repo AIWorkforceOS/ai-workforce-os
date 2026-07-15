@@ -1,20 +1,22 @@
 import { NextResponse } from 'next/server'
 import { getAppUser } from '@/lib/app-user'
 import { createServiceClient } from '@/lib/supabase/service'
+import { sendWelcomeEmail } from '@/lib/email'
 
-function generateTempPassword(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
-  const bytes = crypto.getRandomValues(new Uint8Array(12))
-  return Array.from(bytes, (byte) => chars[byte % chars.length]).join('')
+function siteUrl(): string {
+  return (process.env.NEXT_PUBLIC_APP_URL || 'https://SEU-DOMINIO.vercel.app').replace(/\/+$/, '')
 }
 
 /**
  * Provisiona o acesso de um cliente à plataforma (apenas super_admin):
- *   1. cria o usuário no Supabase Auth com senha temporária
- *   2. cria o registro em public.users vinculado à org (role 'admin')
+ *   1. cria o registro em public.users vinculado à org
+ *   2. cria (ou reaproveita) a conta no Supabase Auth e gera um link de
+ *      primeiro acesso (invite para conta nova, recovery para conta que já
+ *      existia) — nunca uma senha em texto puro
+ *   3. dispara e-mail de boas-vindas com o link (Resend); se o e-mail falhar,
+ *      devolve o link na resposta para a equipe repassar manualmente
  *
- * A senha temporária é retornada UMA única vez para ser repassada ao
- * cliente por canal seguro. Requer SUPABASE_SERVICE_ROLE_KEY.
+ * Requer SUPABASE_SERVICE_ROLE_KEY.
  */
 export async function POST(request: Request) {
   const appUser = await getAppUser()
@@ -64,30 +66,60 @@ export async function POST(request: Request) {
     }
   }
 
-  // Conta de login (Supabase Auth) com senha temporária
-  const tempPassword = generateTempPassword()
-  const { error: authError } = await service.auth.admin.createUser({
-    email,
-    password: tempPassword,
-    email_confirm: true,
-  })
+  // Conta de login (Supabase Auth): link seguro de primeiro acesso em vez de
+  // senha em texto puro. 'invite' cria a conta; se já existir, cai para
+  // 'recovery' (reset de senha) na mesma conta.
+  const redirectTo = `${siteUrl()}/auth/set-password`
+  let actionLink: string | null = null
+  let linkType: 'invite' | 'recovery' = 'invite'
 
-  if (authError) {
-    // Conta de auth já existe: acesso segue funcionando com a senha atual
-    const alreadyExists = /already|registered|exists/i.test(authError.message)
-    if (alreadyExists) {
+  const invite = await service.auth.admin.generateLink({ type: 'invite', email, options: { redirectTo } })
+  if (invite.error) {
+    const alreadyExists = /already|registered|exists/i.test(invite.error.message)
+    if (!alreadyExists) {
+      return NextResponse.json(
+        { error: `Usuário vinculado à empresa, mas falha ao gerar link de acesso: ${invite.error.message}` },
+        { status: 500 },
+      )
+    }
+    linkType = 'recovery'
+    const recovery = await service.auth.admin.generateLink({ type: 'recovery', email, options: { redirectTo } })
+    if (recovery.error || !recovery.data.properties?.action_link) {
       return NextResponse.json({
         ok: true,
         email,
-        tempPassword: null,
-        note: 'Usuário vinculado à empresa. A conta de login já existia — a senha atual continua valendo.',
+        emailSent: false,
+        setupLink: null,
+        note: 'Usuário vinculado à empresa. A conta de login já existia e não foi possível gerar um novo link — a senha atual continua valendo.',
       })
     }
+    actionLink = recovery.data.properties.action_link
+  } else {
+    actionLink = invite.data.properties?.action_link ?? null
+  }
+
+  if (!actionLink) {
     return NextResponse.json(
-      { error: `Usuário vinculado, mas falha ao criar login: ${authError.message}` },
+      { error: 'Usuário vinculado à empresa, mas não foi possível gerar o link de acesso.' },
       { status: 500 },
     )
   }
 
-  return NextResponse.json({ ok: true, email, tempPassword })
+  const emailResult = await sendWelcomeEmail({
+    to: email,
+    name,
+    companyName: org.name,
+    setPasswordUrl: actionLink,
+  })
+
+  return NextResponse.json({
+    ok: true,
+    email,
+    emailSent: emailResult.ok,
+    emailError: emailResult.ok ? null : emailResult.error,
+    // Só volta pra tela se o e-mail não pôde ser enviado (ex.: RESEND_API_KEY
+    // ausente) — nesse caso a equipe repassa o link por canal seguro.
+    setupLink: emailResult.ok ? null : actionLink,
+    linkType,
+  })
 }

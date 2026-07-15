@@ -106,6 +106,46 @@ export async function sendRecruiterEmail(params: {
   return sendEmail({ to: params.to, from, subject: params.subject, html: params.html })
 }
 
+/**
+ * E-mail de boas-vindas disparado ao final do cadastro de uma empresa
+ * (admin Alizo cadastrando ou cliente se cadastrando no /checkout).
+ *
+ * Quando `setPasswordUrl` é informado, o e-mail traz um link seguro de
+ * primeiro acesso (invite/recovery do Supabase Auth) em vez de senha em
+ * texto puro. Sem `setPasswordUrl` (ex.: checkout, onde a pessoa já
+ * escolheu a própria senha), o e-mail só confirma o cadastro e aponta
+ * para o login.
+ */
+export async function sendWelcomeEmail(params: {
+  to: string
+  name: string | null
+  companyName: string
+  setPasswordUrl?: string | null
+}): Promise<SendResult> {
+  const from = defaultFrom()
+  if (!from) return { ok: false, error: 'EMAIL_FROM_DOMAIN não está configurada.' }
+
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://SEU-DOMINIO.vercel.app').replace(/\/+$/, '')
+  const greeting = params.name ? `Olá, ${params.name}!` : 'Olá!'
+  const cta = params.setPasswordUrl
+    ? `<p><a href="${params.setPasswordUrl}" style="display:inline-block;padding:12px 20px;border-radius:10px;background:#06b6d4;color:#fff;text-decoration:none;font-weight:700;">Definir minha senha e entrar</a></p>
+       <p style="font-size:12px;color:#64748b;">Esse link é pessoal e expira em breve. Se não funcionar, fale com a equipe Alizo.</p>`
+    : `<p><a href="${appUrl}/login" style="display:inline-block;padding:12px 20px;border-radius:10px;background:#06b6d4;color:#fff;text-decoration:none;font-weight:700;">Entrar no painel</a></p>
+       <p style="font-size:12px;color:#64748b;">Use o e-mail e a senha que você criou no cadastro.</p>`
+
+  return sendEmail({
+    to: params.to,
+    from,
+    subject: `Bem-vindo à Alizo, ${params.companyName}!`,
+    html: `
+      <p>${greeting}</p>
+      <p>A conta da <strong>${params.companyName}</strong> já está pronta na Alizo — seu funcionário digital está a poucos passos de começar a atender.</p>
+      ${cta}
+      <p>Qualquer dúvida, é só responder este e-mail.</p>
+    `,
+  })
+}
+
 export async function sendNewLeadEmail(params: {
   to: string
   unitName: string

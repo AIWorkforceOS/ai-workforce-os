@@ -30,7 +30,8 @@ export default function NewOrganizationPage() {
   const [error, setError] = useState<string | null>(null)
   const [provisioned, setProvisioned] = useState<{
     email: string
-    tempPassword: string | null
+    emailSent: boolean
+    setupLink: string | null
     note?: string
   } | null>(null)
 
@@ -132,7 +133,7 @@ export default function NewOrganizationPage() {
         })
         const data = await response.json()
         if (response.ok) {
-          setProvisioned({ email: data.email, tempPassword: data.tempPassword ?? null, note: data.note })
+          setProvisioned({ email: data.email, emailSent: !!data.emailSent, setupLink: data.setupLink ?? null, note: data.note })
           setBusy(false)
           return
         }
@@ -172,13 +173,17 @@ export default function NewOrganizationPage() {
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">E-mail de acesso</p>
               <p className="mt-0.5 font-mono text-sm text-white">{provisioned.email}</p>
             </div>
-            {provisioned.tempPassword ? (
+            {provisioned.emailSent ? (
+              <p className="text-xs text-emerald-400">
+                ✓ E-mail de boas-vindas enviado com o link seguro de primeiro acesso — o cliente define a
+                própria senha ao clicar.
+              </p>
+            ) : provisioned.setupLink ? (
               <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Senha temporária</p>
-                <p className="mt-0.5 font-mono text-sm text-cyan-300">{provisioned.tempPassword}</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Link de primeiro acesso</p>
+                <p className="mt-0.5 break-all font-mono text-xs text-cyan-300">{provisioned.setupLink}</p>
                 <p className="mt-1.5 text-[11px] text-amber-400">
-                  ⚠️ Anote agora — esta senha não será exibida novamente. Envie ao cliente por canal
-                  seguro e oriente a troca no primeiro acesso.
+                  ⚠️ O e-mail automático não pôde ser enviado — repasse este link ao cliente por canal seguro.
                 </p>
               </div>
             ) : (

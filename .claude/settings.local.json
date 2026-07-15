@@ -186,7 +186,8 @@
       "Bash(node -e ' *)",
       "Bash(git status *)",
       "Read(//private/tmp/**)",
-      "Bash(curl -s -D - -o /dev/null \"https://rvzvxotmpdffvmycgdfk.supabase.co/auth/v1/verify?token=896f03adf82e1264bc7083c10b60b708dca7f3f25d70f6b6584d7274&type=magiclink&redirect_to=http://localhost:3000/dashboard\")"
+      "Bash(curl -s -D - -o /dev/null \"https://rvzvxotmpdffvmycgdfk.supabase.co/auth/v1/verify?token=896f03adf82e1264bc7083c10b60b708dca7f3f25d70f6b6584d7274&type=magiclink&redirect_to=http://localhost:3000/dashboard\")",
+      "Bash(awk 'NR==275{print NR\": \"$0}' apps/web/src/app/chat/page.tsx)"
     ]
   }
 }

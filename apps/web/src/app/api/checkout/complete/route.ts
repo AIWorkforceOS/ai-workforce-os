@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { PLAN_PRICING, isLocale, type Locale, type PaidPlanSlug } from '@/lib/i18n/config'
+import { sendWelcomeEmail } from '@/lib/email'
 
 export const dynamic = 'force-dynamic'
 
@@ -174,6 +175,11 @@ export async function POST(request: Request) {
   if (billingError) {
     await service.from('financial_records').insert(billingRow)
   }
+
+  // E-mail de boas-vindas — sem link de senha aqui: a pessoa já escolheu a
+  // própria senha no checkout, então só confirmamos o cadastro. Falha no
+  // envio não deve travar o checkout (acesso já foi liberado acima).
+  await sendWelcomeEmail({ to: email, name, companyName: company, setPasswordUrl: null })
 
   return NextResponse.json({ ok: true, orgId: org.id, authAlreadyExisted: !!authError })
 }
