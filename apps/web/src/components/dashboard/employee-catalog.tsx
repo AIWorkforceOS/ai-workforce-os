@@ -88,7 +88,7 @@ export function EmployeeCatalog({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <EmployeeCatalogCard
           icon={Bot}
-          name="Vendedor (SDR)"
+          name="AI Sales Representative"
           tagline="Atende no WhatsApp e traz clientes"
           bullets={[
             'Responde quem chama no seu WhatsApp, dia e noite',

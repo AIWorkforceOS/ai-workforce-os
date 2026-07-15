@@ -61,7 +61,7 @@ export async function sendEscalationEmail(params: {
     from,
     subject: `[${params.unitName}] Escalação: ${params.leadName}`,
     html: `
-      <p>O agente SDR da unidade <strong>${params.unitName}</strong> escalou uma conversa para atendimento humano.</p>
+      <p>O AI Sales Representative da unidade <strong>${params.unitName}</strong> escalou uma conversa para atendimento humano.</p>
       <p><strong>Lead:</strong> ${params.leadName}${params.leadPhone ? ` (${params.leadPhone})` : ''}</p>
       <p><strong>Motivo:</strong> ${params.reason}</p>
       <p><strong>Última mensagem:</strong> ${params.lastMessage}</p>
@@ -160,7 +160,7 @@ export async function sendNewLeadEmail(params: {
     from,
     subject: `[${params.unitName}] Novo lead prospectado: ${params.leadName}`,
     html: `
-      <p>Um novo lead foi prospectado e o primeiro contato já foi enviado pelo agente SDR da unidade <strong>${params.unitName}</strong>.</p>
+      <p>Um novo lead foi prospectado e o primeiro contato já foi enviado pelo AI Sales Representative da unidade <strong>${params.unitName}</strong>.</p>
       <p><strong>Empresa:</strong> ${params.leadName}${params.leadPhone ? ` (${params.leadPhone})` : ''}</p>
     `,
   })

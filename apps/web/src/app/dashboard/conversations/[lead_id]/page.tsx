@@ -150,14 +150,14 @@ export default async function ConversationDetailPage({
                         ? { background: 'rgba(245,158,11,0.15)', color: '#fbbf24' }
                         : { background: 'rgba(59,130,246,0.15)', color: '#60a5fa' }}
                     >
-                      {isInbound ? lead.company_name.slice(0, 2).toUpperCase() : 'SDR'}
+                      {isInbound ? lead.company_name.slice(0, 2).toUpperCase() : 'AI'}
                     </div>
 
                     {/* Content */}
                     <div className="flex flex-1 flex-col gap-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-semibold text-slate-200">
-                          {isInbound ? lead.company_name : 'Agente SDR'}
+                          {isInbound ? lead.company_name : 'AI Sales Representative'}
                         </span>
                         <span className="text-xs text-slate-500">
                           {new Date(msg.sent_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}

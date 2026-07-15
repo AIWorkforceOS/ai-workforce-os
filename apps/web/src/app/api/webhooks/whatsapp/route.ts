@@ -10,6 +10,7 @@ import { handleCompanyReviewInbound, getLeadForJob } from '@/lib/recruiter/orche
 import { buildRecruiterBasePrompt } from '@/lib/recruiter/prompts'
 import { sendToCompany } from '@/lib/recruiter/messaging'
 import { logDecision } from '@/lib/recruiter/log'
+import { handleSalesDealHandoff } from '@/lib/sales/deal-handoff'
 import { logSystemEvent } from '@/lib/system-events'
 import type { Lead, Unit } from '@/lib/types'
 import type { Candidate, JobCandidate, JobOpening } from '@/lib/recruiter/types'
@@ -289,7 +290,17 @@ export async function POST(request: Request) {
     .update({ status: updatedLead.status, last_contacted_at: sentAt })
     .eq('id', lead.id)
 
-  await processInboundMessage({ supabase, unit: unitRow, lead: updatedLead, incomingText: text })
+  const result = await processInboundMessage({ supabase, unit: unitRow, lead: updatedLead, incomingText: text })
 
-  return NextResponse.json({ ok: true })
+  if (result.dealHandoffReady) {
+    try {
+      await handleSalesDealHandoff(supabase, { leadId: lead.id, unit: unitRow })
+    } catch (error) {
+      console.error(
+        `[webhook_whatsapp] handoff Sales→Recrutador falhou: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+  }
+
+  return NextResponse.json({ ok: true, dealHandoffReady: result.dealHandoffReady })
 }

@@ -34,7 +34,7 @@ const COPY = {
       ctaMain: 'Quero meu funcionário IA agora',
       ctaDemo: 'Ver demonstração',
       proof: [
-        { value: '3', label: 'Funcionários digitais prontos', sub: 'SDR, RH e Tráfego Pago' },
+        { value: '3', label: 'Funcionários digitais prontos', sub: 'AI Sales Representative, RH e Tráfego Pago' },
         { value: '24/7', label: 'Disponibilidade garantida', sub: 'Sem feriados, sem férias' },
         { value: '10 min', label: 'Para configurar e ativar', sub: 'Wizard guiado, sem código' },
       ],
@@ -72,7 +72,7 @@ const COPY = {
       ready: 'Disponível',
       soon: 'Em breve',
       members: [
-        { key: 'sdr', name: 'Vendedor (SDR)', ready: true, desc: 'Atende no WhatsApp em segundos, qualifica leads, faz follow-up automático e prospecta empresas no Google Maps.' },
+        { key: 'sdr', name: 'AI Sales Representative', ready: true, desc: 'Atende no WhatsApp em segundos, qualifica leads, faz follow-up automático e prospecta empresas no Google Maps.' },
         { key: 'rh', name: 'Recrutador (RH)', ready: true, desc: 'Cria a vaga com IA, tria currículos, pontua candidatos na régua certa e entrega uma shortlist pronta para entrevista.' },
         { key: 'traffic', name: 'Gestor de Tráfego Pago', ready: true, desc: 'Acompanha Meta Ads e Google Ads, detecta desperdício e sugere otimizações — você aprova, ele executa.' },
         { key: 'finance', name: 'Financeiro', ready: false, desc: 'Cobranças, conciliação e relatórios financeiros automáticos.' },
@@ -132,7 +132,7 @@ const COPY = {
         {
           slug: 'pro', name: 'Pro', featured: true,
           desc: 'Para operações em crescimento que precisam de escala',
-          features: ['Até 5 unidades / localizações', 'Até 3 funcionários digitais (SDR, RH e Tráfego)', 'WhatsApp multi-unidade integrado', 'Prospecção de empresas via Google Maps', 'Funil de vendas (CRM) completo', 'Suporte prioritário', 'Configuração assistida pela nossa equipe'],
+          features: ['Até 5 unidades / localizações', 'Até 3 funcionários digitais (AI Sales Representative, RH e Tráfego)', 'WhatsApp multi-unidade integrado', 'Prospecção de empresas via Google Maps', 'Funil de vendas (CRM) completo', 'Suporte prioritário', 'Configuração assistida pela nossa equipe'],
         },
         {
           slug: 'enterprise', name: 'Enterprise', featured: false,
@@ -185,7 +185,7 @@ const COPY = {
       ctaMain: 'Get my AI employee now',
       ctaDemo: 'See a demo',
       proof: [
-        { value: '3', label: 'Digital employees ready today', sub: 'SDR, Recruiter and Paid Ads' },
+        { value: '3', label: 'Digital employees ready today', sub: 'AI Sales Representative, Recruiter and Paid Ads' },
         { value: '24/7', label: 'Guaranteed availability', sub: 'No holidays, no vacations' },
         { value: '10 min', label: 'To set up and go live', sub: 'Guided wizard, no code' },
       ],
@@ -223,7 +223,7 @@ const COPY = {
       ready: 'Available',
       soon: 'Coming soon',
       members: [
-        { key: 'sdr', name: 'Salesperson (SDR)', ready: true, desc: 'Answers on WhatsApp in seconds, qualifies leads, follows up automatically and prospects companies on Google Maps.' },
+        { key: 'sdr', name: 'AI Sales Representative', ready: true, desc: 'Answers on WhatsApp in seconds, qualifies leads, follows up automatically and prospects companies on Google Maps.' },
         { key: 'rh', name: 'Recruiter (HR)', ready: true, desc: 'Creates the job posting with AI, screens resumes, scores candidates consistently and delivers an interview-ready shortlist.' },
         { key: 'traffic', name: 'Paid Ads Manager', ready: true, desc: 'Monitors Meta Ads and Google Ads, spots wasted spend and suggests optimizations — you approve, it executes.' },
         { key: 'finance', name: 'Finance', ready: false, desc: 'Automatic billing, reconciliation and financial reports.' },
@@ -283,7 +283,7 @@ const COPY = {
         {
           slug: 'pro', name: 'Pro', featured: true,
           desc: 'For growing operations that need scale',
-          features: ['Up to 5 units / locations', 'Up to 3 digital employees (SDR, HR and Ads)', 'Multi-location WhatsApp', 'Company prospecting via Google Maps', 'Full sales pipeline (CRM)', 'Priority support', 'Assisted setup by our team'],
+          features: ['Up to 5 units / locations', 'Up to 3 digital employees (AI Sales Representative, HR and Ads)', 'Multi-location WhatsApp', 'Company prospecting via Google Maps', 'Full sales pipeline (CRM)', 'Priority support', 'Assisted setup by our team'],
         },
         {
           slug: 'enterprise', name: 'Enterprise', featured: false,

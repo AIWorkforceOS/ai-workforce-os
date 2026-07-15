@@ -39,7 +39,7 @@ type InterviewPlaybook = {
 
 export const INTERVIEW_PLAYBOOKS: Record<InterviewAgentType, InterviewPlaybook> = {
   sdr: {
-    roleLabel: 'vendedor (SDR)',
+    roleLabel: 'AI Sales Representative',
     mission:
       'atender clientes e leads pelo WhatsApp da empresa, qualificar interessados, vender os produtos/serviços e prospectar novos clientes',
     requiredTopics: [
@@ -48,9 +48,10 @@ export const INTERVIEW_PLAYBOOKS: Record<InterviewAgentType, InterviewPlaybook> 
       'se a empresa vende para outras empresas (B2B), para consumidor final (B2C) ou os dois',
       'se atender empresas (B2B): que tipo de empresa e em qual região você deve prospectar no Google Maps',
       'se você deve conduzir a venda até o fechamento completo sozinho ou apenas qualificar o interessado e passar para um vendedor humano',
+      'quando o cliente fechar de verdade, se ele quer que você deixe registrado algum documento ou informação específica para enviar depois',
     ],
     profileSchema:
-      '{"sobre_a_empresa": string, "produtos": [{"nome": string, "preco": string, "detalhes": string}], "politica_desconto": string, "tipo_cliente": "b2b"|"b2c"|"ambos", "prospeccao": {"tipos_empresa": string[], "regioes": string[]}, "fechamento": "fecha_sozinho"|"qualifica_e_passa_para_humano", "observacoes": string[]}',
+      '{"sobre_a_empresa": string, "produtos": [{"nome": string, "preco": string, "detalhes": string}], "politica_desconto": string, "tipo_cliente": "b2b"|"b2c"|"ambos", "prospeccao": {"tipos_empresa": string[], "regioes": string[]}, "fechamento": "fecha_sozinho"|"qualifica_e_passa_para_humano", "documento_fechamento": string, "observacoes": string[]}',
   },
   traffic_specialist: {
     roleLabel: 'gestor de tráfego pago',

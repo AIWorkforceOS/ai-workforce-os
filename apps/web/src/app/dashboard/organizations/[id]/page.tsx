@@ -173,7 +173,7 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ id: 
             <TableShell>
               <Th>Unidade</Th>
               <Th>WhatsApp</Th>
-              <Th>Funcionário (SDR)</Th>
+              <Th>Funcionário (AI Sales Representative)</Th>
               <Th>Leads</Th>
               <Th>Instância</Th>
             </TableShell>

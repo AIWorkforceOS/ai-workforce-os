@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { getEvolutionConfig, sendWhatsAppMessage } from '@/lib/evolution'
-import type { AgentConfig, Unit } from '@/lib/types'
+import { createAdLead } from '@/lib/leads/ad-lead-intake'
+import type { Unit } from '@/lib/types'
 
 /**
  * Meta Lead Ads webhook
@@ -93,64 +93,13 @@ export async function POST(request: Request) {
       const { data: unitData } = await unitQuery.maybeSingle()
       if (!unitData) continue
 
-      const unit = unitData as Unit
-
-      // Normalise phone
-      const normalizedPhone = phone.replace(/\D/g, '')
-
-      // Create lead
-      const { data: insertedLead } = await supabase
-        .from('leads')
-        .insert({
-          unit_id: unit.id,
-          company_name: name ?? 'Lead Meta Ads',
-          contact_name: name,
-          phone: normalizedPhone,
-          email,
-          source: 'meta_lead_ad',
-          status: 'new',
-        })
-        .select()
-        .single()
-
-      if (!insertedLead) continue
-
-      // Get agent config to build first message
-      const { data: agentConfig } = await supabase
-        .from('agent_configs')
-        .select('*')
-        .eq('unit_id', unit.id)
-        .eq('agent_type', 'sdr')
-        .maybeSingle()
-
-      const config = getEvolutionConfig(unit)
-      if (!config || !agentConfig) continue
-
-      // Send initial WhatsApp message
-      const agentName = (agentConfig as AgentConfig).persona_name || 'Assistente'
-      const initialMessage =
-        `Olá${name ? `, ${name.split(' ')[0]}` : ''}! Sou o ${agentName}. Vi que você demonstrou interesse e gostaria de te ajudar. Pode falar?`
-
-      try {
-        await sendWhatsAppMessage(config, normalizedPhone, initialMessage)
-
-        await supabase.from('conversations').insert({
-          lead_id: insertedLead.id,
-          unit_id: unit.id,
-          channel: 'whatsapp',
-          direction: 'outbound',
-          content: initialMessage,
-          status: 'sent',
-          sent_at: new Date().toISOString(),
-        })
-
-        await supabase
-          .from('leads')
-          .update({ status: 'contacted', last_contacted_at: new Date().toISOString() })
-          .eq('id', insertedLead.id)
-      } catch {
-        // WhatsApp not connected — lead is still created
-      }
+      // Cria o lead e, se o Sales Rep estiver ativo/dentro do horário,
+      // já entra na fila conversacional real (mesma persona/business_profile
+      // da entrevista de contratação) em vez de uma mensagem fixa.
+      await createAdLead(supabase, {
+        unit: unitData as Unit,
+        lead: { name, phone, email, source: 'meta_lead_ad' },
+      })
     }
   }
 

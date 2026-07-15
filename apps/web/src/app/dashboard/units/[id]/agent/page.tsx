@@ -33,7 +33,7 @@ export default async function UnitAgentPage({ params }: { params: Promise<{ id: 
     <div className="flex flex-col gap-10">
       <div className="flex flex-col gap-6">
         <div>
-          <h1 className="text-xl font-black tracking-tight text-white">Agente SDR — {unitRow.name}</h1>
+          <h1 className="text-xl font-black tracking-tight text-white">AI Sales Representative — {unitRow.name}</h1>
           <p className="mt-1 text-sm text-slate-400">
             Configure a persona, tom, horários e setores de atuação do agente de pré-vendas.
           </p>
@@ -46,7 +46,7 @@ export default async function UnitAgentPage({ params }: { params: Promise<{ id: 
           <h1 className="text-xl font-black tracking-tight text-white">Recrutador IA — {unitRow.name}</h1>
           <p className="mt-1 text-sm text-slate-400">
             Funcionário digital de R&S: levanta o perfil da vaga com a empresa, busca e tria candidatos e
-            entrega a shortlist. Usa o mesmo WhatsApp da unidade, com limite diário compartilhado com o SDR.
+            entrega a shortlist. Usa o mesmo WhatsApp da unidade, com limite diário compartilhado com o AI Sales Representative.
           </p>
         </div>
         <AgentConfigForm unitId={unitRow.id} initialConfig={recruiterConfig as AgentConfig | null} agentType="recruiter" />

@@ -211,7 +211,7 @@ async function ClientHome({ firstName }: { firstName: string }) {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <EmployeeCard
             icon={Bot}
-            name={sdrConfig?.persona_name ? `${sdrConfig.persona_name} · Vendedor` : 'Vendedor (SDR)'}
+            name={sdrConfig?.persona_name ? `${sdrConfig.persona_name} · AI Sales Representative` : 'AI Sales Representative'}
             desc="Atende seus clientes no WhatsApp, responde dúvidas e agenda conversas."
             state={sdrActive ? 'active' : sdrConfig ? 'partial' : 'off'}
             stateLabel={sdrStateLabel}

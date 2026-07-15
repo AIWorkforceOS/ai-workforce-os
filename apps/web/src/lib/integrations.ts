@@ -35,9 +35,9 @@ export function getIntegrationsConfigStatus(): IntegrationConfigStatus[] {
     },
     {
       key: 'openai',
-      label: 'OpenAI (agente SDR + chat Kai)',
+      label: 'OpenAI (AI Sales Representative + chat Kai)',
       configured: has('OPENAI_API_KEY'),
-      detail: 'Gera as respostas do agente SDR no WhatsApp e do consultor Kai na landing page. Env: OPENAI_API_KEY',
+      detail: 'Gera as respostas do AI Sales Representative no WhatsApp e do consultor Kai na landing page. Env: OPENAI_API_KEY',
       testable: true,
     },
     {

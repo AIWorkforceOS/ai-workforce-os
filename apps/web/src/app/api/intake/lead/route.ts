@@ -107,7 +107,7 @@ export async function POST(request: Request) {
         level: 'warning',
         source: config ? 'system' : 'evolution',
         eventType: 'intake_whatsapp_skipped',
-        message: `Lead recebido via intake na unidade "${unit.name}" mas o WhatsApp automático não foi enviado: ${config ? 'agente SDR sem configuração' : 'Evolution API não configurada'}.`,
+        message: `Lead recebido via intake na unidade "${unit.name}" mas o WhatsApp automático não foi enviado: ${config ? 'AI Sales Representative sem configuração' : 'Evolution API não configurada'}.`,
         orgId: unit.org_id,
         unitId: unit.id,
         leadId: newLead.id,

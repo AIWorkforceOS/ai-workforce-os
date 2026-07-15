@@ -34,7 +34,7 @@ export async function POST(
   const config = agentConfig as AgentConfig | null
 
   if (!config || !config.is_active) {
-    return NextResponse.json({ error: 'Configure e ative o agente SDR desta unidade primeiro.' }, { status: 400 })
+    return NextResponse.json({ error: 'Configure e ative o AI Sales Representative desta unidade primeiro.' }, { status: 400 })
   }
 
   if (!leadRow.phone) {

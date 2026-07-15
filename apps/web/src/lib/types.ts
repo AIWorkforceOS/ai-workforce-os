@@ -102,6 +102,9 @@ export type Lead = {
   google_place_id: string | null
   notes: string | null
   last_contacted_at: string | null
+  /** dados de vaga levantados pelo Sales Rep na própria conversa ao fechar negócio (migration 013) */
+  deal_profile: Record<string, unknown>
+  deal_closed_at: string | null
   created_at: string
   updated_at: string
 }

@@ -92,7 +92,7 @@ export default async function LeadsPage({
       <PageHeader
         eyebrow="prospecção"
         title="Leads"
-        subtitle={`Leads prospectados pelo agente SDR em todas as unidades.${total > 0 ? ` ${total} no total.` : ''}`}
+        subtitle={`Leads prospectados pelo AI Sales Representative em todas as unidades.${total > 0 ? ` ${total} no total.` : ''}`}
       />
 
       <Card className="p-4">

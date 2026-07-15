@@ -48,7 +48,7 @@ const navGroups: { label: Record<Locale, string>; items: NavItem[] }[] = [
     label: { pt: 'Funcionários digitais', en: 'Digital employees' },
     items: [
       { href: '/dashboard/equipe-digital', label: { pt: 'Contratar & ativar', en: 'Hire & activate' }, icon: Sparkles },
-      { href: '/dashboard/agents', label: { pt: 'Vendedor (SDR)', en: 'Salesperson (SDR)' }, icon: Bot },
+      { href: '/dashboard/agents', label: { pt: 'AI Sales Representative', en: 'AI Sales Representative' }, icon: Bot },
       { href: '/dashboard/recruiter', label: { pt: 'Recrutador (RH)', en: 'Recruiter (HR)' }, icon: Briefcase },
       { href: '/dashboard/traffic', label: { pt: 'Tráfego pago', en: 'Paid ads' }, icon: Megaphone },
     ],
