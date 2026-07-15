@@ -77,7 +77,11 @@ export function AgentConfigForm({
     setLoading(false)
 
     if (saveError || !data) {
-      setError('Não foi possível salvar a configuração do agente.')
+      setError(
+        saveError?.message?.includes('interview_required')
+          ? 'Este funcionário ainda não concluiu a entrevista de contratação — conclua a entrevista dele (em Equipe digital ou no onboarding) antes de ativá-lo.'
+          : 'Não foi possível salvar a configuração do agente.',
+      )
       return
     }
 

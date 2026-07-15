@@ -36,7 +36,7 @@ import {
   MOCK_META_CAMPAIGNS,
 } from './mock-data'
 import { aggregate, computeDerived, splitRecentVsPrevious } from './metrics'
-import { classifyFunnelStage, evaluateAccount } from './strategy-engine'
+import { classifyFunnelStage, evaluateAccount, strategyFromBusinessProfile } from './strategy-engine'
 import { executeDecision } from './executor'
 import { buildHighlights, generateExecutiveSummary } from './reporting'
 import type {
@@ -225,10 +225,22 @@ export async function syncAndOptimizeAccount(
       is_managed: entityByExternalId.get(entity.external_id)?.is_managed ?? true,
     }))
 
+    // Contexto de negócio aprendido na entrevista de contratação do
+    // Gestor de Tráfego: vira defaults de estratégia (orçamento/CPA/ROAS
+    // alvo); o strategy explícito da conta continua tendo precedência.
+    const { data: trafficConfig } = await supabase
+      .from('agent_configs')
+      .select('*')
+      .eq('unit_id', account.unit_id)
+      .eq('agent_type', 'traffic_specialist')
+      .maybeSingle()
+    const businessProfile = (trafficConfig as { business_profile?: Record<string, unknown> } | null)
+      ?.business_profile
+
     const proposals = evaluateAccount({
       entities: engineEntities,
       metricsByEntity,
-      strategy: account.strategy ?? {},
+      strategy: { ...strategyFromBusinessProfile(businessProfile), ...(account.strategy ?? {}) },
     })
 
     // 4. Persistir decisões (dedupe: não repetir sugestão aberta igual) --

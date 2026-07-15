@@ -8,7 +8,7 @@ import {
   MOCK_GOOGLE_CAMPAIGNS,
   MOCK_META_CAMPAIGNS,
 } from '../mock-data'
-import { classifyFunnelStage, evaluateAccount } from '../strategy-engine'
+import { classifyFunnelStage, evaluateAccount, strategyFromBusinessProfile } from '../strategy-engine'
 import type { PlatformEntity, PlatformMetricsRow, StrategyConfig } from '../types'
 
 const STRATEGY: StrategyConfig = {
@@ -169,5 +169,37 @@ describe('guard-rails de orçamento', () => {
     })
     // sem entidades geridas, só sobram análises de conta (funil), nunca pausa/orçamento
     expect(proposals.some((p) => ['pause_entity', 'increase_budget', 'decrease_budget'].includes(p.decision_type))).toBe(false)
+  })
+})
+
+describe('strategyFromBusinessProfile', () => {
+  it('deriva teto diário do orçamento mensal da entrevista de contratação', () => {
+    const strategy = strategyFromBusinessProfile({ orcamento_mensal_brl: 3000 })
+    expect(strategy.max_daily_budget_cents).toBe(10000) // R$3.000/mês → R$100/dia
+  })
+
+  it('aceita números vindos como string e converte CPA/ROAS alvo', () => {
+    const strategy = strategyFromBusinessProfile({
+      orcamento_mensal_brl: '1500',
+      cpa_alvo_brl: '25',
+      roas_alvo: 4,
+    })
+    expect(strategy.max_daily_budget_cents).toBe(5000)
+    expect(strategy.target_cpa_cents).toBe(2500)
+    expect(strategy.target_roas).toBe(4)
+  })
+
+  it('ignora valores ausentes ou inválidos (perfil vazio → sem defaults)', () => {
+    expect(strategyFromBusinessProfile(null)).toEqual({})
+    expect(strategyFromBusinessProfile({})).toEqual({})
+    expect(strategyFromBusinessProfile({ orcamento_mensal_brl: 'muito' })).toEqual({})
+    expect(strategyFromBusinessProfile({ orcamento_mensal_brl: -10 })).toEqual({})
+  })
+
+  it('o strategy explícito da conta tem precedência sobre o derivado da entrevista', () => {
+    const derived = strategyFromBusinessProfile({ orcamento_mensal_brl: 3000, roas_alvo: 4 })
+    const merged = { ...derived, ...{ max_daily_budget_cents: 20000 } }
+    expect(merged.max_daily_budget_cents).toBe(20000) // explícito vence
+    expect(merged.target_roas).toBe(4) // derivado preenche o que faltar
   })
 })

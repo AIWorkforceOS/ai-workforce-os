@@ -69,6 +69,35 @@ export function classifyFunnelStage(objective: string | null): FunnelStage | nul
   return null
 }
 
+function asPositiveNumber(value: unknown): number | null {
+  const num = typeof value === 'string' ? Number(value) : value
+  return typeof num === 'number' && Number.isFinite(num) && num > 0 ? num : null
+}
+
+/**
+ * Deriva alvos de estratégia do business_profile coletado na entrevista
+ * de contratação do Gestor de Tráfego (orçamento mensal → teto de
+ * orçamento diário; CPA/ROAS alvo quando informados). O strategy explícito
+ * da conta (ad_accounts.strategy) sempre tem precedência sobre isto.
+ */
+export function strategyFromBusinessProfile(
+  profile: Record<string, unknown> | null | undefined,
+): StrategyConfig {
+  if (!profile) return {}
+  const derived: StrategyConfig = {}
+
+  const monthlyBudgetBrl = asPositiveNumber(profile.orcamento_mensal_brl)
+  if (monthlyBudgetBrl) derived.max_daily_budget_cents = Math.round((monthlyBudgetBrl * 100) / 30)
+
+  const targetCpaBrl = asPositiveNumber(profile.cpa_alvo_brl)
+  if (targetCpaBrl) derived.target_cpa_cents = Math.round(targetCpaBrl * 100)
+
+  const targetRoas = asPositiveNumber(profile.roas_alvo)
+  if (targetRoas) derived.target_roas = targetRoas
+
+  return derived
+}
+
 function clampBudget(cents: number, strategy: StrategyConfig): number {
   let value = cents
   if (strategy.max_daily_budget_cents) value = Math.min(value, strategy.max_daily_budget_cents)

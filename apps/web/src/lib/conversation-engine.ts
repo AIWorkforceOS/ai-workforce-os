@@ -4,6 +4,7 @@ import { generateChatReply, getOpenAIApiKey, type ChatMessage } from '@/lib/open
 import { sendEscalationEmail, sendTechnicalAlertEmail } from '@/lib/email'
 import { logSystemEvent, shouldNotifyForEvent, type SystemEventSource } from '@/lib/system-events'
 import { IDENTITY_AND_HANDOFF_RULES } from '@/lib/agent-identity'
+import { buildBusinessContext } from '@/lib/interview/engine'
 import type { AgentConfig, AgentTone, Conversation, Lead, Unit, ActiveHours } from '@/lib/types'
 
 const WEEKDAY_MAP: Record<string, number> = {
@@ -47,12 +48,23 @@ const TONE_LABEL: Record<AgentTone, string> = {
 }
 
 export function buildSystemPrompt(agentConfig: AgentConfig, unit: Unit): string {
+  const businessContext = buildBusinessContext(agentConfig.business_profile)
+  const profile = (agentConfig.business_profile ?? {}) as Record<string, unknown>
+  const closesAlone = profile.fechamento === 'fecha_sozinho'
   return [
     `Você é ${agentConfig.persona_name}, um agente de SDR (pré-vendas) que atende pelo WhatsApp em nome da unidade ${unit.name}${unit.region_city ? ` (${unit.region_city})` : ''}.`,
     `Seu tom de comunicação deve ser ${TONE_LABEL[agentConfig.persona_tone]}.`,
-    'Seu objetivo é qualificar o lead e conseguir agendar uma conversa com um vendedor humano.',
+    closesAlone
+      ? 'Seu objetivo é qualificar o lead e conduzir a venda até o fechamento, conforme combinado com a empresa.'
+      : 'Seu objetivo é qualificar o lead e conseguir agendar uma conversa com um vendedor humano.',
     'Responda sempre em português do Brasil, de forma breve (no máximo 3 frases curtas), sem usar markdown ou listas.',
     IDENTITY_AND_HANDOFF_RULES,
+    ...(businessContext
+      ? [
+          businessContext,
+          'Responda dúvidas sobre produtos, preços e condições usando somente a ficha acima. Nunca ofereça desconto além da política de desconto registrada, e respeite o combinado sobre até onde você conduz a venda.',
+        ]
+      : []),
   ].join(' ')
 }
 

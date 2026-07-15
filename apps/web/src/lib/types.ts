@@ -41,6 +41,15 @@ export type ActiveHours = {
   days: number[]
 }
 
+export type InterviewStatus = 'pending' | 'in_progress' | 'completed'
+
+export type InterviewTranscriptEntry = {
+  role: 'user' | 'assistant'
+  content: string
+  /** true quando esta mensagem do agente foi a pergunta final obrigatória ("tem mais alguma coisa?") */
+  asked_final?: boolean
+}
+
 export type AgentConfig = {
   id: string
   unit_id: string
@@ -52,6 +61,10 @@ export type AgentConfig = {
   escalation_rules: { after_messages: number; keywords: string[] }
   sectors: string[]
   is_active: boolean
+  /** o que o funcionário aprendeu na entrevista de contratação (migration 012) */
+  business_profile?: Record<string, unknown> | null
+  interview_status?: InterviewStatus | null
+  interview_transcript?: InterviewTranscriptEntry[] | null
   created_at: string
   updated_at: string
 }

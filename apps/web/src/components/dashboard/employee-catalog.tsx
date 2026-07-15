@@ -63,13 +63,13 @@ export function EmployeeCatalog({
   ]
 
   const recruiterSteps: Step[] = [
-    { label: 'Ativar o recrutador', desc: 'Escolha o nome dele e ative — leva 1 minuto.', done: !!recruiter?.is_active, inline: true },
+    { label: 'Contratar o recrutador', desc: 'Escolha o nome dele e responda a entrevista de contratação — ele aprende sua empresa.', done: !!recruiter?.is_active, inline: true },
     { label: 'Conectar o WhatsApp da empresa', desc: 'Ele usa o mesmo WhatsApp do vendedor pra falar com candidatos.', done: whatsappConnected, href: '/dashboard/onboarding' },
     { label: 'Abrir sua primeira vaga', desc: 'Conte a vaga que precisa preencher; ele cuida do resto.', done: openJobs > 0, href: '/dashboard/recruiter/jobs/new' },
   ]
 
   const trafficSteps: Step[] = [
-    { label: 'Ativar o gestor de tráfego', desc: 'Um clique — ele já fica de prontidão.', done: !!traffic?.is_active, inline: true },
+    { label: 'Contratar o gestor de tráfego', desc: 'Ele te entrevista sobre orçamento, público e objetivo — e fica de prontidão.', done: !!traffic?.is_active, inline: true },
     { label: 'Conectar suas contas de anúncio', desc: 'Você mesmo conecta pelo painel (Facebook/Instagram e Google) — testamos e confirmamos na hora.', done: adAccounts > 0, href: '/dashboard/traffic/connect' },
     { label: 'Acompanhar as recomendações', desc: 'Ele sugere melhorias todo dia — você aprova ou recusa cada uma.', done: adAccounts > 0, href: '/dashboard/traffic' },
   ]
@@ -299,6 +299,8 @@ function ActivateForm({ agentType, config, units, askName, defaultName }: Activa
 
   const selectableUnits = activeUnits.length > 0 ? activeUnits : units
 
+  const interviewDone = config?.interview_status === 'completed'
+
   async function handleActivate() {
     if (askName && !name.trim()) {
       setError('Escolha um nome — é como ele vai se apresentar.')
@@ -318,17 +320,23 @@ function ActivateForm({ agentType, config, units, askName, defaultName }: Activa
       persona_tone: config?.persona_tone ?? 'friendly',
       daily_limit: config?.daily_limit ?? 15,
       active_hours: config?.active_hours ?? { start: '08:00', end: '18:00', days: [1, 2, 3, 4, 5] },
-      is_active: true,
+      // Só liga direto quem já passou pela entrevista de contratação;
+      // os demais são salvos inativos e seguem pra entrevista.
+      is_active: interviewDone,
     }
-    const { error: saveError } = config
-      ? await supabase.from('agent_configs').update(payload).eq('id', config.id)
-      : await supabase.from('agent_configs').insert(payload)
+    const { data, error: saveError } = config
+      ? await supabase.from('agent_configs').update(payload).eq('id', config.id).select('id').single()
+      : await supabase.from('agent_configs').insert(payload).select('id').single()
     setBusy(false)
-    if (saveError) {
+    if (saveError || !data) {
       setError('Não deu pra ativar agora. Tente de novo — se persistir, fale com suporte@alizo.com.br.')
       return
     }
-    router.refresh()
+    if (interviewDone) {
+      router.refresh()
+      return
+    }
+    router.push(`/dashboard/equipe-digital/${data.id}/entrevista`)
   }
 
   return (
@@ -362,8 +370,13 @@ function ActivateForm({ agentType, config, units, askName, defaultName }: Activa
         style={{ background: brandGradient, boxShadow: '0 4px 10px rgba(6,182,212,0.25)' }}
       >
         {busy ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
-        {busy ? 'Ativando...' : 'Ativar agora'}
+        {busy ? 'Um instante...' : interviewDone ? 'Ativar agora' : 'Contratar e entrevistar'}
       </button>
+      {!interviewDone && (
+        <p className="text-[10px] leading-snug text-slate-500">
+          Antes de trabalhar, ele faz uma entrevista rápida com você pra aprender tudo da sua empresa.
+        </p>
+      )}
     </div>
   )
 }

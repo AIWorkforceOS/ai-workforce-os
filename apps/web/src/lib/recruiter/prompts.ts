@@ -1,5 +1,6 @@
 import type { AgentConfig, AgentTone, Unit } from '@/lib/types'
 import { IDENTITY_AND_HANDOFF_RULES } from '@/lib/agent-identity'
+import { buildBusinessContext } from '@/lib/interview/engine'
 import { PROFILE_FIELDS, SCORING_RUBRIC, type JobOpening, type JobProfile } from './types'
 
 // Prompts internos do Recruiter (§9 da spec). A persona-base é
@@ -16,6 +17,7 @@ const TONE_LABEL: Record<AgentTone, string> = {
 
 /** 9.1 — Sistema-base de todas as conversas do Recruiter. */
 export function buildRecruiterBasePrompt(config: AgentConfig, unit: Unit): string {
+  const businessContext = buildBusinessContext(config.business_profile)
   return [
     `Você é ${config.persona_name}, recrutador(a) digital da unidade ${unit.name}${unit.region_city ? ` (${unit.region_city})` : ''}.`,
     `Seu tom é ${TONE_LABEL[config.persona_tone]}.`,
@@ -24,6 +26,7 @@ export function buildRecruiterBasePrompt(config: AgentConfig, unit: Unit): strin
     'O que não souber, diga que vai confirmar e retome depois.',
     'Você se apresenta como assistente digital na primeira interação com qualquer pessoa — nunca finge ser humano.',
     IDENTITY_AND_HANDOFF_RULES,
+    ...(businessContext ? [businessContext] : []),
   ].join(' ')
 }
 

@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Card } from '@/components/ui/dashboard-ui'
+import { InterviewChat } from '@/components/dashboard/interview-chat'
 import type { AgentConfig, AgentTone, Unit } from '@/lib/types'
 import type { SetupStep } from '@/lib/setup-status'
 
@@ -22,7 +23,7 @@ const STEP_META: { id: StepId; title: string; short: string; subtitle: string; i
   { id: 'whatsapp', title: 'Conecte seu WhatsApp', short: 'WhatsApp', subtitle: 'Escaneie o QR code com o celular da empresa', icon: Wifi, color: '#25d366' },
   { id: 'agent', title: 'Monte seu funcionário digital', short: 'Funcionário', subtitle: 'Nome e jeito de falar — salvos de verdade', icon: Bot, color: '#818cf8' },
   { id: 'test', title: 'Converse com ele antes de ligar', short: 'Teste', subtitle: 'Uma conversa real de teste, sem afetar clientes', icon: Play, color: '#f59e0b' },
-  { id: 'done', title: 'Ligar o atendimento', short: 'Ativar', subtitle: 'A partir daqui ele trabalha sozinho, 24h por dia', icon: Check, color: '#4ade80' },
+  { id: 'done', title: 'Entrevista de contratação', short: 'Ativar', subtitle: 'Ele aprende sua empresa e começa a trabalhar sozinho, 24h por dia', icon: Check, color: '#4ade80' },
 ]
 
 type WhatsStatus = 'open' | 'connecting' | 'close' | 'not_configured' | 'error' | 'loading'
@@ -648,6 +649,8 @@ function ActivateStep({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const interviewDone = config?.interview_status === 'completed'
+
   async function handleActivate() {
     if (!config) {
       setError('Antes de ligar, monte seu funcionário no passo 3.')
@@ -663,7 +666,11 @@ function ActivateStep({
       .eq('unit_id', unitId)
     setBusy(false)
     if (err) {
-      setError('Não foi possível ativar agora. Tente de novo.')
+      setError(
+        err.message?.includes('interview_required')
+          ? 'Ele ainda precisa concluir a entrevista de contratação antes de começar a trabalhar.'
+          : 'Não foi possível ativar agora. Tente de novo.',
+      )
       return
     }
     setActive(true)
@@ -715,6 +722,32 @@ function ActivateStep({
           </Link>
           .
         </p>
+      </div>
+    )
+  }
+
+  // Entrevista de contratação pendente: o funcionário entrevista o dono
+  // pra aprender a empresa (produtos, preços, descontos, prospecção...)
+  // e, quando ele mesmo concluir que cobriu tudo, já sai ativado.
+  if (config && !interviewDone) {
+    return (
+      <div className="space-y-4">
+        <p className="text-sm leading-relaxed text-slate-300">
+          Último passo — a <strong className="text-white">entrevista de contratação</strong>.{' '}
+          Antes de atender seus clientes, <strong className="text-white">{config.persona_name}</strong>{' '}
+          precisa aprender sobre sua empresa: o que você vende, preços, até onde pode dar desconto,
+          quem ele deve prospectar. Responda às perguntas dele como responderia a um funcionário
+          novo. Quando ele tiver aprendido tudo, ele avisa que está pronto — e já começa a trabalhar.
+        </p>
+        <InterviewChat
+          configId={config.id}
+          personaName={config.persona_name}
+          height="h-[420px]"
+          onDone={() => {
+            setActive(true)
+            onActivated()
+          }}
+        />
       </div>
     )
   }
