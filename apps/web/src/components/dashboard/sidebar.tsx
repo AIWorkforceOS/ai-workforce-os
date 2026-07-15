@@ -19,51 +19,57 @@ import {
   Bot,
   Megaphone,
   Briefcase,
+  Sparkles,
+  CreditCard,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { useLocale } from '@/lib/i18n/client'
+import type { Locale } from '@/lib/i18n/config'
 
 type NavItem = {
   href: string
-  label: string
+  label: Record<Locale, string>
   icon: typeof LayoutDashboard
   exact?: boolean
   /** visível apenas para super_admin (equipe Alizo) */
   superOnly?: boolean
 }
 
-const navGroups: { label: string; items: NavItem[] }[] = [
+const navGroups: { label: Record<Locale, string>; items: NavItem[] }[] = [
   {
-    label: 'Principal',
+    label: { pt: 'Principal', en: 'Main' },
     items: [
-      { href: '/dashboard', label: 'Visão geral', icon: LayoutDashboard, exact: true },
-      { href: '/dashboard/onboarding', label: 'Primeiros passos', icon: Rocket },
-      { href: '/dashboard/organizations', label: 'Clientes (empresas)', icon: Building2, superOnly: true },
+      { href: '/dashboard', label: { pt: 'Visão geral', en: 'Overview' }, icon: LayoutDashboard, exact: true },
+      { href: '/dashboard/onboarding', label: { pt: 'Primeiros passos', en: 'Getting started' }, icon: Rocket },
+      { href: '/dashboard/organizations', label: { pt: 'Clientes (empresas)', en: 'Clients (companies)' }, icon: Building2, superOnly: true },
     ],
   },
   {
-    label: 'Funcionários digitais',
+    label: { pt: 'Funcionários digitais', en: 'Digital employees' },
     items: [
-      { href: '/dashboard/agents', label: 'Vendedor (SDR)', icon: Bot },
-      { href: '/dashboard/recruiter', label: 'Recrutador (RH)', icon: Briefcase },
-      { href: '/dashboard/traffic', label: 'Tráfego pago', icon: Megaphone },
+      { href: '/dashboard/equipe-digital', label: { pt: 'Contratar & ativar', en: 'Hire & activate' }, icon: Sparkles },
+      { href: '/dashboard/agents', label: { pt: 'Vendedor (SDR)', en: 'Salesperson (SDR)' }, icon: Bot },
+      { href: '/dashboard/recruiter', label: { pt: 'Recrutador (RH)', en: 'Recruiter (HR)' }, icon: Briefcase },
+      { href: '/dashboard/traffic', label: { pt: 'Tráfego pago', en: 'Paid ads' }, icon: Megaphone },
     ],
   },
   {
-    label: 'Seus clientes',
+    label: { pt: 'Seus clientes', en: 'Your customers' },
     items: [
-      { href: '/dashboard/conversations', label: 'Conversas', icon: MessageSquare },
-      { href: '/dashboard/crm', label: 'Funil de vendas', icon: Kanban },
-      { href: '/dashboard/leads', label: 'Contatos (leads)', icon: UserCircle },
+      { href: '/dashboard/conversations', label: { pt: 'Conversas', en: 'Conversations' }, icon: MessageSquare },
+      { href: '/dashboard/crm', label: { pt: 'Funil de vendas', en: 'Sales pipeline' }, icon: Kanban },
+      { href: '/dashboard/leads', label: { pt: 'Contatos (leads)', en: 'Contacts (leads)' }, icon: UserCircle },
     ],
   },
   {
-    label: 'Sua empresa',
+    label: { pt: 'Sua empresa', en: 'Your company' },
     items: [
-      { href: '/dashboard/units', label: 'Unidades', icon: MapPin },
-      { href: '/dashboard/employees', label: 'Equipe (pessoas)', icon: Users },
-      { href: '/dashboard/results', label: 'Resultados', icon: TrendingUp },
-      { href: '/dashboard/financial', label: 'Cobranças', icon: Wallet, superOnly: true },
-      { href: '/dashboard/sales', label: 'Vendas Alizo', icon: ShoppingCart, superOnly: true },
+      { href: '/dashboard/units', label: { pt: 'Unidades', en: 'Units' }, icon: MapPin },
+      { href: '/dashboard/employees', label: { pt: 'Equipe (pessoas)', en: 'Team (people)' }, icon: Users },
+      { href: '/dashboard/results', label: { pt: 'Resultados', en: 'Results' }, icon: TrendingUp },
+      { href: '/dashboard/financial', label: { pt: 'Cobranças', en: 'Billing' }, icon: Wallet, superOnly: true },
+      { href: '/dashboard/sales', label: { pt: 'Vendas Alizo', en: 'Alizo sales' }, icon: ShoppingCart, exact: true, superOnly: true },
+      { href: '/dashboard/sales/payments', label: { pt: 'Pagamentos (setup)', en: 'Payments (setup)' }, icon: CreditCard, superOnly: true },
     ],
   },
 ]
@@ -77,6 +83,7 @@ function getInitials(email: string): string {
 export function Sidebar({ userEmail, role = 'admin' }: { userEmail: string; role?: string }) {
   const pathname = usePathname()
   const router = useRouter()
+  const locale = useLocale()
   const isSuperAdmin = role === 'super_admin'
 
   const visibleGroups = navGroups
@@ -111,9 +118,9 @@ export function Sidebar({ userEmail, role = 'admin' }: { userEmail: string; role
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-0.5">
         {visibleGroups.map((group, gi) => (
-          <div key={group.label} className={gi > 0 ? 'mt-4' : ''}>
+          <div key={group.label.pt} className={gi > 0 ? 'mt-4' : ''}>
             <p className="mb-1 px-2 text-[9px] font-black uppercase tracking-[0.15em]" style={{ color: 'rgba(148,163,184,0.4)' }}>
-              {group.label}
+              {group.label[locale]}
             </p>
             {group.items.map(({ href, label, icon: Icon, exact }) => {
               const active = isActive(href, exact)
@@ -136,7 +143,7 @@ export function Sidebar({ userEmail, role = 'admin' }: { userEmail: string; role
                   }`} style={active ? { background: 'rgba(6,182,212,0.2)' } : undefined}>
                     <Icon size={13} className={active ? 'text-cyan-400' : 'text-slate-500 group-hover:text-slate-300'} />
                   </div>
-                  <span className="flex-1">{label}</span>
+                  <span className="flex-1">{label[locale]}</span>
                   {active && (
                     <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" style={{ boxShadow: '0 0 6px rgba(6,182,212,0.7)' }} />
                   )}
@@ -168,7 +175,7 @@ export function Sidebar({ userEmail, role = 'admin' }: { userEmail: string; role
             style={pathname.startsWith('/dashboard/settings') ? { background: 'rgba(6,182,212,0.2)' } : undefined}>
             <Settings size={13} className={pathname.startsWith('/dashboard/settings') ? 'text-cyan-400' : 'text-slate-500 group-hover:text-slate-300'} />
           </div>
-          Configurações
+          {locale === 'en' ? 'Settings' : 'Configurações'}
         </Link>
 
         {/* User row */}
@@ -183,7 +190,7 @@ export function Sidebar({ userEmail, role = 'admin' }: { userEmail: string; role
           </div>
           <button
             onClick={handleSignOut}
-            title="Sair"
+            title={locale === 'en' ? 'Sign out' : 'Sair'}
             className="rounded-lg p-1.5 text-slate-500 transition-all hover:bg-white/5 hover:text-slate-300"
           >
             <LogOut size={13} />

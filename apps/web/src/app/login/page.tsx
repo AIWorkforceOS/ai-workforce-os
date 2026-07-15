@@ -3,10 +3,65 @@
 import { useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { useLocale } from '@/lib/i18n/client'
+import type { Locale } from '@/lib/i18n/config'
 import { Bot, MessageSquare, TrendingUp, Zap } from 'lucide-react'
+
+const COPY = {
+  pt: {
+    badge: 'Sistema ativo · 100% operacional',
+    titleA: 'A força de trabalho',
+    titleGrad: 'inteligente',
+    titleB: ' que',
+    titleC: 'escala com você.',
+    sub: 'Seus funcionários digitais atendem, vendem e recrutam por você — e aqui você acompanha tudo em tempo real.',
+    chips: ['Agentes IA 24/7', 'WhatsApp integrado', 'CRM em tempo real', 'Onboarding automático'],
+    stats: [
+      { label: 'Funcionários digitais', value: '3' },
+      { label: 'Disponibilidade', value: '24/7' },
+      { label: 'Para ativar', value: '10 min' },
+    ],
+    welcome: 'Bem-vindo de volta',
+    welcomeSub: 'Entre com suas credenciais de acesso',
+    email: 'E-mail',
+    emailPh: 'voce@empresa.com',
+    password: 'Senha',
+    invalid: 'E-mail ou senha inválidos.',
+    signingIn: 'Entrando...',
+    signIn: 'Acessar painel',
+    noAccess: 'Ainda não tem acesso?',
+    seePlans: 'Ver planos disponíveis',
+  },
+  en: {
+    badge: 'System live · fully operational',
+    titleA: 'The intelligent',
+    titleGrad: 'workforce',
+    titleB: ' that',
+    titleC: 'scales with you.',
+    sub: 'Your digital employees answer, sell and recruit for you — and here you track everything in real time.',
+    chips: ['AI agents 24/7', 'WhatsApp integrated', 'Real-time CRM', 'Automatic onboarding'],
+    stats: [
+      { label: 'Digital employees', value: '3' },
+      { label: 'Availability', value: '24/7' },
+      { label: 'To go live', value: '10 min' },
+    ],
+    welcome: 'Welcome back',
+    welcomeSub: 'Sign in with your credentials',
+    email: 'Email',
+    emailPh: 'you@company.com',
+    password: 'Password',
+    invalid: 'Invalid email or password.',
+    signingIn: 'Signing in...',
+    signIn: 'Open dashboard',
+    noAccess: "Don't have access yet?",
+    seePlans: 'See available plans',
+  },
+} as const satisfies Record<Locale, unknown>
 
 export default function LoginPage() {
   const router = useRouter()
+  const locale = useLocale()
+  const t = COPY[locale]
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -19,7 +74,7 @@ export default function LoginPage() {
     const supabase = createClient()
     const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
     setLoading(false)
-    if (signInError) { setError('E-mail ou senha inválidos.'); return }
+    if (signInError) { setError(t.invalid); return }
     router.push('/dashboard')
     router.refresh()
   }
@@ -44,7 +99,7 @@ export default function LoginPage() {
           style={{ background: 'radial-gradient(circle, rgba(67,97,238,0.2) 0%, transparent 70%)' }}
         />
 
-        <img src="/branding/alizo-logo.png" alt="Alizo" className="relative h-9 w-auto" />
+        <img src="/branding/alizo-logo.png" alt="Alizo" className="relative h-9 w-auto self-start" />
 
         <div className="relative">
           <div
@@ -55,10 +110,10 @@ export default function LoginPage() {
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-50" />
               <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-cyan-400" />
             </span>
-            <span className="text-xs font-semibold" style={{ color: '#67e8f9' }}>Sistema ativo · 100% operacional</span>
+            <span className="text-xs font-semibold" style={{ color: '#67e8f9' }}>{t.badge}</span>
           </div>
           <h1 className="text-4xl font-black leading-tight tracking-tight text-white">
-            A força de trabalho<br />
+            {t.titleA}<br />
             <span
               style={{
                 background: 'linear-gradient(135deg, #22d3ee 0%, #818cf8 100%)',
@@ -67,21 +122,18 @@ export default function LoginPage() {
                 backgroundClip: 'text',
               }}
             >
-              inteligente
-            </span> que<br />
-            escala com você.
+              {t.titleGrad}
+            </span>{t.titleB}<br />
+            {t.titleC}
           </h1>
           <p className="mt-4 max-w-sm text-base text-slate-400">
-            Seus funcionários digitais atendem, vendem e recrutam por você — e aqui você acompanha tudo em tempo real.
+            {t.sub}
           </p>
 
           <div className="mt-8 grid grid-cols-2 gap-3 max-w-sm">
-            {[
-              { icon: Bot, label: 'Agentes IA 24/7' },
-              { icon: MessageSquare, label: 'WhatsApp integrado' },
-              { icon: TrendingUp, label: 'CRM em tempo real' },
-              { icon: Zap, label: 'Onboarding automático' },
-            ].map(({ icon: Icon, label }) => (
+            {t.chips.map((label, i) => {
+              const Icon = [Bot, MessageSquare, TrendingUp, Zap][i]!
+              return (
               <div
                 key={label}
                 className="flex items-center gap-2.5 rounded-xl px-3.5 py-3"
@@ -95,16 +147,13 @@ export default function LoginPage() {
                 </div>
                 <span className="text-xs font-semibold text-slate-300">{label}</span>
               </div>
-            ))}
+              )
+            })}
           </div>
         </div>
 
         <div className="relative grid grid-cols-3 gap-4">
-          {[
-            { label: 'Leads gerados', value: '1.200+' },
-            { label: 'Conversas/dia', value: '340' },
-            { label: 'Taxa de resposta', value: '94%' },
-          ].map(({ label, value }) => (
+          {t.stats.map(({ label, value }) => (
             <div key={label} className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
               <p className="text-2xl font-black text-white">{value}</p>
               <p className="mt-1 text-xs text-slate-500">{label}</p>
@@ -125,12 +174,12 @@ export default function LoginPage() {
             className="rounded-2xl p-8 backdrop-blur-sm"
             style={{ background: 'rgba(20,26,43,0.7)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}
           >
-            <h2 className="text-xl font-black tracking-tight text-white">Bem-vindo de volta</h2>
-            <p className="mt-1 text-sm text-slate-400">Entre com suas credenciais de acesso</p>
+            <h2 className="text-xl font-black tracking-tight text-white">{t.welcome}</h2>
+            <p className="mt-1 text-sm text-slate-400">{t.welcomeSub}</p>
 
             <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-slate-300">E-mail</label>
+                <label className="text-sm font-medium text-slate-300">{t.email}</label>
                 <input
                   type="email"
                   required
@@ -138,12 +187,12 @@ export default function LoginPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   className="rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 outline-none transition-colors focus:border-cyan-500/50"
                   style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
-                  placeholder="voce@empresa.com"
+                  placeholder={t.emailPh}
                 />
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-slate-300">Senha</label>
+                <label className="text-sm font-medium text-slate-300">{t.password}</label>
                 <input
                   type="password"
                   required
@@ -170,16 +219,16 @@ export default function LoginPage() {
                 {loading ? (
                   <>
                     <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                    Entrando...
+                    {t.signingIn}
                   </>
-                ) : 'Acessar painel'}
+                ) : t.signIn}
               </button>
             </form>
           </div>
 
           <p className="mt-6 text-center text-xs text-slate-600">
-            Ainda não tem acesso?{' '}
-            <a href="/#planos" className="text-slate-400 hover:text-cyan-400">Ver planos disponíveis</a>
+            {t.noAccess}{' '}
+            <a href="/#planos" className="text-slate-400 hover:text-cyan-400">{t.seePlans}</a>
           </p>
         </div>
       </div>

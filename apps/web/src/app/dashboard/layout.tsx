@@ -1,11 +1,19 @@
 import type { ReactNode } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { getAppUser, ROLE_LABEL } from '@/lib/app-user'
+import { getAppUser, ROLE_LABEL, type AppRole } from '@/lib/app-user'
+import { getLocale } from '@/lib/i18n/server'
 import { Sidebar } from '@/components/dashboard/sidebar'
 import { SignOutButton } from '@/components/dashboard/sign-out-button'
 
+const ROLE_LABEL_EN: Record<AppRole, string> = {
+  super_admin: 'Super Admin',
+  admin: 'Admin',
+  viewer: 'Viewer',
+}
+
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
+  const locale = getLocale()
   const supabase = await createClient()
   const {
     data: { user },
@@ -27,11 +35,23 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           className="mx-4 max-w-md rounded-2xl p-8 text-center"
           style={{ background: '#141a2b', boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}
         >
-          <h1 className="text-lg font-black text-white">Acesso não provisionado</h1>
+          <h1 className="text-lg font-black text-white">
+            {locale === 'en' ? 'Access not provisioned' : 'Acesso não provisionado'}
+          </h1>
           <p className="mt-2 text-sm text-slate-400">
-            Sua conta <span className="font-semibold text-slate-200">{user.email}</span> foi autenticada,
-            mas ainda não está vinculada a nenhuma empresa na plataforma. Fale com a equipe Alizo para
-            liberar o acesso.
+            {locale === 'en' ? (
+              <>
+                Your account <span className="font-semibold text-slate-200">{user.email}</span> was
+                authenticated, but it is not linked to any company on the platform yet. Contact the
+                Alizo team to get access.
+              </>
+            ) : (
+              <>
+                Sua conta <span className="font-semibold text-slate-200">{user.email}</span> foi autenticada,
+                mas ainda não está vinculada a nenhuma empresa na plataforma. Fale com a equipe Alizo para
+                liberar o acesso.
+              </>
+            )}
           </p>
           <div className="mt-6">
             <SignOutButton />
@@ -77,7 +97,9 @@ export default async function DashboardLayout({ children }: { children: ReactNod
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-50" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-400" />
               </span>
-              <span className="text-[11px] font-semibold" style={{ color: 'rgba(148,163,184,0.7)' }}>Online</span>
+              <span className="text-[11px] font-semibold" style={{ color: 'rgba(148,163,184,0.7)' }}>
+                {locale === 'en' ? 'Live' : 'Online'}
+              </span>
             </div>
 
             {/* Divider */}
@@ -89,7 +111,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
               style={{ background: 'rgba(6,182,212,0.12)', color: '#06b6d4' }}
               title={appUser.orgName ?? undefined}
             >
-              {ROLE_LABEL[appUser.role]}
+              {(locale === 'en' ? ROLE_LABEL_EN : ROLE_LABEL)[appUser.role]}
             </span>
             {!appUser.isSuperAdmin && appUser.orgName && (
               <span className="max-w-[160px] truncate text-[11px] font-semibold text-slate-400">
