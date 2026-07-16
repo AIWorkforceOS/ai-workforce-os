@@ -76,7 +76,18 @@ export function conversationLanguageDirective(locale: Locale): string {
   return `Responda por padrão em ${LANGUAGE_LABEL[locale]}. Se a pessoa começar a escrever em outro idioma, ou pedir para você falar em outro idioma, mude para o idioma dela a partir da próxima mensagem, com naturalidade — nunca anuncie a troca (nada de "vou mudar para..." ou "switching to..."), apenas continue a conversa nesse idioma.`
 }
 
-/** Diretriz de idioma para a entrevista de contratação (idioma fixo da unidade). */
+/** Nome do idioma por extenso — usado para rotular campos (ex.: texto de uma pergunta de fechamento). */
 export function interviewLanguageLabel(locale: Locale): string {
   return LANGUAGE_LABEL[locale]
+}
+
+/**
+ * Diretriz de idioma para a entrevista de contratação: responde por padrão
+ * no idioma padrão da unidade, mas troca de idioma dinamicamente se o chefe
+ * (quem está sendo entrevistado) pedir ou começar a escrever em outro idioma
+ * — mesmo comportamento de conversationLanguageDirective, adaptado ao
+ * interlocutor da entrevista (o chefe, não um lead/candidato).
+ */
+export function interviewLanguageDirective(locale: Locale): string {
+  return `Escreva por padrão em ${LANGUAGE_LABEL[locale]}. Se o chefe começar a escrever em outro idioma, ou pedir para você falar em outro idioma, mude para o idioma dele a partir da próxima mensagem, com naturalidade — nunca anuncie a troca (nada de "vou mudar para..." ou "switching to..."), apenas continue a conversa nesse idioma.`
 }

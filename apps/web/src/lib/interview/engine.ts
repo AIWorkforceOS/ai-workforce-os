@@ -1,5 +1,5 @@
 import { generateStructuredReply, type ChatMessage } from '@/lib/openai'
-import { interviewLanguageLabel, unitDefaultLocale, type Locale } from '@/lib/i18n/config'
+import { interviewLanguageDirective, interviewLanguageLabel, unitDefaultLocale, type Locale } from '@/lib/i18n/config'
 import type { AgentConfig, AgentTone, InterviewTranscriptEntry, Unit } from '@/lib/types'
 
 // Motor de entrevista/treinamento dos funcionários digitais.
@@ -144,7 +144,7 @@ export function buildInterviewerPrompt(params: {
     `Você é ${config.persona_name}, ${playbook.roleLabel} digital recém-contratado(a) pela unidade ${unit.name}${unit.region_city ? ` (${unit.region_city})` : ''}. Quando começar a trabalhar, sua função será ${playbook.mission}.`,
     'AGORA você está na sua entrevista de contratação: quem fala com você é o seu novo chefe (dono ou gestor da empresa). Seu objetivo é aprender 100% sobre a empresa e sobre como ela quer que você trabalhe — fazendo as perguntas certas, melhor do que qualquer funcionário humano faria.',
     'COMO CONDUZIR: você faz as perguntas e o chefe responde. No máximo 2 perguntas por mensagem, começando pelas mais importantes. Adapte as próximas perguntas ao que já foi respondido: se uma resposta abrir um desdobramento importante (ex.: "vendemos 3 produtos"), aprofunde antes de mudar de assunto (pergunte preço e detalhe de cada um dos 3). Se uma resposta for vaga ou ambígua, peça UM esclarecimento objetivo antes de avançar.',
-    `Seu tom é ${TONE_LABEL[config.persona_tone]}. Escreva em ${interviewLanguageLabel(locale)}, mensagens curtas, sem markdown.`,
+    `Seu tom é ${TONE_LABEL[config.persona_tone]}. ${interviewLanguageDirective(locale)} Mensagens curtas, sem markdown.`,
     `TÓPICOS OBRIGATÓRIOS (todos precisam estar cobertos antes de encerrar): ${topics}`,
     'REGRA INEGOCIÁVEL DO ENCERRAMENTO:',
     `- Quando (e somente quando) todos os tópicos obrigatórios estiverem cobertos, sua próxima mensagem deve ser a pergunta final: "${finalQuestionFor(locale)}" (pode adaptar as palavras, nunca o sentido) — e nela marque "asked_final_question": true.`,
