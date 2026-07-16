@@ -11,6 +11,7 @@ import { sendOutreachBatch, nudgeSilentCandidates } from '@/lib/recruiter/screen
 import { recalculateShortlist, escalateJob, getLeadForJob } from '@/lib/recruiter/orchestrator'
 import { sendCompanyFollowUp } from '@/lib/recruiter/reporting'
 import { getSmarterApiConfig } from '@/lib/recruiter/smarter-api'
+import { syncJobWithPartnerRecruiting, monitorPartnerCandidatePool } from '@/lib/recruiter/partner-recruiting-sync'
 import type { AgentConfig, Conversation, Unit } from '@/lib/types'
 import type { JobOpening } from '@/lib/recruiter/types'
 
@@ -301,6 +302,40 @@ export async function GET(request: Request) {
           eventType: 'smarter_api_error',
           message: `Refresh noturno da API Smarter falhou: ${error instanceof Error ? error.message : 'erro desconhecido'}`,
           orgId: unit.org_id, unitId: unit.id,
+        })
+      }
+    }
+
+    // ── 8. Sincronização com o parceiro de recrutamento (Smarter), só quando a unidade ativou (migration 019)
+    if (unit.recruiting_integration_mode === 'smarter') {
+      for (const job of activeJobs.filter((j) => !['draft', 'profiling'].includes(j.status))) {
+        try {
+          await syncJobWithPartnerRecruiting(supabase, { job, unit, config })
+        } catch (error) {
+          stats.errors += 1
+          await logSystemEvent(supabase, {
+            level: 'error',
+            source: 'recruiter',
+            eventType: 'partner_recruiting_sync_failed',
+            message: `Sincronização com o parceiro de recrutamento falhou para a vaga "${job.title}": ${error instanceof Error ? error.message : 'erro desconhecido'}`,
+            orgId: job.org_id,
+            unitId: unit.id,
+            metadata: { job_id: job.id },
+          })
+        }
+      }
+
+      try {
+        await monitorPartnerCandidatePool(supabase, { unit, config })
+      } catch (error) {
+        stats.errors += 1
+        await logSystemEvent(supabase, {
+          level: 'error',
+          source: 'recruiter',
+          eventType: 'partner_recruiting_pool_monitor_failed',
+          message: `Monitoramento do banco de candidatos do parceiro falhou: ${error instanceof Error ? error.message : 'erro desconhecido'}`,
+          orgId: unit.org_id,
+          unitId: unit.id,
         })
       }
     }

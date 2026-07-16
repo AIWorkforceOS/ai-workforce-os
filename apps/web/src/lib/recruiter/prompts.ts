@@ -245,6 +245,29 @@ export function buildConfirmationClassifierPrompt(): string {
   ].join(' ')
 }
 
+/**
+ * Sugestão de estratégia de captação de currículos quando o sourcing
+ * (interno + parceiro) esgota sem candidatos suficientes para uma vaga
+ * (§ integração de recrutamento parceiro). Sempre gerada pela IA a
+ * partir do contexto real da unidade/vaga — nunca um texto fixo — para
+ * já nascer pronta para qualquer unidade, região ou parceiro.
+ */
+export function buildSourcingStrategyPrompt(params: { config: AgentConfig; unit: Unit; job: JobOpening }): string {
+  const { config, unit, job } = params
+  const businessContext = buildBusinessContext(config.business_profile)
+  return [
+    `Você é um consultor de recrutamento sênior ajudando a unidade ${unit.name}${unit.region_city ? ` (${unit.region_city}${unit.region_state ? `/${unit.region_state}` : ''})` : ''} a resolver um problema real: a busca por candidatos para a vaga "${job.title}" esgotou o banco disponível sem candidatos suficientes.`,
+    conversationLanguageDirective(unitDefaultLocale(unit)),
+    `Perfil da vaga: ${JSON.stringify(job.profile)}.`,
+    businessContext ?? '',
+    'Gere de 2 a 4 sugestões concretas e acionáveis de estratégia de captação de currículos para este curso e região específicos (ex.: tráfego pago regional, parcerias com escolas/faculdades locais, feiras de emprego — mas só cite as que fizerem sentido para este caso, adapte ao contexto real em vez de listar todas).',
+    'Seja específico sobre a região e o curso. Nunca invente nomes de instituições, empresas ou eventos reais que você não tem certeza que existem.',
+    'Responda em texto corrido curto (até 6 linhas), sem markdown e sem listas numeradas, pronto para ser lido por um humano em um e-mail.',
+  ]
+    .filter(Boolean)
+    .join(' ')
+}
+
 /** Rótulos amigáveis dos campos do perfil, para as perguntas do intake. */
 export function missingFieldLabels(missing: string[]): string[] {
   return missing

@@ -62,6 +62,37 @@ export function buildProfileSearchText(title: string, profile: JobProfile): stri
     .join('. ')
 }
 
+/**
+ * Conta candidatos disponíveis (não opt-out, consentimento não revogado)
+ * para um curso/cidade — sinal de saúde do banco por região, reusado
+ * pelo monitoramento proativo do parceiro de recrutamento (não é um
+ * ranking, só uma contagem aproximada; por isso filtra curso em memória
+ * com o mesmo critério de tolerância a nulos do match_candidates_for_job,
+ * em vez de reconstruir a query SQL).
+ */
+export async function countAvailableCandidates(
+  supabase: SupabaseClient,
+  params: { orgId: string; course?: string | null; city?: string | null },
+): Promise<number> {
+  let query = supabase
+    .from('candidates')
+    .select('course')
+    .eq('org_id', params.orgId)
+    .eq('opted_out', false)
+    .neq('consent_status', 'revoked')
+    .limit(1000)
+
+  if (params.city) query = query.ilike('city', `%${params.city}%`)
+
+  const { data } = await query
+  const rows = (data as { course: string | null }[] | null) ?? []
+  const terms = courseSearchTerms(params.course)
+  if (!terms) return rows.length
+
+  return rows.filter((row) => !row.course || terms.some((term) => row.course!.toLowerCase().includes(term.toLowerCase())))
+    .length
+}
+
 function normalizeContact(value: string | null | undefined): string {
   return (value ?? '').replace(/\D/g, '')
 }

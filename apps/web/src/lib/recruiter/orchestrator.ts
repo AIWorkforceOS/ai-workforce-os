@@ -21,7 +21,7 @@ export async function getLeadForJob(supabase: SupabaseClient, job: JobOpening): 
   return data as Lead | null
 }
 
-async function getOwnerEmail(supabase: SupabaseClient, orgId: string): Promise<string | null> {
+export async function getOwnerEmail(supabase: SupabaseClient, orgId: string): Promise<string | null> {
   const { data } = await supabase.from('organizations').select('owner_email').eq('id', orgId).maybeSingle()
   return (data as { owner_email: string | null } | null)?.owner_email ?? null
 }

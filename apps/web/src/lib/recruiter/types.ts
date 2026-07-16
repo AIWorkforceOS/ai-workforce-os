@@ -103,6 +103,8 @@ export type JobOpening = {
   follow_up_count: number
   selected_candidate_id: string | null
   handed_off_to: string | null
+  /** id da vaga correspondente no sistema de vagas da Smarter (migration 019). Null fora do modo smarter ou antes da criação. */
+  smarter_recruiting_vacancy_id: string | null
   created_at: string
   updated_at: string
 }
@@ -192,6 +194,8 @@ export type JobCandidate = {
   contacted_at: string | null
   screened_at: string | null
   presented_at: string | null
+  /** quando este candidato foi adicionado à vaga correspondente na Smarter via POST /api/partners/applications (migration 019). */
+  smarter_recruiting_added_at: string | null
   created_at: string
   updated_at: string
 }

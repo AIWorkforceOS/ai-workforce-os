@@ -30,6 +30,12 @@ export type Unit = {
   crm_integration_mode: 'native' | 'smarter'
   /** Token de parceiro (Bearer) da API de CRM da Smarter para esta unidade — segredo. Só usado quando crm_integration_mode = 'smarter'. */
   smarter_crm_partner_token: string | null
+  /** native = pipeline de recrutamento próprio do Alizo (padrão). smarter = vagas/candidatos também são publicados no sistema de vagas da Smarter (migration 019). */
+  recruiting_integration_mode: 'native' | 'smarter'
+  /** Token de parceiro (Bearer) das rotas de vagas/candidaturas da Smarter para esta unidade — segredo. Só usado quando recruiting_integration_mode = 'smarter'. */
+  smarter_recruiting_partner_token: string | null
+  /** id da Company desta unidade no Sistema Smarter — obrigatório para publicar vaga (POST /api/partners/vacancies companyId). Sem ele a integração fica incompleta mesmo com token configurado. */
+  smarter_recruiting_company_id: string | null
   is_active: boolean
   created_at: string
   updated_at: string
