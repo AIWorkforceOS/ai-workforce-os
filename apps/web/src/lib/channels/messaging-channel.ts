@@ -42,12 +42,27 @@ class TwilioSmsChannel implements MessagingChannel {
 }
 
 /**
+ * Endereço de reply-to que o agente consegue LER de volta (webhook em
+ * app/api/webhooks/email). Usa plus-addressing com o id da unidade
+ * (reply+{unit.id}@EMAIL_INBOUND_DOMAIN) num domínio da própria
+ * plataforma com MX configurado pro Resend (Dashboard → Receiving) —
+ * exige configuração de DNS, mas só da Alizo, nunca do domínio do
+ * cliente. Sem EMAIL_INBOUND_DOMAIN configurada, mantém o comportamento
+ * antigo (resposta cai direto na caixa real da empresa, sem o agente ver).
+ */
+export function getEmailReplyTo(unit: Unit): string | null {
+  const inboundDomain = process.env.EMAIL_INBOUND_DOMAIN
+  if (inboundDomain) return `reply+${unit.id}@${inboundDomain}`
+  return unit.email_reply_to
+}
+
+/**
  * Canal de e-mail (item 1): mesmo motor de conversa, mesma persona —
  * só embrulha a resposta no template com a marca da unidade (logo,
- * layout profissional) e usa reply-to pra respostas caírem na caixa da
- * empresa. Ver lib/email.ts (sendLeadEmail) para o "from" técnico:
- * sempre o domínio da plataforma, porque o domínio do cliente não está
- * verificado no Resend.
+ * layout profissional) e usa reply-to pra respostas caírem onde o
+ * agente consegue processá-las (ver getEmailReplyTo). Ver lib/email.ts
+ * (sendLeadEmail) para o "from" técnico: sempre o domínio da
+ * plataforma, porque o domínio do cliente não está verificado no Resend.
  */
 class ResendEmailChannel implements MessagingChannel {
   readonly type: ChannelType = 'email'
@@ -62,7 +77,7 @@ class ResendEmailChannel implements MessagingChannel {
       logoUrl: this.unit.logo_url,
       subject: context?.subject || this.unit.name,
       bodyText: text,
-      replyTo: this.unit.email_reply_to,
+      replyTo: getEmailReplyTo(this.unit),
     })
     if (!result.ok) throw new Error(result.error || 'Falha ao enviar e-mail.')
   }

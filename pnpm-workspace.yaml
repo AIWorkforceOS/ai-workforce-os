@@ -3,3 +3,5 @@ packages:
   - "packages/*"
   - "packs/*"
   - "tools/*"
+minimumReleaseAgeExclude:
+  - svix@1.97.0

@@ -29,13 +29,34 @@ export function phonesMatch(a: string, b: string): boolean {
   return a.length > 0 && b.length > 0 && (a.endsWith(b.slice(-8)) || b.endsWith(a.slice(-8)))
 }
 
+function emailsMatch(a: string | null, b: string | null): boolean {
+  return Boolean(a && b && a.trim().toLowerCase() === b.trim().toLowerCase())
+}
+
+/**
+ * Identifica o remetente de uma mensagem recebida contra um registro
+ * (lead/candidato) — por telefone (WhatsApp/SMS) OU por e-mail, o que
+ * estiver disponível no canal de entrada. Mantém a cascata de roteamento
+ * (§7.0) igual para os três canais: só muda o campo usado pra bater.
+ */
+function identifierMatches(
+  row: { phone: string | null; email: string | null },
+  incomingPhone: string | null,
+  incomingEmail: string | null,
+): boolean {
+  if (incomingPhone && phonesMatch(normalizePhone(row.phone), incomingPhone)) return true
+  if (incomingEmail && emailsMatch(row.email, incomingEmail)) return true
+  return false
+}
+
 type CandidateContext = { candidate: Candidate; jc: JobCandidate; job: JobOpening }
 
-/** Rota 1 (§7.0): telefone bate com candidato em processo ativo na unidade. */
+/** Rota 1 (§7.0): telefone/e-mail bate com candidato em processo ativo na unidade. */
 async function findCandidateContext(
   supabase: SupabaseClient,
   unit: Unit,
-  incomingPhone: string,
+  incomingPhone: string | null,
+  incomingEmail: string | null,
 ): Promise<CandidateContext | null> {
   if (!unit.org_id) return null
 
@@ -43,10 +64,9 @@ async function findCandidateContext(
     .from('candidates')
     .select('*')
     .eq('org_id', unit.org_id)
-    .not('phone', 'is', null)
 
   const candidate = ((candidatesData as Candidate[] | null) ?? []).find((row) =>
-    phonesMatch(normalizePhone(row.phone), incomingPhone),
+    identifierMatches(row, incomingPhone, incomingEmail),
   )
   if (!candidate) return null
 
@@ -86,43 +106,46 @@ export type InboundRouteParams = {
   supabase: SupabaseClient
   unit: Unit
   channel: ChannelType
-  incomingPhone: string
+  /** Telefone de origem (WhatsApp/SMS) — null quando o canal é e-mail. */
+  incomingPhone: string | null
+  /** E-mail de origem — null quando o canal é telefone. */
+  incomingEmail: string | null
   text: string
   externalMessageId: string | null
   sentAt: string
 }
 
 export async function routeInboundMessage(params: InboundRouteParams): Promise<Record<string, unknown>> {
-  const { supabase, unit: unitRow, channel, incomingPhone, text, externalMessageId, sentAt } = params
+  const { supabase, unit: unitRow, channel, incomingPhone, incomingEmail, text, externalMessageId, sentAt } = params
 
   // Contextos possíveis
-  const candidateContext = await findCandidateContext(supabase, unitRow, incomingPhone)
+  const candidateContext = await findCandidateContext(supabase, unitRow, incomingPhone, incomingEmail)
 
   const { data: leads } = await supabase
     .from('leads')
     .select('*')
     .eq('unit_id', unitRow.id)
-    .not('phone', 'is', null)
 
   const lead = ((leads as Lead[] | null) ?? []).find((row) =>
-    phonesMatch(normalizePhone(row.phone), incomingPhone),
+    identifierMatches(row, incomingPhone, incomingEmail),
   )
   const recruiterJob = lead ? await findRecruiterJobForLead(supabase, lead) : null
 
-  // Ambiguidade: mesmo telefone é candidato E empresa com processo ativo →
-  // prioriza o contexto com atividade mais recente + decision log (§7.0)
+  // Ambiguidade: mesmo telefone/e-mail é candidato E empresa com processo
+  // ativo → prioriza o contexto com atividade mais recente + decision log (§7.0)
   let routeToCandidate = Boolean(candidateContext)
   if (candidateContext && recruiterJob) {
     const candidateActivity = new Date(candidateContext.jc.updated_at).getTime()
     const companyActivity = new Date(recruiterJob.updated_at).getTime()
     routeToCandidate = candidateActivity >= companyActivity
+    const identifierLabel = incomingPhone ? `Telefone ${incomingPhone.slice(-8)}` : `E-mail ${incomingEmail}`
     await logDecision(supabase, {
       orgId: unitRow.org_id,
       unitId: unitRow.id,
       jobId: routeToCandidate ? candidateContext.job.id : recruiterJob.id,
       candidateId: candidateContext.candidate.id,
       decisionType: 'route_ambiguous',
-      reasoning: `Telefone ${incomingPhone.slice(-8)} corresponde a candidato e a empresa com processos ativos. Roteado para o contexto com atividade mais recente (${routeToCandidate ? 'candidato' : 'empresa'}).`,
+      reasoning: `${identifierLabel} corresponde a candidato e a empresa com processos ativos. Roteado para o contexto com atividade mais recente (${routeToCandidate ? 'candidato' : 'empresa'}).`,
     })
   }
 

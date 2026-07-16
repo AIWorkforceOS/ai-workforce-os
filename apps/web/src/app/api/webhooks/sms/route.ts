@@ -79,6 +79,7 @@ export async function POST(request: Request) {
     unit: unitRow,
     channel: 'sms',
     incomingPhone,
+    incomingEmail: null,
     text: body,
     externalMessageId: messageSid,
     sentAt,

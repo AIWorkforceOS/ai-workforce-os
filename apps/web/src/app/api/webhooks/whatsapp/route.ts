@@ -66,6 +66,7 @@ export async function POST(request: Request) {
     unit: unitRow,
     channel: 'whatsapp',
     incomingPhone,
+    incomingEmail: null,
     text,
     externalMessageId: key.id ?? null,
     sentAt,
