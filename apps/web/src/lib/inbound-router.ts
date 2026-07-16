@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { processInboundMessage } from '@/lib/conversation-engine'
-import { generateChatReply, getOpenAIApiKey } from '@/lib/openai'
+import { generateChatReply, generateStructuredReply, getOpenAIApiKey } from '@/lib/openai'
 import { getRecruiterConfig } from '@/lib/recruiter/guardrails'
 import { handleCandidateInbound } from '@/lib/recruiter/screening-engine'
 import { handleCompanyIntakeInbound } from '@/lib/recruiter/intake-engine'
@@ -10,6 +10,7 @@ import { sendToCompany } from '@/lib/recruiter/messaging'
 import { logDecision } from '@/lib/recruiter/log'
 import { handleSalesDealHandoff } from '@/lib/sales/deal-handoff'
 import { logSystemEvent } from '@/lib/system-events'
+import { getMessagingChannel, getUnitChannelType } from '@/lib/channels/messaging-channel'
 import type { ChannelType } from '@/lib/channels/messaging-channel'
 import type { Lead, Unit } from '@/lib/types'
 import type { Candidate, JobCandidate, JobOpening } from '@/lib/recruiter/types'
@@ -100,6 +101,266 @@ async function findRecruiterJobForLead(
     .limit(1)
 
   return ((data as JobOpening[] | null) ?? [])[0] ?? null
+}
+
+type UnknownInboundContext = {
+  supabase: SupabaseClient
+  unit: Unit
+  channel: ChannelType
+  incomingPhone: string | null
+  incomingEmail: string | null
+  text: string
+  externalMessageId: string | null
+  sentAt: string
+}
+
+async function handleUnknownInbound(params: UnknownInboundContext): Promise<void> {
+  const { supabase, unit, channel, incomingPhone, incomingEmail, text, externalMessageId, sentAt } = params
+  const apiKey = getOpenAIApiKey()
+  const messagingChannel = getMessagingChannel(unit)
+
+  if (!apiKey || !messagingChannel) return
+
+  if (!incomingPhone) {
+    // Sem telefone, não conseguimos fazer triagem por chat, apenas registra o evento
+    await logSystemEvent(supabase, {
+      level: 'warning',
+      source: 'system',
+      eventType: 'unknown_inbound_without_phone',
+      message: `Mensagem de número desconhecido recebida mas sem telefone para triagem (e-mail: ${incomingEmail ?? 'vazio'})`,
+      orgId: unit.org_id,
+      unitId: unit.id,
+    })
+    return
+  }
+
+  // Procura por um lead em triagem (source = 'unknown_inbound' e status = 'contacted')
+  // para este número — indica que a pergunta de triagem já foi enviada
+  const { data: screeningLeads } = await supabase
+    .from('leads')
+    .select('*')
+    .eq('unit_id', unit.id)
+    .eq('source', 'unknown_inbound')
+    .eq('status', 'contacted')
+    .order('created_at', { ascending: false })
+    .limit(5)
+
+  type ScreeningLead = Lead & { phone: string | null }
+  const existingScreeningLead = ((screeningLeads as ScreeningLead[] | null) ?? []).find(
+    (lead) => lead.phone && phonesMatch(normalizePhone(lead.phone), incomingPhone),
+  )
+
+  // ── Fase 1: Lead em triagem respondeu ──────────────────────────────
+  if (existingScreeningLead) {
+    // Interpretar resposta: é candidato ou empresa?
+    const screeningInterpretation = await generateStructuredReply<{
+      is_candidate_or_employee?: boolean
+      is_company?: boolean
+      is_existing_customer?: boolean
+      reasoning?: string
+    }>({
+      apiKey,
+      systemPrompt: [
+        'Você está analisando uma resposta a uma pergunta de triagem sobre o motivo do contato.',
+        'A pessoa poderia ser: (1) um estudante/candidato procurando vaga; (2) uma empresa procurando contratar; (3) um cliente ativo procurando outro assunto; (4) algo indeterminado.',
+        'Responda com um JSON: {"is_candidate_or_employee": boolean, "is_company": boolean, "is_existing_customer": boolean, "reasoning": string}.',
+        'Seja conciso — apenas uma dessas três flags deve ser true. Se indeterminado, todas false.',
+      ].join(' '),
+      history: [{ role: 'user', content: text }],
+      maxTokens: 200,
+    }).catch(() => ({ is_candidate_or_employee: false, is_company: false, is_existing_customer: false }))
+
+    // Registra a mensagem de resposta
+    await supabase.from('conversations').insert({
+      lead_id: existingScreeningLead.id,
+      unit_id: unit.id,
+      channel,
+      direction: 'inbound',
+      content: text,
+      external_message_id: externalMessageId,
+      status: 'delivered',
+      sent_at: sentAt,
+    })
+
+    // ── Subcaso 1: É candidato/estudante ──────────────────────────────
+    if (screeningInterpretation.is_candidate_or_employee) {
+      // Atualiza lead para indicar que é candidato (source: 'unknown_inbound_candidate')
+      // e volta para 'new' para rotar pelo Sales Rep (que vai encaminhar ao Recruiter se necessário)
+      await supabase
+        .from('leads')
+        .update({
+          status: 'new',
+          source: 'unknown_inbound_candidate',
+          last_contacted_at: sentAt,
+        })
+        .eq('id', existingScreeningLead.id)
+
+      await logSystemEvent(supabase, {
+        level: 'info',
+        source: 'system',
+        eventType: 'unknown_inbound_identified_candidate',
+        message: `Número desconhecido identificado como candidato/estudante via triagem. Lead criado como fonte unknown_inbound_candidate.`,
+        orgId: unit.org_id,
+        unitId: unit.id,
+        leadId: existingScreeningLead.id,
+      })
+      return
+    }
+
+    // ── Subcaso 2: É empresa/cliente procurando contratar ──────────────
+    if (screeningInterpretation.is_company) {
+      // Atualiza lead para empresa (source: 'unknown_inbound')
+      // e status normal para rotar pelo Sales Rep
+      await supabase
+        .from('leads')
+        .update({
+          status: 'replied',
+          source: 'unknown_inbound',
+          last_contacted_at: sentAt,
+        })
+        .eq('id', existingScreeningLead.id)
+
+      await logSystemEvent(supabase, {
+        level: 'info',
+        source: 'system',
+        eventType: 'unknown_inbound_identified_company',
+        message: `Número desconhecido identificado como empresa/cliente procurando contratar via triagem. Lead criado como fonte unknown_inbound.`,
+        orgId: unit.org_id,
+        unitId: unit.id,
+        leadId: existingScreeningLead.id,
+      })
+      return
+    }
+
+    // ── Subcaso 3: Diz que já é cliente ─────────────────────────────
+    if (screeningInterpretation.is_existing_customer) {
+      await logSystemEvent(supabase, {
+        level: 'warning',
+        source: 'system',
+        eventType: 'unknown_inbound_claims_existing_customer',
+        message: `Número desconhecido diz ser cliente ativo: ${text}. Requer revisão humana — número não bate com nenhum registro.`,
+        orgId: unit.org_id,
+        unitId: unit.id,
+        leadId: existingScreeningLead.id,
+      })
+      // Marca o lead como "paused" para não entrar em fluxo automático
+      await supabase
+        .from('leads')
+        .update({
+          status: 'paused',
+          source: 'unknown_inbound_unmatched_customer',
+          last_contacted_at: sentAt,
+        })
+        .eq('id', existingScreeningLead.id)
+      return
+    }
+
+    // ── Subcaso 4: Indeterminado — pergunta novamente ────────────────
+    const followUpQuestion = await generateChatReply({
+      apiKey,
+      systemPrompt:
+        'Você é um assistente de triagem que precisa esclarecer o motivo do contato de forma educada. ' +
+        'A pessoa respondeu algo indeterminado. Pergunte de novo, mas de forma ligeiramente diferente, ' +
+        'se ela procura uma vaga, quer oferecer oportunidade, ou se já é cliente. Mantenha breve (1-2 frases).',
+      history: [{ role: 'user', content: text }],
+    })
+
+    if (followUpQuestion) {
+      try {
+        await messagingChannel.sendMessage(incomingPhone, followUpQuestion)
+        await supabase.from('conversations').insert({
+          lead_id: existingScreeningLead.id,
+          unit_id: unit.id,
+          channel,
+          direction: 'outbound',
+          content: followUpQuestion,
+          status: 'sent',
+          sent_at: new Date().toISOString(),
+        })
+      } catch (error) {
+        console.error(`[inbound_router] follow-up triagem falhou: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    return
+  }
+
+  // ── Fase 2: Primeira mensagem — enviar pergunta de triagem ────────────
+  const triageQuestion = await generateChatReply({
+    apiKey,
+    systemPrompt:
+      'Você é um assistente de primeiro contato que recebe mensagens de números desconhecidos. ' +
+      'Responda de forma amigável e breve (1-2 frases) perguntando o motivo do contato: ' +
+      'se a pessoa procura uma vaga/oportunidade de trabalho, se representa uma empresa que quer contratar, ' +
+      'ou se já é cliente. Use linguagem conversacional e natural.',
+    history: [{ role: 'user', content: text }],
+  })
+
+  if (!triageQuestion) return
+
+  // Criar um lead em status "contacted" (indicando que a pergunta de triagem foi enviada)
+  const { data: insertedLead, error } = await supabase
+    .from('leads')
+    .insert({
+      unit_id: unit.id,
+      phone: incomingPhone,
+      email: incomingEmail,
+      company_name: `Contato desconhecido (${incomingPhone.slice(-4)})`,
+      contact_name: null,
+      source: 'unknown_inbound',
+      status: 'contacted',
+    })
+    .select()
+    .single()
+
+  if (error || !insertedLead) {
+    await logSystemEvent(supabase, {
+      level: 'error',
+      source: 'system',
+      eventType: 'unknown_inbound_lead_create_failed',
+      message: `Falha ao criar lead de triagem para número desconhecido ${incomingPhone}: ${error?.message ?? 'erro desconhecido'}`,
+      orgId: unit.org_id,
+      unitId: unit.id,
+    })
+    return
+  }
+
+  const leadRow = insertedLead as Lead
+
+  // Registra a primeira mensagem do cliente
+  await supabase.from('conversations').insert({
+    lead_id: leadRow.id,
+    unit_id: unit.id,
+    channel,
+    direction: 'inbound',
+    content: text,
+    external_message_id: externalMessageId,
+    status: 'delivered',
+    sent_at: sentAt,
+  })
+
+  // Envia a pergunta de triagem
+  try {
+    await messagingChannel.sendMessage(incomingPhone, triageQuestion)
+    await supabase.from('conversations').insert({
+      lead_id: leadRow.id,
+      unit_id: unit.id,
+      channel,
+      direction: 'outbound',
+      content: triageQuestion,
+      status: 'sent',
+      sent_at: new Date().toISOString(),
+    })
+  } catch (error) {
+    await logSystemEvent(supabase, {
+      level: 'error',
+      source: 'system',
+      eventType: 'unknown_inbound_triage_question_failed',
+      message: `Falha ao enviar pergunta de triagem para número desconhecido ${incomingPhone}: ${error instanceof Error ? error.message : 'erro desconhecido'}`,
+      orgId: unit.org_id,
+      unitId: unit.id,
+      leadId: leadRow.id,
+    })
+  }
 }
 
 export type InboundRouteParams = {
@@ -245,9 +506,20 @@ export async function routeInboundMessage(params: InboundRouteParams): Promise<R
     return { ok: true, routed: 'recruiter_company' }
   }
 
-  // ── Rota 3: fluxo SDR/Sales Rep original, intocado ────────────────
-  if (!lead) {
-    return { ok: true, skipped: 'lead_not_found' }
+  // ── Rota 3: número desconhecido ou em triagem ──────────────────────
+  // (triagem: lead com source='unknown_inbound' e status='contacted')
+  if (!lead || (lead.source === 'unknown_inbound' && lead.status === 'contacted')) {
+    await handleUnknownInbound({
+      supabase,
+      unit: unitRow,
+      channel,
+      incomingPhone,
+      incomingEmail,
+      text,
+      externalMessageId,
+      sentAt,
+    })
+    return { ok: true, routed: 'unknown_inbound_screening' }
   }
 
   await supabase.from('conversations').insert({
