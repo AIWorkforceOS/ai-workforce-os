@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getEvolutionConfig, sendWhatsAppMessage } from '@/lib/evolution'
+import { getMessagingChannel, getUnitChannelType, channelLabel } from '@/lib/channels/messaging-channel'
 import { sendRecruiterEmail } from '@/lib/email'
 import { logSystemEvent } from '@/lib/system-events'
 import type { AgentConfig, Unit } from '@/lib/types'
@@ -9,12 +9,13 @@ import type { Candidate } from './types'
 // Envio de mensagens do Recruiter com guard-rails aplicados em código
 // (§11): horário ativo, limite diário compartilhado, opt-out/consent
 // LGPD e filtro de promessa de contratação — tudo ANTES do envio.
-// WhatsApp preferido; fallback e-mail quando o destinatário tem e-mail
-// (exceção 6 da spec). Toda mensagem fica registrada (candidate_messages
-// para candidatos, conversations para a empresa/lead).
+// WhatsApp/SMS (conforme o canal configurado na unidade) preferido;
+// fallback e-mail quando o destinatário tem e-mail (exceção 6 da spec).
+// Toda mensagem fica registrada (candidate_messages para candidatos,
+// conversations para a empresa/lead).
 
 export type SendOutcome =
-  | { sent: true; channel: 'whatsapp' | 'email' }
+  | { sent: true; channel: 'whatsapp' | 'sms' | 'email' }
   | { sent: false; reason: string }
 
 /** Envia mensagem a um candidato e registra em candidate_messages. */
@@ -52,7 +53,7 @@ export async function sendToCandidate(params: {
     if (!sendCheck.ok) return { sent: false, reason: sendCheck.reason }
   }
 
-  const record = async (channel: 'whatsapp' | 'email', status: 'sent' | 'failed') => {
+  const record = async (channel: 'whatsapp' | 'sms' | 'email', status: 'sent' | 'failed') => {
     await supabase.from('candidate_messages').insert({
       candidate_id: candidate.id,
       job_id: jobId,
@@ -66,20 +67,21 @@ export async function sendToCandidate(params: {
     })
   }
 
-  // Preferência WhatsApp
-  const evolutionConfig = getEvolutionConfig(unit)
-  if (evolutionConfig && candidate.phone) {
+  // Preferência WhatsApp/SMS (conforme o canal configurado na unidade)
+  const channelType = getUnitChannelType(unit)
+  const messagingChannel = getMessagingChannel(unit)
+  if (messagingChannel && candidate.phone) {
     try {
-      await sendWhatsAppMessage(evolutionConfig, candidate.phone, text)
-      await record('whatsapp', 'sent')
-      return { sent: true, channel: 'whatsapp' }
+      await messagingChannel.sendMessage(candidate.phone, text)
+      await record(channelType, 'sent')
+      return { sent: true, channel: channelType }
     } catch (error) {
-      await record('whatsapp', 'failed')
+      await record(channelType, 'failed')
       await logSystemEvent(supabase, {
         level: 'error',
-        source: 'evolution',
-        eventType: 'recruiter_whatsapp_failed',
-        message: `Falha ao enviar WhatsApp a candidato: ${error instanceof Error ? error.message : 'erro desconhecido'}`,
+        source: channelType === 'sms' ? 'twilio' : 'evolution',
+        eventType: 'recruiter_message_failed',
+        message: `Falha ao enviar ${channelLabel(channelType)} a candidato: ${error instanceof Error ? error.message : 'erro desconhecido'}`,
         orgId: unit.org_id,
         unitId: unit.id,
         metadata: { candidate_id: candidate.id, job_id: jobId },
@@ -96,12 +98,12 @@ export async function sendToCandidate(params: {
     })
     await record('email', result.ok ? 'sent' : 'failed')
     if (result.ok) return { sent: true, channel: 'email' }
-    return { sent: false, reason: `WhatsApp e e-mail falharam: ${result.error ?? 'erro desconhecido'}` }
+    return { sent: false, reason: `${channelLabel(channelType)} e e-mail falharam: ${result.error ?? 'erro desconhecido'}` }
   }
 
   return {
     sent: false,
-    reason: evolutionConfig ? 'candidato sem telefone e sem e-mail alcançáveis' : 'Evolution API não configurada e candidato sem e-mail',
+    reason: messagingChannel ? 'candidato sem telefone e sem e-mail alcançáveis' : `${channelLabel(channelType)} não configurado para esta unidade e candidato sem e-mail`,
   }
 }
 
@@ -128,7 +130,7 @@ export async function sendToCompany(params: {
     if (!sendCheck.ok) return { sent: false, reason: sendCheck.reason }
   }
 
-  const record = async (channel: 'whatsapp' | 'email', status: 'sent' | 'failed') => {
+  const record = async (channel: 'whatsapp' | 'sms' | 'email', status: 'sent' | 'failed') => {
     await supabase.from('conversations').insert({
       lead_id: leadId,
       unit_id: unit.id,
@@ -141,19 +143,20 @@ export async function sendToCompany(params: {
     })
   }
 
-  const evolutionConfig = getEvolutionConfig(unit)
-  if (evolutionConfig && params.leadPhone) {
+  const channelType = getUnitChannelType(unit)
+  const messagingChannel = getMessagingChannel(unit)
+  if (messagingChannel && params.leadPhone) {
     try {
-      await sendWhatsAppMessage(evolutionConfig, params.leadPhone, text)
-      await record('whatsapp', 'sent')
-      return { sent: true, channel: 'whatsapp' }
+      await messagingChannel.sendMessage(params.leadPhone, text)
+      await record(channelType, 'sent')
+      return { sent: true, channel: channelType }
     } catch (error) {
-      await record('whatsapp', 'failed')
+      await record(channelType, 'failed')
       await logSystemEvent(supabase, {
         level: 'error',
-        source: 'evolution',
-        eventType: 'recruiter_whatsapp_failed',
-        message: `Falha ao enviar WhatsApp à empresa: ${error instanceof Error ? error.message : 'erro desconhecido'}`,
+        source: channelType === 'sms' ? 'twilio' : 'evolution',
+        eventType: 'recruiter_message_failed',
+        message: `Falha ao enviar ${channelLabel(channelType)} à empresa: ${error instanceof Error ? error.message : 'erro desconhecido'}`,
         orgId: unit.org_id,
         unitId: unit.id,
         leadId,
@@ -169,7 +172,7 @@ export async function sendToCompany(params: {
     })
     await record('email', result.ok ? 'sent' : 'failed')
     if (result.ok) return { sent: true, channel: 'email' }
-    return { sent: false, reason: `WhatsApp e e-mail falharam: ${result.error ?? 'erro desconhecido'}` }
+    return { sent: false, reason: `${channelLabel(channelType)} e e-mail falharam: ${result.error ?? 'erro desconhecido'}` }
   }
 
   return { sent: false, reason: 'empresa sem canal de contato alcançável' }

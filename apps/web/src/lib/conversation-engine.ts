@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getEvolutionConfig, sendWhatsAppMessage } from '@/lib/evolution'
+import { getMessagingChannel, getUnitChannelType, channelLabel } from '@/lib/channels/messaging-channel'
 import { generateChatReply, generateStructuredReply, getOpenAIApiKey, type ChatMessage } from '@/lib/openai'
 import { sendEscalationEmail, sendTechnicalAlertEmail } from '@/lib/email'
 import { logSystemEvent, shouldNotifyForEvent, type SystemEventSource } from '@/lib/system-events'
@@ -167,6 +167,7 @@ export function buildSystemPrompt(agentConfig: AgentConfig, unit: Unit, dealProf
   const businessContext = buildBusinessContext(agentConfig.business_profile)
   const profile = (agentConfig.business_profile ?? {}) as Record<string, unknown>
   const closesAlone = profile.fechamento === 'fecha_sozinho'
+  const channelType = getUnitChannelType(unit)
   const fields = closingFields(profile)
   const dealAction =
     typeof profile.fechamento_acao === 'string' && profile.fechamento_acao.trim()
@@ -194,12 +195,14 @@ export function buildSystemPrompt(agentConfig: AgentConfig, unit: Unit, dealProf
     : ''
 
   return [
-    `Você é ${agentConfig.persona_name}, um AI Sales Representative (pré-vendas) que atende pelo WhatsApp em nome da unidade ${unit.name}${unit.region_city ? ` (${unit.region_city})` : ''}.`,
+    `Você é ${agentConfig.persona_name}, um AI Sales Representative (pré-vendas) que atende por ${channelLabel(channelType)} em nome da unidade ${unit.name}${unit.region_city ? ` (${unit.region_city})` : ''}.`,
     `Seu tom de comunicação deve ser ${TONE_LABEL[agentConfig.persona_tone]}.`,
     closesAlone
       ? 'Seu objetivo é qualificar o lead e conduzir a venda até o fechamento, conforme combinado com a empresa.'
       : 'Seu objetivo é qualificar o lead e conseguir agendar uma conversa com um vendedor humano.',
-    'Responda sempre em português do Brasil, de forma breve (no máximo 3 frases curtas), sem usar markdown ou listas.',
+    channelType === 'sms'
+      ? 'Responda sempre de forma breve (no máximo 1-2 frases curtas, idealmente até 160 caracteres), sem usar markdown ou listas — cada mensagem é um SMS, e mensagens longas viram vários SMS e custam mais.'
+      : 'Responda sempre em português do Brasil, de forma breve (no máximo 3 frases curtas), sem usar markdown ou listas.',
     IDENTITY_AND_HANDOFF_RULES,
     SALES_EXPERTISE_RULES,
     ...(businessContext
@@ -445,15 +448,16 @@ export async function processInboundMessage(params: {
     return noHandoff
   }
 
-  const evolutionConfig = getEvolutionConfig(unit)
-  if (!evolutionConfig) {
+  const channelType = getUnitChannelType(unit)
+  const channel = getMessagingChannel(unit)
+  if (!channel) {
     await reportAgentFailure({
       supabase,
       unit,
       lead,
-      source: 'evolution',
-      eventType: 'missing_env_evolution',
-      message: `Evolution API não configurada para a unidade "${unit.name}" — o agente não consegue enviar mensagens no WhatsApp.`,
+      source: channelType === 'sms' ? 'twilio' : 'evolution',
+      eventType: channelType === 'sms' ? 'missing_env_twilio' : 'missing_env_evolution',
+      message: `${channelType === 'sms' ? 'Twilio' : 'Evolution API'} não configurada para a unidade "${unit.name}" — o agente não consegue enviar mensagens no ${channelLabel(channelType)}.`,
     })
     return noHandoff
   }
@@ -530,14 +534,14 @@ export async function processInboundMessage(params: {
   }
 
   try {
-    await sendWhatsAppMessage(evolutionConfig, lead.phone, reply)
+    await channel.sendMessage(lead.phone, reply)
   } catch (error) {
     // Registra a resposta que falhou no histórico (status 'failed') para
     // que a falha fique visível na tela de Conversas, não só no log.
     await supabase.from('conversations').insert({
       lead_id: lead.id,
       unit_id: unit.id,
-      channel: 'whatsapp',
+      channel: channelType,
       direction: 'outbound',
       content: reply,
       status: 'failed',
@@ -548,9 +552,9 @@ export async function processInboundMessage(params: {
       supabase,
       unit,
       lead,
-      source: 'evolution',
-      eventType: 'evolution_send_failed',
-      message: `Falha ao enviar resposta via Evolution API: ${error instanceof Error ? error.message : 'erro desconhecido'}`,
+      source: channelType === 'sms' ? 'twilio' : 'evolution',
+      eventType: channelType === 'sms' ? 'twilio_send_failed' : 'evolution_send_failed',
+      message: `Falha ao enviar resposta via ${channelLabel(channelType)}: ${error instanceof Error ? error.message : 'erro desconhecido'}`,
     })
     return noHandoff
   }
@@ -560,7 +564,7 @@ export async function processInboundMessage(params: {
   await supabase.from('conversations').insert({
     lead_id: lead.id,
     unit_id: unit.id,
-    channel: 'whatsapp',
+    channel: channelType,
     direction: 'outbound',
     content: reply,
     status: 'sent',

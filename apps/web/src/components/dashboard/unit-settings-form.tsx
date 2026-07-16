@@ -3,13 +3,16 @@
 import { useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import type { Unit } from '@/lib/types'
-import { FormSection, Input, Label } from '@/components/ui/dashboard-ui'
+import type { MessagingChannelType, Unit } from '@/lib/types'
+import { FormSection, Input, Label, Select } from '@/components/ui/dashboard-ui'
 
 export function UnitSettingsForm({ unit, showAdvanced = false }: { unit: Unit; showAdvanced?: boolean }) {
   const router = useRouter()
   const [whatsapp, setWhatsapp] = useState(unit.whatsapp_phone ?? '')
   const [emailFrom, setEmailFrom] = useState(unit.email_from ?? '')
+  const [messagingChannel, setMessagingChannel] = useState<MessagingChannelType>(
+    unit.messaging_channel === 'sms' ? 'sms' : 'whatsapp',
+  )
   const [evolutionApiUrl, setEvolutionApiUrl] = useState(unit.evolution_api_url ?? '')
   const [evolutionApiKey, setEvolutionApiKey] = useState(unit.evolution_api_key ?? '')
   const [evolutionInstanceName, setEvolutionInstanceName] = useState(
@@ -31,6 +34,7 @@ export function UnitSettingsForm({ unit, showAdvanced = false }: { unit: Unit; s
       .update({
         whatsapp_phone: whatsapp || null,
         email_from: emailFrom || null,
+        messaging_channel: messagingChannel,
         // Campos técnicos: só o painel interno (equipe Alizo) mexe neles.
         // Sem eles a unidade usa o servidor central de WhatsApp da Alizo.
         ...(showAdvanced
@@ -77,6 +81,22 @@ export function UnitSettingsForm({ unit, showAdvanced = false }: { unit: Unit; s
               onChange={(e) => setEmailFrom(e.target.value)}
             />
           </div>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="messagingChannel">Canal de mensagens</Label>
+          <Select
+            id="messagingChannel"
+            value={messagingChannel}
+            onChange={(e) => setMessagingChannel(e.target.value as MessagingChannelType)}
+          >
+            <option value="whatsapp">WhatsApp</option>
+            <option value="sms">SMS (Twilio)</option>
+          </Select>
+          <p className="text-xs text-slate-500">
+            Sugestão: Brasil → WhatsApp, EUA → SMS. Para usar SMS, conecte antes as credenciais Twilio em{' '}
+            <a href="/dashboard/messaging/connect" className="underline">Canal de mensagens (SMS)</a>.
+          </p>
         </div>
 
         {showAdvanced && (

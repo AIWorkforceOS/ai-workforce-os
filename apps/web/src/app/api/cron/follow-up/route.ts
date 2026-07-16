@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { getEvolutionConfig, sendWhatsAppMessage } from '@/lib/evolution'
+import { getMessagingChannel, getUnitChannelType, channelLabel } from '@/lib/channels/messaging-channel'
 import { getOpenAIApiKey } from '@/lib/openai'
 import {
   countSentToday,
@@ -91,13 +91,14 @@ export async function GET(request: Request) {
       continue
     }
 
-    const evolutionConfig = getEvolutionConfig(unit)
-    if (!evolutionConfig) {
+    const channelType = getUnitChannelType(unit)
+    const channel = getMessagingChannel(unit)
+    if (!channel) {
       await logSystemEvent(supabase, {
         level: 'warning',
-        source: 'evolution',
+        source: channelType === 'sms' ? 'twilio' : 'evolution',
         eventType: 'follow_up_unit_skipped',
-        message: `Follow-up pulado na unidade "${unit.name}": Evolution API não configurada.`,
+        message: `Follow-up pulado na unidade "${unit.name}": ${channelLabel(channelType)} não configurado.`,
         orgId: unit.org_id,
         unitId: unit.id,
       })
@@ -138,13 +139,13 @@ export async function GET(request: Request) {
         const message = await generateFollowUpMessage(config, unit, lead, historyRows)
         if (!message) continue
 
-        await sendWhatsAppMessage(evolutionConfig, lead.phone!, message)
+        await channel.sendMessage(lead.phone!, message)
 
         const sentAt = new Date().toISOString()
         await supabase.from('conversations').insert({
           lead_id: lead.id,
           unit_id: unit.id,
-          channel: 'whatsapp',
+          channel: channelType,
           direction: 'outbound',
           content: message,
           template_key: FOLLOW_UP_TEMPLATE_KEY,

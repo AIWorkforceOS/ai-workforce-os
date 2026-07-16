@@ -11,7 +11,7 @@ import { createServiceClient } from '@/lib/supabase/service'
  * OPENAI_ADMIN_KEY estiver configurada.
  */
 
-export type ApiProvider = 'openai' | 'google_maps' | 'resend' | 'evolution'
+export type ApiProvider = 'openai' | 'google_maps' | 'resend' | 'evolution' | 'twilio'
 
 // USD por 1M de tokens (OpenAI, tabela pública jul/2026)
 const OPENAI_PRICING_PER_1M: Record<string, { input: number; output: number }> = {
@@ -29,6 +29,12 @@ const GOOGLE_PLACES_PRICING_PER_REQUEST: Record<string, number> = {
 // USD por e-mail (Resend Pro US$20 / 50k e-mails — no plano free o
 // custo marginal real é 0; mantemos a estimativa conservadora)
 const RESEND_COST_PER_EMAIL = 0.0004
+
+// USD por segmento de SMS via Twilio nos EUA (tabela pública jul/2026,
+// varia por operadora) — não inclui o custo de registro A2P 10DLC
+// (setup único + mensalidade por campanha), que é cobrado direto pela
+// Twilio na conta de cada empresa cliente, fora deste sistema de medição.
+const TWILIO_SMS_COST_PER_SEGMENT_USD = 0.0079
 
 export function estimateOpenAICost(model: string, inputTokens: number, outputTokens: number): number {
   const pricing = OPENAI_PRICING_PER_1M[model] ?? { input: 0.15, output: 0.6 }
@@ -126,4 +132,14 @@ export async function logResendUsage(): Promise<void> {
  */
 export async function logEvolutionUsage(endpoint: string): Promise<void> {
   await logApiUsage({ provider: 'evolution', endpoint, estimatedCostUsd: 0 })
+}
+
+/** Atalho para twilio.ts: custo estimado por segmento de SMS enviado. */
+export async function logTwilioUsage(params: { endpoint: string; segments: number }): Promise<void> {
+  await logApiUsage({
+    provider: 'twilio',
+    endpoint: params.endpoint,
+    requestCount: params.segments,
+    estimatedCostUsd: params.segments * TWILIO_SMS_COST_PER_SEGMENT_USD,
+  })
 }

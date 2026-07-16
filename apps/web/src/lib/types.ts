@@ -1,3 +1,5 @@
+export type MessagingChannelType = 'whatsapp' | 'sms'
+
 export type Unit = {
   id: string
   org_id: string | null
@@ -12,6 +14,11 @@ export type Unit = {
   evolution_api_url: string | null
   evolution_api_key: string | null
   evolution_instance_name: string | null
+  /** Canal de mensagens escolhido pela unidade. Null = padrão histórico (whatsapp). */
+  messaging_channel: MessagingChannelType | null
+  twilio_account_sid: string | null
+  twilio_auth_token: string | null
+  twilio_phone_number: string | null
   intake_token: string | null
   is_active: boolean
   created_at: string
@@ -109,7 +116,7 @@ export type Lead = {
   updated_at: string
 }
 
-export type ConversationChannel = 'whatsapp' | 'email'
+export type ConversationChannel = 'whatsapp' | 'email' | 'sms'
 export type ConversationDirection = 'outbound' | 'inbound'
 export type ConversationStatus = 'sent' | 'delivered' | 'read' | 'failed'
 

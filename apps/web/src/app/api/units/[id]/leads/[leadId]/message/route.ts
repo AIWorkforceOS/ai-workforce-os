@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getEvolutionConfig, sendWhatsAppMessage } from '@/lib/evolution'
+import { getMessagingChannel, getUnitChannelType, channelLabel } from '@/lib/channels/messaging-channel'
 import { countSentToday, generateFirstContactMessage, isWithinActiveHours } from '@/lib/conversation-engine'
 import { sendNewLeadEmail } from '@/lib/email'
 import type { AgentConfig, Lead, Unit } from '@/lib/types'
@@ -41,9 +41,13 @@ export async function POST(
     return NextResponse.json({ error: 'Este lead não possui telefone cadastrado.' }, { status: 400 })
   }
 
-  const evolutionConfig = getEvolutionConfig(unitRow)
-  if (!evolutionConfig) {
-    return NextResponse.json({ error: 'Configure a Evolution API desta unidade primeiro.' }, { status: 400 })
+  const channelType = getUnitChannelType(unitRow)
+  const channel = getMessagingChannel(unitRow)
+  if (!channel) {
+    return NextResponse.json(
+      { error: `Configure o canal ${channelLabel(channelType)} desta unidade primeiro.` },
+      { status: 400 },
+    )
   }
 
   if (!isWithinActiveHours(config.active_hours)) {
@@ -66,10 +70,10 @@ export async function POST(
   }
 
   try {
-    await sendWhatsAppMessage(evolutionConfig, leadRow.phone, message)
+    await channel.sendMessage(leadRow.phone, message)
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Erro ao enviar mensagem via Evolution API.' },
+      { error: error instanceof Error ? error.message : `Erro ao enviar mensagem via ${channelLabel(channelType)}.` },
       { status: 502 },
     )
   }
@@ -79,7 +83,7 @@ export async function POST(
   await supabase.from('conversations').insert({
     lead_id: leadRow.id,
     unit_id: unitRow.id,
-    channel: 'whatsapp',
+    channel: channelType,
     direction: 'outbound',
     content: message,
     template_key: 'primeiro_contato',

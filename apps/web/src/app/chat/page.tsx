@@ -11,7 +11,7 @@ type Message = {
   ts: number
 }
 
-type ChatMode = 'sales' | 'support' | 'traffic'
+type ChatMode = 'sales' | 'support' | 'traffic' | 'sms'
 
 const INITIAL_MESSAGES: Record<ChatMode, string> = {
   sales:
@@ -20,6 +20,8 @@ const INITIAL_MESSAGES: Record<ChatMode, string> = {
     'Olá! Sou o **Kai**, do suporte do AI Workforce OS 👋\n\nConte o que você está tentando fazer que eu te guio passo a passo.',
   traffic:
     'Olá! Sou o **Kai** e vou te ajudar a conectar suas contas de anúncio 👋\n\nVocê está travado no **Meta Ads** (Facebook/Instagram) ou no **Google Ads**?',
+  sms:
+    'Olá! Sou o **Kai** e vou te ajudar a conectar o canal de SMS (Twilio) 👋\n\nEm qual passo você está: criando a conta Twilio, comprando o número, o registro A2P 10DLC, ou testando a conexão?',
 }
 
 function renderMarkdown(text: string) {
@@ -40,7 +42,8 @@ export default function ChatPage() {
 function ChatPageInner() {
   const searchParams = useSearchParams()
   const modeParam = searchParams.get('mode')
-  const mode: ChatMode = modeParam === 'support' || modeParam === 'traffic' ? modeParam : 'sales'
+  const mode: ChatMode =
+    modeParam === 'support' || modeParam === 'traffic' || modeParam === 'sms' ? modeParam : 'sales'
 
   const initialMessage: Message = { id: 'init', role: 'assistant', content: INITIAL_MESSAGES[mode], ts: Date.now() }
   const [messages, setMessages] = useState<Message[]>([initialMessage])
@@ -112,9 +115,11 @@ function ChatPageInner() {
   const quickReplies =
     mode === 'traffic'
       ? ['Estou travado no Meta Ads', 'Estou travado no Google Ads', 'Deu erro ao testar a conexão']
-      : mode === 'support'
-        ? ['Como conecto o WhatsApp?', 'Como troco minha senha?', 'Como adiciono uma unidade?']
-        : ['Como funciona?', 'Quanto custa?', 'Tem garantia?', 'Aceita PIX?']
+      : mode === 'sms'
+        ? ['Como crio a conta Twilio?', 'O que é o registro A2P 10DLC?', 'Deu erro ao testar a conexão']
+        : mode === 'support'
+          ? ['Como conecto o WhatsApp?', 'Como troco minha senha?', 'Como adiciono uma unidade?']
+          : ['Como funciona?', 'Quanto custa?', 'Tem garantia?', 'Aceita PIX?']
 
   return (
     <div

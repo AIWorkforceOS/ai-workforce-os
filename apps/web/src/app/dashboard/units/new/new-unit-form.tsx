@@ -33,6 +33,7 @@ export function NewUnitForm({
   const [state, setState] = useState('')
   const [whatsapp, setWhatsapp] = useState('')
   const [emailFrom, setEmailFrom] = useState('')
+  const [messagingChannel, setMessagingChannel] = useState<'whatsapp' | 'sms'>('whatsapp')
   const [evolutionApiUrl, setEvolutionApiUrl] = useState('')
   const [evolutionApiKey, setEvolutionApiKey] = useState('')
   const [evolutionInstanceName, setEvolutionInstanceName] = useState('')
@@ -68,6 +69,7 @@ export function NewUnitForm({
         region_state: state || null,
         whatsapp_phone: whatsapp || null,
         email_from: emailFrom || null,
+        messaging_channel: messagingChannel,
         evolution_api_url: evolutionApiUrl || null,
         evolution_api_key: evolutionApiKey || null,
         evolution_instance_name: evolutionInstanceName || null,
@@ -143,6 +145,23 @@ export function NewUnitForm({
             onChange={(e) => setEmailFrom(e.target.value)}
             placeholder="campinas@alizo.com.br"
           />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="messagingChannel">Canal de mensagens</Label>
+          <Select
+            id="messagingChannel"
+            value={messagingChannel}
+            onChange={(e) => setMessagingChannel(e.target.value as 'whatsapp' | 'sms')}
+          >
+            <option value="whatsapp">WhatsApp</option>
+            <option value="sms">SMS (Twilio)</option>
+          </Select>
+          <p className="text-xs text-slate-500">
+            Sugestão: Brasil → WhatsApp, EUA → SMS (fora do Brasil o WhatsApp costuma não ser o canal
+            dominante). Escolha manualmente conforme o mercado da unidade — para SMS, as credenciais Twilio
+            se conectam depois em Canal de mensagens (SMS).
+          </p>
         </div>
 
         <div className="flex flex-col gap-1 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>

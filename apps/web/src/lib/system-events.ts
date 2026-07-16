@@ -4,6 +4,7 @@ export type SystemEventLevel = 'info' | 'warning' | 'error'
 export type SystemEventSource =
   | 'openai'
   | 'evolution'
+  | 'twilio'
   | 'google_maps'
   | 'resend'
   | 'cron'

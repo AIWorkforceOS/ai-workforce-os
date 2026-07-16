@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getEvolutionConfig, sendWhatsAppMessage } from '@/lib/evolution'
+import { getMessagingChannel, getUnitChannelType, channelLabel } from '@/lib/channels/messaging-channel'
 import { generateFirstContactMessage, isWithinActiveHours, countSentToday } from '@/lib/conversation-engine'
 import { logSystemEvent } from '@/lib/system-events'
 import type { AgentConfig, Lead, Unit } from '@/lib/types'
@@ -65,9 +65,10 @@ export async function createAdLead(
     .maybeSingle()
 
   const config = agentConfig as AgentConfig | null
-  const evolutionConfig = getEvolutionConfig(unit)
+  const channelType = getUnitChannelType(unit)
+  const messagingChannel = getMessagingChannel(unit)
 
-  if (!config?.is_active || !evolutionConfig) {
+  if (!config?.is_active || !messagingChannel) {
     return { leadId: leadRow.id, contacted: false }
   }
   if (!isWithinActiveHours(config.active_hours)) {
@@ -82,13 +83,13 @@ export async function createAdLead(
     const message = await generateFirstContactMessage(config, unit, leadRow)
     if (!message) return { leadId: leadRow.id, contacted: false }
 
-    await sendWhatsAppMessage(evolutionConfig, normalizedPhone, message)
+    await messagingChannel.sendMessage(normalizedPhone, message)
 
     const sentAt = new Date().toISOString()
     await supabase.from('conversations').insert({
       lead_id: leadRow.id,
       unit_id: unit.id,
-      channel: 'whatsapp',
+      channel: channelType,
       direction: 'outbound',
       content: message,
       status: 'sent',
@@ -99,9 +100,9 @@ export async function createAdLead(
   } catch (error) {
     await logSystemEvent(supabase, {
       level: 'error',
-      source: 'evolution',
+      source: channelType === 'sms' ? 'twilio' : 'evolution',
       eventType: 'ad_lead_first_contact_failed',
-      message: `Lead de anúncio criado na unidade "${unit.name}" mas a primeira mensagem falhou: ${error instanceof Error ? error.message : 'erro desconhecido'}`,
+      message: `Lead de anúncio criado na unidade "${unit.name}" mas a primeira mensagem (${channelLabel(channelType)}) falhou: ${error instanceof Error ? error.message : 'erro desconhecido'}`,
       orgId: unit.org_id,
       unitId: unit.id,
       leadId: leadRow.id,

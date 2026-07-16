@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { getEvolutionConfig, sendWhatsAppMessage } from '@/lib/evolution'
+import { getMessagingChannel, getUnitChannelType, channelLabel } from '@/lib/channels/messaging-channel'
 import { logSystemEvent } from '@/lib/system-events'
 import type { AgentConfig, Unit } from '@/lib/types'
 
@@ -100,32 +100,33 @@ export async function POST(request: Request) {
       .eq('agent_type', 'sdr')
       .maybeSingle()
 
-    const config = getEvolutionConfig(unit)
+    const channelType = getUnitChannelType(unit)
+    const channel = getMessagingChannel(unit)
 
-    if (!config || !agentConfig) {
+    if (!channel || !agentConfig) {
       await logSystemEvent(supabase, {
         level: 'warning',
-        source: config ? 'system' : 'evolution',
-        eventType: 'intake_whatsapp_skipped',
-        message: `Lead recebido via intake na unidade "${unit.name}" mas o WhatsApp automático não foi enviado: ${config ? 'AI Sales Representative sem configuração' : 'Evolution API não configurada'}.`,
+        source: channel ? 'system' : (channelType === 'sms' ? 'twilio' : 'evolution'),
+        eventType: 'intake_message_skipped',
+        message: `Lead recebido via intake na unidade "${unit.name}" mas a mensagem automática não foi enviada: ${channel ? 'AI Sales Representative sem configuração' : `${channelLabel(channelType)} não configurado`}.`,
         orgId: unit.org_id,
         unitId: unit.id,
         leadId: newLead.id,
       })
     }
 
-    if (config && agentConfig) {
+    if (channel && agentConfig) {
       const agentName = (agentConfig as AgentConfig).persona_name || 'Assistente'
       const firstName = name ? name.split(' ')[0] : null
       const initialMessage = `Olá${firstName ? `, ${firstName}` : ''}! Sou o ${agentName}. Vi que você tem interesse e quero te ajudar. Pode me contar um pouco mais sobre o que está buscando?`
 
       try {
-        await sendWhatsAppMessage(config, normalizedPhone, initialMessage)
+        await channel.sendMessage(normalizedPhone, initialMessage)
 
         await supabase.from('conversations').insert({
           lead_id: newLead.id,
           unit_id: unit.id,
-          channel: 'whatsapp',
+          channel: channelType,
           direction: 'outbound',
           content: initialMessage,
           status: 'sent',
@@ -137,12 +138,12 @@ export async function POST(request: Request) {
           .update({ status: 'contacted', last_contacted_at: new Date().toISOString() })
           .eq('id', newLead.id)
       } catch (error) {
-        // WhatsApp send failed — lead still created, but the failure must be visible
+        // Envio falhou — lead ainda foi criado, mas a falha precisa ficar visível
         await logSystemEvent(supabase, {
           level: 'error',
-          source: 'evolution',
-          eventType: 'intake_whatsapp_failed',
-          message: `Falha ao enviar primeiro contato via WhatsApp para lead do intake: ${error instanceof Error ? error.message : 'erro desconhecido'}`,
+          source: channelType === 'sms' ? 'twilio' : 'evolution',
+          eventType: 'intake_message_failed',
+          message: `Falha ao enviar primeiro contato via ${channelLabel(channelType)} para lead do intake: ${error instanceof Error ? error.message : 'erro desconhecido'}`,
           orgId: unit.org_id,
           unitId: unit.id,
           leadId: newLead.id,

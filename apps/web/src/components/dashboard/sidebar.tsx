@@ -21,6 +21,7 @@ import {
   Briefcase,
   Sparkles,
   CreditCard,
+  Smartphone,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useLocale } from '@/lib/i18n/client'
@@ -65,6 +66,7 @@ const navGroups: { label: Record<Locale, string>; items: NavItem[] }[] = [
     label: { pt: 'Sua empresa', en: 'Your company' },
     items: [
       { href: '/dashboard/units', label: { pt: 'Unidades', en: 'Units' }, icon: MapPin },
+      { href: '/dashboard/messaging/connect', label: { pt: 'Canal de mensagens (SMS)', en: 'Messaging channel (SMS)' }, icon: Smartphone },
       { href: '/dashboard/employees', label: { pt: 'Equipe (pessoas)', en: 'Team (people)' }, icon: Users },
       { href: '/dashboard/results', label: { pt: 'Resultados', en: 'Results' }, icon: TrendingUp },
       { href: '/dashboard/financial', label: { pt: 'Cobranças', en: 'Billing' }, icon: Wallet, superOnly: true },
