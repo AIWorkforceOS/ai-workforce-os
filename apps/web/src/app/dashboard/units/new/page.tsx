@@ -1,5 +1,7 @@
+import { headers } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { getAppUser } from '@/lib/app-user'
+import { LOCALE_HEADER, isLocale, DEFAULT_LOCALE } from '@/lib/i18n/config'
 import { NewUnitForm } from './new-unit-form'
 
 export default async function NewUnitPage({
@@ -9,6 +11,13 @@ export default async function NewUnitPage({
 }) {
   const appUser = await getAppUser()
   const { org_id: orgIdParam } = await searchParams
+
+  // Sugestão automática de idioma da unidade pelo país do IP de quem está
+  // criando a conta (mesmo header já resolvido pelo middleware para a
+  // localidade do site) — editável no form, mesmo molde de messaging_channel.
+  const headerList = await headers()
+  const localeFromHeader = headerList.get(LOCALE_HEADER)
+  const suggestedLanguage = isLocale(localeFromHeader) ? localeFromHeader : DEFAULT_LOCALE
 
   let organizations: { id: string; name: string }[] | null = null
   let defaultOrgId = ''
@@ -35,7 +44,7 @@ export default async function NewUnitPage({
           Sua conta não está vinculada a nenhuma empresa — não é possível criar uma unidade. Fale com a equipe Alizo.
         </p>
       ) : (
-        <NewUnitForm organizations={organizations} defaultOrgId={defaultOrgId} />
+        <NewUnitForm organizations={organizations} defaultOrgId={defaultOrgId} suggestedLanguage={suggestedLanguage} />
       )}
     </div>
   )

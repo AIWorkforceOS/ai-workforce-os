@@ -1,19 +1,24 @@
-import type { MessagingChannelType, Unit } from '@/lib/types'
+import type { ConversationChannel, Lead, MessagingChannelType, Unit } from '@/lib/types'
 import { getEvolutionConfig, sendWhatsAppMessage, type EvolutionUnitConfig } from '@/lib/evolution'
 import { getTwilioConfig, sendSmsMessage, type TwilioUnitConfig } from '@/lib/twilio'
+import { getResendApiKey, sendLeadEmail } from '@/lib/email'
 
 // Abstração de canal de mensagens (item 1): o funcionário de IA (SDR,
-// Sales Rep, Recruiter) fala com o cliente por WhatsApp (Evolution API)
-// ou SMS (Twilio, para países como os EUA onde WhatsApp não é o canal
-// dominante) sem precisar saber qual dos dois está por trás — só chama
-// sendMessage. Qual provider é usado depende de units.messaging_channel
-// (ver getUnitChannelType).
+// Sales Rep, Recruiter) fala com o cliente por WhatsApp (Evolution API),
+// SMS (Twilio, para países como os EUA onde WhatsApp não é o canal
+// dominante) ou e-mail (Resend) sem precisar saber qual está por trás —
+// só chama sendMessage. WhatsApp/SMS são o canal "de telefone" da
+// unidade (escolhido em units.messaging_channel via getUnitChannelType);
+// e-mail é sempre adicional — tentado sempre que o lead tem endereço
+// cadastrado, em paralelo ao canal de telefone (ver sendToLeadChannels).
 
-export type ChannelType = MessagingChannelType
+export type ChannelType = ConversationChannel
+
+export type SendContext = { subject?: string; personaName?: string }
 
 export interface MessagingChannel {
   readonly type: ChannelType
-  sendMessage(phone: string, text: string): Promise<void>
+  sendMessage(recipient: string, text: string, context?: SendContext): Promise<void>
 }
 
 class EvolutionWhatsAppChannel implements MessagingChannel {
@@ -37,16 +42,43 @@ class TwilioSmsChannel implements MessagingChannel {
 }
 
 /**
+ * Canal de e-mail (item 1): mesmo motor de conversa, mesma persona —
+ * só embrulha a resposta no template com a marca da unidade (logo,
+ * layout profissional) e usa reply-to pra respostas caírem na caixa da
+ * empresa. Ver lib/email.ts (sendLeadEmail) para o "from" técnico:
+ * sempre o domínio da plataforma, porque o domínio do cliente não está
+ * verificado no Resend.
+ */
+class ResendEmailChannel implements MessagingChannel {
+  readonly type: ChannelType = 'email'
+
+  constructor(private readonly unit: Unit) {}
+
+  async sendMessage(email: string, text: string, context?: SendContext): Promise<void> {
+    const result = await sendLeadEmail({
+      to: email,
+      unitName: this.unit.name,
+      personaName: context?.personaName || this.unit.name,
+      logoUrl: this.unit.logo_url,
+      subject: context?.subject || this.unit.name,
+      bodyText: text,
+      replyTo: this.unit.email_reply_to,
+    })
+    if (!result.ok) throw new Error(result.error || 'Falha ao enviar e-mail.')
+  }
+}
+
+/**
  * Canal configurado para a unidade. `messaging_channel` é escolhido pelo
  * cliente (self-service, ver /dashboard/messaging/connect e a config da
  * unidade); null usa o padrão histórico (whatsapp) para não quebrar
  * unidades já em produção antes deste campo existir.
  */
-export function getUnitChannelType(unit: Unit): ChannelType {
+export function getUnitChannelType(unit: Unit): MessagingChannelType {
   return unit.messaging_channel === 'sms' ? 'sms' : 'whatsapp'
 }
 
-/** Instancia o provider certo para a unidade, ou null se não configurado. */
+/** Instancia o provider de telefone certo para a unidade, ou null se não configurado. */
 export function getMessagingChannel(unit: Unit): MessagingChannel | null {
   if (getUnitChannelType(unit) === 'sms') {
     const config = getTwilioConfig(unit)
@@ -57,6 +89,69 @@ export function getMessagingChannel(unit: Unit): MessagingChannel | null {
   return config ? new EvolutionWhatsAppChannel(config) : null
 }
 
+/** Canal de e-mail da unidade, ou null se Resend não está configurado na plataforma. */
+export function getEmailChannel(unit: Unit): MessagingChannel | null {
+  if (!getResendApiKey() || !process.env.EMAIL_FROM_DOMAIN) return null
+  return new ResendEmailChannel(unit)
+}
+
 export function channelLabel(type: ChannelType): string {
-  return type === 'sms' ? 'SMS' : 'WhatsApp'
+  if (type === 'sms') return 'SMS'
+  if (type === 'email') return 'E-mail'
+  return 'WhatsApp'
+}
+
+export type ChannelSendAttempt = { channel: ChannelType; ok: boolean; error?: string }
+
+/**
+ * Tenta enviar a mesma mensagem por todos os canais disponíveis para o
+ * lead (item 2 do pedido): WhatsApp/SMS se o lead tem telefone e a
+ * unidade tem o canal configurado, e-mail se o lead tem e-mail e a
+ * plataforma tem Resend configurado. Um lead com os dois cadastrados
+ * recebe pelos dois — o histórico fica consolidado porque quem chama
+ * isto grava todas as tentativas na mesma linha de `lead_id` (ver
+ * sendAcrossChannels em lib/conversation-engine.ts), nunca cria leads
+ * ou conversas separadas por canal.
+ */
+export async function sendToLeadChannels(params: {
+  unit: Unit
+  lead: Pick<Lead, 'phone' | 'email'>
+  text: string
+  context?: SendContext
+}): Promise<ChannelSendAttempt[]> {
+  const attempts: ChannelSendAttempt[] = []
+
+  if (params.lead.phone) {
+    const channel = getMessagingChannel(params.unit)
+    if (channel) {
+      try {
+        await channel.sendMessage(params.lead.phone, params.text, params.context)
+        attempts.push({ channel: channel.type, ok: true })
+      } catch (error) {
+        attempts.push({
+          channel: channel.type,
+          ok: false,
+          error: error instanceof Error ? error.message : 'Erro desconhecido.',
+        })
+      }
+    }
+  }
+
+  if (params.lead.email) {
+    const emailChannel = getEmailChannel(params.unit)
+    if (emailChannel) {
+      try {
+        await emailChannel.sendMessage(params.lead.email, params.text, params.context)
+        attempts.push({ channel: 'email', ok: true })
+      } catch (error) {
+        attempts.push({
+          channel: 'email',
+          ok: false,
+          error: error instanceof Error ? error.message : 'Erro desconhecido.',
+        })
+      }
+    }
+  }
+
+  return attempts
 }

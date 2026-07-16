@@ -16,6 +16,7 @@ async function sendEmail(params: {
   from: string
   subject: string
   html: string
+  replyTo?: string | null
 }): Promise<SendResult> {
   const apiKey = getResendApiKey()
   if (!apiKey) {
@@ -29,7 +30,13 @@ async function sendEmail(params: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(params),
+      body: JSON.stringify({
+        to: params.to,
+        from: params.from,
+        subject: params.subject,
+        html: params.html,
+        ...(params.replyTo ? { reply_to: params.replyTo } : {}),
+      }),
     })
 
     if (!response.ok) {
@@ -163,5 +170,97 @@ export async function sendNewLeadEmail(params: {
       <p>Um novo lead foi prospectado e o primeiro contato já foi enviado pelo AI Sales Representative da unidade <strong>${params.unitName}</strong>.</p>
       <p><strong>Empresa:</strong> ${params.leadName}${params.leadPhone ? ` (${params.leadPhone})` : ''}</p>
     `,
+  })
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+/**
+ * E-mail é sempre enviado pelo domínio da plataforma (EMAIL_FROM_DOMAIN,
+ * verificado no Resend) — um domínio próprio do cliente não está
+ * verificado ali, então usá-lo como `from` faria o Resend rejeitar o
+ * envio. O nome de exibição do remetente já carrega a marca do cliente
+ * (persona + unidade), e `replyTo` (units.email_reply_to) faz as
+ * respostas do lead caírem na caixa de entrada real da empresa mesmo
+ * com o endereço técnico sendo da plataforma.
+ */
+function salesFrom(displayName: string): string | null {
+  const domain = process.env.EMAIL_FROM_DOMAIN
+  return domain ? `${displayName} <sales@${domain}>` : null
+}
+
+/**
+ * Template HTML genérico com a marca do cliente (logo, se configurada)
+ * para as mensagens do Sales Rep por e-mail — item 4 do pedido do
+ * produto: layout profissional, sem hardcode de tipo de negócio.
+ * `bodyText` é a resposta em texto simples gerada pelo mesmo motor de
+ * conversa usado no WhatsApp/SMS (lib/conversation-engine.ts); aqui só
+ * viramos cada linha em um parágrafo.
+ */
+function buildBrandedEmailHtml(params: {
+  unitName: string
+  logoUrl: string | null
+  bodyText: string
+}): string {
+  const paragraphs = params.bodyText
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => `<p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#1e293b;">${escapeHtml(line)}</p>`)
+    .join('')
+
+  const logoBlock = params.logoUrl
+    ? `<img src="${escapeHtml(params.logoUrl)}" alt="${escapeHtml(params.unitName)}" style="max-height:40px;max-width:220px;height:auto;width:auto;" />`
+    : `<span style="font-size:16px;font-weight:700;color:#0f172a;">${escapeHtml(params.unitName)}</span>`
+
+  return `
+    <div style="background:#f1f5f9;padding:32px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+      <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;">
+        <div style="padding:24px 32px;border-bottom:1px solid #e2e8f0;">
+          ${logoBlock}
+        </div>
+        <div style="padding:32px;">
+          ${paragraphs}
+        </div>
+        <div style="padding:16px 32px;background:#f8fafc;border-top:1px solid #e2e8f0;">
+          <p style="margin:0;font-size:12px;color:#94a3b8;">Mensagem enviada por ${escapeHtml(params.unitName)}. Basta responder este e-mail para continuar a conversa.</p>
+        </div>
+      </div>
+    </div>
+  `
+}
+
+/**
+ * E-mail de prospecção/acompanhamento do Sales Rep (item 1 do pedido:
+ * e-mail como canal adicional, em paralelo ao WhatsApp/SMS). Usado por
+ * lib/channels/messaging-channel.ts (EmailChannel) — mesma persona,
+ * mesmo texto que sairia por WhatsApp, só embrulhado no template com a
+ * marca da unidade.
+ */
+export async function sendLeadEmail(params: {
+  to: string
+  unitName: string
+  personaName: string
+  logoUrl: string | null
+  subject: string
+  bodyText: string
+  replyTo?: string | null
+}): Promise<SendResult> {
+  const from = salesFrom(`${params.personaName} · ${params.unitName}`)
+  if (!from) return { ok: false, error: 'EMAIL_FROM_DOMAIN não está configurada.' }
+
+  return sendEmail({
+    to: params.to,
+    from,
+    subject: params.subject,
+    html: buildBrandedEmailHtml({ unitName: params.unitName, logoUrl: params.logoUrl, bodyText: params.bodyText }),
+    replyTo: params.replyTo,
   })
 }

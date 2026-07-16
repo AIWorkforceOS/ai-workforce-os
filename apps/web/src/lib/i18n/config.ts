@@ -51,3 +51,32 @@ export type PaidPlanSlug = keyof typeof PLAN_PRICING
 export function planPrice(slug: PaidPlanSlug, locale: Locale): number {
   return locale === 'en' ? PLAN_PRICING[slug].usd : PLAN_PRICING[slug].brl
 }
+
+const LANGUAGE_LABEL: Record<Locale, string> = {
+  en: 'inglês (EUA)',
+  pt: 'português do Brasil',
+}
+
+/**
+ * Idioma padrão de atendimento da unidade (units.default_conversation_language).
+ * Null = padrão histórico (pt), para não quebrar unidades já em produção
+ * antes deste campo existir (mesmo molde de getUnitChannelType).
+ */
+export function unitDefaultLocale(unit: { default_conversation_language: Locale | null }): Locale {
+  return unit.default_conversation_language ?? DEFAULT_LOCALE
+}
+
+/**
+ * Diretriz de idioma para prompts de conversa real (SDR/Sales Rep,
+ * Recrutador): responde no idioma padrão da unidade, mas troca de idioma
+ * dinamicamente e com naturalidade se o lead/candidato pedir ou começar a
+ * escrever em outro idioma — sem anunciar a troca de forma robótica.
+ */
+export function conversationLanguageDirective(locale: Locale): string {
+  return `Responda por padrão em ${LANGUAGE_LABEL[locale]}. Se a pessoa começar a escrever em outro idioma, ou pedir para você falar em outro idioma, mude para o idioma dela a partir da próxima mensagem, com naturalidade — nunca anuncie a troca (nada de "vou mudar para..." ou "switching to..."), apenas continue a conversa nesse idioma.`
+}
+
+/** Diretriz de idioma para a entrevista de contratação (idioma fixo da unidade). */
+export function interviewLanguageLabel(locale: Locale): string {
+  return LANGUAGE_LABEL[locale]
+}

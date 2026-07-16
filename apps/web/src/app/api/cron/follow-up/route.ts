@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { getMessagingChannel, getUnitChannelType, channelLabel } from '@/lib/channels/messaging-channel'
+import { getMessagingChannel, getEmailChannel } from '@/lib/channels/messaging-channel'
 import { getOpenAIApiKey } from '@/lib/openai'
 import {
   countSentToday,
   generateFollowUpMessage,
   isWithinActiveHours,
+  sendAcrossChannels,
 } from '@/lib/conversation-engine'
 import { logSystemEvent } from '@/lib/system-events'
 import type { AgentConfig, Conversation, Lead, Unit } from '@/lib/types'
@@ -91,14 +92,18 @@ export async function GET(request: Request) {
       continue
     }
 
-    const channelType = getUnitChannelType(unit)
-    const channel = getMessagingChannel(unit)
-    if (!channel) {
+    // E-mail é sempre adicional (item 2 do pedido): só pula a unidade
+    // inteira quando NENHUM dos dois canais (telefone da unidade,
+    // e-mail da plataforma) está disponível — cada lead ainda escolhe
+    // entre os dois de acordo com o que tem cadastrado.
+    const hasPhoneChannel = Boolean(getMessagingChannel(unit))
+    const hasEmailChannel = Boolean(getEmailChannel(unit))
+    if (!hasPhoneChannel && !hasEmailChannel) {
       await logSystemEvent(supabase, {
         level: 'warning',
-        source: channelType === 'sms' ? 'twilio' : 'evolution',
+        source: 'system',
         eventType: 'follow_up_unit_skipped',
-        message: `Follow-up pulado na unidade "${unit.name}": ${channelLabel(channelType)} não configurado.`,
+        message: `Follow-up pulado na unidade "${unit.name}": nenhum canal (WhatsApp/SMS ou e-mail) configurado.`,
         orgId: unit.org_id,
         unitId: unit.id,
       })
@@ -113,7 +118,7 @@ export async function GET(request: Request) {
       .select('*')
       .eq('unit_id', unit.id)
       .in('status', ['contacted', 'replied'])
-      .not('phone', 'is', null)
+      .or('phone.not.is.null,email.not.is.null')
       .lte('last_contacted_at', cutoff)
       .order('last_contacted_at', { ascending: true })
       .limit(maxPerUnit)
@@ -139,19 +144,18 @@ export async function GET(request: Request) {
         const message = await generateFollowUpMessage(config, unit, lead, historyRows)
         if (!message) continue
 
-        await channel.sendMessage(lead.phone!, message)
+        const { anySent } = await sendAcrossChannels({
+          supabase,
+          unit,
+          lead,
+          text: message,
+          subject: `${config.persona_name} · ${unit.name}`,
+          personaName: config.persona_name,
+          templateKey: FOLLOW_UP_TEMPLATE_KEY,
+        })
+        if (!anySent) continue
 
         const sentAt = new Date().toISOString()
-        await supabase.from('conversations').insert({
-          lead_id: lead.id,
-          unit_id: unit.id,
-          channel: channelType,
-          direction: 'outbound',
-          content: message,
-          template_key: FOLLOW_UP_TEMPLATE_KEY,
-          status: 'sent',
-          sent_at: sentAt,
-        })
         await supabase.from('leads').update({ last_contacted_at: sentAt }).eq('id', lead.id)
 
         sentToday += 1

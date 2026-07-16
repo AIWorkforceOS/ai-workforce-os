@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { getMessagingChannel, getUnitChannelType, channelLabel } from '@/lib/channels/messaging-channel'
+import { getMessagingChannel, getEmailChannel } from '@/lib/channels/messaging-channel'
+import { sendAcrossChannels } from '@/lib/conversation-engine'
 import { logSystemEvent } from '@/lib/system-events'
 import type { AgentConfig, Unit } from '@/lib/types'
 
@@ -100,50 +101,50 @@ export async function POST(request: Request) {
       .eq('agent_type', 'sdr')
       .maybeSingle()
 
-    const channelType = getUnitChannelType(unit)
-    const channel = getMessagingChannel(unit)
+    // E-mail é sempre tentado em paralelo ao WhatsApp/SMS quando o lead
+    // tem endereço cadastrado (item 1/2 do pedido) — hasAnyChannel só
+    // bloqueia o envio quando NENHUM dos dois está disponível.
+    const hasAnyChannel = Boolean(getMessagingChannel(unit) || (email && getEmailChannel(unit)))
 
-    if (!channel || !agentConfig) {
+    if (!hasAnyChannel || !agentConfig) {
       await logSystemEvent(supabase, {
         level: 'warning',
-        source: channel ? 'system' : (channelType === 'sms' ? 'twilio' : 'evolution'),
+        source: hasAnyChannel ? 'system' : 'evolution',
         eventType: 'intake_message_skipped',
-        message: `Lead recebido via intake na unidade "${unit.name}" mas a mensagem automática não foi enviada: ${channel ? 'AI Sales Representative sem configuração' : `${channelLabel(channelType)} não configurado`}.`,
+        message: `Lead recebido via intake na unidade "${unit.name}" mas a mensagem automática não foi enviada: ${hasAnyChannel ? 'AI Sales Representative sem configuração' : 'nenhum canal (WhatsApp/SMS ou e-mail) configurado'}.`,
         orgId: unit.org_id,
         unitId: unit.id,
         leadId: newLead.id,
       })
     }
 
-    if (channel && agentConfig) {
+    if (hasAnyChannel && agentConfig) {
       const agentName = (agentConfig as AgentConfig).persona_name || 'Assistente'
       const firstName = name ? name.split(' ')[0] : null
       const initialMessage = `Olá${firstName ? `, ${firstName}` : ''}! Sou o ${agentName}. Vi que você tem interesse e quero te ajudar. Pode me contar um pouco mais sobre o que está buscando?`
 
-      try {
-        await channel.sendMessage(normalizedPhone, initialMessage)
+      const { anySent, attempts } = await sendAcrossChannels({
+        supabase,
+        unit,
+        lead: { id: newLead.id, phone: normalizedPhone, email: email ?? null },
+        text: initialMessage,
+        subject: `${agentName} · ${unit.name}`,
+        personaName: agentName,
+      })
 
-        await supabase.from('conversations').insert({
-          lead_id: newLead.id,
-          unit_id: unit.id,
-          channel: channelType,
-          direction: 'outbound',
-          content: initialMessage,
-          status: 'sent',
-          sent_at: new Date().toISOString(),
-        })
-
+      if (anySent) {
         await supabase
           .from('leads')
           .update({ status: 'contacted', last_contacted_at: new Date().toISOString() })
           .eq('id', newLead.id)
-      } catch (error) {
-        // Envio falhou — lead ainda foi criado, mas a falha precisa ficar visível
+      } else {
+        // Envio falhou nos canais tentados — lead ainda foi criado, mas a falha precisa ficar visível
+        const errors = attempts.map((a) => a.error).filter(Boolean).join(' | ')
         await logSystemEvent(supabase, {
           level: 'error',
-          source: channelType === 'sms' ? 'twilio' : 'evolution',
+          source: 'evolution',
           eventType: 'intake_message_failed',
-          message: `Falha ao enviar primeiro contato via ${channelLabel(channelType)} para lead do intake: ${error instanceof Error ? error.message : 'erro desconhecido'}`,
+          message: `Falha ao enviar primeiro contato para lead do intake: ${errors || 'erro desconhecido'}`,
           orgId: unit.org_id,
           unitId: unit.id,
           leadId: newLead.id,

@@ -1,3 +1,5 @@
+import type { Locale } from '@/lib/i18n/config'
+
 export type MessagingChannelType = 'whatsapp' | 'sms'
 
 export type Unit = {
@@ -9,6 +11,8 @@ export type Unit = {
   whatsapp_phone: string | null
   email_from: string | null
   email_reply_to: string | null
+  /** URL pública da logo da unidade (Supabase Storage, bucket unit-logos), usada no template de e-mail do Sales Rep. */
+  logo_url: string | null
   region_city: string | null
   region_state: string | null
   evolution_api_url: string | null
@@ -19,6 +23,8 @@ export type Unit = {
   twilio_account_sid: string | null
   twilio_auth_token: string | null
   twilio_phone_number: string | null
+  /** Idioma padrão de atendimento da unidade. Null = padrão histórico (pt). */
+  default_conversation_language: Locale | null
   intake_token: string | null
   is_active: boolean
   created_at: string

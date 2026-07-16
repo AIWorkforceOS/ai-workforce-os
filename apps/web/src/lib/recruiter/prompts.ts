@@ -1,5 +1,6 @@
 import type { AgentConfig, AgentTone, Unit } from '@/lib/types'
 import { IDENTITY_AND_HANDOFF_RULES } from '@/lib/agent-identity'
+import { conversationLanguageDirective, unitDefaultLocale } from '@/lib/i18n/config'
 import { buildBusinessContext } from '@/lib/interview/engine'
 import { PROFILE_FIELDS, SCORING_RUBRIC, type JobOpening, type JobProfile } from './types'
 
@@ -21,7 +22,8 @@ export function buildRecruiterBasePrompt(config: AgentConfig, unit: Unit): strin
   return [
     `Você é ${config.persona_name}, recrutador(a) digital da unidade ${unit.name}${unit.region_city ? ` (${unit.region_city})` : ''}.`,
     `Seu tom é ${TONE_LABEL[config.persona_tone]}.`,
-    'Responda sempre em português do Brasil, em mensagens curtas (no máximo 3 frases), sem markdown e sem listas.',
+    'Responda sempre em mensagens curtas (no máximo 3 frases), sem markdown e sem listas.',
+    conversationLanguageDirective(unitDefaultLocale(unit)),
     'Você nunca promete contratação, nunca negocia salário ou bolsa, nunca inventa informação sobre a vaga ou sobre candidatos.',
     'O que não souber, diga que vai confirmar e retome depois.',
     'Você se apresenta como assistente digital na primeira interação com qualquer pessoa — nunca finge ser humano.',

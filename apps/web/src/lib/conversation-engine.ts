@@ -1,5 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getMessagingChannel, getUnitChannelType, channelLabel } from '@/lib/channels/messaging-channel'
+import {
+  getMessagingChannel,
+  getUnitChannelType,
+  channelLabel,
+  sendToLeadChannels,
+  type ChannelSendAttempt,
+} from '@/lib/channels/messaging-channel'
+import { conversationLanguageDirective, unitDefaultLocale } from '@/lib/i18n/config'
 import { generateChatReply, generateStructuredReply, getOpenAIApiKey, type ChatMessage } from '@/lib/openai'
 import { sendEscalationEmail, sendTechnicalAlertEmail } from '@/lib/email'
 import { logSystemEvent, shouldNotifyForEvent, type SystemEventSource } from '@/lib/system-events'
@@ -168,6 +175,7 @@ export function buildSystemPrompt(agentConfig: AgentConfig, unit: Unit, dealProf
   const profile = (agentConfig.business_profile ?? {}) as Record<string, unknown>
   const closesAlone = profile.fechamento === 'fecha_sozinho'
   const channelType = getUnitChannelType(unit)
+  const locale = unitDefaultLocale(unit)
   const fields = closingFields(profile)
   const dealAction =
     typeof profile.fechamento_acao === 'string' && profile.fechamento_acao.trim()
@@ -202,7 +210,8 @@ export function buildSystemPrompt(agentConfig: AgentConfig, unit: Unit, dealProf
       : 'Seu objetivo é qualificar o lead e conseguir agendar uma conversa com um vendedor humano.',
     channelType === 'sms'
       ? 'Responda sempre de forma breve (no máximo 1-2 frases curtas, idealmente até 160 caracteres), sem usar markdown ou listas — cada mensagem é um SMS, e mensagens longas viram vários SMS e custam mais.'
-      : 'Responda sempre em português do Brasil, de forma breve (no máximo 3 frases curtas), sem usar markdown ou listas.',
+      : 'Responda sempre de forma breve (no máximo 3 frases curtas), sem usar markdown ou listas.',
+    conversationLanguageDirective(locale),
     IDENTITY_AND_HANDOFF_RULES,
     SALES_EXPERTISE_RULES,
     ...(businessContext
@@ -229,6 +238,56 @@ export async function countSentToday(supabase: SupabaseClient, unitId: string): 
     .gte('sent_at', startOfDay.toISOString())
 
   return count ?? 0
+}
+
+export type SendAcrossChannelsResult = { anySent: boolean; attempts: ChannelSendAttempt[] }
+
+/**
+ * Manda a mesma mensagem por todos os canais disponíveis para o lead
+ * (WhatsApp/SMS se tem telefone, e-mail se tem e-mail — item 2 do
+ * pedido) e grava uma linha em `conversations` por tentativa, todas com
+ * o mesmo `lead_id`. É isso que mantém o histórico consolidado: um lead
+ * com telefone e e-mail continua sendo UM lead com UMA conversa, só que
+ * com mensagens em mais de um canal, nunca dois leads desconectados.
+ *
+ * Usado nos disparos proativos (primeiro contato, follow-up automático):
+ * nesses casos vale tentar os dois canais porque ainda não se sabe qual
+ * vai emplacar. Respostas a mensagens recebidas (processInboundMessage)
+ * continuam indo só pelo canal em que o lead respondeu — não há como
+ * ingerir resposta de e-mail hoje (sem webhook de e-mail configurado),
+ * então duplicar a resposta por e-mail a cada turno só gera ruído.
+ */
+export async function sendAcrossChannels(params: {
+  supabase: SupabaseClient
+  unit: Unit
+  lead: Pick<Lead, 'id' | 'phone' | 'email'>
+  text: string
+  subject?: string
+  personaName?: string
+  templateKey?: string | null
+}): Promise<SendAcrossChannelsResult> {
+  const attempts = await sendToLeadChannels({
+    unit: params.unit,
+    lead: params.lead,
+    text: params.text,
+    context: { subject: params.subject, personaName: params.personaName },
+  })
+
+  const sentAt = new Date().toISOString()
+  for (const attempt of attempts) {
+    await params.supabase.from('conversations').insert({
+      lead_id: params.lead.id,
+      unit_id: params.unit.id,
+      channel: attempt.channel,
+      direction: 'outbound',
+      content: params.text,
+      template_key: params.templateKey ?? null,
+      status: attempt.ok ? 'sent' : 'failed',
+      sent_at: sentAt,
+    })
+  }
+
+  return { anySent: attempts.some((a) => a.ok), attempts }
 }
 
 export async function generateFirstContactMessage(

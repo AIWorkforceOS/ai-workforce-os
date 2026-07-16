@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getMessagingChannel, getUnitChannelType, channelLabel } from '@/lib/channels/messaging-channel'
-import { countSentToday, generateFirstContactMessage, isWithinActiveHours } from '@/lib/conversation-engine'
+import { getMessagingChannel, getEmailChannel } from '@/lib/channels/messaging-channel'
+import { countSentToday, generateFirstContactMessage, isWithinActiveHours, sendAcrossChannels } from '@/lib/conversation-engine'
 import { sendNewLeadEmail } from '@/lib/email'
 import type { AgentConfig, Lead, Unit } from '@/lib/types'
 
@@ -37,15 +37,15 @@ export async function POST(
     return NextResponse.json({ error: 'Configure e ative o AI Sales Representative desta unidade primeiro.' }, { status: 400 })
   }
 
-  if (!leadRow.phone) {
-    return NextResponse.json({ error: 'Este lead não possui telefone cadastrado.' }, { status: 400 })
+  if (!leadRow.phone && !leadRow.email) {
+    return NextResponse.json({ error: 'Este lead não possui telefone nem e-mail cadastrado.' }, { status: 400 })
   }
 
-  const channelType = getUnitChannelType(unitRow)
-  const channel = getMessagingChannel(unitRow)
-  if (!channel) {
+  const hasPhoneChannel = Boolean(leadRow.phone && getMessagingChannel(unitRow))
+  const hasEmailChannel = Boolean(leadRow.email && getEmailChannel(unitRow))
+  if (!hasPhoneChannel && !hasEmailChannel) {
     return NextResponse.json(
-      { error: `Configure o canal ${channelLabel(channelType)} desta unidade primeiro.` },
+      { error: 'Configure o canal de WhatsApp/SMS ou o e-mail (RESEND_API_KEY/EMAIL_FROM_DOMAIN) desta unidade primeiro.' },
       { status: 400 },
     )
   }
@@ -69,27 +69,25 @@ export async function POST(
     )
   }
 
-  try {
-    await channel.sendMessage(leadRow.phone, message)
-  } catch (error) {
+  const { anySent, attempts } = await sendAcrossChannels({
+    supabase,
+    unit: unitRow,
+    lead: leadRow,
+    text: message,
+    subject: `${config.persona_name} · ${unitRow.name}`,
+    personaName: config.persona_name,
+    templateKey: 'primeiro_contato',
+  })
+
+  if (!anySent) {
+    const errors = attempts.map((a) => a.error).filter(Boolean).join(' | ')
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : `Erro ao enviar mensagem via ${channelLabel(channelType)}.` },
+      { error: errors || 'Erro ao enviar mensagem pelos canais configurados.' },
       { status: 502 },
     )
   }
 
   const sentAt = new Date().toISOString()
-
-  await supabase.from('conversations').insert({
-    lead_id: leadRow.id,
-    unit_id: unitRow.id,
-    channel: channelType,
-    direction: 'outbound',
-    content: message,
-    template_key: 'primeiro_contato',
-    status: 'sent',
-    sent_at: sentAt,
-  })
 
   await supabase
     .from('leads')

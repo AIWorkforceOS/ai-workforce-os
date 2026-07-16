@@ -1,4 +1,5 @@
 import { generateStructuredReply, type ChatMessage } from '@/lib/openai'
+import { interviewLanguageLabel, unitDefaultLocale, type Locale } from '@/lib/i18n/config'
 import type { AgentConfig, AgentTone, InterviewTranscriptEntry, Unit } from '@/lib/types'
 
 // Motor de entrevista/treinamento dos funcionários digitais.
@@ -36,7 +37,7 @@ type InterviewPlaybook = {
   /** schema (informal) do business_profile que o extractor preenche */
   profileSchema: string
   /** instruções extras só deste playbook, anexadas depois do schema */
-  extraGuidance?: string
+  extraGuidance?: (locale: Locale) => string
 }
 
 export const INTERVIEW_PLAYBOOKS: Record<InterviewAgentType, InterviewPlaybook> = {
@@ -55,8 +56,8 @@ export const INTERVIEW_PLAYBOOKS: Record<InterviewAgentType, InterviewPlaybook> 
     ],
     profileSchema:
       '{"sobre_a_empresa": string, "produtos": [{"nome": string, "preco": string, "detalhes": string}], "politica_desconto": string, "tipo_cliente": "b2b"|"b2c"|"ambos", "prospeccao": {"tipos_empresa": string[], "regioes": string[]}, "fechamento": "fecha_sozinho"|"qualifica_e_passa_para_humano", "fechamento_campos": [{"chave": string, "pergunta": string}], "fechamento_acao": string, "fechamento_cria_vaga_recrutamento": boolean, "observacoes": string[]}',
-    extraGuidance:
-      'Sobre "fechamento_campos": cada item precisa de uma "chave" curta em snake_case (identificador, ex.: "cidade", "cpf_cnpj") e uma "pergunta" em português explicando o que perguntar ao cliente — envie SOMENTE os campos que fazem sentido para ESTA empresa, nunca uma lista padrão. Se "fechamento_cria_vaga_recrutamento" for true, use preferencialmente as chaves course, semester_min, semester_max, city, modality, positions_needed, urgency (mantém compatibilidade com o Recrutador). Em "fechamento_acao", descreva em texto livre e específico o que fazer com o fechamento e para quem encaminhar — nunca deixe vago.',
+    extraGuidance: (locale) =>
+      `Sobre "fechamento_campos": cada item precisa de uma "chave" curta em snake_case (identificador, ex.: "cidade", "cpf_cnpj") e uma "pergunta" em ${interviewLanguageLabel(locale)} explicando o que perguntar ao cliente — envie SOMENTE os campos que fazem sentido para ESTA empresa, nunca uma lista padrão. Se "fechamento_cria_vaga_recrutamento" for true, use preferencialmente as chaves course, semester_min, semester_max, city, modality, positions_needed, urgency (mantém compatibilidade com o Recrutador). Em "fechamento_acao", descreva em texto livre e específico o que fazer com o fechamento e para quem encaminhar — nunca deixe vago.`,
   },
   traffic_specialist: {
     roleLabel: 'gestor de tráfego pago',
@@ -91,8 +92,29 @@ export const INTERVIEW_PLAYBOOKS: Record<InterviewAgentType, InterviewPlaybook> 
 export const FINAL_QUESTION =
   'Antes de eu começar a trabalhar: tem mais alguma coisa importante que eu deveria saber sobre a empresa ou sobre como você quer que eu trabalhe?'
 
+const FINAL_QUESTION_EN =
+  "Before I start working: is there anything important I should know about the company or how you'd like me to work?"
+
+function finalQuestionFor(locale: Locale): string {
+  return locale === 'en' ? FINAL_QUESTION_EN : FINAL_QUESTION
+}
+
 const READY_MESSAGE =
   'Perfeito, anotei tudo! Obrigado pela entrevista — estou pronto(a) para começar a trabalhar. 🚀'
+
+const READY_MESSAGE_EN =
+  "Perfect, got it all! Thanks for the interview — I'm ready to start working. 🚀"
+
+function readyMessageFor(locale: Locale): string {
+  return locale === 'en' ? READY_MESSAGE_EN : READY_MESSAGE
+}
+
+const CONTINUE_PROMPT = 'Certo! Me conta um pouco mais sobre isso, por favor?'
+const CONTINUE_PROMPT_EN = 'Got it! Could you tell me a bit more about that, please?'
+
+function continuePromptFor(locale: Locale): string {
+  return locale === 'en' ? CONTINUE_PROMPT_EN : CONTINUE_PROMPT
+}
 
 /** Saída do modelo em cada turno (JSON mode). */
 export type InterviewerOutput = {
@@ -117,14 +139,15 @@ export function buildInterviewerPrompt(params: {
   const { config, unit, profile, finalAlreadyAsked } = params
   const playbook = INTERVIEW_PLAYBOOKS[config.agent_type as InterviewAgentType]
   const topics = playbook.requiredTopics.map((topic, i) => `${i + 1}) ${topic}`).join(' ')
+  const locale = unitDefaultLocale(unit)
   return [
     `Você é ${config.persona_name}, ${playbook.roleLabel} digital recém-contratado(a) pela unidade ${unit.name}${unit.region_city ? ` (${unit.region_city})` : ''}. Quando começar a trabalhar, sua função será ${playbook.mission}.`,
     'AGORA você está na sua entrevista de contratação: quem fala com você é o seu novo chefe (dono ou gestor da empresa). Seu objetivo é aprender 100% sobre a empresa e sobre como ela quer que você trabalhe — fazendo as perguntas certas, melhor do que qualquer funcionário humano faria.',
     'COMO CONDUZIR: você faz as perguntas e o chefe responde. No máximo 2 perguntas por mensagem, começando pelas mais importantes. Adapte as próximas perguntas ao que já foi respondido: se uma resposta abrir um desdobramento importante (ex.: "vendemos 3 produtos"), aprofunde antes de mudar de assunto (pergunte preço e detalhe de cada um dos 3). Se uma resposta for vaga ou ambígua, peça UM esclarecimento objetivo antes de avançar.',
-    `Seu tom é ${TONE_LABEL[config.persona_tone]}. Escreva em português do Brasil, mensagens curtas, sem markdown.`,
+    `Seu tom é ${TONE_LABEL[config.persona_tone]}. Escreva em ${interviewLanguageLabel(locale)}, mensagens curtas, sem markdown.`,
     `TÓPICOS OBRIGATÓRIOS (todos precisam estar cobertos antes de encerrar): ${topics}`,
     'REGRA INEGOCIÁVEL DO ENCERRAMENTO:',
-    `- Quando (e somente quando) todos os tópicos obrigatórios estiverem cobertos, sua próxima mensagem deve ser a pergunta final: "${FINAL_QUESTION}" (pode adaptar as palavras, nunca o sentido) — e nela marque "asked_final_question": true.`,
+    `- Quando (e somente quando) todos os tópicos obrigatórios estiverem cobertos, sua próxima mensagem deve ser a pergunta final: "${finalQuestionFor(locale)}" (pode adaptar as palavras, nunca o sentido) — e nela marque "asked_final_question": true.`,
     '- Se a resposta à pergunta final trouxer informação nova, registre no perfil, aprofunde se necessário e faça a pergunta final DE NOVO depois.',
     '- Só marque "interview_complete": true quando o chefe responder à pergunta final indicando que não há mais nada a acrescentar. Nessa mensagem de encerramento, agradeça e diga que está pronto(a) para começar a trabalhar.',
     finalAlreadyAsked
@@ -135,7 +158,7 @@ export function buildInterviewerPrompt(params: {
     '{"message": "sua próxima mensagem para o chefe", "profile_updates": { apenas os campos aprendidos com a ÚLTIMA resposta dele }, "asked_final_question": boolean, "interview_complete": boolean}',
     `Schema do perfil (preencha nesses nomes de campo): ${playbook.profileSchema}.`,
     'Em "observacoes" acumule instruções extras que não cabem nos outros campos — sempre envie o array COMPLETO atualizado. Em campos de lista (ex.: "produtos"), envie a lista completa atualizada quando ela mudar. Não invente valores: registre apenas o que o chefe disse.',
-    playbook.extraGuidance ?? '',
+    playbook.extraGuidance?.(locale) ?? '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -190,7 +213,10 @@ export function reduceInterview(params: {
   /** transcript já incluindo a última mensagem do usuário */
   transcript: InterviewTranscriptEntry[]
   output: InterviewerOutput
+  /** idioma da unidade — padrão 'pt' preserva o comportamento histórico */
+  locale?: Locale
 }): InterviewTurnResult {
+  const locale = params.locale ?? 'pt'
   const profile = mergeProfile(params.profile, params.output.profile_updates)
   const finalAlreadyAsked = lastAssistantAskedFinal(params.transcript)
   const wantsComplete = params.output.interview_complete === true
@@ -204,12 +230,13 @@ export function reduceInterview(params: {
 
   if (wantsComplete && !done && !askedFinal) {
     // Tentou encerrar antes da pergunta final → força a pergunta final agora
-    reply = reply.length > 0 ? `${reply} ${FINAL_QUESTION}` : FINAL_QUESTION
+    const finalQuestion = finalQuestionFor(locale)
+    reply = reply.length > 0 ? `${reply} ${finalQuestion}` : finalQuestion
     askedFinal = true
   }
 
   if (reply.length === 0) {
-    reply = done ? READY_MESSAGE : 'Certo! Me conta um pouco mais sobre isso, por favor?'
+    reply = done ? readyMessageFor(locale) : continuePromptFor(locale)
   }
 
   const transcript: InterviewTranscriptEntry[] = [
@@ -264,7 +291,7 @@ export async function runInterviewTurn(params: {
     maxTokens: 900,
   })
 
-  return reduceInterview({ profile, transcript, output })
+  return reduceInterview({ profile, transcript, output, locale: unitDefaultLocale(unit) })
 }
 
 /**

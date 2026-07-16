@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import type { Locale } from '@/lib/i18n/config'
 import { FormSection, Input, Label, Select } from '@/components/ui/dashboard-ui'
 
 function slugify(value: string) {
@@ -19,10 +20,13 @@ type OrgOption = { id: string; name: string }
 export function NewUnitForm({
   organizations,
   defaultOrgId,
+  suggestedLanguage = 'pt',
 }: {
   /** Lista de empresas para escolher (só super admin) — null para admin de empresa (org fixa). */
   organizations: OrgOption[] | null
   defaultOrgId: string
+  /** Sugestão automática pelo país do IP de quem está criando a unidade — editável. */
+  suggestedLanguage?: Locale
 }) {
   const router = useRouter()
   const [orgId, setOrgId] = useState(defaultOrgId)
@@ -34,6 +38,7 @@ export function NewUnitForm({
   const [whatsapp, setWhatsapp] = useState('')
   const [emailFrom, setEmailFrom] = useState('')
   const [messagingChannel, setMessagingChannel] = useState<'whatsapp' | 'sms'>('whatsapp')
+  const [language, setLanguage] = useState<Locale>(suggestedLanguage)
   const [evolutionApiUrl, setEvolutionApiUrl] = useState('')
   const [evolutionApiKey, setEvolutionApiKey] = useState('')
   const [evolutionInstanceName, setEvolutionInstanceName] = useState('')
@@ -70,6 +75,7 @@ export function NewUnitForm({
         whatsapp_phone: whatsapp || null,
         email_from: emailFrom || null,
         messaging_channel: messagingChannel,
+        default_conversation_language: language,
         evolution_api_url: evolutionApiUrl || null,
         evolution_api_key: evolutionApiKey || null,
         evolution_instance_name: evolutionInstanceName || null,
@@ -161,6 +167,19 @@ export function NewUnitForm({
             Sugestão: Brasil → WhatsApp, EUA → SMS (fora do Brasil o WhatsApp costuma não ser o canal
             dominante). Escolha manualmente conforme o mercado da unidade — para SMS, as credenciais Twilio
             se conectam depois em Canal de mensagens (SMS).
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="language">Idioma padrão de atendimento</Label>
+          <Select id="language" value={language} onChange={(e) => setLanguage(e.target.value as Locale)}>
+            <option value="pt">Português</option>
+            <option value="en">Inglês (EUA)</option>
+          </Select>
+          <p className="text-xs text-slate-500">
+            Sugestão pelo seu país de acesso: EUA → Inglês, Brasil → Português. É o idioma padrão em que o
+            funcionário digital conduz a entrevista de contratação e atende leads/candidatos — ele muda de
+            idioma automaticamente se a pessoa pedir ou escrever em outro idioma.
           </p>
         </div>
 
