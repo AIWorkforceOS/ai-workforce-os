@@ -8,8 +8,11 @@ function siteUrl(): string {
 }
 
 /**
- * Provisiona o acesso de um cliente à plataforma (apenas super_admin):
- *   1. cria o registro em public.users vinculado à org
+ * Provisiona o acesso de um cliente à plataforma (super_admin, ou admin da
+ * própria organização provisionando um "dono de unidade" para uma unidade
+ * da própria org):
+ *   1. cria o registro em public.users vinculado à org (e, opcionalmente,
+ *      a uma unidade específica — dono de unidade só acessa aquela unidade)
  *   2. cria (ou reaproveita) a conta no Supabase Auth e gera um link de
  *      primeiro acesso (invite para conta nova, recovery para conta que já
  *      existia) — nunca uma senha em texto puro
@@ -20,8 +23,8 @@ function siteUrl(): string {
  */
 export async function POST(request: Request) {
   const appUser = await getAppUser()
-  if (!appUser?.isSuperAdmin) {
-    return NextResponse.json({ error: 'Apenas super admin pode provisionar usuários.' }, { status: 403 })
+  if (!appUser) {
+    return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 })
   }
 
   const service = createServiceClient()
@@ -36,10 +39,27 @@ export async function POST(request: Request) {
   const email: string | undefined = body?.email?.trim().toLowerCase()
   const name: string | null = body?.name?.trim() || null
   const orgId: string | undefined = body?.org_id
-  const role: string = body?.role === 'viewer' ? 'viewer' : 'admin'
+  const unitId: string | null = body?.unit_id || null
+  // Admin de org só pode provisionar 'admin' (dono de unidade usa esse mesmo
+  // papel + unit_id); 'viewer'/'super_admin' continuam exclusivos do super admin.
+  const requestedRole: string = body?.role === 'viewer' ? 'viewer' : 'admin'
+  const role: string = appUser.isSuperAdmin ? requestedRole : 'admin'
 
   if (!email || !orgId) {
     return NextResponse.json({ error: 'email e org_id são obrigatórios.' }, { status: 400 })
+  }
+
+  if (!appUser.isSuperAdmin) {
+    if (appUser.role !== 'admin') {
+      return NextResponse.json({ error: 'Sem permissão para provisionar usuários.' }, { status: 403 })
+    }
+    if (orgId !== appUser.orgId) {
+      return NextResponse.json({ error: 'Você só pode provisionar acesso para a própria empresa.' }, { status: 403 })
+    }
+    // Dono de unidade (unitId próprio preenchido) só provisiona a própria unidade.
+    if (appUser.unitId && appUser.unitId !== unitId) {
+      return NextResponse.json({ error: 'Você só pode provisionar acesso para a própria unidade.' }, { status: 403 })
+    }
   }
 
   const { data: org } = await service.from('organizations').select('id, name').eq('id', orgId).maybeSingle()
@@ -47,12 +67,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Organização não encontrada.' }, { status: 404 })
   }
 
+  if (unitId) {
+    const { data: unit } = await service.from('units').select('id, org_id').eq('id', unitId).maybeSingle()
+    if (!unit || unit.org_id !== orgId) {
+      return NextResponse.json({ error: 'Unidade não encontrada nesta empresa.' }, { status: 404 })
+    }
+  }
+
   // Registro de negócio (public.users) — upsert por e-mail
   const { data: existingUser } = await service.from('users').select('id').eq('email', email).maybeSingle()
   if (existingUser) {
     const { error: updateError } = await service
       .from('users')
-      .update({ org_id: orgId, role, name: name ?? undefined, is_active: true })
+      .update({ org_id: orgId, unit_id: unitId, role, name: name ?? undefined, is_active: true })
       .eq('id', existingUser.id)
     if (updateError) {
       return NextResponse.json({ error: `Erro ao atualizar usuário: ${updateError.message}` }, { status: 500 })
@@ -60,7 +87,7 @@ export async function POST(request: Request) {
   } else {
     const { error: insertError } = await service
       .from('users')
-      .insert({ email, name, org_id: orgId, role })
+      .insert({ email, name, org_id: orgId, unit_id: unitId, role })
     if (insertError) {
       return NextResponse.json({ error: `Erro ao criar usuário: ${insertError.message}` }, { status: 500 })
     }

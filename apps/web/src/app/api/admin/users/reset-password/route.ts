@@ -10,13 +10,14 @@ function generateTempPassword(): string {
 
 /**
  * POST /api/admin/users/reset-password — gera uma nova senha temporária
- * para um usuário cliente (apenas super_admin). A senha é retornada UMA
+ * para um usuário cliente (super_admin, ou admin da própria organização
+ * resetando um usuário da própria org/unidade). A senha é retornada UMA
  * única vez para ser repassada por canal seguro.
  */
 export async function POST(request: Request) {
   const appUser = await getAppUser()
-  if (!appUser?.isSuperAdmin) {
-    return NextResponse.json({ error: 'Apenas super admin pode resetar senhas.' }, { status: 403 })
+  if (!appUser) {
+    return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 })
   }
 
   const service = createServiceClient()
@@ -28,6 +29,22 @@ export async function POST(request: Request) {
   const email: string | undefined = body?.email?.trim().toLowerCase()
   if (!email) {
     return NextResponse.json({ error: 'email é obrigatório.' }, { status: 400 })
+  }
+
+  if (!appUser.isSuperAdmin) {
+    const { data: targetUser } = await service
+      .from('users')
+      .select('org_id, unit_id')
+      .eq('email', email)
+      .maybeSingle()
+    if (
+      appUser.role !== 'admin' ||
+      !targetUser ||
+      targetUser.org_id !== appUser.orgId ||
+      (appUser.unitId && appUser.unitId !== targetUser.unit_id)
+    ) {
+      return NextResponse.json({ error: 'Sem permissão para resetar a senha deste usuário.' }, { status: 403 })
+    }
   }
 
   const { data: list, error: listError } = await service.auth.admin.listUsers({ page: 1, perPage: 1000 })

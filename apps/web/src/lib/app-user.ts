@@ -12,6 +12,8 @@ export type AppUser = {
   orgId: string | null
   orgName: string | null
   isSuperAdmin: boolean
+  /** Preenchido = "dono de unidade": só acessa a própria unidade (ver can_access_unit no banco). */
+  unitId: string | null
 }
 
 export const ROLE_LABEL: Record<AppRole, string> = {
@@ -26,6 +28,7 @@ type AppUserRow = {
   name: string | null
   role: string
   org_id: string | null
+  unit_id: string | null
   is_active: boolean
   organizations: { name: string } | null
 }
@@ -48,7 +51,7 @@ export const getAppUser = cache(async (): Promise<AppUser | null> => {
 
   const { data } = await supabase
     .from('users')
-    .select('id, email, name, role, org_id, is_active, organizations(name)')
+    .select('id, email, name, role, org_id, unit_id, is_active, organizations(name)')
     .ilike('email', user.email)
     .maybeSingle()
 
@@ -65,5 +68,6 @@ export const getAppUser = cache(async (): Promise<AppUser | null> => {
     orgId: row.org_id,
     orgName: row.organizations?.name ?? null,
     isSuperAdmin: role === 'super_admin',
+    unitId: row.unit_id,
   }
 })

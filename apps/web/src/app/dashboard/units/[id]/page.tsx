@@ -6,20 +6,46 @@ import { UnitSettingsForm } from '@/components/dashboard/unit-settings-form'
 import { WhatsAppConnection } from '@/components/dashboard/whatsapp-connection'
 import { CopyWhatsAppLink } from '@/components/dashboard/copy-whatsapp-link'
 import { ProspectingPanel } from '@/components/dashboard/prospecting-panel'
+import { UnitOwnerPanel } from '@/components/dashboard/unit-owner-panel'
 import type { AgentConfig, DashboardSummaryRow, Unit } from '@/lib/types'
 import { Badge, Card } from '@/components/ui/dashboard-ui'
 
-export default async function UnitDetailPage({ params }: { params: Promise<{ id: string }> }) {
+const CLOSED_JOB_STATUSES = ['closed', 'cancelled', 'expired', 'handed_off']
+const TERMINAL_CANDIDATE_STAGES = ['approved', 'not_selected', 'unreachable', 'withdrew', 'disqualified']
+
+export default async function UnitDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ welcome?: string }>
+}) {
   const { id } = await params
+  const { welcome } = await searchParams
   const supabase = await createClient()
   const appUser = await getAppUser()
   const isSuperAdmin = appUser?.isSuperAdmin ?? false
+  const isOrgAdmin = isSuperAdmin || appUser?.role === 'admin'
 
-  const [{ data: unit }, { data: summary }, { data: agentConfig }] = await Promise.all([
-    supabase.from('units').select('*').eq('id', id).single(),
-    supabase.from('dashboard_summary').select('*').eq('unit_id', id).maybeSingle(),
-    supabase.from('agent_configs').select('*').eq('unit_id', id).eq('agent_type', 'sdr').maybeSingle(),
-  ])
+  const [{ data: unit }, { data: summary }, { data: agentConfig }, { count: openJobsCount }, { count: activeCandidatesCount }, { data: ownerUser }] =
+    await Promise.all([
+      supabase.from('units').select('*').eq('id', id).single(),
+      supabase.from('dashboard_summary').select('*').eq('unit_id', id).maybeSingle(),
+      supabase.from('agent_configs').select('*').eq('unit_id', id).eq('agent_type', 'sdr').maybeSingle(),
+      supabase
+        .from('job_openings')
+        .select('id', { count: 'exact', head: true })
+        .eq('unit_id', id)
+        .not('status', 'in', `(${CLOSED_JOB_STATUSES.join(',')})`),
+      supabase
+        .from('job_candidates')
+        .select('id', { count: 'exact', head: true })
+        .eq('unit_id', id)
+        .not('stage', 'in', `(${TERMINAL_CANDIDATE_STAGES.join(',')})`),
+      isOrgAdmin
+        ? supabase.from('users').select('email, name').eq('unit_id', id).eq('is_active', true).maybeSingle()
+        : Promise.resolve({ data: null }),
+    ])
 
   if (!unit) {
     notFound()
@@ -33,6 +59,8 @@ export default async function UnitDetailPage({ params }: { params: Promise<{ id:
     { label: 'Contatos (leads)', value: summaryRow?.total_leads ?? 0 },
     { label: 'Conversas', value: summaryRow?.total_conversations ?? 0 },
     { label: 'Negócios fechados', value: summaryRow?.won_leads ?? 0 },
+    { label: 'Vagas abertas', value: openJobsCount ?? 0 },
+    { label: 'Processos seletivos em andamento', value: activeCandidatesCount ?? 0 },
   ]
 
   return (
@@ -48,7 +76,15 @@ export default async function UnitDetailPage({ params }: { params: Promise<{ id:
         <Badge variant={unitRow.is_active ? 'green' : 'slate'}>{unitRow.is_active ? 'Ativa' : 'Inativa'}</Badge>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      {welcome && (
+        <Card className={`px-6 py-3 text-sm ${welcome === 'sent' ? 'text-emerald-400' : 'text-amber-400'}`}>
+          {welcome === 'sent'
+            ? 'Acesso criado e e-mail de boas-vindas enviado ao responsável desta unidade.'
+            : 'Unidade criada, mas não foi possível enviar o e-mail de boas-vindas automaticamente. Use o painel abaixo para tentar novamente.'}
+        </Card>
+      )}
+
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         {metrics.map((metric) => (
           <Card key={metric.label} className="p-5">
             <p className="text-sm text-slate-400">{metric.label}</p>
@@ -86,6 +122,18 @@ export default async function UnitDetailPage({ params }: { params: Promise<{ id:
           </Link>
         </div>
       </Card>
+
+      {isOrgAdmin && unitRow.org_id && (
+        <Card className="p-6">
+          <h2 className="text-sm font-bold text-white">Acesso do responsável pela unidade</h2>
+          <p className="mt-1 text-sm text-slate-400">
+            Login restrito só aos dados desta unidade (não enxerga as outras unidades da empresa).
+          </p>
+          <div className="mt-4">
+            <UnitOwnerPanel orgId={unitRow.org_id} unitId={unitRow.id} initialOwner={ownerUser ?? null} />
+          </div>
+        </Card>
+      )}
 
       <UnitSettingsForm unit={unitRow} showAdvanced={isSuperAdmin} />
 

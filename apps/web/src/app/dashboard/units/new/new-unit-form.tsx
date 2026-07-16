@@ -42,6 +42,9 @@ export function NewUnitForm({
   const [evolutionApiUrl, setEvolutionApiUrl] = useState('')
   const [evolutionApiKey, setEvolutionApiKey] = useState('')
   const [evolutionInstanceName, setEvolutionInstanceName] = useState('')
+  const [createOwnerAccess, setCreateOwnerAccess] = useState(false)
+  const [ownerEmail, setOwnerEmail] = useState('')
+  const [ownerName, setOwnerName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -58,6 +61,10 @@ export function NewUnitForm({
 
     if (!orgId) {
       setError('Selecione a empresa.')
+      return
+    }
+    if (createOwnerAccess && !ownerEmail.trim()) {
+      setError('Informe o e-mail do responsável para enviar o acesso.')
       return
     }
 
@@ -83,14 +90,29 @@ export function NewUnitForm({
       .select('id')
       .single()
 
-    setLoading(false)
-
     if (insertError || !unit) {
+      setLoading(false)
       setError('Não foi possível criar a unidade. Verifique se o slug já está em uso.')
       return
     }
 
-    router.push(`/dashboard/units/${unit.id}`)
+    let welcomeStatus: 'sent' | 'failed' | null = null
+    if (createOwnerAccess) {
+      const res = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: ownerEmail.trim(),
+          name: ownerName.trim() || null,
+          org_id: orgId,
+          unit_id: unit.id,
+        }),
+      })
+      welcomeStatus = res.ok ? 'sent' : 'failed'
+    }
+
+    setLoading(false)
+    router.push(`/dashboard/units/${unit.id}${welcomeStatus ? `?welcome=${welcomeStatus}` : ''}`)
     router.refresh()
   }
 
@@ -201,6 +223,44 @@ export function NewUnitForm({
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="evolutionInstanceName">Nome da instância</Label>
           <Input id="evolutionInstanceName" value={evolutionInstanceName} onChange={(e) => setEvolutionInstanceName(e.target.value)} placeholder="alizo-campinas" />
+        </div>
+
+        <div className="flex flex-col gap-3 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <label className="flex items-start gap-2.5 text-sm text-slate-300">
+            <input
+              type="checkbox"
+              checked={createOwnerAccess}
+              onChange={(e) => setCreateOwnerAccess(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-white/20 bg-transparent accent-cyan-500"
+            />
+            <span>
+              Criar acesso e enviar e-mail de boas-vindas para o responsável desta unidade
+              <span className="mt-0.5 block text-xs text-slate-500">
+                Deixe desmarcado se esta unidade não deve ter login na plataforma (ex.: unidades que operam só
+                pela integração com o sistema da Smarter).
+              </span>
+            </span>
+          </label>
+
+          {createOwnerAccess && (
+            <div className="grid grid-cols-2 gap-4 pl-6">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="ownerEmail">E-mail do responsável</Label>
+                <Input
+                  id="ownerEmail"
+                  type="email"
+                  required={createOwnerAccess}
+                  value={ownerEmail}
+                  onChange={(e) => setOwnerEmail(e.target.value)}
+                  placeholder="responsavel@empresa.com"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="ownerName">Nome do responsável</Label>
+                <Input id="ownerName" value={ownerName} onChange={(e) => setOwnerName(e.target.value)} placeholder="Nome" />
+              </div>
+            </div>
+          )}
         </div>
 
         {error && <p className="text-sm text-red-400">{error}</p>}
