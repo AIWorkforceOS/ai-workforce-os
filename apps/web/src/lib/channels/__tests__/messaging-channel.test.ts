@@ -55,6 +55,8 @@ function makeUnit(overrides: Partial<Unit> = {}): Unit {
     twilio_phone_number: null,
     default_conversation_language: null,
     intake_token: null,
+    crm_integration_mode: 'native',
+    smarter_crm_partner_token: null,
     is_active: true,
     created_at: '',
     updated_at: '',

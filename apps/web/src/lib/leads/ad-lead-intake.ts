@@ -1,15 +1,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getMessagingChannel, getUnitChannelType, channelLabel } from '@/lib/channels/messaging-channel'
-import { generateFirstContactMessage, isWithinActiveHours, countSentToday } from '@/lib/conversation-engine'
+import { triggerFirstContact } from '@/lib/leads/lead-intake'
+import { syncLeadToSmarterCrm } from '@/lib/sales/smarter-crm'
 import { logSystemEvent } from '@/lib/system-events'
-import type { AgentConfig, Lead, Unit } from '@/lib/types'
+import type { Lead, Unit } from '@/lib/types'
 
 // Entrada automática de leads de anúncio (Meta e Google Ads) na fila do
 // Sales Rep (item 3). Compartilhado pelos dois webhooks para que o
 // primeiro contato sempre use o mesmo motor de conversa configurado na
 // entrevista de contratação (buildSystemPrompt + business_profile) em
 // vez de uma mensagem fixa — e respeite os mesmos guard-rails (horário
-// ativo, limite diário) que o resto do produto.
+// ativo, limite diário) que o resto do produto (lib/leads/lead-intake.ts).
 
 export type AdLeadInput = {
   name: string | null
@@ -56,57 +56,7 @@ export async function createAdLead(
   }
 
   const leadRow = insertedLead as Lead
-
-  const { data: agentConfig } = await supabase
-    .from('agent_configs')
-    .select('*')
-    .eq('unit_id', unit.id)
-    .eq('agent_type', 'sdr')
-    .maybeSingle()
-
-  const config = agentConfig as AgentConfig | null
-  const channelType = getUnitChannelType(unit)
-  const messagingChannel = getMessagingChannel(unit)
-
-  if (!config?.is_active || !messagingChannel) {
-    return { leadId: leadRow.id, contacted: false }
-  }
-  if (!isWithinActiveHours(config.active_hours)) {
-    return { leadId: leadRow.id, contacted: false }
-  }
-  const sentToday = await countSentToday(supabase, unit.id)
-  if (sentToday >= config.daily_limit) {
-    return { leadId: leadRow.id, contacted: false }
-  }
-
-  try {
-    const message = await generateFirstContactMessage(config, unit, leadRow)
-    if (!message) return { leadId: leadRow.id, contacted: false }
-
-    await messagingChannel.sendMessage(normalizedPhone, message)
-
-    const sentAt = new Date().toISOString()
-    await supabase.from('conversations').insert({
-      lead_id: leadRow.id,
-      unit_id: unit.id,
-      channel: channelType,
-      direction: 'outbound',
-      content: message,
-      status: 'sent',
-      sent_at: sentAt,
-    })
-    await supabase.from('leads').update({ status: 'contacted', last_contacted_at: sentAt }).eq('id', leadRow.id)
-    return { leadId: leadRow.id, contacted: true }
-  } catch (error) {
-    await logSystemEvent(supabase, {
-      level: 'error',
-      source: channelType === 'sms' ? 'twilio' : 'evolution',
-      eventType: 'ad_lead_first_contact_failed',
-      message: `Lead de anúncio criado na unidade "${unit.name}" mas a primeira mensagem (${channelLabel(channelType)}) falhou: ${error instanceof Error ? error.message : 'erro desconhecido'}`,
-      orgId: unit.org_id,
-      unitId: unit.id,
-      leadId: leadRow.id,
-    })
-    return { leadId: leadRow.id, contacted: false }
-  }
+  await syncLeadToSmarterCrm(supabase, unit, leadRow)
+  const contacted = await triggerFirstContact(supabase, unit, leadRow)
+  return { leadId: leadRow.id, contacted }
 }

@@ -10,6 +10,7 @@ import { conversationLanguageDirective, unitDefaultLocale } from '@/lib/i18n/con
 import { generateChatReply, generateStructuredReply, getOpenAIApiKey, type ChatMessage } from '@/lib/openai'
 import { sendEscalationEmail, sendTechnicalAlertEmail } from '@/lib/email'
 import { logSystemEvent, shouldNotifyForEvent, type SystemEventSource } from '@/lib/system-events'
+import { syncLeadToSmarterCrm } from '@/lib/sales/smarter-crm'
 import { IDENTITY_AND_HANDOFF_RULES } from '@/lib/agent-identity'
 import { buildBusinessContext } from '@/lib/interview/engine'
 import type { AgentConfig, AgentTone, Conversation, Lead, Unit, ActiveHours } from '@/lib/types'
@@ -645,6 +646,10 @@ export async function processInboundMessage(params: {
     }
   }
   await supabase.from('leads').update(leadUpdate).eq('id', lead.id)
+
+  if ('status' in leadUpdate) {
+    await syncLeadToSmarterCrm(supabase, unit, { ...lead, ...leadUpdate } as Lead, { statusChanged: true })
+  }
 
   return { dealHandoffReady: readyToClose }
 }

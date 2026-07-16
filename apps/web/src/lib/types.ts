@@ -26,6 +26,10 @@ export type Unit = {
   /** Idioma padrão de atendimento da unidade. Null = padrão histórico (pt). */
   default_conversation_language: Locale | null
   intake_token: string | null
+  /** native = CRM próprio do Alizo (padrão). smarter = leads também são espelhados no CRM de parceiros da Smarter (migration 018). */
+  crm_integration_mode: 'native' | 'smarter'
+  /** Token de parceiro (Bearer) da API de CRM da Smarter para esta unidade — segredo. Só usado quando crm_integration_mode = 'smarter'. */
+  smarter_crm_partner_token: string | null
   is_active: boolean
   created_at: string
   updated_at: string
@@ -118,6 +122,8 @@ export type Lead = {
   /** dados de vaga levantados pelo Sales Rep na própria conversa ao fechar negócio (migration 013) */
   deal_profile: Record<string, unknown>
   deal_closed_at: string | null
+  /** id do CrmLead correspondente no CRM da Smarter, quando a unidade usa crm_integration_mode = 'smarter' (migration 018). */
+  smarter_crm_lead_id: string | null
   created_at: string
   updated_at: string
 }

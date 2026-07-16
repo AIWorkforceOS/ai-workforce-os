@@ -69,6 +69,8 @@ describe.skipIf(!apiKey)('handoff Sales → Recrutador no fechamento (live)', ()
       twilio_phone_number: null,
       default_conversation_language: null,
       intake_token: null,
+      crm_integration_mode: 'native',
+      smarter_crm_partner_token: null,
       is_active: true,
       created_at: '',
       updated_at: '',
@@ -120,6 +122,7 @@ describe.skipIf(!apiKey)('handoff Sales → Recrutador no fechamento (live)', ()
       last_contacted_at: new Date().toISOString(),
       deal_profile: {},
       deal_closed_at: null,
+      smarter_crm_lead_id: null,
       created_at: '',
       updated_at: '',
     }
@@ -190,6 +193,8 @@ describe.skipIf(!apiKey)('handoff Sales → Recrutador no fechamento (live)', ()
       twilio_phone_number: null,
       default_conversation_language: null,
       intake_token: null,
+      crm_integration_mode: 'native',
+      smarter_crm_partner_token: null,
       is_active: true,
       created_at: '',
       updated_at: '',
@@ -236,6 +241,7 @@ describe.skipIf(!apiKey)('handoff Sales → Recrutador no fechamento (live)', ()
       last_contacted_at: new Date().toISOString(),
       deal_profile: {},
       deal_closed_at: null,
+      smarter_crm_lead_id: null,
       created_at: '',
       updated_at: '',
     }

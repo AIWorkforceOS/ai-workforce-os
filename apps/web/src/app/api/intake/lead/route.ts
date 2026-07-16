@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { getMessagingChannel, getEmailChannel } from '@/lib/channels/messaging-channel'
 import { sendAcrossChannels } from '@/lib/conversation-engine'
+import { syncLeadToSmarterCrm } from '@/lib/sales/smarter-crm'
 import { logSystemEvent } from '@/lib/system-events'
-import type { AgentConfig, Unit } from '@/lib/types'
+import type { AgentConfig, Lead, Unit } from '@/lib/types'
 
 /**
  * Generic B2C lead intake
@@ -93,6 +94,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Erro ao criar lead.' }, { status: 500 })
   }
 
+  await syncLeadToSmarterCrm(supabase, unit, newLead as Lead)
+
   if (send_whatsapp) {
     const { data: agentConfig } = await supabase
       .from('agent_configs')
@@ -133,10 +136,17 @@ export async function POST(request: Request) {
       })
 
       if (anySent) {
+        const sentAt = new Date().toISOString()
         await supabase
           .from('leads')
-          .update({ status: 'contacted', last_contacted_at: new Date().toISOString() })
+          .update({ status: 'contacted', last_contacted_at: sentAt })
           .eq('id', newLead.id)
+        await syncLeadToSmarterCrm(
+          supabase,
+          unit,
+          { ...(newLead as Lead), status: 'contacted', last_contacted_at: sentAt },
+          { statusChanged: true },
+        )
       } else {
         // Envio falhou nos canais tentados — lead ainda foi criado, mas a falha precisa ficar visível
         const errors = attempts.map((a) => a.error).filter(Boolean).join(' | ')

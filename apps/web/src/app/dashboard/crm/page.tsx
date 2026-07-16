@@ -125,10 +125,13 @@ function AddLeadModal({
     if (!form.company_name.trim()) { setError('Nome da empresa é obrigatório'); return }
     if (!form.unit_id) { setError('Selecione uma unidade'); return }
     setSaving(true)
-    const supabase = createClient()
-    const { data, error: err } = await supabase
-      .from('leads')
-      .insert({
+    // Via servidor (não insert direto): dispara o mesmo primeiro contato
+    // automático do Sales Rep que já roda para leads de anúncio/intake
+    // (lib/leads/lead-intake.ts) — ver /api/leads.
+    const response = await fetch('/api/leads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
         company_name: form.company_name.trim(),
         contact_name: form.contact_name.trim() || null,
         phone: form.phone.trim() || null,
@@ -136,18 +139,12 @@ function AddLeadModal({
         source: form.source,
         unit_id: form.unit_id,
         notes: form.notes.trim() || null,
-        status: 'new',
-        sector: null,
-        city: null,
-        state: null,
-        google_place_id: null,
-        last_contacted_at: null,
-      })
-      .select()
-      .single()
+      }),
+    })
+    const data = await response.json().catch(() => null)
     setSaving(false)
-    if (err) { setError(err.message); return }
-    onSave(data as Lead)
+    if (!response.ok) { setError(data?.error ?? 'Erro ao criar lead.'); return }
+    onSave(data.lead as Lead)
     onClose()
   }
 
