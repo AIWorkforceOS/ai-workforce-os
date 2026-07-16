@@ -81,15 +81,31 @@ export function courseSearchTerms(course: string | null | undefined): string[] |
 }
 
 /**
+ * A API da Smarter é dado de parceria, não uma fonte global: só organizações
+ * marcadas como clientes/franquias da Smarter (organizations.is_smarter_partner)
+ * podem consultá-la. Demais organizações (ex.: Mawi Services) usam só a base
+ * própria de candidatos, mesmo com as envs SMARTER_CANDIDATES_API_* configuradas
+ * globalmente no projeto Vercel.
+ */
+async function isSmarterPartnerOrg(supabase: SupabaseClient, orgId: string): Promise<boolean> {
+  const { data } = await supabase.from('organizations').select('is_smarter_partner').eq('id', orgId).maybeSingle()
+  return (data as { is_smarter_partner: boolean } | null)?.is_smarter_partner ?? false
+}
+
+/**
  * Sincroniza candidatos da API da Smarter para `candidates` (upsert por
  * org+source+external_ref, com dedupe adicional por telefone/e-mail —
  * exceção 8 da spec: mantém o registro existente e enriquece campos vazios).
- * Sem env configurada, degrada graciosamente com warning.
+ * Sem env configurada, ou para organizações que não são parceiras da Smarter,
+ * degrada graciosamente (sem chamada de API).
  */
 export async function syncSmarterCandidates(
   supabase: SupabaseClient,
   params: { orgId: string; unitId?: string | null; course?: string | null; city?: string | null; updatedSince?: string | null },
 ): Promise<{ synced: number; skippedNoConsent: number } | null> {
+  const isPartner = await isSmarterPartnerOrg(supabase, params.orgId)
+  if (!isPartner) return null
+
   const apiConfig = getSmarterApiConfig()
   if (!apiConfig) {
     await logSystemEvent(supabase, {

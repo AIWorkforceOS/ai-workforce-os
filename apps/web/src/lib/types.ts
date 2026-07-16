@@ -167,6 +167,8 @@ export type Organization = {
   billing_day: number
   is_active: boolean
   owner_email: string | null
+  /** true só para organizações clientes/franquias da Smarter Estágios — controla se o sourcing usa a API de parceiros da Smarter (lib/recruiter/smarter-api.ts). */
+  is_smarter_partner: boolean
   created_at: string
   updated_at: string
 }
