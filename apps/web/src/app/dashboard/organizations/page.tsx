@@ -1,9 +1,11 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { getAppUser } from '@/lib/app-user'
 import { computeSetupStatus } from '@/lib/setup-status'
 import { Building2, Plus } from 'lucide-react'
 import type { AgentConfig, DashboardSummaryRow, Organization, Unit } from '@/lib/types'
 import { Badge, type BadgeVariant, Card, EmptyState, PageHeader, PrimaryButton, TableShell, Td, Th, Tr } from '@/components/ui/dashboard-ui'
+import { DeleteOrgButton } from '@/components/admin/org-actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,14 +16,16 @@ const PLAN_VARIANT: Record<string, BadgeVariant> = {
 }
 
 export default async function OrganizationsPage() {
+  const appUser = await getAppUser()
   const supabase = await createClient()
 
-  const [{ data: organizations }, { data: units }, { data: configs }, { data: users }, { data: summary }] = await Promise.all([
+  const [{ data: organizations }, { data: units }, { data: configs }, { data: users }, { data: summary }, { data: candidates }] = await Promise.all([
     supabase.from('organizations').select('*').order('created_at', { ascending: false }),
     supabase.from('units').select('id, org_id, name, is_active, whatsapp_phone'),
     supabase.from('agent_configs').select('unit_id, agent_type, is_active, persona_name'),
     supabase.from('users').select('id, org_id, is_active'),
     supabase.from('dashboard_summary').select('*'),
+    supabase.from('candidates').select('org_id'),
   ])
 
   const orgRows = (organizations ?? []) as Organization[]
@@ -29,6 +33,7 @@ export default async function OrganizationsPage() {
   const configRows = (configs ?? []) as Pick<AgentConfig, 'unit_id' | 'agent_type' | 'is_active' | 'persona_name'>[]
   const userRows = (users ?? []) as { id: string; org_id: string | null; is_active: boolean }[]
   const summaryRows = (summary ?? []) as DashboardSummaryRow[]
+  const candidateRows = (candidates ?? []) as { org_id: string }[]
   const leadsByUnit = new Map(summaryRows.map((r) => [r.unit_id, r]))
 
   const health = orgRows.map((org) => {
@@ -42,6 +47,8 @@ export default async function OrganizationsPage() {
       whatsappCount: orgUnits.filter((u) => u.whatsapp_phone).length,
       userCount: userRows.filter((u) => u.org_id === org.id && u.is_active).length,
       totalLeads: orgUnits.reduce((s, u) => s + Number(leadsByUnit.get(u.id)?.total_leads ?? 0), 0),
+      totalConversations: orgUnits.reduce((s, u) => s + Number(leadsByUnit.get(u.id)?.total_conversations ?? 0), 0),
+      candidateCount: candidateRows.filter((c) => c.org_id === org.id).length,
     }
   })
 
@@ -79,9 +86,10 @@ export default async function OrganizationsPage() {
               <Th>Acessos</Th>
               <Th>Leads</Th>
               <Th>Status</Th>
+              {appUser?.isSuperAdmin && <Th>Ações</Th>}
             </TableShell>
             <tbody>
-              {health.map(({ org, setup, unitCount, whatsappCount, userCount, totalLeads }) => (
+              {health.map(({ org, setup, unitCount, whatsappCount, userCount, totalLeads, totalConversations, candidateCount }) => (
                 <Tr key={org.id}>
                   <Td>
                     <Link href={`/dashboard/organizations/${org.id}`} className="font-semibold text-white transition-colors hover:text-cyan-400">
@@ -116,6 +124,22 @@ export default async function OrganizationsPage() {
                   <Td>
                     <Badge variant={org.is_active ? 'green' : 'slate'}>{org.is_active ? 'Ativa' : 'Inativa'}</Badge>
                   </Td>
+                  {appUser?.isSuperAdmin && (
+                    <Td>
+                      <DeleteOrgButton
+                        orgId={org.id}
+                        orgName={org.name}
+                        summary={{
+                          units: unitCount,
+                          users: userCount,
+                          leads: totalLeads,
+                          conversations: totalConversations,
+                          candidates: candidateCount,
+                        }}
+                        compact
+                      />
+                    </Td>
+                  )}
                 </Tr>
               ))}
             </tbody>

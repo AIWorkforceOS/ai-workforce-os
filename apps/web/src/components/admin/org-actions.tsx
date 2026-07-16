@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { KeyRound, Loader2, Power, UserPlus } from 'lucide-react'
+import { AlertTriangle, KeyRound, Loader2, Power, Trash2, UserPlus, X } from 'lucide-react'
 import { Input, Label } from '@/components/ui/dashboard-ui'
 
 /** Liga/desliga a empresa (super admin). */
@@ -179,5 +179,149 @@ export function ProvisionUserForm({ orgId }: { orgId: string }) {
       </button>
       {error && <span className="text-xs text-red-400">{error}</span>}
     </form>
+  )
+}
+
+export type OrgDeleteSummary = {
+  units: number
+  users: number
+  leads: number
+  conversations: number
+  candidates: number
+}
+
+const SUMMARY_LABELS: Record<keyof OrgDeleteSummary, string> = {
+  units: 'unidades',
+  users: 'acessos de usuário',
+  leads: 'leads',
+  conversations: 'conversas',
+  candidates: 'candidatos',
+}
+
+/**
+ * Exclui uma empresa e tudo que depende dela (hard delete — ver
+ * /api/admin/orgs/[id] DELETE e migration 20260716000021). Irreversível:
+ * exige digitar o nome exato da organização, no padrão GitHub.
+ */
+export function DeleteOrgButton({ orgId, orgName, summary, compact = false }: { orgId: string; orgName: string; summary: OrgDeleteSummary; compact?: boolean }) {
+  const router = useRouter()
+  const [open, setOpen] = useState(false)
+  const [confirmText, setConfirmText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const canConfirm = confirmText === orgName
+
+  async function submitDelete() {
+    if (!canConfirm) return
+    setBusy(true)
+    setError(null)
+    const res = await fetch(`/api/admin/orgs/${orgId}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmName: confirmText }),
+    })
+    const data = await res.json().catch(() => null)
+    setBusy(false)
+    if (!res.ok) {
+      setError(data?.error ?? 'Erro ao excluir empresa.')
+      return
+    }
+    setOpen(false)
+    router.push('/dashboard/organizations')
+    router.refresh()
+  }
+
+  function close() {
+    if (busy) return
+    setOpen(false)
+    setConfirmText('')
+    setError(null)
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className={
+          compact
+            ? 'flex items-center justify-center rounded-lg p-1.5 text-slate-500 transition-all hover:bg-red-500/10 hover:text-red-400'
+            : 'flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold text-red-400 transition-all hover:bg-red-500/10'
+        }
+        style={compact ? undefined : { border: '1px solid rgba(239,68,68,0.3)' }}
+        title="Excluir empresa"
+      >
+        <Trash2 size={compact ? 13 : 12} />
+        {!compact && 'Excluir empresa'}
+      </button>
+
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.7)' }} onClick={close}>
+          <div
+            className="w-full max-w-md rounded-2xl p-6"
+            style={{ background: '#111827', border: '1px solid rgba(239,68,68,0.3)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full" style={{ background: 'rgba(239,68,68,0.15)' }}>
+                  <AlertTriangle size={16} className="text-red-400" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-black text-white">Excluir {orgName}</h2>
+                  <p className="text-[11px] text-slate-500">Ação permanente — não pode ser desfeita</p>
+                </div>
+              </div>
+              <button onClick={close} className="text-slate-500 hover:text-slate-300">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="mt-4 rounded-xl p-3 text-xs text-slate-300" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
+              <p className="font-bold text-red-300">Isto vai apagar para sempre:</p>
+              <ul className="mt-1.5 space-y-0.5">
+                {(Object.keys(SUMMARY_LABELS) as (keyof OrgDeleteSummary)[]).map((key) => (
+                  <li key={key}>
+                    <span className="font-bold text-white">{summary[key]}</span> {SUMMARY_LABELS[key]}
+                  </li>
+                ))}
+                <li>e todos os dados dependentes (vagas, candidatos no pipeline, contas de anúncio, decisões, mensagens, etc.)</li>
+              </ul>
+            </div>
+
+            <div className="mt-4">
+              <Label htmlFor="confirm-org-name">
+                Digite <span className="text-white">{orgName}</span> para confirmar
+              </Label>
+              <Input
+                id="confirm-org-name"
+                autoFocus
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder={orgName}
+                className="mt-1"
+              />
+            </div>
+
+            {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={close} disabled={busy} className="rounded-xl px-3.5 py-2 text-xs font-bold text-slate-300 hover:bg-white/5 disabled:opacity-50">
+                Cancelar
+              </button>
+              <button
+                onClick={submitDelete}
+                disabled={!canConfirm || busy}
+                className="flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-black text-white disabled:opacity-40"
+                style={{ background: canConfirm ? '#dc2626' : 'rgba(220,38,38,0.4)' }}
+              >
+                {busy ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                Excluir permanentemente
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }

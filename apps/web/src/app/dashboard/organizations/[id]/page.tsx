@@ -3,7 +3,7 @@ import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getAppUser } from '@/lib/app-user'
 import { computeSetupStatus } from '@/lib/setup-status'
-import { ProvisionUserForm, ResetPasswordButton, ToggleOrgActive } from '@/components/admin/org-actions'
+import { DeleteOrgButton, ProvisionUserForm, ResetPasswordButton, ToggleOrgActive } from '@/components/admin/org-actions'
 import { Badge, Card, TableShell, Td, Th, Tr } from '@/components/ui/dashboard-ui'
 import { AlertTriangle, ArrowLeft, Check, CheckCircle2, WifiOff } from 'lucide-react'
 import type { AgentConfig, DashboardSummaryRow, Organization, Unit } from '@/lib/types'
@@ -58,8 +58,11 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ id: 
     : { data: [] }
   const configRows = (configs ?? []) as AgentConfig[]
 
+  const { count: candidateCount } = await supabase.from('candidates').select('id', { count: 'exact', head: true }).eq('org_id', id)
+
   const setup = computeSetupStatus(unitRows, configRows)
   const totalLeads = unitRows.reduce((s, u) => s + Number(leadsByUnit.get(u.id)?.total_leads ?? 0), 0)
+  const totalConversations = unitRows.reduce((s, u) => s + Number(leadsByUnit.get(u.id)?.total_conversations ?? 0), 0)
   const errorEvents = eventRows.filter((e) => e.level === 'error')
 
   return (
@@ -80,6 +83,17 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ id: 
             <Badge variant={orgRow.is_active ? 'green' : 'slate'}>{orgRow.is_active ? 'Ativa' : 'Inativa'}</Badge>
             <Badge variant="purple">{orgRow.plan}</Badge>
             <ToggleOrgActive orgId={orgRow.id} isActive={orgRow.is_active} />
+            <DeleteOrgButton
+              orgId={orgRow.id}
+              orgName={orgRow.name}
+              summary={{
+                units: unitRows.length,
+                users: userRows.length,
+                leads: totalLeads,
+                conversations: totalConversations,
+                candidates: candidateCount ?? 0,
+              }}
+            />
           </div>
         </div>
       </div>
