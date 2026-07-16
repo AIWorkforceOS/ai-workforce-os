@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { isRecruitmentDeal, isWithinActiveHours } from '@/lib/conversation-engine'
+import { isAutoRecruitmentDeal, isWithinActiveHours } from '@/lib/conversation-engine'
 import { getRecruiterConfig } from '@/lib/recruiter/guardrails'
 import { runSourcing } from '@/lib/recruiter/sourcing-engine'
 import { logRecruiterEvent } from '@/lib/recruiter/log'
@@ -14,11 +14,15 @@ import type { JobOpening, JobProfile } from '@/lib/recruiter/types'
 // intake assíncrono do Recrutador, que continua existindo para vagas
 // abertas manualmente.
 //
-// Este handoff só faz sentido para negócios de recrutamento/estágio —
-// o único vertical em que "fechar negócio" significa "preencher uma
-// vaga". Para qualquer outro tipo de negócio (venda de produto/serviço
-// etc., aprendido na entrevista via `fechamento_natureza`), fechar um
-// negócio não deve criar vaga nenhuma: só registra o ganho.
+// A única automação de handoff que existe hoje é esta (recrutamento).
+// O que fazer no fechamento é sempre definido pelo que a empresa
+// ensinou na entrevista daquela instância específica do Sales Rep
+// (`business_profile.fechamento_cria_vaga_recrutamento` +
+// `fechamento_acao`, aprendidos em lib/interview/engine.ts) — nunca por
+// uma categoria fixa no código. Qualquer outro negócio (venda de
+// produto/serviço, contrato de franquia, etc.) não cria vaga nenhuma:
+// o fechamento fica registrado de forma estruturada (dados coletados +
+// ação ensinada) para o time humano dar sequência manualmente.
 
 function toStr(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value : null
@@ -39,10 +43,12 @@ function clampShortlistSize(value: unknown): number {
 /**
  * Ponto de entrada único do handoff de fechamento (chamado pelo webhook
  * do WhatsApp). Decide, a partir do que a empresa ensinou na entrevista
- * (`business_profile.fechamento_natureza`), se este fechamento é uma
- * vaga de recrutamento/estágio (cria job_opening e aciona o Recrutador)
- * ou um negócio genérico (só registra o ganho — sem inventar vaga nem
- * nenhuma outra automação para o vertical).
+ * (`business_profile.fechamento_cria_vaga_recrutamento`), se este
+ * fechamento é uma vaga de recrutamento/estágio (cria job_opening e
+ * aciona o Recrutador — a única automação de handoff que existe hoje)
+ * ou outra coisa qualquer, ensinada em `fechamento_acao` (registra o
+ * fechamento com os dados coletados e a ação pretendida, de forma
+ * estruturada, para o time humano dar sequência manualmente).
  */
 export async function handleSalesDealHandoff(
   supabase: SupabaseClient,
@@ -64,15 +70,24 @@ export async function handleSalesDealHandoff(
   const sdrConfig = sdrConfigRow as AgentConfig | null
   const businessProfile = (sdrConfig?.business_profile ?? {}) as Record<string, unknown>
 
-  if (!isRecruitmentDeal(businessProfile)) {
+  if (!isAutoRecruitmentDeal(businessProfile)) {
+    const dealAction =
+      typeof businessProfile.fechamento_acao === 'string' && businessProfile.fechamento_acao.trim()
+        ? businessProfile.fechamento_acao.trim()
+        : null
+    const dealProfile = (lead.deal_profile ?? {}) as Record<string, unknown>
+
     await logSystemEvent(supabase, {
       level: 'info',
       source: 'sales',
       eventType: 'deal_won',
-      message: `Sales Rep fechou negócio com "${lead.company_name}" — marcado como ganho (negócio não é de recrutamento/estágio, nenhuma vaga foi criada).`,
+      message: dealAction
+        ? `Sales Rep fechou negócio com "${lead.company_name}" — marcado como ganho. Ação ensinada para este momento: "${dealAction}". Nenhuma automação foi executada — encaminhar manualmente com os dados coletados.`
+        : `Sales Rep fechou negócio com "${lead.company_name}" — marcado como ganho. Nenhuma ação de handoff foi ensinada nesta configuração — encaminhar manualmente se necessário.`,
       orgId: unit.org_id,
       unitId: unit.id,
       leadId: lead.id,
+      metadata: { deal_profile: dealProfile, fechamento_acao: dealAction },
     })
     return
   }

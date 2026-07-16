@@ -35,6 +35,8 @@ type InterviewPlaybook = {
   requiredTopics: string[]
   /** schema (informal) do business_profile que o extractor preenche */
   profileSchema: string
+  /** instruções extras só deste playbook, anexadas depois do schema */
+  extraGuidance?: string
 }
 
 export const INTERVIEW_PLAYBOOKS: Record<InterviewAgentType, InterviewPlaybook> = {
@@ -48,11 +50,13 @@ export const INTERVIEW_PLAYBOOKS: Record<InterviewAgentType, InterviewPlaybook> 
       'se a empresa vende para outras empresas (B2B), para consumidor final (B2C) ou os dois',
       'se atender empresas (B2B): que tipo de empresa e em qual região você deve prospectar no Google Maps',
       'se você deve conduzir a venda até o fechamento completo sozinho ou apenas qualificar o interessado e passar para um vendedor humano',
-      'se você fecha sozinho: quando o cliente confirmar o fechamento, isso significa preencher uma vaga de emprego/estágio para essa empresa (ela é uma agência de recrutamento, estágios ou similar) ou é uma venda comum de produto/serviço (sem vaga nenhuma envolvida)',
-      'quando o cliente fechar de verdade, se ele quer que você deixe registrado algum documento ou informação específica para enviar depois',
+      'se você fecha sozinho: quando o cliente confirmar o fechamento de verdade, EXATAMENTE quais dados você precisa perguntar pra ele nesse momento — pode ser um perfil de vaga (curso, semestre, cidade, modalidade, quantidade de vagas) se a empresa for uma agência de recrutamento/estágios, dados como CPF/CNPJ e endereço se for uma venda que gera contrato (ex.: franquia), ou qualquer outra coisa — pergunte especificamente o que ESTA empresa precisa, nunca assuma um padrão',
+      'se você fecha sozinho: o que deve acontecer depois de coletar esses dados — pra quem ou pro quê isso deve ser encaminhado (ex.: "criar uma vaga e mandar pro Recrutador", "notificar o jurídico/financeiro pra emitir contrato de franquia", "só registrar o interesse e notificar o time comercial humano pra fechar por telefone") — e se isso significa especificamente criar uma vaga de recrutamento/estágio e mandar pro Recrutador (sim ou não)',
     ],
     profileSchema:
-      '{"sobre_a_empresa": string, "produtos": [{"nome": string, "preco": string, "detalhes": string}], "politica_desconto": string, "tipo_cliente": "b2b"|"b2c"|"ambos", "prospeccao": {"tipos_empresa": string[], "regioes": string[]}, "fechamento": "fecha_sozinho"|"qualifica_e_passa_para_humano", "fechamento_natureza": "vaga_recrutamento"|"venda_ou_servico", "documento_fechamento": string, "observacoes": string[]}',
+      '{"sobre_a_empresa": string, "produtos": [{"nome": string, "preco": string, "detalhes": string}], "politica_desconto": string, "tipo_cliente": "b2b"|"b2c"|"ambos", "prospeccao": {"tipos_empresa": string[], "regioes": string[]}, "fechamento": "fecha_sozinho"|"qualifica_e_passa_para_humano", "fechamento_campos": [{"chave": string, "pergunta": string}], "fechamento_acao": string, "fechamento_cria_vaga_recrutamento": boolean, "observacoes": string[]}',
+    extraGuidance:
+      'Sobre "fechamento_campos": cada item precisa de uma "chave" curta em snake_case (identificador, ex.: "cidade", "cpf_cnpj") e uma "pergunta" em português explicando o que perguntar ao cliente — envie SOMENTE os campos que fazem sentido para ESTA empresa, nunca uma lista padrão. Se "fechamento_cria_vaga_recrutamento" for true, use preferencialmente as chaves course, semester_min, semester_max, city, modality, positions_needed, urgency (mantém compatibilidade com o Recrutador). Em "fechamento_acao", descreva em texto livre e específico o que fazer com o fechamento e para quem encaminhar — nunca deixe vago.',
   },
   traffic_specialist: {
     roleLabel: 'gestor de tráfego pago',
@@ -131,6 +135,7 @@ export function buildInterviewerPrompt(params: {
     '{"message": "sua próxima mensagem para o chefe", "profile_updates": { apenas os campos aprendidos com a ÚLTIMA resposta dele }, "asked_final_question": boolean, "interview_complete": boolean}',
     `Schema do perfil (preencha nesses nomes de campo): ${playbook.profileSchema}.`,
     'Em "observacoes" acumule instruções extras que não cabem nos outros campos — sempre envie o array COMPLETO atualizado. Em campos de lista (ex.: "produtos"), envie a lista completa atualizada quando ela mudar. Não invente valores: registre apenas o que o chefe disse.',
+    playbook.extraGuidance ?? '',
   ]
     .filter(Boolean)
     .join(' ')
