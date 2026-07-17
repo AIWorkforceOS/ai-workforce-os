@@ -36,6 +36,8 @@ export type Unit = {
   smarter_recruiting_partner_token: string | null
   /** id da Company desta unidade no Sistema Smarter — obrigatório para publicar vaga (POST /api/partners/vacancies companyId). Sem ele a integração fica incompleta mesmo com token configurado. */
   smarter_recruiting_company_id: string | null
+  /** Token público de baixo risco para POST /api/public/lead-intake (migration 022) — cria lead simples e dispara o primeiro contato, sem login de usuário. Não confundir com os tokens de parceiro acima (direção oposta: aqui é fonte externa escrevendo no Alizo). */
+  public_lead_intake_token: string | null
   is_active: boolean
   created_at: string
   updated_at: string

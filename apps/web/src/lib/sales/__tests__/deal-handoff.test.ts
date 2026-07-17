@@ -40,6 +40,7 @@ const unit: Unit = {
       recruiting_integration_mode: 'native',
       smarter_recruiting_partner_token: null,
       smarter_recruiting_company_id: null,
+      public_lead_intake_token: null,
   is_active: true,
   created_at: '',
   updated_at: '',

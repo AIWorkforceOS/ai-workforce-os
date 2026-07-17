@@ -4,19 +4,22 @@ import { syncLeadToSmarterCrm } from '@/lib/sales/smarter-crm'
 import { logSystemEvent } from '@/lib/system-events'
 import type { Lead, Unit } from '@/lib/types'
 
-// Entrada automática de leads de anúncio (Meta e Google Ads) na fila do
-// Sales Rep (item 3). Compartilhado pelos dois webhooks para que o
-// primeiro contato sempre use o mesmo motor de conversa configurado na
-// entrevista de contratação (buildSystemPrompt + business_profile) em
-// vez de uma mensagem fixa — e respeite os mesmos guard-rails (horário
-// ativo, limite diário) que o resto do produto (lib/leads/lead-intake.ts).
+// Entrada automática de lead de fonte externa (anúncios Meta/Google, ou
+// qualquer outra origem que já tenha nome+telefone prontos, como o
+// intake público por unidade) na fila do Sales Rep. Compartilhado por
+// todos esses pontos de entrada para que o primeiro contato sempre use
+// o mesmo motor de conversa configurado na entrevista de contratação
+// (buildSystemPrompt + business_profile) em vez de uma mensagem fixa —
+// e respeite os mesmos guard-rails (horário ativo, limite diário) que o
+// resto do produto (lib/leads/lead-intake.ts).
 
 export type AdLeadInput = {
   name: string | null
   phone: string | null
   email: string | null
-  /** 'meta_lead_ad' | 'google_lead_ad' */
+  /** 'meta_lead_ad' | 'google_lead_ad' | 'smarter_landing_franquia' | 'smarter_site_publico' | ... */
   source: string
+  notes?: string | null
 }
 
 export async function createAdLead(
@@ -33,11 +36,12 @@ export async function createAdLead(
     .from('leads')
     .insert({
       unit_id: unit.id,
-      company_name: input.name ?? 'Lead de anúncio',
+      company_name: input.name ?? 'Lead',
       contact_name: input.name,
       phone: normalizedPhone,
       email: input.email,
       source: input.source,
+      notes: input.notes ?? null,
       status: 'new',
     })
     .select()
@@ -48,7 +52,7 @@ export async function createAdLead(
       level: 'error',
       source: 'system',
       eventType: 'ad_lead_insert_failed',
-      message: `Falha ao criar lead de anúncio (${input.source}) na unidade "${unit.name}": ${error?.message ?? 'erro desconhecido'}`,
+      message: `Falha ao criar lead (${input.source}) na unidade "${unit.name}": ${error?.message ?? 'erro desconhecido'}`,
       orgId: unit.org_id,
       unitId: unit.id,
     })
