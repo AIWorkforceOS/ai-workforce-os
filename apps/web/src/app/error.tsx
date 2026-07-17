@@ -18,13 +18,21 @@ export default function RootError({ error, reset }: { error: Error & { digest?: 
   const isChunkLoadError =
     /ChunkLoadError|Loading chunk|Failed to fetch dynamically imported module/i.test(error.message ?? '')
 
+  // Corrida benigna entre React e algo externo (autofill/gerenciador de
+  // senha, extensão) mexendo no DOM ao mesmo tempo — ver src/lib/dom-patch.ts.
+  // Se ainda assim chegar até aqui, recupera sozinho em vez de crashar a tela.
+  const isDomRace =
+    error.name === 'NotFoundError' && /removeChild|insertBefore/i.test(error.message ?? '')
+
   useEffect(() => {
     if (isChunkLoadError) {
       window.location.reload()
+    } else if (isDomRace) {
+      reset()
     }
-  }, [isChunkLoadError])
+  }, [isChunkLoadError, isDomRace, reset])
 
-  if (isChunkLoadError) return null
+  if (isChunkLoadError || isDomRace) return null
 
   return (
     <div style={{ background: '#0a0f1e', minHeight: '100vh' }}>

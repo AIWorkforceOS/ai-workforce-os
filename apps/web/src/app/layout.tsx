@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 import { getLocale } from '@/lib/i18n/server'
 import { LocaleProvider } from '@/lib/i18n/client'
+import '@/lib/dom-patch'
 import './globals.css'
 
 export function generateMetadata(): Metadata {

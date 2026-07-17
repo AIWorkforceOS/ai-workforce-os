@@ -15,7 +15,17 @@ import './globals.css'
  * porque este boundary roda fora do RootLayout (sem providers).
  */
 export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+  // Corrida benigna entre React e algo externo (autofill/gerenciador de
+  // senha, extensão) mexendo no DOM — ver src/lib/dom-patch.ts. Se ainda
+  // assim chegar até aqui, recupera sozinho em vez de crashar a tela.
+  const isDomRace =
+    error.name === 'NotFoundError' && /removeChild|insertBefore/i.test(error.message ?? '')
+
   useEffect(() => {
+    if (isDomRace) {
+      reset()
+      return
+    }
     fetch('/api/internal/client-error-log', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -28,7 +38,7 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
       }),
       keepalive: true,
     }).catch(() => {})
-  }, [error])
+  }, [error, isDomRace, reset])
 
   return (
     <html lang="pt-BR">
