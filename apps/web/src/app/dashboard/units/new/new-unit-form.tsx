@@ -42,6 +42,11 @@ export function NewUnitForm({
   const [evolutionApiUrl, setEvolutionApiUrl] = useState('')
   const [evolutionApiKey, setEvolutionApiKey] = useState('')
   const [evolutionInstanceName, setEvolutionInstanceName] = useState('')
+  const [crmIntegrationMode, setCrmIntegrationMode] = useState<'native' | 'smarter'>('native')
+  const [smarterCrmPartnerToken, setSmarterCrmPartnerToken] = useState('')
+  const [recruitingIntegrationMode, setRecruitingIntegrationMode] = useState<'native' | 'smarter'>('native')
+  const [smarterRecruitingPartnerToken, setSmarterRecruitingPartnerToken] = useState('')
+  const [smarterRecruitingCompanyId, setSmarterRecruitingCompanyId] = useState('')
   const [createOwnerAccess, setCreateOwnerAccess] = useState(false)
   const [ownerEmail, setOwnerEmail] = useState('')
   const [ownerName, setOwnerName] = useState('')
@@ -86,6 +91,11 @@ export function NewUnitForm({
         evolution_api_url: evolutionApiUrl || null,
         evolution_api_key: evolutionApiKey || null,
         evolution_instance_name: evolutionInstanceName || null,
+        crm_integration_mode: crmIntegrationMode,
+        smarter_crm_partner_token: smarterCrmPartnerToken || null,
+        recruiting_integration_mode: recruitingIntegrationMode,
+        smarter_recruiting_partner_token: smarterRecruitingPartnerToken || null,
+        smarter_recruiting_company_id: smarterRecruitingCompanyId || null,
       })
       .select('id')
       .single()
@@ -224,6 +234,79 @@ export function NewUnitForm({
           <Label htmlFor="evolutionInstanceName">Nome da instância</Label>
           <Input id="evolutionInstanceName" value={evolutionInstanceName} onChange={(e) => setEvolutionInstanceName(e.target.value)} placeholder="alizo-campinas" />
         </div>
+
+        <div className="flex flex-col gap-1 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <span className="text-sm font-medium text-slate-300">Integração com a Smarter</span>
+          <p className="text-xs text-slate-500">
+            Opcional na criação — pode deixar em nativo e configurar depois na tela da unidade. Vincula esta
+            unidade a uma empresa/unidade real do Sistema Smarter. Os tokens de parceiro são gerados pela
+            equipe da Smarter e colados aqui, não pelo Alizo.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="crmIntegrationMode">CRM de vendas (Sales Rep)</Label>
+          <Select
+            id="crmIntegrationMode"
+            value={crmIntegrationMode}
+            onChange={(e) => setCrmIntegrationMode(e.target.value as 'native' | 'smarter')}
+          >
+            <option value="native">Nativo (CRM próprio do Alizo)</option>
+            <option value="smarter">Espelhar no CRM da Smarter</option>
+          </Select>
+        </div>
+
+        {crmIntegrationMode === 'smarter' && (
+          <div className="flex flex-col gap-1.5 pl-4" style={{ borderLeft: '2px solid rgba(255,255,255,0.06)' }}>
+            <Label htmlFor="smarterCrmPartnerToken">Token de parceiro — CRM da Smarter</Label>
+            <Input
+              id="smarterCrmPartnerToken"
+              type="password"
+              value={smarterCrmPartnerToken}
+              onChange={(e) => setSmarterCrmPartnerToken(e.target.value)}
+              placeholder="token Bearer gerado no lado da Smarter para esta unidade"
+            />
+          </div>
+        )}
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="recruitingIntegrationMode">Recrutamento (Recruiter)</Label>
+          <Select
+            id="recruitingIntegrationMode"
+            value={recruitingIntegrationMode}
+            onChange={(e) => setRecruitingIntegrationMode(e.target.value as 'native' | 'smarter')}
+          >
+            <option value="native">Nativo (pipeline próprio do Alizo)</option>
+            <option value="smarter">Publicar no sistema de vagas da Smarter</option>
+          </Select>
+        </div>
+
+        {recruitingIntegrationMode === 'smarter' && (
+          <div className="flex flex-col gap-4 pl-4" style={{ borderLeft: '2px solid rgba(255,255,255,0.06)' }}>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="smarterRecruitingPartnerToken">Token de parceiro — vagas/candidatos da Smarter</Label>
+              <Input
+                id="smarterRecruitingPartnerToken"
+                type="password"
+                value={smarterRecruitingPartnerToken}
+                onChange={(e) => setSmarterRecruitingPartnerToken(e.target.value)}
+                placeholder="token Bearer gerado no lado da Smarter para esta unidade"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="smarterRecruitingCompanyId">ID da empresa/franquia na Smarter</Label>
+              <Input
+                id="smarterRecruitingCompanyId"
+                value={smarterRecruitingCompanyId}
+                onChange={(e) => setSmarterRecruitingCompanyId(e.target.value)}
+                placeholder="companyId desta unidade no Sistema Smarter"
+              />
+              <p className="text-xs text-slate-500">
+                Obrigatório para publicar vaga — sem ele a integração fica incompleta mesmo com token válido.
+              </p>
+            </div>
+          </div>
+        )}
 
         <div className="flex flex-col gap-3 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
           <label className="flex items-start gap-2.5 text-sm text-slate-300">

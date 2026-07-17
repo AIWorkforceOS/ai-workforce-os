@@ -27,9 +27,39 @@ export function UnitSettingsForm({ unit, showAdvanced = false }: { unit: Unit; s
   const [evolutionInstanceName, setEvolutionInstanceName] = useState(
     unit.evolution_instance_name ?? '',
   )
+  const [crmIntegrationMode, setCrmIntegrationMode] = useState<'native' | 'smarter'>(
+    unit.crm_integration_mode === 'smarter' ? 'smarter' : 'native',
+  )
+  const [smarterCrmPartnerToken, setSmarterCrmPartnerToken] = useState(unit.smarter_crm_partner_token ?? '')
+  const [recruitingIntegrationMode, setRecruitingIntegrationMode] = useState<'native' | 'smarter'>(
+    unit.recruiting_integration_mode === 'smarter' ? 'smarter' : 'native',
+  )
+  const [smarterRecruitingPartnerToken, setSmarterRecruitingPartnerToken] = useState(
+    unit.smarter_recruiting_partner_token ?? '',
+  )
+  const [smarterRecruitingCompanyId, setSmarterRecruitingCompanyId] = useState(
+    unit.smarter_recruiting_company_id ?? '',
+  )
+  const [tokenCopied, setTokenCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(false)
+
+  async function handleCopyLeadIntakeToken() {
+    if (!unit.public_lead_intake_token) return
+    try {
+      await navigator.clipboard.writeText(unit.public_lead_intake_token)
+    } catch {
+      const el = document.createElement('textarea')
+      el.value = unit.public_lead_intake_token
+      document.body.appendChild(el)
+      el.select()
+      document.execCommand('copy')
+      document.body.removeChild(el)
+    }
+    setTokenCopied(true)
+    setTimeout(() => setTokenCopied(false), 2000)
+  }
 
   async function handleLogoChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -88,6 +118,11 @@ export function UnitSettingsForm({ unit, showAdvanced = false }: { unit: Unit; s
               evolution_api_url: evolutionApiUrl || null,
               evolution_api_key: evolutionApiKey || null,
               evolution_instance_name: evolutionInstanceName || null,
+              crm_integration_mode: crmIntegrationMode,
+              smarter_crm_partner_token: smarterCrmPartnerToken || null,
+              recruiting_integration_mode: recruitingIntegrationMode,
+              smarter_recruiting_partner_token: smarterRecruitingPartnerToken || null,
+              smarter_recruiting_company_id: smarterRecruitingCompanyId || null,
             }
           : {}),
       })
@@ -259,6 +294,114 @@ export function UnitSettingsForm({ unit, showAdvanced = false }: { unit: Unit; s
                 onChange={(e) => setEvolutionApiKey(e.target.value)}
                 placeholder="sua_api_key"
               />
+            </div>
+
+            <div className="flex flex-col gap-1 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+              <span className="text-sm font-medium text-slate-300">Integração com a Smarter</span>
+              <p className="text-xs text-slate-500">
+                Vincula esta unidade a uma empresa/unidade real do lado do Sistema Smarter, para que o
+                funcionário digital escreva no lugar certo. Os tokens de parceiro (CRM e recrutamento) são
+                gerados pela equipe da Smarter e colados aqui — não são gerados pelo Alizo.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="crmIntegrationMode">CRM de vendas (Sales Rep)</Label>
+              <Select
+                id="crmIntegrationMode"
+                value={crmIntegrationMode}
+                onChange={(e) => setCrmIntegrationMode(e.target.value as 'native' | 'smarter')}
+              >
+                <option value="native">Nativo (CRM próprio do Alizo)</option>
+                <option value="smarter">Espelhar no CRM da Smarter</option>
+              </Select>
+              <p className="text-xs text-slate-500">
+                Quando ativado, todo lead do Sales Rep também é criado/atualizado no CRM da Smarter
+                (sistema.smarterestagios.com.br) via o token de parceiro abaixo.
+              </p>
+            </div>
+
+            {crmIntegrationMode === 'smarter' && (
+              <div className="flex flex-col gap-1.5 pl-4" style={{ borderLeft: '2px solid rgba(255,255,255,0.06)' }}>
+                <Label htmlFor="smarterCrmPartnerToken">Token de parceiro — CRM da Smarter</Label>
+                <Input
+                  id="smarterCrmPartnerToken"
+                  type="password"
+                  value={smarterCrmPartnerToken}
+                  onChange={(e) => setSmarterCrmPartnerToken(e.target.value)}
+                  placeholder="token Bearer gerado no lado da Smarter para esta unidade"
+                />
+              </div>
+            )}
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="recruitingIntegrationMode">Recrutamento (Recruiter)</Label>
+              <Select
+                id="recruitingIntegrationMode"
+                value={recruitingIntegrationMode}
+                onChange={(e) => setRecruitingIntegrationMode(e.target.value as 'native' | 'smarter')}
+              >
+                <option value="native">Nativo (pipeline próprio do Alizo)</option>
+                <option value="smarter">Publicar no sistema de vagas da Smarter</option>
+              </Select>
+              <p className="text-xs text-slate-500">
+                Quando ativado, o Recruiter também publica vaga e adiciona candidatos sourced no sistema de
+                vagas da Smarter, usando o token de parceiro e o ID da empresa abaixo.
+              </p>
+            </div>
+
+            {recruitingIntegrationMode === 'smarter' && (
+              <div className="flex flex-col gap-4 pl-4" style={{ borderLeft: '2px solid rgba(255,255,255,0.06)' }}>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="smarterRecruitingPartnerToken">Token de parceiro — vagas/candidatos da Smarter</Label>
+                  <Input
+                    id="smarterRecruitingPartnerToken"
+                    type="password"
+                    value={smarterRecruitingPartnerToken}
+                    onChange={(e) => setSmarterRecruitingPartnerToken(e.target.value)}
+                    placeholder="token Bearer gerado no lado da Smarter para esta unidade"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="smarterRecruitingCompanyId">ID da empresa/franquia na Smarter</Label>
+                  <Input
+                    id="smarterRecruitingCompanyId"
+                    value={smarterRecruitingCompanyId}
+                    onChange={(e) => setSmarterRecruitingCompanyId(e.target.value)}
+                    placeholder="companyId desta unidade no Sistema Smarter"
+                  />
+                  <p className="text-xs text-slate-500">
+                    Obrigatório para publicar vaga (POST /api/partners/vacancies) — sem ele a integração fica
+                    incompleta mesmo com token válido.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="publicLeadIntakeToken">Token público de intake de lead (landing page → Sales Rep)</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="publicLeadIntakeToken"
+                  readOnly
+                  value={unit.public_lead_intake_token ?? ''}
+                  className="font-mono text-xs"
+                />
+                <button
+                  type="button"
+                  onClick={handleCopyLeadIntakeToken}
+                  className="shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-colors"
+                  style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                >
+                  {tokenCopied ? 'Copiado!' : 'Copiar'}
+                </button>
+              </div>
+              <p className="text-xs text-slate-500">
+                Gerado automaticamente para esta unidade — não é editável. Passe este valor para a equipe da
+                Smarter usarem como <code>Authorization: Bearer &lt;token&gt;</code> no POST para{' '}
+                <code>/api/public/lead-intake</code>, para que a landing page desta unidade entregue leads
+                diretamente ao Sales Rep, sem login.
+              </p>
             </div>
           </>
         )}
