@@ -47,6 +47,7 @@ export function NewUnitForm({
   const [recruitingIntegrationMode, setRecruitingIntegrationMode] = useState<'native' | 'smarter'>('native')
   const [smarterRecruitingPartnerToken, setSmarterRecruitingPartnerToken] = useState('')
   const [smarterRecruitingCompanyId, setSmarterRecruitingCompanyId] = useState('')
+  const [smarterMarketingPartnerToken, setSmarterMarketingPartnerToken] = useState('')
   const [createOwnerAccess, setCreateOwnerAccess] = useState(false)
   const [ownerEmail, setOwnerEmail] = useState('')
   const [ownerName, setOwnerName] = useState('')
@@ -96,6 +97,7 @@ export function NewUnitForm({
         recruiting_integration_mode: recruitingIntegrationMode,
         smarter_recruiting_partner_token: smarterRecruitingPartnerToken || null,
         smarter_recruiting_company_id: smarterRecruitingCompanyId || null,
+        smarter_marketing_partner_token: smarterMarketingPartnerToken || null,
       })
       .select('id')
       .single()
@@ -307,6 +309,21 @@ export function NewUnitForm({
             </div>
           </div>
         )}
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="smarterMarketingPartnerToken">Tráfego Pago — token de parceiro da Smarter</Label>
+          <Input
+            id="smarterMarketingPartnerToken"
+            type="password"
+            value={smarterMarketingPartnerToken}
+            onChange={(e) => setSmarterMarketingPartnerToken(e.target.value)}
+            placeholder="token Bearer gerado no lado da Smarter para esta unidade (opcional)"
+          />
+          <p className="text-xs text-slate-500">
+            Opcional — quando preenchido, o Traffic Specialist também espelha as campanhas geridas
+            (Meta/Google Ads) no Sistema Smarter. Sem toggle: se vazio, nada muda no comportamento atual.
+          </p>
+        </div>
 
         <div className="flex flex-col gap-3 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
           <label className="flex items-start gap-2.5 text-sm text-slate-300">

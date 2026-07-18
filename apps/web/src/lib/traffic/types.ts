@@ -116,6 +116,8 @@ export type AdEntity = {
   bid_strategy: string | null
   is_managed: boolean
   raw: Record<string, unknown>
+  /** id da Campanha correspondente no Sistema Smarter (migration 023) — só populado para entity_level='campaign' quando a unidade tem smarter_marketing_partner_token. Null = não sincronizada ainda. */
+  smarter_campaign_id: string | null
   created_at: string
   updated_at: string
 }

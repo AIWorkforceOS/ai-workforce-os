@@ -39,6 +39,8 @@ import { aggregate, computeDerived, splitRecentVsPrevious } from './metrics'
 import { classifyFunnelStage, evaluateAccount, strategyFromBusinessProfile } from './strategy-engine'
 import { executeDecision } from './executor'
 import { buildHighlights, generateExecutiveSummary } from './reporting'
+import { syncCampaignsToSmarterMarketing } from './smarter-campaigns'
+import type { Unit } from '@/lib/types'
 import type {
   AdAccount,
   AdEntity,
@@ -210,6 +212,19 @@ export async function syncAndOptimizeAccount(
         .from('ad_metrics_snapshots')
         .upsert(snapshotRows, { onConflict: 'entity_id,snapshot_date' })
       if (error) throw new Error(`Upsert de snapshots falhou: ${error.message}`)
+    }
+
+    // 2b. Espelho de campanhas na Smarter (opcional, por unidade) --------
+    const { data: unitRow } = await supabase
+      .from('units')
+      .select('*')
+      .eq('id', account.unit_id)
+      .maybeSingle()
+    if (unitRow && (unitRow as Unit).smarter_marketing_partner_token) {
+      const campaignEntities = ((dbEntities ?? []) as AdEntity[]).filter(
+        (row) => row.entity_level === 'campaign',
+      )
+      await syncCampaignsToSmarterMarketing(supabase, unitRow as Unit, account, campaignEntities)
     }
 
     // 3. Motor de estratégia --------------------------------------------

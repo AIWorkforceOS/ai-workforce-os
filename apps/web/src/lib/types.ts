@@ -36,6 +36,8 @@ export type Unit = {
   smarter_recruiting_partner_token: string | null
   /** id da Company desta unidade no Sistema Smarter — obrigatório para publicar vaga (POST /api/partners/vacancies companyId). Sem ele a integração fica incompleta mesmo com token configurado. */
   smarter_recruiting_company_id: string | null
+  /** Token de parceiro (Bearer, escopo marketing) da API de campanhas da Smarter para esta unidade — segredo. Presente = o cron do Traffic Specialist espelha campanhas via lib/traffic/smarter-campaigns.ts (migration 023). Null = sem espelhamento, comportamento atual. */
+  smarter_marketing_partner_token: string | null
   /** Token público de baixo risco para POST /api/public/lead-intake (migration 022) — cria lead simples e dispara o primeiro contato, sem login de usuário. Não confundir com os tokens de parceiro acima (direção oposta: aqui é fonte externa escrevendo no Alizo). */
   public_lead_intake_token: string | null
   is_active: boolean

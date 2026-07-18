@@ -40,6 +40,9 @@ export function UnitSettingsForm({ unit, showAdvanced = false }: { unit: Unit; s
   const [smarterRecruitingCompanyId, setSmarterRecruitingCompanyId] = useState(
     unit.smarter_recruiting_company_id ?? '',
   )
+  const [smarterMarketingPartnerToken, setSmarterMarketingPartnerToken] = useState(
+    unit.smarter_marketing_partner_token ?? '',
+  )
   const [tokenCopied, setTokenCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
@@ -123,6 +126,7 @@ export function UnitSettingsForm({ unit, showAdvanced = false }: { unit: Unit; s
               recruiting_integration_mode: recruitingIntegrationMode,
               smarter_recruiting_partner_token: smarterRecruitingPartnerToken || null,
               smarter_recruiting_company_id: smarterRecruitingCompanyId || null,
+              smarter_marketing_partner_token: smarterMarketingPartnerToken || null,
             }
           : {}),
       })
@@ -377,6 +381,21 @@ export function UnitSettingsForm({ unit, showAdvanced = false }: { unit: Unit; s
                 </div>
               </div>
             )}
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="smarterMarketingPartnerToken">Tráfego Pago — token de parceiro da Smarter</Label>
+              <Input
+                id="smarterMarketingPartnerToken"
+                type="password"
+                value={smarterMarketingPartnerToken}
+                onChange={(e) => setSmarterMarketingPartnerToken(e.target.value)}
+                placeholder="token Bearer gerado no lado da Smarter para esta unidade (opcional)"
+              />
+              <p className="text-xs text-slate-500">
+                Opcional — quando preenchido, o Traffic Specialist também espelha as campanhas geridas
+                (Meta/Google Ads) no Sistema Smarter. Sem toggle: se vazio, nada muda no comportamento atual.
+              </p>
+            </div>
 
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="publicLeadIntakeToken">Token público de intake de lead (landing page → Sales Rep)</Label>
