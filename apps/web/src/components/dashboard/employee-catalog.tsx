@@ -9,6 +9,7 @@ import {
   Briefcase,
   Check,
   ChevronRight,
+  Headset,
   Loader2,
   Megaphone,
   Pause,
@@ -45,16 +46,19 @@ export function EmployeeCatalog({
   configs,
   openJobs,
   adAccounts,
+  customers,
 }: {
   units: Unit[]
   configs: AgentConfig[]
   openJobs: number
   adAccounts: number
+  customers: number
 }) {
   const whatsappConnected = units.some((u) => !!u.whatsapp_phone)
   const sdr = configs.find((c) => c.agent_type === 'sdr')
   const recruiter = configs.find((c) => c.agent_type === 'recruiter')
   const traffic = configs.find((c) => c.agent_type === 'traffic_specialist')
+  const receptionist = configs.find((c) => c.agent_type === 'receptionist')
 
   const sdrSteps: Step[] = [
     { label: 'Conectar o WhatsApp da empresa', desc: 'Escaneando um QR code, igual ao WhatsApp Web.', done: whatsappConnected, href: '/dashboard/onboarding' },
@@ -74,6 +78,11 @@ export function EmployeeCatalog({
     { label: 'Acompanhar as recomendações', desc: 'Ele sugere melhorias todo dia — você aprova ou recusa cada uma.', done: adAccounts > 0, href: '/dashboard/traffic' },
   ]
 
+  const receptionistSteps: Step[] = [
+    { label: 'Contratar o AI Receptionist', desc: 'Escolha o nome dele e responda a entrevista de contratação — ele aprende como funciona seu atendimento.', done: !!receptionist?.is_active, inline: true },
+    { label: 'Acompanhar o cadastro de clientes', desc: 'Todo negócio fechado pelo Sales Rep já entra automaticamente como cliente.', done: customers > 0, href: '/dashboard/receptionist/customers' },
+  ]
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -85,7 +94,7 @@ export function EmployeeCatalog({
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-4">
         <EmployeeCatalogCard
           icon={Bot}
           name="AI Sales Representative"
@@ -130,6 +139,21 @@ export function EmployeeCatalog({
           personaName={null}
           activation={{ agentType: 'traffic_specialist', config: traffic ?? null, units, askName: false, defaultName: 'Gestor de Tráfego' }}
         />
+        <EmployeeCatalogCard
+          icon={Headset}
+          name="AI Receptionist"
+          tagline="Organiza o atendimento e os clientes"
+          bullets={[
+            'Mantém o cadastro de clientes sempre atualizado',
+            'Resolve sozinho(a) o que for rotina do dia a dia',
+            'Avisa um humano no que exigir decisão, do jeito que a empresa ensinou',
+          ]}
+          steps={receptionistSteps}
+          state={receptionist?.is_active ? (customers > 0 ? 'working' : 'configuring') : 'available'}
+          panelHref="/dashboard/receptionist"
+          personaName={receptionist?.persona_name ?? null}
+          activation={{ agentType: 'receptionist', config: receptionist ?? null, units, askName: true, defaultName: 'Ana' }}
+        />
       </div>
 
       <p className="text-xs text-slate-500">
@@ -142,7 +166,7 @@ export function EmployeeCatalog({
 }
 
 type ActivationProps = {
-  agentType: 'recruiter' | 'traffic_specialist'
+  agentType: 'recruiter' | 'traffic_specialist' | 'receptionist'
   config: AgentConfig | null
   units: Unit[]
   /** true = pede nome (funcionário que conversa com pessoas) */

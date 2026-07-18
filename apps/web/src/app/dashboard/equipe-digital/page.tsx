@@ -10,12 +10,13 @@ export const dynamic = 'force-dynamic'
 export default async function DigitalTeamPage() {
   const supabase = await createClient()
 
-  const [{ data: units }, { data: configs }, { count: openJobs }, { count: adAccounts }] =
+  const [{ data: units }, { data: configs }, { count: openJobs }, { count: adAccounts }, { count: customers }] =
     await Promise.all([
       supabase.from('units').select('*').order('created_at', { ascending: true }),
       supabase.from('agent_configs').select('*'),
       supabase.from('job_openings').select('id', { count: 'exact', head: true }),
       supabase.from('ad_accounts').select('id', { count: 'exact', head: true }),
+      supabase.from('customers').select('id', { count: 'exact', head: true }),
     ])
 
   return (
@@ -24,6 +25,7 @@ export default async function DigitalTeamPage() {
       configs={(configs ?? []) as AgentConfig[]}
       openJobs={openJobs ?? 0}
       adAccounts={adAccounts ?? 0}
+      customers={customers ?? 0}
     />
   )
 }

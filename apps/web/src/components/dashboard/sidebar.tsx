@@ -19,6 +19,7 @@ import {
   Bot,
   Megaphone,
   Briefcase,
+  Headset,
   Sparkles,
   CreditCard,
   Smartphone,
@@ -52,6 +53,7 @@ const navGroups: { label: Record<Locale, string>; items: NavItem[] }[] = [
       { href: '/dashboard/agents', label: { pt: 'AI Sales Representative', en: 'AI Sales Representative' }, icon: Bot },
       { href: '/dashboard/recruiter', label: { pt: 'Recrutador (RH)', en: 'Recruiter (HR)' }, icon: Briefcase },
       { href: '/dashboard/traffic', label: { pt: 'Tráfego pago', en: 'Paid ads' }, icon: Megaphone },
+      { href: '/dashboard/receptionist', label: { pt: 'AI Receptionist', en: 'AI Receptionist' }, icon: Headset },
     ],
   },
   {

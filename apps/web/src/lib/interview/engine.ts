@@ -21,10 +21,15 @@ import type { AgentConfig, AgentTone, InterviewTranscriptEntry, Unit } from '@/l
 // Tráfego). A entrevista do Recrutador cobre a EMPRESA; o levantamento
 // de cada vaga continua com o intake-engine assíncrono existente.
 
-export type InterviewAgentType = 'sdr' | 'recruiter' | 'traffic_specialist'
+export type InterviewAgentType = 'sdr' | 'recruiter' | 'traffic_specialist' | 'receptionist'
 
 export function isInterviewAgentType(agentType: string): agentType is InterviewAgentType {
-  return agentType === 'sdr' || agentType === 'recruiter' || agentType === 'traffic_specialist'
+  return (
+    agentType === 'sdr' ||
+    agentType === 'recruiter' ||
+    agentType === 'traffic_specialist' ||
+    agentType === 'receptionist'
+  )
 }
 
 type InterviewPlaybook = {
@@ -87,6 +92,21 @@ export const INTERVIEW_PLAYBOOKS: Record<InterviewAgentType, InterviewPlaybook> 
     ],
     profileSchema:
       '{"sobre_a_empresa": string, "segmento": string, "cargos_tipicos": string[], "cultura_valores": string[], "locais": string[], "processo_seletivo": string, "observacoes": string[]}',
+  },
+  receptionist: {
+    roleLabel: 'recepcionista/gerente de operações',
+    mission:
+      'organizar o atendimento e a operação do dia a dia: manter o cadastro de clientes em dia, resolver sozinho(a) o que for rotina e avisar um humano no que exigir decisão',
+    requiredTopics: [
+      'qual é o tipo de negócio da empresa e como funciona o atendimento hoje (loja física, telefone, WhatsApp, agenda, recepção, etc.)',
+      'quais tarefas do dia a dia você pode resolver sozinho(a), sem precisar avisar ninguém (ex.: cadastrar um cliente novo, atualizar um dado, responder uma dúvida simples)',
+      'em quais situações você deve avisar um humano e esperar, em vez de decidir sozinho(a) (ex.: reclamação, cancelamento, algo fora do combinado) — e quem exatamente deve ser avisado nesses casos',
+      'quais dados mínimos você deve pedir quando um cliente novo aparece (nome e telefone sempre; o que mais faz sentido pedir para ESTE negócio, ex.: endereço, e-mail)',
+      'se a empresa já separa os clientes por algum tipo de marcação/categoria (ex.: VIP, inadimplente, novo) e quais são essas categorias',
+      'qual o horário de funcionamento da empresa e o que fazer com contatos fora desse horário',
+    ],
+    profileSchema:
+      '{"tipo_negocio": string, "como_atende_hoje": string, "tarefas_automaticas": string[], "quando_avisar_humano": string, "quem_avisar": string, "dados_minimos_cliente": string[], "tags_clientes": string[], "horario_funcionamento": string, "observacoes": string[]}',
   },
 }
 

@@ -138,6 +138,27 @@ export type Lead = {
   updated_at: string
 }
 
+export type CustomerStatus = 'active' | 'inactive'
+
+export type Customer = {
+  id: string
+  org_id: string
+  unit_id: string
+  /** lead de origem quando o cliente veio do fechamento do Sales Rep (migration 024) */
+  lead_id: string | null
+  name: string
+  phone: string | null
+  email: string | null
+  address: string | null
+  city: string | null
+  status: CustomerStatus
+  tags: string[]
+  source: string
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
 export type ConversationChannel = 'whatsapp' | 'email' | 'sms'
 export type ConversationDirection = 'outbound' | 'inbound'
 export type ConversationStatus = 'sent' | 'delivered' | 'read' | 'failed'

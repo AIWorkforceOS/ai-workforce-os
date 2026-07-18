@@ -4,6 +4,7 @@ import { getRecruiterConfig } from '@/lib/recruiter/guardrails'
 import { runSourcing } from '@/lib/recruiter/sourcing-engine'
 import { logRecruiterEvent } from '@/lib/recruiter/log'
 import { logSystemEvent } from '@/lib/system-events'
+import { createCustomerFromDealLead } from '@/lib/receptionist/customers'
 import type { AgentConfig, Lead, Unit } from '@/lib/types'
 import type { JobOpening, JobProfile } from '@/lib/recruiter/types'
 
@@ -14,7 +15,6 @@ import type { JobOpening, JobProfile } from '@/lib/recruiter/types'
 // intake assíncrono do Recrutador, que continua existindo para vagas
 // abertas manualmente.
 //
-// A única automação de handoff que existe hoje é esta (recrutamento).
 // O que fazer no fechamento é sempre definido pelo que a empresa
 // ensinou na entrevista daquela instância específica do Sales Rep
 // (`business_profile.fechamento_cria_vaga_recrutamento` +
@@ -23,6 +23,11 @@ import type { JobOpening, JobProfile } from '@/lib/recruiter/types'
 // produto/serviço, contrato de franquia, etc.) não cria vaga nenhuma:
 // o fechamento fica registrado de forma estruturada (dados coletados +
 // ação ensinada) para o time humano dar sequência manualmente.
+//
+// Handoff Sales → Receptionist: independente de criar vaga ou não,
+// todo fechamento ganho vira um Cliente (lib/receptionist/customers.ts)
+// — automação separada, roda sempre. Fail-safe: erro aqui nunca
+// derruba o fechamento da venda, só fica registrado em system_events.
 
 function toStr(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value : null
@@ -60,6 +65,31 @@ export async function handleSalesDealHandoff(
   const { data: leadRow } = await supabase.from('leads').select('*').eq('id', leadId).maybeSingle()
   const lead = leadRow as Lead | null
   if (!lead) return
+
+  try {
+    const result = await createCustomerFromDealLead(supabase, { lead, unit })
+    if (result.error) {
+      await logSystemEvent(supabase, {
+        level: 'error',
+        source: 'receptionist',
+        eventType: 'customer_creation_failed',
+        message: `Fechamento do lead "${lead.company_name}" não conseguiu criar o Cliente automaticamente: ${result.error}.`,
+        orgId: unit.org_id,
+        unitId: unit.id,
+        leadId: lead.id,
+      })
+    }
+  } catch (error) {
+    await logSystemEvent(supabase, {
+      level: 'error',
+      source: 'receptionist',
+      eventType: 'customer_creation_failed',
+      message: `Fechamento do lead "${lead.company_name}" não conseguiu criar o Cliente automaticamente: ${error instanceof Error ? error.message : String(error)}.`,
+      orgId: unit.org_id,
+      unitId: unit.id,
+      leadId: lead.id,
+    })
+  }
 
   const { data: sdrConfigRow } = await supabase
     .from('agent_configs')
