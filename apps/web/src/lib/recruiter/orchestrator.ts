@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { generateChatReply, generateStructuredReply, getOpenAIApiKey } from '@/lib/openai'
 import { sendRecruiterEmail } from '@/lib/email'
 import { logSystemEvent, shouldNotifyForEvent } from '@/lib/system-events'
+import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
 import type { AgentConfig, Lead, Unit } from '@/lib/types'
 import { buildCompanyReviewClassifierPrompt, buildRecruiterBasePrompt, buildProfileExtractorPrompt } from './prompts'
 import { getRecruiterLimits } from './guardrails'
@@ -373,6 +374,7 @@ export async function handleCompanyReviewInbound(
   const apiKey = getOpenAIApiKey()
   if (!apiKey) throw new Error('OPENAI_API_KEY não está configurada.')
 
+  const organizationProfile = await fetchOrganizationBusinessProfile(supabase, unit.org_id)
   const presented = await getEntries(supabase, job.id, ['presented', 'shortlisted'])
   const refs = presented.map((entry, index) => ({ ref: `C${index + 1}`, entry }))
 
@@ -391,7 +393,7 @@ export async function handleCompanyReviewInbound(
       const reply = await generateChatReply({
         apiKey,
         systemPrompt: [
-          buildRecruiterBasePrompt(config, unit),
+          buildRecruiterBasePrompt(config, unit, organizationProfile),
           `A empresa confirmou a escolha de ${chosen.entry.candidate.name} para a vaga "${job.title}". Agradeça, confirme a escolha e avise que o responsável humano assume agora a parte de documentação e contrato.`,
         ].join(' '),
         history: [{ role: 'user', content: text }],
@@ -440,7 +442,7 @@ export async function handleCompanyReviewInbound(
     const reply = await generateChatReply({
       apiKey,
       systemPrompt: [
-        buildRecruiterBasePrompt(config, unit),
+        buildRecruiterBasePrompt(config, unit, organizationProfile),
         `A empresa pediu para ajustar a busca da vaga "${job.title}" (${classification.detail ?? 'ajuste de perfil'}). Confirme que entendeu o ajuste e que você já vai buscar novos candidatos com esse novo direcionamento.`,
       ].join(' '),
       history: [{ role: 'user', content: text }],
@@ -470,7 +472,7 @@ export async function handleCompanyReviewInbound(
     const reply = await generateChatReply({
       apiKey,
       systemPrompt: [
-        buildRecruiterBasePrompt(config, unit),
+        buildRecruiterBasePrompt(config, unit, organizationProfile),
         `A empresa cancelou a vaga "${job.title}". Confirme o cancelamento com cordialidade, avise que os candidatos em processo receberão uma devolutiva e se coloque à disposição para novas vagas.`,
       ].join(' '),
       history: [{ role: 'user', content: text }],
@@ -495,7 +497,7 @@ export async function handleCompanyReviewInbound(
   const reply = await generateChatReply({
     apiKey,
     systemPrompt: [
-      buildRecruiterBasePrompt(config, unit),
+      buildRecruiterBasePrompt(config, unit, organizationProfile),
       `A empresa está avaliando a shortlist da vaga "${job.title}" e mandou uma mensagem. Responda usando SOMENTE os dados reais dos relatórios (não invente nada): ${reportsContext}.`,
       'Se a pergunta não puder ser respondida com esses dados, diga que vai verificar e retorna. Termine incentivando gentilmente a decisão.',
     ].join(' '),

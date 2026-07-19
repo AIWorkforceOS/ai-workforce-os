@@ -3,6 +3,7 @@ import type { AgentConfig, Unit } from '@/lib/types'
 import { getOpenAIApiKey, generateChatReply } from '@/lib/openai'
 import { sendRecruiterEmail } from '@/lib/email'
 import { logSystemEvent, shouldNotifyForEvent } from '@/lib/system-events'
+import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
 import { logDecision, logRecruiterEvent } from './log'
 import { getRecruiterLimits } from './guardrails'
 import { getOwnerEmail } from './orchestrator'
@@ -203,9 +204,10 @@ async function generateSourcingStrategySuggestion(
   const apiKey = getOpenAIApiKey()
   if (!apiKey) return null
   try {
+    const organizationProfile = await fetchOrganizationBusinessProfile(supabase, params.unit.org_id)
     return await generateChatReply({
       apiKey,
-      systemPrompt: buildSourcingStrategyPrompt(params),
+      systemPrompt: buildSourcingStrategyPrompt({ ...params, organizationProfile }),
       history: [{ role: 'user', content: 'Gere a sugestão de estratégia de captação.' }],
     })
   } catch (error) {

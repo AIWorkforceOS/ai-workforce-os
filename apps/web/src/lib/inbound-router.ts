@@ -10,6 +10,7 @@ import { sendToCompany } from '@/lib/recruiter/messaging'
 import { logDecision } from '@/lib/recruiter/log'
 import { handleSalesDealHandoff } from '@/lib/sales/deal-handoff'
 import { logSystemEvent } from '@/lib/system-events'
+import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
 import { getMessagingChannel } from '@/lib/channels/messaging-channel'
 import type { ChannelType } from '@/lib/channels/messaging-channel'
 import type { Lead, Unit } from '@/lib/types'
@@ -485,10 +486,11 @@ export async function routeInboundMessage(params: InboundRouteParams): Promise<R
       // Vaga em sourcing/outreach/screening: resposta de status honesta
       const apiKey = getOpenAIApiKey()
       if (apiKey) {
+        const organizationProfile = await fetchOrganizationBusinessProfile(supabase, unitRow.org_id)
         const reply = await generateChatReply({
           apiKey,
           systemPrompt: [
-            buildRecruiterBasePrompt(config, unitRow),
+            buildRecruiterBasePrompt(config, unitRow, organizationProfile),
             `A empresa mandou mensagem sobre a vaga "${recruiterJob.title}", que está na etapa "${recruiterJob.status}" (busca/triagem de candidatos em andamento).`,
             'Responda a mensagem dela com base nisso: dê um status honesto e curto do processo e diga que volta com a shortlist em breve. Não invente números nem prazos exatos.',
           ].join(' '),

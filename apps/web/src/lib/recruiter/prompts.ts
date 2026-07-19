@@ -1,7 +1,7 @@
 import type { AgentConfig, AgentTone, Unit } from '@/lib/types'
 import { IDENTITY_AND_HANDOFF_RULES } from '@/lib/agent-identity'
 import { conversationLanguageDirective, unitDefaultLocale } from '@/lib/i18n/config'
-import { buildBusinessContext } from '@/lib/interview/engine'
+import { buildCombinedBusinessContext } from '@/lib/interview/engine'
 import { PROFILE_FIELDS, SCORING_RUBRIC, type JobOpening, type JobProfile } from './types'
 
 // Prompts internos do Recruiter (§9 da spec). A persona-base é
@@ -17,8 +17,12 @@ const TONE_LABEL: Record<AgentTone, string> = {
 }
 
 /** 9.1 — Sistema-base de todas as conversas do Recruiter. */
-export function buildRecruiterBasePrompt(config: AgentConfig, unit: Unit): string {
-  const businessContext = buildBusinessContext(config.business_profile)
+export function buildRecruiterBasePrompt(
+  config: AgentConfig,
+  unit: Unit,
+  organizationProfile?: Record<string, unknown> | null,
+): string {
+  const businessContext = buildCombinedBusinessContext(organizationProfile, config.business_profile)
   return [
     `Você é ${config.persona_name}, recrutador(a) digital da unidade ${unit.name}${unit.region_city ? ` (${unit.region_city})` : ''}.`,
     `Seu tom é ${TONE_LABEL[config.persona_tone]}.`,
@@ -38,9 +42,10 @@ export function buildCompanyIntakePrompt(
   unit: Unit,
   job: JobOpening,
   missingLabels: string[],
+  organizationProfile?: Record<string, unknown> | null,
 ): string {
   return [
-    buildRecruiterBasePrompt(config, unit),
+    buildRecruiterBasePrompt(config, unit, organizationProfile),
     `Você está conduzindo o levantamento de perfil da vaga "${job.title}" com a empresa cliente, com a postura consultiva de um recrutador sênior com mais de 20 anos de experiência.`,
     'Não é um formulário: é uma entrevista conduzida. Pergunte no máximo 2 ou 3 itens por mensagem, encadeando com o que a empresa acabou de dizer.',
     `Itens que ainda faltam levantar, em ordem de prioridade: ${missingLabels.join('; ')}.`,
@@ -87,10 +92,11 @@ export function buildOutreachPrompt(params: {
   candidateInstitution: string | null
   candidateSemester: number | null
   relevantSkills: string[]
+  organizationProfile?: Record<string, unknown> | null
 }): string {
-  const { config, unit, job, companyName, candidateFirstName } = params
+  const { config, unit, job, companyName, candidateFirstName, organizationProfile } = params
   return [
-    buildRecruiterBasePrompt(config, unit),
+    buildRecruiterBasePrompt(config, unit, organizationProfile),
     `Escreva a primeira mensagem de WhatsApp para ${candidateFirstName}${params.candidateCourse ? `, estudante de ${params.candidateCourse}` : ''}${params.candidateInstitution ? ` (${params.candidateInstitution}${params.candidateSemester ? `, ${params.candidateSemester}º semestre` : ''})` : ''}, sobre a vaga "${job.title}" na empresa ${companyName}${job.profile.city ? ` em ${job.profile.city}` : ''}.`,
     params.relevantSkills.length > 0
       ? `Conecte a vaga com o perfil dele: ${params.relevantSkills.join(', ')}.`
@@ -108,9 +114,10 @@ export function buildScreeningPrompt(params: {
   job: JobOpening
   companyName: string
   pendingTopics: string[]
+  organizationProfile?: Record<string, unknown> | null
 }): string {
   return [
-    buildRecruiterBasePrompt(params.config, params.unit),
+    buildRecruiterBasePrompt(params.config, params.unit, params.organizationProfile),
     `Você está fazendo a triagem do candidato para a vaga "${params.job.title}" na empresa ${params.companyName}.`,
     `Dados confirmados da vaga (única fonte de verdade — não invente nada além disto): ${JSON.stringify(params.job.profile)}.`,
     `Ainda falta confirmar com o candidato: ${params.pendingTopics.join('; ')}.`,
@@ -179,6 +186,7 @@ export function buildCompanyFollowUpPrompt(params: {
   presentedAt: string
   topCandidateFact: string | null
   previousFollowUps: string[]
+  organizationProfile?: Record<string, unknown> | null
 }): string {
   const angle =
     params.attempt === 1
@@ -187,7 +195,7 @@ export function buildCompanyFollowUpPrompt(params: {
         ? 'mencione que a disponibilidade real dos candidatos pode mudar (sem pressão artificial)'
         : 'ofereça ajustar a busca caso o perfil apresentado não tenha agradado'
   return [
-    buildRecruiterBasePrompt(params.config, params.unit),
+    buildRecruiterBasePrompt(params.config, params.unit, params.organizationProfile),
     `Tentativa ${params.attempt}/3. Escreva um follow-up curto e natural para a empresa sobre a shortlist da vaga "${params.job.title}", enviada em ${params.presentedAt}.`,
     `Ângulo desta tentativa: ${angle}.`,
     'Nunca soe como cobrança automática, nunca diga "só passando para lembrar".',
@@ -207,9 +215,10 @@ export function buildRejectionPrompt(params: {
   candidateFirstName: string
   realStrength: string | null
   keepInBank: boolean
+  organizationProfile?: Record<string, unknown> | null
 }): string {
   return [
-    buildRecruiterBasePrompt(params.config, params.unit),
+    buildRecruiterBasePrompt(params.config, params.unit, params.organizationProfile),
     `Escreva uma devolutiva breve, humana e respeitosa para ${params.candidateFirstName} sobre a vaga "${params.jobTitle}":`,
     'agradeça o tempo dele, informe que a empresa seguiu com outro perfil nesta vaga',
     params.realStrength ? `e reforce um ponto forte real dele: ${params.realStrength}.` : '.',
@@ -252,9 +261,14 @@ export function buildConfirmationClassifierPrompt(): string {
  * partir do contexto real da unidade/vaga — nunca um texto fixo — para
  * já nascer pronta para qualquer unidade, região ou parceiro.
  */
-export function buildSourcingStrategyPrompt(params: { config: AgentConfig; unit: Unit; job: JobOpening }): string {
-  const { config, unit, job } = params
-  const businessContext = buildBusinessContext(config.business_profile)
+export function buildSourcingStrategyPrompt(params: {
+  config: AgentConfig
+  unit: Unit
+  job: JobOpening
+  organizationProfile?: Record<string, unknown> | null
+}): string {
+  const { config, unit, job, organizationProfile } = params
+  const businessContext = buildCombinedBusinessContext(organizationProfile, config.business_profile)
   return [
     `Você é um consultor de recrutamento sênior ajudando a unidade ${unit.name}${unit.region_city ? ` (${unit.region_city}${unit.region_state ? `/${unit.region_state}` : ''})` : ''} a resolver um problema real: a busca por candidatos para a vaga "${job.title}" esgotou o banco disponível sem candidatos suficientes.`,
     conversationLanguageDirective(unitDefaultLocale(unit)),

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { generateChatReply, getOpenAIApiKey } from '@/lib/openai'
 import { sendRecruiterEmail } from '@/lib/email'
+import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
 import type { AgentConfig, Lead, Unit } from '@/lib/types'
 import { buildCompanyFollowUpPrompt, buildRejectionPrompt, buildRecruiterBasePrompt } from './prompts'
 import { sendToCandidate, sendToCompany } from './messaging'
@@ -33,12 +34,13 @@ export async function presentShortlist(
   const apiKey = getOpenAIApiKey()
   if (!apiKey) throw new Error('OPENAI_API_KEY não está configurada.')
 
+  const organizationProfile = await fetchOrganizationBusinessProfile(supabase, unit.org_id)
   const link = shortlistUrl(job.id)
   const count = shortlisted.length
   const shortText = await generateChatReply({
     apiKey,
     systemPrompt: [
-      buildRecruiterBasePrompt(config, unit),
+      buildRecruiterBasePrompt(config, unit, organizationProfile),
       `Avise a empresa que a seleção da vaga "${job.title}" está pronta: ${count} candidato(s) triado(s) e avaliado(s), com relatório individual em ${link}.`,
       count < job.target_shortlist_size
         ? `IMPORTANTE: a meta eram ${job.target_shortlist_size} candidatos, mas apenas ${count} passaram no corte de qualidade. Seja transparente sobre isso — nunca inflamos a lista com candidato abaixo do padrão.`
@@ -137,9 +139,10 @@ export async function sendCompanyFollowUp(
   const apiKey = getOpenAIApiKey()
   if (!apiKey) return false
 
+  const organizationProfile = await fetchOrganizationBusinessProfile(supabase, unit.org_id)
   const text = await generateChatReply({
     apiKey,
-    systemPrompt: buildCompanyFollowUpPrompt(params),
+    systemPrompt: buildCompanyFollowUpPrompt({ ...params, organizationProfile }),
     history: [{ role: 'user', content: 'Gere o follow-up.' }],
   })
   if (!text) return false
@@ -189,6 +192,7 @@ export async function sendRejectionFeedback(
 
   const strength = jc.report?.strengths?.[0] ?? null
   const keepInBank = !candidate.opted_out && candidate.consent_status !== 'revoked'
+  const organizationProfile = await fetchOrganizationBusinessProfile(supabase, unit.org_id)
 
   const text = await generateChatReply({
     apiKey,
@@ -199,6 +203,7 @@ export async function sendRejectionFeedback(
       candidateFirstName: candidate.name.split(' ')[0] ?? candidate.name,
       realStrength: strength,
       keepInBank,
+      organizationProfile,
     }),
     history: [{ role: 'user', content: 'Gere a devolutiva.' }],
   })

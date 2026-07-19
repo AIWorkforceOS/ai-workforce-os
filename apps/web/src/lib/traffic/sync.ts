@@ -40,6 +40,7 @@ import { classifyFunnelStage, evaluateAccount, strategyFromBusinessProfile } fro
 import { executeDecision } from './executor'
 import { buildHighlights, generateExecutiveSummary } from './reporting'
 import { syncCampaignsToSmarterMarketing } from './smarter-campaigns'
+import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
 import type { Unit } from '@/lib/types'
 import type {
   AdAccount,
@@ -252,10 +253,18 @@ export async function syncAndOptimizeAccount(
     const businessProfile = (trafficConfig as { business_profile?: Record<string, unknown> } | null)
       ?.business_profile
 
+    // Ficha compartilhada da organização (migration 025) soma-se à ficha
+    // específica do Gestor de Tráfego antes de derivar os alvos de
+    // estratégia — campos específicos do agente têm precedência em caso
+    // de conflito. Quando a ficha compartilhada está vazia (hoje, sempre),
+    // o resultado é idêntico a usar só businessProfile.
+    const organizationProfile = await fetchOrganizationBusinessProfile(supabase, (unitRow as Unit | null)?.org_id)
+    const mergedBusinessProfile = { ...(organizationProfile ?? {}), ...(businessProfile ?? {}) }
+
     const proposals = evaluateAccount({
       entities: engineEntities,
       metricsByEntity,
-      strategy: { ...strategyFromBusinessProfile(businessProfile), ...(account.strategy ?? {}) },
+      strategy: { ...strategyFromBusinessProfile(mergedBusinessProfile), ...(account.strategy ?? {}) },
     })
 
     // 4. Persistir decisões (dedupe: não repetir sugestão aberta igual) --

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { generateChatReply, generateStructuredReply, getOpenAIApiKey, type ChatMessage } from '@/lib/openai'
+import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
 import type { AgentConfig, Lead, Unit } from '@/lib/types'
 import {
   buildOutreachPrompt,
@@ -81,6 +82,7 @@ export async function sendOutreachBatch(
   const limits = getRecruiterLimits(config)
   const lead = await getLeadForJob(supabase, job)
   const companyName = lead?.company_name ?? unit.name
+  const organizationProfile = await fetchOrganizationBusinessProfile(supabase, unit.org_id)
 
   const { data } = await supabase
     .from('job_candidates')
@@ -111,6 +113,7 @@ export async function sendOutreachBatch(
         candidateInstitution: candidate.institution,
         candidateSemester: candidate.semester,
         relevantSkills: relevantSkills(candidate, job),
+        organizationProfile,
       }),
       history: [{ role: 'user', content: 'Gere a mensagem de primeiro contato.' }],
     })
@@ -178,6 +181,7 @@ export async function nudgeSilentCandidates(
 
   const limits = getRecruiterLimits(config)
   const cutoff = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString()
+  const organizationProfile = await fetchOrganizationBusinessProfile(supabase, unit.org_id)
 
   const { data } = await supabase
     .from('job_candidates')
@@ -211,6 +215,7 @@ export async function nudgeSilentCandidates(
           config, unit, job,
           companyName: unit.name,
           pendingTopics: ['interesse na vaga'],
+          organizationProfile,
         }),
         'O candidato não respondeu ao primeiro contato há 3 dias. Escreva UM reforço curto e leve, sem pressionar, reafirmando a oportunidade e facilitando a resposta ("posso te contar mais?").',
       ].join(' '),
@@ -276,6 +281,7 @@ export async function handleCandidateInbound(
   if (!apiKey) throw new Error('OPENAI_API_KEY não está configurada.')
 
   const companyName = params.lead?.company_name ?? unit.name
+  const organizationProfile = await fetchOrganizationBusinessProfile(supabase, unit.org_id)
 
   // 1. Opt-out determinístico (LGPD §18) — imediato, auditável
   if (detectsOptOut(text)) {
@@ -384,7 +390,7 @@ export async function handleCandidateInbound(
     const bye = await generateChatReply({
       apiKey,
       systemPrompt: [
-        buildScreeningPrompt({ config, unit, job, companyName, pendingTopics: [] }),
+        buildScreeningPrompt({ config, unit, job, companyName, pendingTopics: [], organizationProfile }),
         'O candidato declarou que não tem interesse. Agradeça com sinceridade, deseje sucesso e diga que ele segue no banco para oportunidades futuras mais alinhadas (se fizer sentido).',
       ].join(' '),
       history: await getCandidateHistory(supabase, candidate.id, job.id),
@@ -454,7 +460,7 @@ export async function handleCandidateInbound(
     const closing = await generateChatReply({
       apiKey,
       systemPrompt: [
-        buildScreeningPrompt({ config, unit, job, companyName, pendingTopics: [] }),
+        buildScreeningPrompt({ config, unit, job, companyName, pendingTopics: [], organizationProfile }),
         'A triagem terminou. Agradeça as respostas e explique o próximo passo com honestidade: o perfil dele será apresentado à empresa junto com outros candidatos, e você retorna com novidades em alguns dias. NÃO prometa vaga nem aprovação.',
       ].join(' '),
       history: [...history, { role: 'user', content: text }],
@@ -474,7 +480,7 @@ export async function handleCandidateInbound(
   // 8. Triagem continua: próxima resposta conversacional
   const reply = await generateChatReply({
     apiKey,
-    systemPrompt: buildScreeningPrompt({ config, unit, job, companyName, pendingTopics: pending }),
+    systemPrompt: buildScreeningPrompt({ config, unit, job, companyName, pendingTopics: pending, organizationProfile }),
     history: [...history, { role: 'user', content: text }],
   })
   if (reply) {

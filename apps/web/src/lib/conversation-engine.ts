@@ -12,7 +12,8 @@ import { sendEscalationEmail, sendTechnicalAlertEmail } from '@/lib/email'
 import { logSystemEvent, shouldNotifyForEvent, type SystemEventSource } from '@/lib/system-events'
 import { syncLeadToSmarterCrm } from '@/lib/sales/smarter-crm'
 import { IDENTITY_AND_HANDOFF_RULES } from '@/lib/agent-identity'
-import { buildBusinessContext } from '@/lib/interview/engine'
+import { buildCombinedBusinessContext } from '@/lib/interview/engine'
+import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
 import type { AgentConfig, AgentTone, Conversation, Lead, Unit, ActiveHours } from '@/lib/types'
 
 // Dados levantados pelo Sales Rep (AI) direto na conversa quando o
@@ -171,8 +172,13 @@ const SALES_EXPERTISE_RULES = [
   'Se o cliente pedir uma apresentação, catálogo, portfólio ou material sobre o negócio: você NÃO tem como enviar arquivos, então nunca prometa mandar um documento. Em vez disso, resuma ali mesmo na conversa, em poucas frases: a dor/problema do cliente, o que o produto/serviço resolve, e a vantagem concreta de fechar agora — sempre usando o que você aprendeu sobre a empresa.',
 ].join(' ')
 
-export function buildSystemPrompt(agentConfig: AgentConfig, unit: Unit, dealProfile?: SalesDealProfile): string {
-  const businessContext = buildBusinessContext(agentConfig.business_profile)
+export function buildSystemPrompt(
+  agentConfig: AgentConfig,
+  unit: Unit,
+  dealProfile?: SalesDealProfile,
+  organizationProfile?: Record<string, unknown> | null,
+): string {
+  const businessContext = buildCombinedBusinessContext(organizationProfile, agentConfig.business_profile)
   const profile = (agentConfig.business_profile ?? {}) as Record<string, unknown>
   const closesAlone = profile.fechamento === 'fecha_sozinho'
   const channelType = getUnitChannelType(unit)
@@ -559,11 +565,16 @@ export async function processInboundMessage(params: {
   }))
   chatHistory.push({ role: 'user', content: incomingText })
 
+  // Ficha da Empresa compartilhada entre todos os funcionários digitais
+  // (organizations.business_profile, migration 025) — soma-se à ficha
+  // específica deste Sales Rep sem substituí-la (buildCombinedBusinessContext).
+  const organizationProfile = await fetchOrganizationBusinessProfile(supabase, unit.org_id)
+
   let reply: string
   try {
     reply = await generateChatReply({
       apiKey,
-      systemPrompt: buildSystemPrompt(config, unit, dealProfile),
+      systemPrompt: buildSystemPrompt(config, unit, dealProfile, organizationProfile),
       history: chatHistory,
     })
   } catch (error) {

@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest'
 import {
   FINAL_QUESTION,
   buildBusinessContext,
+  buildCombinedBusinessContext,
+  buildInterviewerPrompt,
+  extractOrganizationIntake,
   isInterviewAgentType,
   mergeProfile,
   reduceInterview,
 } from '../engine'
-import type { InterviewTranscriptEntry } from '@/lib/types'
+import type { AgentConfig, InterviewTranscriptEntry, Unit } from '@/lib/types'
 
 // A regra verbatim do produto: "a última pergunta precisa ser sempre se
 // tem algo mais para passar". reduceInterview garante isso em código,
@@ -173,6 +176,91 @@ describe('buildBusinessContext', () => {
     const context = buildBusinessContext({ politica_desconto: 'até 10%' })
     expect(context).toContain('FICHA DA EMPRESA')
     expect(context).toContain('até 10%')
+  })
+})
+
+describe('buildCombinedBusinessContext — Ficha da Empresa compartilhada (migration 025)', () => {
+  const agentProfile = { politica_desconto: 'até 10%' }
+
+  it('regressão: com a ficha da organização vazia (todas as orgs hoje), o texto é IDÊNTICO ao de buildBusinessContext sozinho', () => {
+    expect(buildCombinedBusinessContext({}, agentProfile)).toBe(buildBusinessContext(agentProfile))
+    expect(buildCombinedBusinessContext(null, agentProfile)).toBe(buildBusinessContext(agentProfile))
+    expect(buildCombinedBusinessContext(undefined, agentProfile)).toBe(buildBusinessContext(agentProfile))
+  })
+
+  it('regressão: sem nenhum dos dois perfis, continua null', () => {
+    expect(buildCombinedBusinessContext({}, {})).toBeNull()
+    expect(buildCombinedBusinessContext(null, null)).toBeNull()
+  })
+
+  it('quando a organização já tem ficha, soma as duas com rótulos distintos', () => {
+    const combined = buildCombinedBusinessContext({ nome_empresa: 'Acme' }, agentProfile)
+    expect(combined).toContain('FICHA COMPARTILHADA DA EMPRESA')
+    expect(combined).toContain('Acme')
+    expect(combined).toContain('INFORMAÇÕES ESPECÍFICAS DESTE FUNCIONÁRIO')
+    expect(combined).toContain('até 10%')
+  })
+
+  it('ficha da organização sozinha (agente ainda sem entrevista) não quebra', () => {
+    const combined = buildCombinedBusinessContext({ nome_empresa: 'Acme' }, null)
+    expect(combined).toContain('FICHA COMPARTILHADA DA EMPRESA')
+    expect(combined).not.toContain('INFORMAÇÕES ESPECÍFICAS')
+  })
+})
+
+describe('extractOrganizationIntake', () => {
+  it('null enquanto o segmento não foi confirmado', () => {
+    expect(extractOrganizationIntake({})).toBeNull()
+    expect(extractOrganizationIntake({ org_vertical_key: 'cleaning_services' })).toBeNull()
+    expect(extractOrganizationIntake({ org_vertical_key: 'cleaning_services', org_vertical_confirmed: false })).toBeNull()
+  })
+
+  it('null com vertical_key inválida mesmo confirmada', () => {
+    expect(extractOrganizationIntake({ org_vertical_key: 'inventado', org_vertical_confirmed: true })).toBeNull()
+  })
+
+  it('extrai vertical_key + business_profile só com os campos org_* presentes, sem o prefixo', () => {
+    const result = extractOrganizationIntake({
+      org_vertical_key: 'therapy_clinic',
+      org_vertical_confirmed: true,
+      org_company_name: 'Clínica Bem-Estar',
+      org_languages: ['pt', 'en'],
+      fechamento: 'fecha_sozinho', // campo específico do agente — não deve vazar pro business_profile da org
+    })
+    expect(result).toEqual({
+      vertical_key: 'therapy_clinic',
+      business_profile: { company_name: 'Clínica Bem-Estar', languages: ['pt', 'en'] },
+    })
+  })
+})
+
+describe('runInterviewTurn — gate da Ficha da Empresa compartilhada', () => {
+  const unit = { name: 'Unidade Teste', region_city: 'Campinas' } as Unit
+  const config = {
+    id: 'cfg-1',
+    unit_id: 'unit-1',
+    agent_type: 'sdr',
+    persona_name: 'Kai',
+    persona_tone: 'friendly',
+    daily_limit: 15,
+    active_hours: { start: '08:00', end: '18:00', days: [1, 2, 3, 4, 5] },
+    escalation_rules: { after_messages: 5, keywords: [] },
+    sectors: [],
+    is_active: false,
+    created_at: '',
+    updated_at: '',
+  } as AgentConfig
+
+  it('sem includeOrgIntake (comportamento padrão), o prompt não pergunta segmento/identidade compartilhada', () => {
+    const prompt = buildInterviewerPrompt({ config, unit, profile: {}, finalAlreadyAsked: false })
+    expect(prompt).not.toContain('Ficha da Empresa compartilhada')
+    expect(prompt).not.toContain('org_vertical_key')
+  })
+
+  it('com includeOrgIntake=true, o prompt inclui o segmento e os fatos de identidade antes do roteiro do cargo', () => {
+    const prompt = buildInterviewerPrompt({ config, unit, profile: {}, finalAlreadyAsked: false, includeOrgIntake: true })
+    expect(prompt).toContain('segmento principal do negócio')
+    expect(prompt).toContain('org_vertical_confirmed')
   })
 })
 

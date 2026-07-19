@@ -206,6 +206,10 @@ export type Organization = {
   owner_email: string | null
   /** true só para organizações clientes/franquias da Smarter Estágios — controla se o sourcing usa a API de parceiros da Smarter (lib/recruiter/smarter-api.ts). */
   is_smarter_partner: boolean
+  /** Chave do segmento de negócio (ver lib/verticals/catalog.ts), migration 025. Null = ainda não definido. */
+  vertical_key: string | null
+  /** Ficha da empresa COMPARTILHADA entre todos os AI Employees da organização (migration 025). Distinta de agent_configs.business_profile. */
+  business_profile: Record<string, unknown>
   created_at: string
   updated_at: string
 }

@@ -1,5 +1,5 @@
 import { IDENTITY_AND_HANDOFF_RULES } from '@/lib/agent-identity'
-import { buildBusinessContext } from '@/lib/interview/engine'
+import { buildCombinedBusinessContext } from '@/lib/interview/engine'
 import { conversationLanguageDirective, unitDefaultLocale } from '@/lib/i18n/config'
 import type { AgentConfig, AgentTone, Unit } from '@/lib/types'
 
@@ -22,8 +22,12 @@ const TONE_LABEL: Record<AgentTone, string> = {
   formal: 'formal e cortês',
 }
 
-export function buildReceptionistSystemPrompt(agentConfig: AgentConfig, unit: Unit): string {
-  const businessContext = buildBusinessContext(agentConfig.business_profile)
+export function buildReceptionistSystemPrompt(
+  agentConfig: AgentConfig,
+  unit: Unit,
+  organizationProfile?: Record<string, unknown> | null,
+): string {
+  const businessContext = buildCombinedBusinessContext(organizationProfile, agentConfig.business_profile)
   const profile = (agentConfig.business_profile ?? {}) as Record<string, unknown>
   const locale = unitDefaultLocale(unit)
 

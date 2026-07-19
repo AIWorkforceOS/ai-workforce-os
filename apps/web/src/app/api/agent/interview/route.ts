@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getAppUser } from '@/lib/app-user'
 import { getOpenAIApiKey } from '@/lib/openai'
-import { isInterviewAgentType, runInterviewTurn } from '@/lib/interview/engine'
-import type { AgentConfig, InterviewTranscriptEntry, Unit } from '@/lib/types'
+import { extractOrganizationIntake, isInterviewAgentType, runInterviewTurn } from '@/lib/interview/engine'
+import type { AgentConfig, InterviewTranscriptEntry, Organization, Unit } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -23,14 +23,25 @@ async function loadConfig(configId: string) {
     .select('*')
     .eq('id', configId)
     .maybeSingle()
-  if (!config) return { supabase, config: null, unit: null }
+  if (!config) return { supabase, config: null, unit: null, organization: null }
 
   const { data: unit } = await supabase
     .from('units')
     .select('*')
     .eq('id', (config as AgentConfig).unit_id)
     .maybeSingle()
-  return { supabase, config: config as AgentConfig, unit: unit as Unit | null }
+
+  const orgId = (unit as Unit | null)?.org_id
+  const { data: organization } = orgId
+    ? await supabase.from('organizations').select('*').eq('id', orgId).maybeSingle()
+    : { data: null }
+
+  return {
+    supabase,
+    config: config as AgentConfig,
+    unit: unit as Unit | null,
+    organization: organization as Organization | null,
+  }
 }
 
 export async function GET(request: Request) {
@@ -65,7 +76,7 @@ export async function POST(request: Request) {
 
   if (!configId) return NextResponse.json({ error: 'configId é obrigatório.' }, { status: 400 })
 
-  const { supabase, config, unit } = await loadConfig(configId)
+  const { supabase, config, unit, organization } = await loadConfig(configId)
   if (!config || !unit) {
     return NextResponse.json({ error: 'Funcionário não encontrado ou sem acesso.' }, { status: 404 })
   }
@@ -86,7 +97,7 @@ export async function POST(request: Request) {
 
   let result
   try {
-    result = await runInterviewTurn({ apiKey, config, unit, userMessage: message })
+    result = await runInterviewTurn({ apiKey, config, unit, organization, userMessage: message })
   } catch (error) {
     console.error('[interview] OpenAI error:', error instanceof Error ? error.message : error)
     return NextResponse.json({ error: 'Não consegui gerar a próxima pergunta. Tente de novo.' }, { status: 502 })
@@ -112,6 +123,26 @@ export async function POST(request: Request) {
       },
       { status: 500 },
     )
+  }
+
+  // Ficha da Empresa compartilhada (organizations.vertical_key/business_profile,
+  // migration 025): só grava quando o chefe confirmou o segmento nesta
+  // entrevista e a organização ainda não tinha vertical_key — never sobrescreve
+  // uma ficha já definida (uma vez por organização). Best-effort: se falhar
+  // (ex.: migration 025 ainda não aplicada), a entrevista do funcionário já
+  // foi salva normalmente acima, então não retornamos erro por causa disso.
+  if (organization && !organization.vertical_key) {
+    const orgIntake = extractOrganizationIntake(result.profile)
+    if (orgIntake) {
+      const { error: orgSaveError } = await supabase
+        .from('organizations')
+        .update({ vertical_key: orgIntake.vertical_key, business_profile: orgIntake.business_profile })
+        .eq('id', organization.id)
+        .is('vertical_key', null)
+      if (orgSaveError) {
+        console.error('[interview] org intake persist error:', orgSaveError.message)
+      }
+    }
   }
 
   return NextResponse.json({ reply: result.reply, done: result.done })

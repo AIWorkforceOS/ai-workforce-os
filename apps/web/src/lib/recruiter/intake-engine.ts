@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { generateChatReply, generateStructuredReply, getOpenAIApiKey, type ChatMessage } from '@/lib/openai'
+import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
 import type { AgentConfig, Conversation, Lead, Unit } from '@/lib/types'
 import {
   buildCompanyIntakePrompt,
@@ -60,9 +61,10 @@ export async function startIntake(
   const apiKey = getOpenAIApiKey()
   if (!apiKey) throw new Error('OPENAI_API_KEY não está configurada.')
 
+  const organizationProfile = await fetchOrganizationBusinessProfile(supabase, unit.org_id)
   const missing = computeMissingFields(job.profile)
   const systemPrompt = [
-    buildCompanyIntakePrompt(config, unit, job, missingFieldLabels(missing)),
+    buildCompanyIntakePrompt(config, unit, job, missingFieldLabels(missing), organizationProfile),
     `Escreva a PRIMEIRA mensagem para ${lead.contact_name ?? `a empresa ${lead.company_name}`}: parabenize pela abertura da vaga "${job.title}", apresente-se como assistente digital de recrutamento e faça as 2 primeiras perguntas do levantamento.`,
   ].join(' ')
 
@@ -133,6 +135,7 @@ export async function handleCompanyIntakeInbound(
   const apiKey = getOpenAIApiKey()
   if (!apiKey) throw new Error('OPENAI_API_KEY não está configurada.')
 
+  const organizationProfile = await fetchOrganizationBusinessProfile(supabase, unit.org_id)
   const history = await getCompanyHistory(supabase, lead.id, job.created_at)
 
   // Perfil completo aguardando "ok" da empresa?
@@ -161,7 +164,7 @@ export async function handleCompanyIntakeInbound(
       const reply = await generateChatReply({
         apiKey,
         systemPrompt: [
-          buildCompanyIntakePrompt(config, unit, job, []),
+          buildCompanyIntakePrompt(config, unit, job, [], organizationProfile),
           'A empresa acabou de confirmar o perfil ideal. Agradeça e avise que você já vai começar a busca dos candidatos e volta em breve com novidades.',
         ].join(' '),
         history: [...history, { role: 'user', content: text }],
@@ -262,7 +265,7 @@ export async function handleCompanyIntakeInbound(
     const confirmText = await generateChatReply({
       apiKey,
       systemPrompt: [
-        buildCompanyIntakePrompt(config, unit, { ...job, profile: profileWithSummary }, []),
+        buildCompanyIntakePrompt(config, unit, { ...job, profile: profileWithSummary }, [], organizationProfile),
         `Todos os dados foram coletados. Apresente este resumo do perfil ideal para a empresa confirmar: "${synthesis.summary ?? ''}". Termine perguntando se é isso mesmo ou se algo precisa de ajuste.`,
       ].join(' '),
       history: [...history, { role: 'user', content: text }],
@@ -297,6 +300,7 @@ export async function handleCompanyIntakeInbound(
       unit,
       { ...job, profile: mergedProfile },
       missingFieldLabels(missing),
+      organizationProfile,
     ),
     history: [...history, { role: 'user', content: text }],
   })
@@ -328,11 +332,12 @@ export async function sendIntakeReminder(
   const apiKey = getOpenAIApiKey()
   if (!apiKey) return false
 
+  const organizationProfile = await fetchOrganizationBusinessProfile(supabase, unit.org_id)
   const history = await getCompanyHistory(supabase, lead.id, job.created_at)
   const text = await generateChatReply({
     apiKey,
     systemPrompt: [
-      buildCompanyIntakePrompt(config, unit, job, missingFieldLabels(job.profile_missing_fields)),
+      buildCompanyIntakePrompt(config, unit, job, missingFieldLabels(job.profile_missing_fields), organizationProfile),
       `A empresa parou de responder no meio do levantamento (lembrete ${attempt} de 2). Escreva uma retomada leve e útil: relembre em uma frase onde a conversa parou e repita a pergunta pendente de forma ainda mais fácil de responder.`,
     ].join(' '),
     history,

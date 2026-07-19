@@ -1,6 +1,7 @@
 import { generateStructuredReply, type ChatMessage } from '@/lib/openai'
 import { interviewLanguageDirective, interviewLanguageLabel, unitDefaultLocale, type Locale } from '@/lib/i18n/config'
-import type { AgentConfig, AgentTone, InterviewTranscriptEntry, Unit } from '@/lib/types'
+import { VERTICAL_TEMPLATES, type VerticalKey } from '@/lib/verticals/catalog'
+import type { AgentConfig, AgentTone, InterviewTranscriptEntry, Organization, Unit } from '@/lib/types'
 
 // Motor de entrevista/treinamento dos funcionários digitais.
 //
@@ -110,6 +111,31 @@ export const INTERVIEW_PLAYBOOKS: Record<InterviewAgentType, InterviewPlaybook> 
   },
 }
 
+// Ficha da Empresa compartilhada (organizations.vertical_key/business_profile,
+// migration 025, sub-etapa 2/7 de Business Profile + Vertical Templates).
+// Perguntada UMA VEZ por organização, só na primeira entrevista que começa
+// depois de a org ainda não ter vertical_key definido — ver runInterviewTurn
+// (gate por interview_status/profile.org_intake_started) e
+// extractOrganizationIntake (grava em organizations, nunca em
+// agent_configs.business_profile). Puramente aditivo: uma entrevista que já
+// estava em andamento antes desta mudança nunca ganha estes tópicos.
+
+function verticalOptionsLabel(locale: Locale): string {
+  return Object.values(VERTICAL_TEMPLATES)
+    .map((t) => (locale === 'en' ? t.labelEn : t.labelPt))
+    .join(', ')
+}
+
+function orgIntakeTopics(locale: Locale): string[] {
+  return [
+    `o segmento principal do negócio — apresente estas opções: ${verticalOptionsLabel(locale)}; se a resposta do chefe não se encaixar claramente em nenhuma, analise a descrição que ele der do negócio e sugira o segmento que parece mais adequado (ou "${locale === 'en' ? VERTICAL_TEMPLATES.other.labelEn : VERTICAL_TEMPLATES.other.labelPt}" se nenhum se encaixar bem) — em qualquer caso, SEMPRE peça confirmação explícita do chefe antes de registrar "org_vertical_confirmed": true`,
+    'um pequeno conjunto de fatos de identidade da empresa, compartilhados entre todos os funcionários digitais dela: nome oficial, descrição curta do negócio, principais diferenciais competitivos, tom de voz preferido no atendimento, idioma(s) em que a empresa atende, horário geral de funcionamento, e quais canais de atendimento ela usa',
+  ]
+}
+
+const ORG_INTAKE_PROFILE_SCHEMA_FRAGMENT =
+  '"org_vertical_key": "cleaning_services"|"therapy_clinic"|"other", "org_vertical_confirmed": boolean (só true depois de confirmado com o chefe), "org_company_name": string, "org_description": string, "org_differentiators": string[], "org_tone_of_voice": string, "org_languages": string[], "org_business_hours": string, "org_channels": string[]'
+
 export const FINAL_QUESTION =
   'Antes de eu começar a trabalhar: tem mais alguma coisa importante que eu deveria saber sobre a empresa ou sobre como você quer que eu trabalhe?'
 
@@ -156,16 +182,22 @@ export function buildInterviewerPrompt(params: {
   unit: Unit
   profile: Record<string, unknown>
   finalAlreadyAsked: boolean
+  /** true só na(s) entrevista(s) que ainda vão perguntar a Ficha da Empresa compartilhada (ver runInterviewTurn) */
+  includeOrgIntake?: boolean
 }): string {
-  const { config, unit, profile, finalAlreadyAsked } = params
+  const { config, unit, profile, finalAlreadyAsked, includeOrgIntake = false } = params
   const playbook = INTERVIEW_PLAYBOOKS[config.agent_type as InterviewAgentType]
-  const topics = playbook.requiredTopics.map((topic, i) => `${i + 1}) ${topic}`).join(' ')
   const locale = unitDefaultLocale(unit)
+  const allTopics = includeOrgIntake ? [...orgIntakeTopics(locale), ...playbook.requiredTopics] : playbook.requiredTopics
+  const topics = allTopics.map((topic, i) => `${i + 1}) ${topic}`).join(' ')
   return [
     `Você é ${config.persona_name}, ${playbook.roleLabel} digital recém-contratado(a) pela unidade ${unit.name}${unit.region_city ? ` (${unit.region_city})` : ''}. Quando começar a trabalhar, sua função será ${playbook.mission}.`,
     'AGORA você está na sua entrevista de contratação: quem fala com você é o seu novo chefe (dono ou gestor da empresa). Seu objetivo é aprender 100% sobre a empresa e sobre como ela quer que você trabalhe — fazendo as perguntas certas, melhor do que qualquer funcionário humano faria.',
     'COMO CONDUZIR: você faz as perguntas e o chefe responde. No máximo 2 perguntas por mensagem, começando pelas mais importantes. Adapte as próximas perguntas ao que já foi respondido: se uma resposta abrir um desdobramento importante (ex.: "vendemos 3 produtos"), aprofunde antes de mudar de assunto (pergunte preço e detalhe de cada um dos 3). Se uma resposta for vaga ou ambígua, peça UM esclarecimento objetivo antes de avançar.',
     `Seu tom é ${TONE_LABEL[config.persona_tone]}. ${interviewLanguageDirective(locale)} Mensagens curtas, sem markdown.`,
+    includeOrgIntake
+      ? 'Esta empresa ainda não tem uma Ficha da Empresa compartilhada entre os funcionários digitais dela — comece a entrevista pelos tópicos 1 e 2 (identidade da empresa e segmento de negócio) antes de entrar nos tópicos específicos do seu cargo.'
+      : '',
     `TÓPICOS OBRIGATÓRIOS (todos precisam estar cobertos antes de encerrar): ${topics}`,
     'REGRA INEGOCIÁVEL DO ENCERRAMENTO:',
     `- Quando (e somente quando) todos os tópicos obrigatórios estiverem cobertos, sua próxima mensagem deve ser a pergunta final: "${finalQuestionFor(locale)}" (pode adaptar as palavras, nunca o sentido) — e nela marque "asked_final_question": true.`,
@@ -178,6 +210,9 @@ export function buildInterviewerPrompt(params: {
     'FORMATO DA RESPOSTA — responda SOMENTE um JSON válido no formato:',
     '{"message": "sua próxima mensagem para o chefe", "profile_updates": { apenas os campos aprendidos com a ÚLTIMA resposta dele }, "asked_final_question": boolean, "interview_complete": boolean}',
     `Schema do perfil (preencha nesses nomes de campo): ${playbook.profileSchema}.`,
+    includeOrgIntake
+      ? `Além desse schema, quando cobrir os tópicos 1 e 2 (e SOMENTE depois de o chefe confirmar o segmento), inclua também estes campos no profile_updates: ${ORG_INTAKE_PROFILE_SCHEMA_FRAGMENT}.`
+      : '',
     'Em "observacoes" acumule instruções extras que não cabem nos outros campos — sempre envie o array COMPLETO atualizado. Em campos de lista (ex.: "produtos"), envie a lista completa atualizada quando ela mudar. Não invente valores: registre apenas o que o chefe disse.',
     playbook.extraGuidance?.(locale) ?? '',
   ]
@@ -277,9 +312,11 @@ export async function runInterviewTurn(params: {
   apiKey: string
   config: AgentConfig
   unit: Unit
+  /** Organização dona da unidade — usada só para decidir/gravar a Ficha da Empresa compartilhada (vertical_key/business_profile, migration 025). Ausente/null = nunca pergunta a ficha compartilhada, comportamento idêntico ao de hoje. */
+  organization?: Organization | null
   userMessage: string | null
 }): Promise<InterviewTurnResult> {
-  const { apiKey, config, unit, userMessage } = params
+  const { apiKey, config, unit, organization = null, userMessage } = params
   if (!isInterviewAgentType(config.agent_type)) {
     throw new Error(`Tipo de agente sem entrevista de contratação: ${config.agent_type}`)
   }
@@ -300,6 +337,19 @@ export async function runInterviewTurn(params: {
     })
   }
 
+  // Só pergunta a Ficha da Empresa compartilhada enquanto a org ainda não
+  // tem vertical_key E (a) esta é a entrevista que está começando agora
+  // (interview_status ainda 'pending' — nunca reabre uma entrevista já em
+  // andamento antes desta mudança) OU (b) ela mesma já iniciou esse
+  // sub-roteiro num turno anterior (profile.org_intake_started, marcado
+  // logo abaixo) — assim o tópico continua lembrado turno a turno até o
+  // chefe confirmar o segmento, do mesmo jeito que os tópicos do playbook.
+  const includeOrgIntake =
+    Boolean(organization) &&
+    !organization!.vertical_key &&
+    profile.org_vertical_confirmed !== true &&
+    ((config.interview_status ?? 'pending') === 'pending' || profile.org_intake_started === true)
+
   const output = await generateStructuredReply<InterviewerOutput>({
     apiKey,
     systemPrompt: buildInterviewerPrompt({
@@ -307,12 +357,17 @@ export async function runInterviewTurn(params: {
       unit,
       profile,
       finalAlreadyAsked: lastAssistantAskedFinal(transcript),
+      includeOrgIntake,
     }),
     history,
     maxTokens: 900,
   })
 
-  return reduceInterview({ profile, transcript, output, locale: unitDefaultLocale(unit) })
+  const result = reduceInterview({ profile, transcript, output, locale: unitDefaultLocale(unit) })
+  if (includeOrgIntake && result.profile.org_intake_started !== true) {
+    result.profile = { ...result.profile, org_intake_started: true }
+  }
+  return result
 }
 
 /**
@@ -327,4 +382,64 @@ export function buildBusinessContext(profile: Record<string, unknown> | null | u
     JSON.stringify(profile),
     'Use essas informações ativamente nas conversas e decisões; NÃO invente nada que não esteja na ficha.',
   ].join(' ')
+}
+
+/**
+ * Compõe a Ficha da Empresa compartilhada (organizations.business_profile,
+ * migration 025) com a ficha específica de um funcionário
+ * (agent_configs.business_profile) — usada pelos 4 prompts de sistema
+ * (Sales, Recrutador, Receptionist, Tráfego). Quando a ficha compartilhada
+ * ainda está vazia (todas as organizações hoje), o texto produzido é
+ * IDÊNTICO ao de `buildBusinessContext(agentProfile)` sozinho — nenhuma
+ * organização já entrevistada nesta sub-etapa perde ou ganha comportamento.
+ */
+export function buildCombinedBusinessContext(
+  organizationProfile: Record<string, unknown> | null | undefined,
+  agentProfile: Record<string, unknown> | null | undefined,
+): string | null {
+  const orgContext = buildBusinessContext(organizationProfile)
+  const agentContext = buildBusinessContext(agentProfile)
+  if (!orgContext) return agentContext
+  const orgBlock = [
+    'FICHA COMPARTILHADA DA EMPRESA — vale para todos os funcionários digitais desta empresa, aprendida na entrevista de contratação de um deles:',
+    JSON.stringify(organizationProfile),
+    'Use essas informações ativamente; NÃO invente nada que não esteja nelas.',
+  ].join(' ')
+  return agentContext ? `${orgBlock} INFORMAÇÕES ESPECÍFICAS DESTE FUNCIONÁRIO: ${agentContext}` : orgBlock
+}
+
+export type OrganizationIntakeResult = { vertical_key: VerticalKey; business_profile: Record<string, unknown> }
+
+const ORG_INTAKE_FIELD_MAP: [string, string][] = [
+  ['org_company_name', 'company_name'],
+  ['org_description', 'description'],
+  ['org_differentiators', 'differentiators'],
+  ['org_tone_of_voice', 'tone_of_voice'],
+  ['org_languages', 'languages'],
+  ['org_business_hours', 'business_hours'],
+  ['org_channels', 'channels'],
+]
+
+function isVerticalKey(value: unknown): value is VerticalKey {
+  return value === 'cleaning_services' || value === 'therapy_clinic' || value === 'other'
+}
+
+/**
+ * Função pura e separada de `mergeProfile` (que continua gravando só em
+ * agent_configs.business_profile, sem alteração): a partir do profile do
+ * AGENTE após um turno de entrevista, decide se o chefe acabou de confirmar
+ * o segmento/identidade da empresa — e se sim, devolve o que gravar em
+ * organizations.vertical_key/business_profile. Retorna null enquanto não
+ * houver confirmação explícita (`org_vertical_confirmed !== true`).
+ */
+export function extractOrganizationIntake(profile: Record<string, unknown>): OrganizationIntakeResult | null {
+  if (profile.org_vertical_confirmed !== true) return null
+  if (!isVerticalKey(profile.org_vertical_key)) return null
+
+  const business_profile: Record<string, unknown> = {}
+  for (const [from, to] of ORG_INTAKE_FIELD_MAP) {
+    const value = profile[from]
+    if (value !== undefined) business_profile[to] = value
+  }
+  return { vertical_key: profile.org_vertical_key, business_profile }
 }

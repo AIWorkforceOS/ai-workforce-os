@@ -105,3 +105,42 @@ describe('consumo do business_profile no trabalho real', () => {
     expect(strategyFromBusinessProfile(null)).toEqual({})
   })
 })
+
+// Sub-etapa 2/7 de Business Profile + Vertical Templates: a Ficha da
+// Empresa compartilhada (organizations.business_profile, migration 025)
+// passou a somar-se à ficha de cada agente nestes 2 prompts. Garantia de
+// não regressão: TODA organização hoje tem business_profile = {} (a
+// migration acabou de rodar), então o texto produzido tem que ficar
+// byte-a-byte igual ao de antes desta mudança.
+describe('regressão — organização com business_profile={} não muda nenhum prompt existente', () => {
+  const profile = {
+    produtos: [{ nome: 'Plano Pro', preco: 'R$ 997/mês' }],
+    politica_desconto: 'até 15% pra fechar no ato',
+    fechamento: 'fecha_sozinho',
+  }
+
+  it('buildSystemPrompt do SDR: com organizationProfile={} é idêntico a não passar o parâmetro', () => {
+    const config = makeConfig({ business_profile: profile })
+    const before = buildSystemPrompt(config, unit)
+    const after = buildSystemPrompt(config, unit, undefined, {})
+    expect(after).toBe(before)
+    expect(buildSystemPrompt(config, unit, undefined, null)).toBe(before)
+  })
+
+  it('buildRecruiterBasePrompt: com organizationProfile={} é idêntico a não passar o parâmetro', () => {
+    const config = makeConfig({ agent_type: 'recruiter', business_profile: { segmento: 'estágios em TI' } })
+    const before = buildRecruiterBasePrompt(config, unit)
+    const after = buildRecruiterBasePrompt(config, unit, {})
+    expect(after).toBe(before)
+    expect(buildRecruiterBasePrompt(config, unit, null)).toBe(before)
+  })
+
+  it('quando a organização JÁ tem ficha compartilhada, os prompts passam a incluí-la além da ficha do agente', () => {
+    const config = makeConfig({ business_profile: profile })
+    const orgProfile = { nome_empresa: 'Acme Ltda', idiomas: ['pt'] }
+    const prompt = buildSystemPrompt(config, unit, undefined, orgProfile)
+    expect(prompt).toContain('FICHA COMPARTILHADA DA EMPRESA')
+    expect(prompt).toContain('Acme Ltda')
+    expect(prompt).toContain('R$ 997/mês') // ficha específica do agente continua presente
+  })
+})
