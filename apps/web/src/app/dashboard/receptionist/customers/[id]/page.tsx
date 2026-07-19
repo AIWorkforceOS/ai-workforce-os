@@ -7,6 +7,7 @@ import { CustomerDetailForm } from '@/components/dashboard/customer-detail-form'
 import type { Customer, Unit } from '@/lib/types'
 import { fetchOrganizationVerticalKey } from '@/lib/organizations'
 import { getCustomerTerm } from '@/lib/verticals/terminology'
+import { VERTICAL_TEMPLATES } from '@/lib/verticals/catalog'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,6 +25,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
   const verticalKey = await fetchOrganizationVerticalKey(supabase, customerRow.org_id)
   const term = getCustomerTerm(verticalKey, 'pt')
   const termPlural = getCustomerTerm(verticalKey, 'pt', { plural: true })
+  const customFieldSchema = verticalKey ? VERTICAL_TEMPLATES[verticalKey].customerFieldSchema : []
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
@@ -42,7 +44,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
       </div>
 
       <Card className="p-6">
-        <CustomerDetailForm customer={customerRow} customerTerm={term} />
+        <CustomerDetailForm customer={customerRow} customerTerm={term} customFieldSchema={customFieldSchema} />
       </Card>
     </div>
   )

@@ -155,6 +155,8 @@ export type Customer = {
   tags: string[]
   source: string
   notes: string | null
+  /** campos dinâmicos por segmento de negócio (ex.: quartos/banheiros em cleaning) — schema em lib/verticals/catalog.ts (migration 025) */
+  custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
 }

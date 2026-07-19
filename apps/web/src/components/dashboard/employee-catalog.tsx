@@ -16,6 +16,8 @@ import {
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Card, brandGradient } from '@/components/ui/dashboard-ui'
+import { computeTrainingCompleteness } from '@/lib/interview/completeness'
+import type { VerticalKey } from '@/lib/verticals/catalog'
 import type { AgentConfig, Unit } from '@/lib/types'
 
 // Catálogo dos funcionários digitais: a empresa vê os 3 disponíveis, ativa
@@ -47,12 +49,14 @@ export function EmployeeCatalog({
   openJobs,
   adAccounts,
   customers,
+  verticalKey,
 }: {
   units: Unit[]
   configs: AgentConfig[]
   openJobs: number
   adAccounts: number
   customers: number
+  verticalKey?: VerticalKey | null
 }) {
   const whatsappConnected = units.some((u) => !!u.whatsapp_phone)
   const sdr = configs.find((c) => c.agent_type === 'sdr')
@@ -108,6 +112,7 @@ export function EmployeeCatalog({
           state={sdr?.is_active && whatsappConnected ? 'working' : sdr || whatsappConnected ? 'configuring' : 'available'}
           panelHref="/dashboard/agents"
           personaName={sdr?.persona_name ?? null}
+          trainingScore={sdr ? computeTrainingCompleteness(sdr, verticalKey) : null}
         />
         <EmployeeCatalogCard
           icon={Briefcase}
@@ -123,6 +128,7 @@ export function EmployeeCatalog({
           panelHref="/dashboard/recruiter"
           personaName={recruiter?.persona_name ?? null}
           activation={{ agentType: 'recruiter', config: recruiter ?? null, units, askName: true, defaultName: 'Rafa' }}
+          trainingScore={recruiter ? computeTrainingCompleteness(recruiter, verticalKey) : null}
         />
         <EmployeeCatalogCard
           icon={Megaphone}
@@ -138,6 +144,7 @@ export function EmployeeCatalog({
           panelHref="/dashboard/traffic"
           personaName={null}
           activation={{ agentType: 'traffic_specialist', config: traffic ?? null, units, askName: false, defaultName: 'Gestor de Tráfego' }}
+          trainingScore={traffic ? computeTrainingCompleteness(traffic, verticalKey) : null}
         />
         <EmployeeCatalogCard
           icon={Headset}
@@ -153,6 +160,7 @@ export function EmployeeCatalog({
           panelHref="/dashboard/receptionist"
           personaName={receptionist?.persona_name ?? null}
           activation={{ agentType: 'receptionist', config: receptionist ?? null, units, askName: true, defaultName: 'Ana' }}
+          trainingScore={receptionist ? computeTrainingCompleteness(receptionist, verticalKey) : null}
         />
       </div>
 
@@ -184,6 +192,7 @@ function EmployeeCatalogCard({
   panelHref,
   personaName,
   activation,
+  trainingScore,
 }: {
   icon: typeof Bot
   name: string
@@ -195,6 +204,8 @@ function EmployeeCatalogCard({
   personaName: string | null
   /** ausente no SDR — a ativação dele acontece no passo a passo guiado */
   activation?: ActivationProps
+  /** null = funcionário ainda não foi contratado (sem agent_configs) */
+  trainingScore?: number | null
 }) {
   const stateMeta = STATE_META[state]
   const nextStep = steps.find((s) => !s.done)
@@ -205,10 +216,15 @@ function EmployeeCatalogCard({
         <div className="flex h-11 w-11 items-center justify-center rounded-2xl" style={{ background: brandGradient, boxShadow: '0 4px 12px rgba(6,182,212,0.25)' }}>
           <Icon size={18} className="text-white" />
         </div>
-        <span className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold" style={stateMeta.style}>
-          <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'currentColor' }} />
-          {stateMeta.label}
-        </span>
+        <div className="flex flex-col items-end gap-1">
+          <span className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold" style={stateMeta.style}>
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'currentColor' }} />
+            {stateMeta.label}
+          </span>
+          {trainingScore !== null && trainingScore !== undefined && (
+            <span className="text-[10px] font-bold text-slate-500">Treinamento: {trainingScore}%</span>
+          )}
+        </div>
       </div>
 
       <div>

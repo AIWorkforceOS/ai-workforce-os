@@ -43,6 +43,11 @@ export async function POST(request: Request) {
     ? body.tags.filter((t: unknown) => typeof t === 'string' && t.trim().length > 0)
     : []
 
+  const customFields: Record<string, unknown> =
+    body?.custom_fields && typeof body.custom_fields === 'object' && !Array.isArray(body.custom_fields)
+      ? body.custom_fields
+      : {}
+
   const { data: customer, error } = await supabase
     .from('customers')
     .insert({
@@ -56,6 +61,7 @@ export async function POST(request: Request) {
       tags,
       source: 'manual',
       notes: body?.notes?.trim() || null,
+      custom_fields: customFields,
     })
     .select('*')
     .single()

@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getAppUser } from '@/lib/app-user'
 import { fetchOrganizationVerticalKey } from '@/lib/organizations'
 import { getCustomerTerm } from '@/lib/verticals/terminology'
+import { VERTICAL_TEMPLATES } from '@/lib/verticals/catalog'
 import { NewCustomerForm } from '@/components/dashboard/new-customer-form'
 
 export const dynamic = 'force-dynamic'
@@ -12,6 +13,7 @@ export default async function NewCustomerPage() {
   const verticalKey = await fetchOrganizationVerticalKey(supabase, appUser?.orgId)
   const term = getCustomerTerm(verticalKey, 'pt')
   const termPlural = getCustomerTerm(verticalKey, 'pt', { plural: true })
+  const customFieldSchema = verticalKey ? VERTICAL_TEMPLATES[verticalKey].customerFieldSchema : []
 
-  return <NewCustomerForm customerTerm={term} customerTermPlural={termPlural} />
+  return <NewCustomerForm customerTerm={term} customerTermPlural={termPlural} customFieldSchema={customFieldSchema} />
 }

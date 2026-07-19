@@ -4,7 +4,7 @@ import { getAppUser } from '@/lib/app-user'
 
 export const dynamic = 'force-dynamic'
 
-const EDITABLE_FIELDS = ['name', 'phone', 'email', 'address', 'city', 'status', 'tags', 'notes'] as const
+const EDITABLE_FIELDS = ['name', 'phone', 'email', 'address', 'city', 'status', 'tags', 'notes', 'custom_fields'] as const
 
 /**
  * PATCH /api/customers/[id] — edição de um cliente já cadastrado
@@ -37,6 +37,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       update.tags = Array.isArray(body.tags)
         ? body.tags.filter((t: unknown) => typeof t === 'string' && t.trim().length > 0)
         : []
+      continue
+    }
+    if (field === 'custom_fields') {
+      update.custom_fields =
+        body.custom_fields && typeof body.custom_fields === 'object' && !Array.isArray(body.custom_fields)
+          ? body.custom_fields
+          : {}
       continue
     }
     update[field] = typeof body[field] === 'string' ? body[field].trim() || null : body[field]

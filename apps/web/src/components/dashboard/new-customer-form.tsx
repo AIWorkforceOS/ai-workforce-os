@@ -6,10 +6,20 @@ import Link from 'next/link'
 import { UserPlus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { FormSection, Input, Label, Select, Textarea } from '@/components/ui/dashboard-ui'
+import { DynamicFieldsForm } from '@/components/dashboard/dynamic-fields-form'
+import type { DynamicField } from '@/lib/verticals/catalog'
 
 type UnitOption = { id: string; name: string }
 
-export function NewCustomerForm({ customerTerm, customerTermPlural }: { customerTerm: string; customerTermPlural: string }) {
+export function NewCustomerForm({
+  customerTerm,
+  customerTermPlural,
+  customFieldSchema,
+}: {
+  customerTerm: string
+  customerTermPlural: string
+  customFieldSchema: DynamicField[]
+}) {
   const router = useRouter()
   const [units, setUnits] = useState<UnitOption[]>([])
   const [form, setForm] = useState({
@@ -22,6 +32,7 @@ export function NewCustomerForm({ customerTerm, customerTermPlural }: { customer
     tags: '',
     notes: '',
   })
+  const [customFields, setCustomFields] = useState<Record<string, unknown>>({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -59,6 +70,7 @@ export function NewCustomerForm({ customerTerm, customerTermPlural }: { customer
           city: form.city.trim() || null,
           tags: form.tags.split(',').map((t) => t.trim()).filter(Boolean),
           notes: form.notes.trim() || null,
+          custom_fields: customFields,
         }),
       })
       const data = await res.json()
@@ -128,28 +140,40 @@ export function NewCustomerForm({ customerTerm, customerTermPlural }: { customer
             <Label>Observações</Label>
             <Textarea rows={3} value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} placeholder={`Qualquer detalhe útil sobre este ${customerTerm.toLowerCase()}`} />
           </div>
-
-          {error && <p className="text-sm text-red-400">{error}</p>}
-
-          <div className="flex gap-3 pt-2">
-            <button
-              type="submit"
-              disabled={busy}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
-              style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
-            >
-              <UserPlus size={14} />
-              {busy ? 'Salvando...' : `Cadastrar ${customerTerm.toLowerCase()}`}
-            </button>
-            <Link
-              href="/dashboard/receptionist/customers"
-              className="rounded-xl px-4 py-2 text-sm text-slate-300 hover:bg-white/5"
-              style={{ border: '1px solid rgba(255,255,255,0.08)' }}
-            >
-              Cancelar
-            </Link>
-          </div>
         </FormSection>
+
+        {customFieldSchema.length > 0 && (
+          <div className="mt-6">
+            <FormSection title="Informações específicas">
+              <DynamicFieldsForm
+                fields={customFieldSchema}
+                values={customFields}
+                onChange={(key, value) => setCustomFields((f) => ({ ...f, [key]: value }))}
+              />
+            </FormSection>
+          </div>
+        )}
+
+        {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
+
+        <div className="mt-6 flex gap-3">
+          <button
+            type="submit"
+            disabled={busy}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+            style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
+          >
+            <UserPlus size={14} />
+            {busy ? 'Salvando...' : `Cadastrar ${customerTerm.toLowerCase()}`}
+          </button>
+          <Link
+            href="/dashboard/receptionist/customers"
+            className="rounded-xl px-4 py-2 text-sm text-slate-300 hover:bg-white/5"
+            style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+          >
+            Cancelar
+          </Link>
+        </div>
       </form>
     </div>
   )
