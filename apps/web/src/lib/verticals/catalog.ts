@@ -2,6 +2,10 @@ import type { InterviewAgentType } from '@/lib/interview/engine'
 
 export type VerticalKey = 'cleaning_services' | 'therapy_clinic' | 'other'
 
+export function isVerticalKey(value: unknown): value is VerticalKey {
+  return value === 'cleaning_services' || value === 'therapy_clinic' || value === 'other'
+}
+
 export type DynamicField = {
   key: string
   label: string

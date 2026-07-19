@@ -6,7 +6,7 @@ import { Check, Loader2 } from 'lucide-react'
 import { FormSection, Input, Label, Select, Textarea } from '@/components/ui/dashboard-ui'
 import type { Customer, CustomerStatus } from '@/lib/types'
 
-export function CustomerDetailForm({ customer }: { customer: Customer }) {
+export function CustomerDetailForm({ customer, customerTerm }: { customer: Customer; customerTerm: string }) {
   const router = useRouter()
   const [form, setForm] = useState({
     phone: customer.phone ?? '',
@@ -54,7 +54,7 @@ export function CustomerDetailForm({ customer }: { customer: Customer }) {
   }
 
   return (
-    <FormSection title="Dados do cliente">
+    <FormSection title={`Dados do ${customerTerm.toLowerCase()}`}>
       <div className="grid grid-cols-2 gap-3">
         <div className="flex flex-col gap-1.5">
           <Label>Telefone</Label>

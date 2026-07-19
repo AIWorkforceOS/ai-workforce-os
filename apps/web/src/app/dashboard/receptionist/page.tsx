@@ -2,6 +2,9 @@ import { Headset, TrendingUp, UserPlus, Users } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { Badge, type BadgeVariant, Card, EmptyState, PageHeader, PrimaryButton } from '@/components/ui/dashboard-ui'
 import type { Customer } from '@/lib/types'
+import { getAppUser } from '@/lib/app-user'
+import { fetchOrganizationVerticalKey } from '@/lib/organizations'
+import { getCustomerTerm } from '@/lib/verticals/terminology'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,6 +25,10 @@ function daysAgo(n: number): Date {
 
 export default async function ReceptionistHomePage() {
   const supabase = await createClient()
+  const appUser = await getAppUser()
+  const verticalKey = await fetchOrganizationVerticalKey(supabase, appUser?.orgId)
+  const term = getCustomerTerm(verticalKey, 'pt')
+  const termPlural = getCustomerTerm(verticalKey, 'pt', { plural: true })
 
   const { data: customers } = await supabase
     .from('customers')
@@ -32,14 +39,14 @@ export default async function ReceptionistHomePage() {
   if (rows.length === 0) {
     return (
       <div className="flex flex-col gap-6">
-        <PageHeader eyebrow="ai receptionist" title="AI Receptionist" subtitle="Organiza o atendimento e mantém o cadastro de clientes em dia." />
+        <PageHeader eyebrow="ai receptionist" title="AI Receptionist" subtitle={`Organiza o atendimento e mantém o cadastro de ${termPlural.toLowerCase()} em dia.`} />
         <Card>
           <EmptyState
             icon={<Headset size={22} className="text-white" />}
-            title="Nenhum cliente cadastrado ainda"
-            subtitle="Clientes aparecem aqui assim que o Sales Rep fechar um negócio, ou você pode cadastrar um manualmente."
+            title={`Nenhum ${term.toLowerCase()} cadastrado ainda`}
+            subtitle={`${termPlural} aparecem aqui assim que o Sales Rep fechar um negócio, ou você pode cadastrar um manualmente.`}
             actionHref="/dashboard/receptionist/customers/new"
-            actionLabel="Cadastrar cliente"
+            actionLabel={`Cadastrar ${term.toLowerCase()}`}
           />
         </Card>
       </div>
@@ -59,7 +66,7 @@ export default async function ReceptionistHomePage() {
   }
 
   const kpis = [
-    { label: 'Total de clientes', value: rows.length, sub: 'na base', icon: Users, grad: 'from-cyan-400 to-blue-500' },
+    { label: `Total de ${termPlural.toLowerCase()}`, value: rows.length, sub: 'na base', icon: Users, grad: 'from-cyan-400 to-blue-500' },
     { label: 'Novos na semana', value: newThisWeek, sub: 'últimos 7 dias', icon: UserPlus, grad: 'from-emerald-400 to-green-500' },
     { label: 'Ativos', value: byStatus.get('active') ?? 0, sub: 'status ativo', icon: TrendingUp, grad: 'from-violet-400 to-purple-500' },
   ]
@@ -69,8 +76,8 @@ export default async function ReceptionistHomePage() {
       <PageHeader
         eyebrow="ai receptionist"
         title="AI Receptionist"
-        subtitle="Organiza o atendimento e mantém o cadastro de clientes em dia."
-        action={<PrimaryButton href="/dashboard/receptionist/customers/new" icon={<UserPlus size={14} />}>Novo cliente</PrimaryButton>}
+        subtitle={`Organiza o atendimento e mantém o cadastro de ${termPlural.toLowerCase()} em dia.`}
+        action={<PrimaryButton href="/dashboard/receptionist/customers/new" icon={<UserPlus size={14} />}>Novo {term.toLowerCase()}</PrimaryButton>}
       />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

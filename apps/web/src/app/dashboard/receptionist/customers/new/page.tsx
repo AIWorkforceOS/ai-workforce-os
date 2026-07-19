@@ -1,156 +1,17 @@
-'use client'
+import { createClient } from '@/lib/supabase/server'
+import { getAppUser } from '@/lib/app-user'
+import { fetchOrganizationVerticalKey } from '@/lib/organizations'
+import { getCustomerTerm } from '@/lib/verticals/terminology'
+import { NewCustomerForm } from '@/components/dashboard/new-customer-form'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import Link from 'next/link'
-import { UserPlus } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
-import { FormSection, Input, Label, Select, Textarea } from '@/components/ui/dashboard-ui'
+export const dynamic = 'force-dynamic'
 
-type UnitOption = { id: string; name: string }
+export default async function NewCustomerPage() {
+  const supabase = await createClient()
+  const appUser = await getAppUser()
+  const verticalKey = await fetchOrganizationVerticalKey(supabase, appUser?.orgId)
+  const term = getCustomerTerm(verticalKey, 'pt')
+  const termPlural = getCustomerTerm(verticalKey, 'pt', { plural: true })
 
-export default function NewCustomerPage() {
-  const router = useRouter()
-  const [units, setUnits] = useState<UnitOption[]>([])
-  const [form, setForm] = useState({
-    unit_id: '',
-    name: '',
-    phone: '',
-    email: '',
-    address: '',
-    city: '',
-    tags: '',
-    notes: '',
-  })
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    const supabase = createClient()
-    supabase
-      .from('units')
-      .select('id, name')
-      .order('name')
-      .then(({ data }) => {
-        const rows = (data ?? []) as UnitOption[]
-        setUnits(rows)
-        if (rows.length > 0) setForm((f) => ({ ...f, unit_id: f.unit_id || rows[0]!.id }))
-      })
-  }, [])
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!form.name.trim() || !form.unit_id) {
-      setError('Escolha a unidade e o nome do cliente.')
-      return
-    }
-    setBusy(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/customers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          unit_id: form.unit_id,
-          name: form.name.trim(),
-          phone: form.phone.trim() || null,
-          email: form.email.trim() || null,
-          address: form.address.trim() || null,
-          city: form.city.trim() || null,
-          tags: form.tags.split(',').map((t) => t.trim()).filter(Boolean),
-          notes: form.notes.trim() || null,
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        setError(data.error ?? 'Não foi possível cadastrar o cliente. Tente novamente.')
-        setBusy(false)
-        return
-      }
-      router.push(data.customer?.id ? `/dashboard/receptionist/customers/${data.customer.id}` : '/dashboard/receptionist/customers')
-      router.refresh()
-    } catch {
-      setError('Falha de conexão. Tente novamente.')
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-6">
-      <div>
-        <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">ai receptionist</p>
-        <Link href="/dashboard/receptionist/customers" className="text-sm text-slate-400 hover:text-white">← Clientes</Link>
-        <h1 className="mt-2 text-2xl font-black tracking-tight text-white">Novo cliente</h1>
-      </div>
-
-      <form onSubmit={handleSubmit}>
-        <FormSection title="Dados do cliente">
-          <div className="flex flex-col gap-1.5">
-            <Label>Unidade *</Label>
-            <Select value={form.unit_id} onChange={(e) => setForm((f) => ({ ...f, unit_id: e.target.value }))}>
-              {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-            </Select>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label>Nome *</Label>
-            <Input required value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Nome do cliente ou da empresa" />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1.5">
-              <Label>Telefone</Label>
-              <Input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="(11) 99999-9999" />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>E-mail</Label>
-              <Input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="cliente@email.com" />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1.5">
-              <Label>Endereço</Label>
-              <Input value={form.address} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} placeholder="Rua, número" />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>Cidade</Label>
-              <Input value={form.city} onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))} placeholder="Cidade" />
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label>Tags</Label>
-            <Input value={form.tags} onChange={(e) => setForm((f) => ({ ...f, tags: e.target.value }))} placeholder="separadas por vírgula, ex: vip, recorrente" />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label>Observações</Label>
-            <Textarea rows={3} value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Qualquer detalhe útil sobre este cliente" />
-          </div>
-
-          {error && <p className="text-sm text-red-400">{error}</p>}
-
-          <div className="flex gap-3 pt-2">
-            <button
-              type="submit"
-              disabled={busy}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
-              style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
-            >
-              <UserPlus size={14} />
-              {busy ? 'Salvando...' : 'Cadastrar cliente'}
-            </button>
-            <Link
-              href="/dashboard/receptionist/customers"
-              className="rounded-xl px-4 py-2 text-sm text-slate-300 hover:bg-white/5"
-              style={{ border: '1px solid rgba(255,255,255,0.08)' }}
-            >
-              Cancelar
-            </Link>
-          </div>
-        </FormSection>
-      </form>
-    </div>
-  )
+  return <NewCustomerForm customerTerm={term} customerTermPlural={termPlural} />
 }

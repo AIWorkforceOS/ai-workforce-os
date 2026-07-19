@@ -2,6 +2,9 @@ import Link from 'next/link'
 import { UserPlus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import type { Customer, Unit } from '@/lib/types'
+import { getAppUser } from '@/lib/app-user'
+import { fetchOrganizationVerticalKey } from '@/lib/organizations'
+import { getCustomerTerm } from '@/lib/verticals/terminology'
 import {
   Badge,
   type BadgeVariant,
@@ -46,6 +49,10 @@ export default async function ReceptionistCustomersPage({
   const offset = (page - 1) * PAGE_SIZE
 
   const supabase = await createClient()
+  const appUser = await getAppUser()
+  const verticalKey = await fetchOrganizationVerticalKey(supabase, appUser?.orgId)
+  const term = getCustomerTerm(verticalKey, 'pt')
+  const termPlural = getCustomerTerm(verticalKey, 'pt', { plural: true })
 
   const { data: units } = await supabase.from('units').select('id, name').order('name')
   const unitRows = (units ?? []) as Pick<Unit, 'id' | 'name'>[]
@@ -80,9 +87,9 @@ export default async function ReceptionistCustomersPage({
     <div className="flex flex-col gap-6">
       <PageHeader
         eyebrow="ai receptionist"
-        title="Clientes"
-        subtitle={`Cadastro de clientes de todas as unidades.${total > 0 ? ` ${total} no total.` : ''}`}
-        action={<PrimaryButton href="/dashboard/receptionist/customers/new" icon={<UserPlus size={14} />}>Novo cliente</PrimaryButton>}
+        title={termPlural}
+        subtitle={`Cadastro de ${termPlural.toLowerCase()} de todas as unidades.${total > 0 ? ` ${total} no total.` : ''}`}
+        action={<PrimaryButton href="/dashboard/receptionist/customers/new" icon={<UserPlus size={14} />}>Novo {term.toLowerCase()}</PrimaryButton>}
       />
 
       <Card className="p-4">
@@ -139,10 +146,10 @@ export default async function ReceptionistCustomersPage({
         {rows.length === 0 ? (
           <EmptyState
             icon={<UserPlus size={22} className="text-white" />}
-            title="Nenhum cliente encontrado"
-            subtitle={hasFilters ? 'Ajuste os filtros ou cadastre um novo cliente.' : 'Clientes aparecem aqui automaticamente quando um negócio fecha, ou cadastre um manualmente.'}
+            title={`Nenhum ${term.toLowerCase()} encontrado`}
+            subtitle={hasFilters ? `Ajuste os filtros ou cadastre um novo ${term.toLowerCase()}.` : `${termPlural} aparecem aqui automaticamente quando um negócio fecha, ou cadastre um manualmente.`}
             actionHref="/dashboard/receptionist/customers/new"
-            actionLabel="Cadastrar cliente"
+            actionLabel={`Cadastrar ${term.toLowerCase()}`}
           />
         ) : (
           <table className="w-full text-left text-sm">

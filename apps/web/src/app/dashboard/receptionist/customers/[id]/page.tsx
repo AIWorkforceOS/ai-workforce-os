@@ -5,6 +5,8 @@ import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/dashboard-ui'
 import { CustomerDetailForm } from '@/components/dashboard/customer-detail-form'
 import type { Customer, Unit } from '@/lib/types'
+import { fetchOrganizationVerticalKey } from '@/lib/organizations'
+import { getCustomerTerm } from '@/lib/verticals/terminology'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,6 +21,10 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
   const { data: unit } = await supabase.from('units').select('id, name').eq('id', customerRow.unit_id).maybeSingle()
   const unitRow = unit as Pick<Unit, 'id' | 'name'> | null
 
+  const verticalKey = await fetchOrganizationVerticalKey(supabase, customerRow.org_id)
+  const term = getCustomerTerm(verticalKey, 'pt')
+  const termPlural = getCustomerTerm(verticalKey, 'pt', { plural: true })
+
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
       <div>
@@ -26,7 +32,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
           href="/dashboard/receptionist/customers"
           className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-slate-200"
         >
-          <ArrowLeft size={12} /> Voltar pra clientes
+          <ArrowLeft size={12} /> Voltar pra {termPlural.toLowerCase()}
         </Link>
         <h1 className="mt-2 text-2xl font-black tracking-tight text-white">{customerRow.name}</h1>
         <p className="mt-0.5 text-sm text-slate-400">
@@ -36,7 +42,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
       </div>
 
       <Card className="p-6">
-        <CustomerDetailForm customer={customerRow} />
+        <CustomerDetailForm customer={customerRow} customerTerm={term} />
       </Card>
     </div>
   )
