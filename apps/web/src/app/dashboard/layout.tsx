@@ -69,7 +69,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     <div className="flex h-dvh overflow-hidden" style={{ background: '#0a0f1e' }}>
       {/* Sidebar fixa — só em desktop; em mobile vira drawer (MobileSidebar no header) */}
       <div className="hidden flex-shrink-0 lg:flex">
-        <Sidebar userEmail={email} role={appUser.role} />
+        <Sidebar userEmail={email} role={appUser.role} unitId={appUser.unitId} />
       </div>
 
       <div className="flex flex-1 flex-col overflow-hidden">
@@ -85,7 +85,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           }}
         >
           <div className="flex items-center gap-2">
-            <MobileSidebar userEmail={email} role={appUser.role} />
+            <MobileSidebar userEmail={email} role={appUser.role} unitId={appUser.unitId} />
             <img src="/branding/alizo-icon.png" alt="Alizo" className="h-6 w-auto" />
             <p className="text-[14px] font-black tracking-tight text-white">alizo</p>
             <span style={{ color: 'rgba(255,255,255,0.2)' }}>/</span>

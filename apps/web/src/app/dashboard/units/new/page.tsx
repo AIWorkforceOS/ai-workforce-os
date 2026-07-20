@@ -1,4 +1,5 @@
 import { headers } from 'next/headers'
+import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getAppUser } from '@/lib/app-user'
 import { LOCALE_HEADER, isLocale, DEFAULT_LOCALE } from '@/lib/i18n/config'
@@ -10,6 +11,13 @@ export default async function NewUnitPage({
   searchParams: Promise<{ org_id?: string }>
 }) {
   const appUser = await getAppUser()
+
+  // Dono de unidade não pode criar unidade (units_write exige can_access_unit
+  // do id novo, que nunca é o dele) — evita o erro confuso de RLS no submit.
+  if (appUser?.unitId) {
+    redirect(`/dashboard/units/${appUser.unitId}`)
+  }
+
   const { org_id: orgIdParam } = await searchParams
 
   // Sugestão automática de idioma da unidade pelo país do IP de quem está

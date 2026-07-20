@@ -11,7 +11,15 @@ import { Sidebar } from './sidebar'
  * Hambúrguer + drawer da sidebar para telas < lg. Em desktop a sidebar fixa
  * do layout continua sendo usada — aqui nada é renderizado (lg:hidden).
  */
-export function MobileSidebar({ userEmail, role = 'admin' }: { userEmail: string; role?: string }) {
+export function MobileSidebar({
+  userEmail,
+  role = 'admin',
+  unitId = null,
+}: {
+  userEmail: string
+  role?: string
+  unitId?: string | null
+}) {
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
   const locale = useLocale()
@@ -54,7 +62,7 @@ export function MobileSidebar({ userEmail, role = 'admin' }: { userEmail: string
 
           {/* Painel do drawer */}
           <div className="absolute inset-y-0 left-0 w-64" style={{ boxShadow: '8px 0 24px rgba(0,0,0,0.5)' }}>
-            <Sidebar userEmail={userEmail} role={role} onNavigate={() => setOpen(false)} />
+            <Sidebar userEmail={userEmail} role={role} unitId={unitId} onNavigate={() => setOpen(false)} />
           </div>
 
           <button

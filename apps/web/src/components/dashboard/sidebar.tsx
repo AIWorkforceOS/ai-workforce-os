@@ -87,10 +87,13 @@ function getInitials(email: string): string {
 export function Sidebar({
   userEmail,
   role = 'admin',
+  unitId = null,
   onNavigate,
 }: {
   userEmail: string
   role?: string
+  /** users.unit_id — preenchido = dono de unidade (só acessa a própria unidade) */
+  unitId?: string | null
   /** chamado ao clicar num link — usado pelo drawer mobile pra fechar */
   onNavigate?: () => void
 }) {
@@ -102,7 +105,14 @@ export function Sidebar({
   const visibleGroups = navGroups
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => isSuperAdmin || !item.superOnly),
+      items: group.items
+        .filter((item) => isSuperAdmin || !item.superOnly)
+        .map((item) =>
+          // Dono de unidade não gerencia a lista de unidades — vai direto pra sua
+          item.href === '/dashboard/units' && unitId
+            ? { ...item, href: `/dashboard/units/${unitId}`, label: { pt: 'Minha unidade', en: 'My unit' } as Record<Locale, string> }
+            : item,
+        ),
     }))
     .filter((group) => group.items.length > 0)
 

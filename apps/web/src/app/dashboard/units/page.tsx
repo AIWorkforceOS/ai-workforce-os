@@ -1,11 +1,22 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { getAppUser } from '@/lib/app-user'
 import { CopyWhatsAppLink } from '@/components/dashboard/copy-whatsapp-link'
 import type { Unit } from '@/lib/types'
 import { Plus, MapPin } from 'lucide-react'
 import { Badge, Card, EmptyState, PageHeader, PrimaryButton, TableShell, Td, Th, Tr } from '@/components/ui/dashboard-ui'
 
 export default async function UnitsPage() {
+  const appUser = await getAppUser()
+
+  // Dono de unidade não gerencia lista de unidades: a listagem seria uma
+  // tabela de 1 linha (RLS só devolve a própria) e "Nova unidade" falharia
+  // no RLS — vai direto pra tela da unidade dele.
+  if (appUser?.unitId) {
+    redirect(`/dashboard/units/${appUser.unitId}`)
+  }
+
   const supabase = await createClient()
   const { data: units } = await supabase
     .from('units')
