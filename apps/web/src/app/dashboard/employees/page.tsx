@@ -1,4 +1,3 @@
-import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { Users, Plus } from 'lucide-react'
 import { Badge, type BadgeVariant, Card, EmptyState, PageHeader, PrimaryButton, TableShell, Td, Th, Tr } from '@/components/ui/dashboard-ui'
@@ -78,9 +77,7 @@ export default async function EmployeesPage() {
               {employees.map((emp) => (
                 <Tr key={emp.id}>
                   <Td>
-                    <Link href={`/dashboard/employees/${emp.id}`} className="font-semibold text-white transition-colors hover:text-cyan-400">
-                      {emp.name}
-                    </Link>
+                    <span className="font-semibold text-white">{emp.name}</span>
                   </Td>
                   <Td>
                     <p className="font-medium text-slate-300">{emp.organizations?.name ?? '—'}</p>

@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { Card, TableCard, TableShell, Td, Th, Tr } from '@/components/ui/dashboard-ui'
 import type { Candidate, JobCandidate, JobOpening } from '@/lib/recruiter/types'
 
 export const dynamic = 'force-dynamic'
@@ -8,11 +9,6 @@ export const dynamic = 'force-dynamic'
 // Apresentação da shortlist (§7.6): página autenticada que a empresa
 // (usuária da org) recebe por link — capa com a vaga e o perfil ideal,
 // 1 card por candidato com o relatório completo e tabela comparativa.
-
-const cardStyle = {
-  background: '#141a2b',
-  boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)',
-} as const
 
 type Row = JobCandidate & { candidates: Candidate | null }
 
@@ -39,7 +35,7 @@ export default async function ShortlistPage({ params }: { params: Promise<{ id: 
   return (
     <div className="flex flex-col gap-6">
       {/* Capa */}
-      <div className="rounded-2xl p-6" style={cardStyle}>
+      <Card className="p-6">
         <Link href={`/dashboard/recruiter/jobs/${job.id}`} className="text-xs font-bold text-slate-500 hover:text-cyan-400">
           ← Detalhes da vaga
         </Link>
@@ -53,47 +49,43 @@ export default async function ShortlistPage({ params }: { params: Promise<{ id: 
           {rows.length} candidato(s) triado(s) e avaliado(s) pelo Recruiter IA. Notas de 0 a 100 com
           rubrica fixa e justificativa — pontos fracos incluídos por princípio de transparência.
         </p>
-      </div>
+      </Card>
 
       {rows.length === 0 && (
-        <div className="rounded-2xl p-6 text-sm text-slate-400" style={cardStyle}>
+        <Card className="p-6 text-sm text-slate-400">
           A shortlist ainda não está pronta — os candidatos aparecem aqui quando a triagem termina.
-        </div>
+        </Card>
       )}
 
       {/* Tabela comparativa */}
       {rows.length > 1 && (
-        <div className="overflow-x-auto rounded-2xl" style={cardStyle}>
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                <th className="px-5 py-3">Candidato</th>
-                <th className="px-5 py-3">Curso</th>
-                <th className="px-5 py-3">Nota</th>
-                <th className="px-5 py-3">Compatibilidade</th>
-                <th className="px-5 py-3">Risco</th>
-                <th className="px-5 py-3">Disponibilidade</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.id} className="border-t" style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
-                  <td className="px-5 py-3 font-semibold text-white">
-                    {row.candidates!.name}
-                    {row.stage === 'approved' && <span className="ml-2 text-emerald-400">✓</span>}
-                  </td>
-                  <td className="px-5 py-3 text-slate-400">{row.candidates!.course ?? '—'}</td>
-                  <td className="px-5 py-3 font-black text-white">{row.ai_score ?? '—'}</td>
-                  <td className="px-5 py-3 text-slate-300">{row.report?.compatibility_pct ?? '—'}%</td>
-                  <td className="px-5 py-3 font-bold" style={{ color: RISK_COLOR[row.report?.risk ?? ''] ?? '#94a3b8' }}>
-                    {row.report?.risk ?? '—'}
-                  </td>
-                  <td className="px-5 py-3 text-slate-400">{row.report?.availability || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <TableCard>
+          <TableShell>
+            <Th>Candidato</Th>
+            <Th>Curso</Th>
+            <Th>Nota</Th>
+            <Th>Compatibilidade</Th>
+            <Th>Risco</Th>
+            <Th>Disponibilidade</Th>
+          </TableShell>
+          <tbody>
+            {rows.map((row) => (
+              <Tr key={row.id}>
+                <Td className="font-semibold text-white">
+                  {row.candidates!.name}
+                  {row.stage === 'approved' && <span className="ml-2 text-emerald-400">✓</span>}
+                </Td>
+                <Td className="text-slate-400">{row.candidates!.course ?? '—'}</Td>
+                <Td className="font-black text-white">{row.ai_score ?? '—'}</Td>
+                <Td className="text-slate-300">{row.report?.compatibility_pct ?? '—'}%</Td>
+                <Td className="font-bold">
+                  <span style={{ color: RISK_COLOR[row.report?.risk ?? ''] ?? '#94a3b8' }}>{row.report?.risk ?? '—'}</span>
+                </Td>
+                <Td className="text-slate-400">{row.report?.availability || '—'}</Td>
+              </Tr>
+            ))}
+          </tbody>
+        </TableCard>
       )}
 
       {/* 1 card por candidato */}
@@ -101,7 +93,7 @@ export default async function ShortlistPage({ params }: { params: Promise<{ id: 
         const candidate = row.candidates!
         const report = row.report
         return (
-          <div key={row.id} className="rounded-2xl p-6" style={cardStyle}>
+          <Card key={row.id} className="p-6">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-black text-white">
@@ -171,19 +163,19 @@ export default async function ShortlistPage({ params }: { params: Promise<{ id: 
             ) : (
               <p className="mt-3 text-sm text-slate-500">Relatório em produção.</p>
             )}
-          </div>
+          </Card>
         )
       })}
 
       {/* Próximos passos */}
       {rows.length > 0 && (
-        <div className="rounded-2xl p-5 text-sm text-slate-400" style={cardStyle}>
+        <Card className="p-5 text-sm text-slate-400">
           <p className="font-bold text-slate-300">Próximos passos</p>
           <p className="mt-1">
             Responda no WhatsApp com o candidato escolhido (ou marque na página da vaga). Precisa de um
             perfil diferente? Diga o ajuste — o Recruiter refaz a busca com o novo direcionamento.
           </p>
-        </div>
+        </Card>
       )}
     </div>
   )

@@ -3,14 +3,10 @@ import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { JOB_STATUS_LABEL, CANDIDATE_STAGE_LABEL, PROFILE_FIELD_LABEL } from '@/lib/recruiter/ui'
 import { JobActions, SelectCandidateButton } from '@/components/dashboard/job-actions'
+import { Card } from '@/components/ui/dashboard-ui'
 import type { Candidate, JobCandidate, JobOpening } from '@/lib/recruiter/types'
 
 export const dynamic = 'force-dynamic'
-
-const cardStyle = {
-  background: '#141a2b',
-  boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)',
-} as const
 
 type JcRow = JobCandidate & { candidates: Candidate | null }
 type DecisionRow = {
@@ -110,7 +106,7 @@ export default async function RecruiterJobPage({ params }: { params: Promise<{ i
       </div>
 
       {/* Perfil ideal */}
-      <div className="rounded-2xl p-5" style={cardStyle}>
+      <Card className="p-5">
         <h2 className="text-sm font-black uppercase tracking-wide text-slate-300">Perfil ideal</h2>
         {job.profile.ideal_profile_summary && (
           <p className="mt-2 text-sm text-slate-300">{job.profile.ideal_profile_summary}</p>
@@ -128,10 +124,10 @@ export default async function RecruiterJobPage({ params }: { params: Promise<{ i
             </div>
           ))}
         </div>
-      </div>
+      </Card>
 
       {/* Pipeline de candidatos */}
-      <div className="rounded-2xl p-5" style={cardStyle}>
+      <Card className="p-5">
         <h2 className="text-sm font-black uppercase tracking-wide text-slate-300">
           Pipeline de candidatos ({rows.length})
         </h2>
@@ -192,11 +188,11 @@ export default async function RecruiterJobPage({ params }: { params: Promise<{ i
             )
           })}
         </div>
-      </div>
+      </Card>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Decision log */}
-        <div className="rounded-2xl p-5" style={cardStyle}>
+        <Card className="p-5">
           <h2 className="text-sm font-black uppercase tracking-wide text-slate-300">
             Decision log — por que a IA fez cada coisa
           </h2>
@@ -217,10 +213,10 @@ export default async function RecruiterJobPage({ params }: { params: Promise<{ i
               </div>
             ))}
           </div>
-        </div>
+        </Card>
 
         {/* Eventos do processo */}
-        <div className="rounded-2xl p-5" style={cardStyle}>
+        <Card className="p-5">
           <h2 className="text-sm font-black uppercase tracking-wide text-slate-300">Linha do tempo do processo</h2>
           <div className="mt-3 flex max-h-[480px] flex-col gap-2 overflow-y-auto pr-1">
             {events.length === 0 && <p className="text-sm text-slate-500">Nenhum evento ainda.</p>}
@@ -237,7 +233,7 @@ export default async function RecruiterJobPage({ params }: { params: Promise<{ i
               </div>
             ))}
           </div>
-        </div>
+        </Card>
       </div>
     </div>
   )

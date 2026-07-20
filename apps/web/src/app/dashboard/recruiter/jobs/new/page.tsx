@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Briefcase, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { Card, Input, Label, Select, Textarea } from '@/components/ui/dashboard-ui'
+import { Card, Input, Label, PageHeader, Select, Textarea, brandGradient } from '@/components/ui/dashboard-ui'
 
 type UnitOption = { id: string; name: string }
 
@@ -76,14 +76,11 @@ export default function NewJobPage() {
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
-      <div>
-        <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">recrutador digital</p>
-        <h1 className="mt-0.5 text-2xl font-black tracking-tight text-white">Abrir uma vaga</h1>
-        <p className="mt-1 text-sm text-slate-400">
-          Conte o essencial — depois o recrutador conversa com você pelo WhatsApp pra fechar os
-          detalhes do perfil ideal antes de sair divulgando.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="recrutador digital"
+        title="Abrir uma vaga"
+        subtitle="Conte o essencial — depois o recrutador conversa com você pelo WhatsApp pra fechar os detalhes do perfil ideal antes de sair divulgando."
+      />
 
       <form onSubmit={handleSubmit}>
         <Card className="flex flex-col gap-5 p-6">
@@ -155,7 +152,7 @@ export default function NewJobPage() {
               type="submit"
               disabled={busy}
               className="flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-black text-white disabled:opacity-60"
-              style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
+              style={{ background: brandGradient, boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
             >
               {busy ? <Loader2 size={14} className="animate-spin" /> : <Briefcase size={14} />}
               {busy ? 'Abrindo vaga...' : 'Abrir vaga'}

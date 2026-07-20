@@ -1,8 +1,21 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { Plus, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { Lead, LeadStatus } from '@/lib/types'
+import {
+  Badge,
+  type BadgeVariant,
+  Input,
+  KpiCard,
+  Label,
+  PageHeader,
+  Select,
+  Textarea,
+  brandGradient,
+  cardShadow,
+} from '@/components/ui/dashboard-ui'
 
 // ── Column definitions ────────────────────────────────────────────────────────
 const COLUMNS: {
@@ -10,73 +23,62 @@ const COLUMNS: {
   label: string
   accent: string        // gradient top bar
   bg: string            // column bg
-  badgeBg: string
-  badgeColor: string
+  variant: BadgeVariant // count badge
 }[] = [
   {
     status: 'new',
     label: 'Novo',
     accent: 'linear-gradient(90deg,#64748b,#94a3b8)',
     bg: 'rgba(255,255,255,0.02)',
-    badgeBg: 'rgba(255,255,255,0.08)',
-    badgeColor: '#cbd5e1',
+    variant: 'slate',
   },
   {
     status: 'contacted',
     label: 'Em Contato',
     accent: 'linear-gradient(90deg,#2563eb,#3b82f6)',
     bg: 'rgba(59,130,246,0.04)',
-    badgeBg: 'rgba(59,130,246,0.15)',
-    badgeColor: '#60a5fa',
+    variant: 'blue',
   },
   {
     status: 'replied',
     label: 'Respondeu',
     accent: 'linear-gradient(90deg,#d97706,#f59e0b)',
     bg: 'rgba(245,158,11,0.04)',
-    badgeBg: 'rgba(245,158,11,0.15)',
-    badgeColor: '#fbbf24',
+    variant: 'amber',
   },
   {
     status: 'negotiating',
     label: 'Negociando',
     accent: 'linear-gradient(90deg,#7c3aed,#a78bfa)',
     bg: 'rgba(139,92,246,0.04)',
-    badgeBg: 'rgba(139,92,246,0.15)',
-    badgeColor: '#a78bfa',
+    variant: 'purple',
   },
   {
     status: 'won',
     label: 'Convertido',
     accent: 'linear-gradient(90deg,#16a34a,#22c55e)',
     bg: 'rgba(34,197,94,0.04)',
-    badgeBg: 'rgba(34,197,94,0.15)',
-    badgeColor: '#4ade80',
+    variant: 'green',
   },
   {
     status: 'lost',
     label: 'Perdido',
     accent: 'linear-gradient(90deg,#dc2626,#f87171)',
     bg: 'rgba(239,68,68,0.04)',
-    badgeBg: 'rgba(239,68,68,0.15)',
-    badgeColor: '#f87171',
+    variant: 'red',
   },
 ]
 
 const PIPELINE_ORDER: LeadStatus[] = ['new', 'contacted', 'replied', 'negotiating', 'won', 'lost']
 
 const SOURCE_LABEL: Record<string, string> = {
-  whatsapp: '📱 WhatsApp',
-  instagram: '📸 Instagram',
-  indicacao: '🤝 Indicação',
-  site: '🌐 Site',
-  linkedin: '💼 LinkedIn',
-  manual: '✍️ Manual',
+  whatsapp: 'WhatsApp',
+  instagram: 'Instagram',
+  indicacao: 'Indicação',
+  site: 'Site',
+  linkedin: 'LinkedIn',
+  manual: 'Manual',
 }
-
-const brandGradient = 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)'
-const fieldStyle = { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }
-const fieldClass = 'w-full rounded-xl px-3 py-2 text-sm text-white placeholder-slate-600 outline-none transition-colors focus:border-cyan-500/50'
 
 function daysSince(dateStr: string | null): number {
   if (!dateStr) return 0
@@ -154,7 +156,7 @@ function AddLeadModal({
       style={{ background: 'rgba(0,0,0,0.6)' }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="w-full max-w-md rounded-2xl" style={{ background: '#141a2b', boxShadow: '0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.08)' }}>
+      <div className="w-full max-w-md rounded-2xl bg-[#141a2b]" style={{ boxShadow: `0 20px 60px rgba(0,0,0,0.5), ${cardShadow}` }}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
           <div>
@@ -162,9 +164,7 @@ function AddLeadModal({
             <p className="text-xs text-slate-500">Adicionar manualmente ao pipeline</p>
           </div>
           <button onClick={onClose} className="rounded-lg p-1.5 text-slate-500 hover:bg-white/5 hover:text-slate-300">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path d="M18 6L6 18M6 6l12 12"/>
-            </svg>
+            <X size={16} strokeWidth={2.5} />
           </button>
         </div>
 
@@ -174,58 +174,58 @@ function AddLeadModal({
             <p className="rounded-lg px-3 py-2 text-xs text-red-400" style={{ background: 'rgba(239,68,68,0.1)' }}>{error}</p>
           )}
           <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
-              <label className="mb-1 block text-xs font-medium text-slate-400">Empresa *</label>
-              <input
-                className={fieldClass}
-                style={fieldStyle}
+            <div className="col-span-2 flex flex-col gap-1">
+              <Label htmlFor="lead-company">Empresa *</Label>
+              <Input
+                id="lead-company"
+                className="w-full"
                 placeholder="Ex: Imobiliária Silva"
                 value={form.company_name}
                 onChange={(e) => set('company_name', e.target.value)}
               />
             </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-400">Contato</label>
-              <input
-                className={fieldClass}
-                style={fieldStyle}
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="lead-contact">Contato</Label>
+              <Input
+                id="lead-contact"
+                className="w-full"
                 placeholder="Nome"
                 value={form.contact_name}
                 onChange={(e) => set('contact_name', e.target.value)}
               />
             </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-400">WhatsApp</label>
-              <input
-                className={fieldClass}
-                style={fieldStyle}
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="lead-phone">WhatsApp</Label>
+              <Input
+                id="lead-phone"
+                className="w-full"
                 placeholder="+55 11 9..."
                 value={form.phone}
                 onChange={(e) => set('phone', e.target.value)}
               />
             </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-400">Origem</label>
-              <select className={fieldClass} style={fieldStyle} value={form.source} onChange={(e) => set('source', e.target.value)}>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="lead-source">Origem</Label>
+              <Select id="lead-source" className="w-full" value={form.source} onChange={(e) => set('source', e.target.value)}>
                 {Object.entries(SOURCE_LABEL).map(([k, v]) => (
-                  <option key={k} value={k}>{v.replace(/^.{2}/, '').trim()}</option>
+                  <option key={k} value={k}>{v}</option>
                 ))}
-              </select>
+              </Select>
             </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-400">Unidade *</label>
-              <select className={fieldClass} style={fieldStyle} value={form.unit_id} onChange={(e) => set('unit_id', e.target.value)}>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="lead-unit">Unidade *</Label>
+              <Select id="lead-unit" className="w-full" value={form.unit_id} onChange={(e) => set('unit_id', e.target.value)}>
                 {units.map((u) => (
                   <option key={u.id} value={u.id}>{u.name}</option>
                 ))}
-              </select>
+              </Select>
             </div>
-            <div className="col-span-2">
-              <label className="mb-1 block text-xs font-medium text-slate-400">Observações</label>
-              <textarea
+            <div className="col-span-2 flex flex-col gap-1">
+              <Label htmlFor="lead-notes">Observações</Label>
+              <Textarea
+                id="lead-notes"
                 rows={2}
-                className={`${fieldClass} resize-none`}
-                style={fieldStyle}
+                className="w-full resize-none"
                 placeholder="Contexto, interesse, etc."
                 value={form.notes}
                 onChange={(e) => set('notes', e.target.value)}
@@ -291,7 +291,7 @@ function LeadDetail({
       style={{ background: 'rgba(0,0,0,0.5)' }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="flex h-full w-full max-w-sm flex-col" style={{ background: '#141a2b', boxShadow: '-8px 0 40px rgba(0,0,0,0.5)' }}>
+      <div className="flex h-full w-full max-w-sm flex-col bg-[#141a2b]" style={{ boxShadow: '-8px 0 40px rgba(0,0,0,0.5)' }}>
         {/* Top accent */}
         <div className="h-[3px]" style={{ background: col.accent }} />
 
@@ -302,9 +302,7 @@ function LeadDetail({
             {lead.contact_name && <p className="text-sm text-slate-400">{lead.contact_name}</p>}
           </div>
           <button onClick={onClose} className="rounded-lg p-1.5 text-slate-500 hover:bg-white/5">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path d="M18 6L6 18M6 6l12 12"/>
-            </svg>
+            <X size={16} strokeWidth={2.5} />
           </button>
         </div>
 
@@ -329,12 +327,12 @@ function LeadDetail({
           </div>
 
           {/* Notes */}
-          <div>
-            <label className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-slate-500">Observações</label>
-            <textarea
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="lead-detail-notes">Observações</Label>
+            <Textarea
+              id="lead-detail-notes"
               rows={5}
-              className={`${fieldClass} resize-none`}
-              style={fieldStyle}
+              className="w-full resize-none"
               placeholder="Histórico, interesse, objeções..."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
@@ -342,7 +340,7 @@ function LeadDetail({
             <button
               onClick={saveNotes}
               disabled={saving || notes === (lead.notes ?? '')}
-              className="mt-2 w-full rounded-xl py-2 text-sm font-semibold text-white disabled:opacity-40"
+              className="mt-1 w-full rounded-xl py-2 text-sm font-semibold text-white disabled:opacity-40"
               style={{ background: brandGradient }}
             >
               {saving ? 'Salvando...' : 'Salvar observações'}
@@ -376,8 +374,8 @@ function LeadCard({
 
   return (
     <div
-      className="rounded-2xl cursor-pointer group"
-      style={{ background: '#1a2137', boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}
+      className="rounded-2xl bg-[#1a2137] cursor-pointer group"
+      style={{ boxShadow: cardShadow }}
     >
       {/* Top accent */}
       <div className="h-[2px] rounded-t-2xl" style={{ background: col.accent }} />
@@ -449,7 +447,7 @@ function LeadCard({
             className="w-full rounded-lg py-1.5 text-[11px] font-bold text-white transition-all hover:scale-[1.01]"
             style={{ background: 'linear-gradient(135deg, #16a34a, #22c55e)' }}
           >
-            💼 Abrir vaga (Recrutador IA)
+            Abrir vaga (Recrutador IA)
           </button>
         </div>
       )}
@@ -505,48 +503,35 @@ export default function CrmPage() {
   const qualRate = total > 0 ? Math.round((qualified / total) * 100) : 0
 
   const kpis = [
-    { label: 'Total de Leads', val: total, color: '#818cf8' },
-    { label: 'Qualificados', val: qualified, color: '#a78bfa' },
-    { label: 'Convertidos', val: won, color: '#4ade80' },
-    { label: 'Taxa Conversão', val: `${convRate}%`, color: '#22d3ee' },
-    { label: 'Taxa Qualificação', val: `${qualRate}%`, color: '#fbbf24' },
+    { label: 'Total de Leads', value: String(total), gradient: 'from-indigo-400 to-indigo-500' },
+    { label: 'Qualificados', value: String(qualified), gradient: 'from-purple-400 to-violet-500' },
+    { label: 'Convertidos', value: String(won), gradient: 'from-green-400 to-emerald-500' },
+    { label: 'Taxa Conversão', value: `${convRate}%`, gradient: 'from-cyan-400 to-blue-500' },
+    { label: 'Taxa Qualificação', value: `${qualRate}%`, gradient: 'from-amber-400 to-orange-500' },
   ]
 
   return (
     <div className="flex flex-col gap-6 min-h-0">
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">vendas</p>
-          <h1 className="mt-0.5 text-2xl font-black tracking-tight text-white">Pipeline CRM</h1>
-          <p className="mt-0.5 text-sm text-slate-400">
-            Gerencie seus leads no funil de vendas — mova com as setas em cada card.
-          </p>
-        </div>
-        <button
-          onClick={() => setShowAdd(true)}
-          className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
-          style={{ background: brandGradient, boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <path d="M12 5v14M5 12h14"/>
-          </svg>
-          Novo Lead
-        </button>
-      </div>
+      <PageHeader
+        eyebrow="vendas"
+        title="Pipeline CRM"
+        subtitle="Gerencie seus leads no funil de vendas — mova com as setas em cada card."
+        action={
+          <button
+            onClick={() => setShowAdd(true)}
+            className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
+            style={{ background: brandGradient, boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
+          >
+            <Plus size={14} />
+            Novo Lead
+          </button>
+        }
+      />
 
       {/* KPI bar */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         {kpis.map((k) => (
-          <div
-            key={k.label}
-            className="rounded-2xl px-4 py-3"
-            style={{ background: '#141a2b', boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}
-          >
-            <div className="h-[3px] w-8 rounded-full mb-2" style={{ background: k.color }} />
-            <p className="text-[22px] font-black text-white leading-none">{k.val}</p>
-            <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">{k.label}</p>
-          </div>
+          <KpiCard key={k.label} label={k.label} value={k.value} gradient={k.gradient} />
         ))}
       </div>
 
@@ -571,9 +556,7 @@ export default function CrmPage() {
                   <span className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-300">
                     {col.label}
                   </span>
-                  <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: col.badgeBg, color: col.badgeColor }}>
-                    {colLeads.length}
-                  </span>
+                  <Badge variant={col.variant}>{colLeads.length}</Badge>
                 </div>
 
                 {/* Cards */}
