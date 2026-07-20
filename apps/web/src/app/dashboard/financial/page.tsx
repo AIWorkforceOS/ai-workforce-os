@@ -104,7 +104,8 @@ export default async function FinancialPage() {
             actionLabel="Adicionar lançamento"
           />
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] text-sm">
             <TableShell>
               <Th>Descrição</Th>
               <Th>Tipo</Th>
@@ -138,6 +139,7 @@ export default async function FinancialPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
     </div>

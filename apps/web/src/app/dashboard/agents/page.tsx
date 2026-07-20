@@ -151,7 +151,8 @@ export default async function AgentsPage() {
             </Link>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-sm">
             <TableShell>
               <Th>Unidade</Th>
               <Th>WhatsApp</Th>
@@ -186,6 +187,7 @@ export default async function AgentsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
 

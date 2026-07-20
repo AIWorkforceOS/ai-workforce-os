@@ -92,7 +92,8 @@ export default async function ResultsPage() {
             <p className="text-xs text-slate-500">Os leads com status &quot;Fechado&quot; aparecerão aqui.</p>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-sm">
             <TableShell>
               <Th>Empresa</Th>
               <Th>Unidade</Th>
@@ -120,6 +121,7 @@ export default async function ResultsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
     </div>

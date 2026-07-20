@@ -37,7 +37,8 @@ export default async function UnitsPage() {
             actionLabel="Criar unidade"
           />
         ) : (
-          <table className="w-full text-left text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-left text-sm">
             <TableShell>
               <Th>Nome</Th>
               <Th>Cidade / Estado</Th>
@@ -68,6 +69,7 @@ export default async function UnitsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
     </div>

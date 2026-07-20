@@ -212,7 +212,8 @@ export default async function TrafficPage() {
             </a>
           </div>
         ) : (
-          <table className="w-full text-left text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-left text-sm">
             <TableShell>
               <Th>Conta</Th>
               <Th>Plataforma</Th>
@@ -250,6 +251,7 @@ export default async function TrafficPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
 
@@ -332,7 +334,8 @@ export default async function TrafficPage() {
             Nenhuma campanha sincronizada ainda.
           </div>
         ) : (
-          <table className="w-full text-left text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[880px] text-left text-sm">
             <TableShell>
               <Th>Campanha</Th>
               <Th>Plataforma</Th>
@@ -377,6 +380,7 @@ export default async function TrafficPage() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
 
@@ -394,7 +398,8 @@ export default async function TrafficPage() {
             com payload, estado anterior e resposta da plataforma.
           </div>
         ) : (
-          <table className="w-full text-left text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-left text-sm">
             <TableShell>
               <Th>Quando</Th>
               <Th>Ação</Th>
@@ -434,6 +439,7 @@ export default async function TrafficPage() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
     </div>

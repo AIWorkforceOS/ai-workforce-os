@@ -153,7 +153,8 @@ export default async function LeadsPage({
             <p className="text-sm text-slate-400">Ajuste os filtros ou prospecte novos leads em uma unidade.</p>
           </div>
         ) : (
-          <table className="w-full text-left text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] text-left text-sm">
             <TableShell>
               <Th>Empresa</Th>
               <Th>Telefone</Th>
@@ -197,6 +198,7 @@ export default async function LeadsPage({
               })}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
 

@@ -152,7 +152,8 @@ export default async function ReceptionistCustomersPage({
             actionLabel={`Cadastrar ${term.toLowerCase()}`}
           />
         ) : (
-          <table className="w-full text-left text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] text-left text-sm">
             <TableShell>
               <Th>Nome</Th>
               <Th>Telefone</Th>
@@ -184,6 +185,7 @@ export default async function ReceptionistCustomersPage({
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
 

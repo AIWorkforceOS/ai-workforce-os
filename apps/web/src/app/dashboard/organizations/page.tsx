@@ -77,7 +77,8 @@ export default async function OrganizationsPage() {
         </div>
       ) : (
         <Card className="overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[880px] text-sm">
             <TableShell>
               <Th>Cliente</Th>
               <Th>Plano</Th>
@@ -144,6 +145,7 @@ export default async function OrganizationsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </Card>
       )}
     </div>

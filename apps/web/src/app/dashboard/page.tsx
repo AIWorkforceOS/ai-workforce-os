@@ -467,7 +467,8 @@ async function AdminHome({ firstName }: { firstName: string }) {
             Ver página completa →
           </Link>
         </div>
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[760px] text-sm">
           <thead>
             <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
               {['Cliente', 'Plano', 'Setup', 'WhatsApp', 'Leads', 'Status'].map((h) => (
@@ -506,6 +507,7 @@ async function AdminHome({ firstName }: { firstName: string }) {
             ))}
           </tbody>
         </table>
+        </div>
       </Card>
 
       {/* Saúde das integrações da plataforma */}

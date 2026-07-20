@@ -84,7 +84,16 @@ function getInitials(email: string): string {
   return (parts[0]?.slice(0, 2) ?? 'AW').toUpperCase()
 }
 
-export function Sidebar({ userEmail, role = 'admin' }: { userEmail: string; role?: string }) {
+export function Sidebar({
+  userEmail,
+  role = 'admin',
+  onNavigate,
+}: {
+  userEmail: string
+  role?: string
+  /** chamado ao clicar num link — usado pelo drawer mobile pra fechar */
+  onNavigate?: () => void
+}) {
   const pathname = usePathname()
   const router = useRouter()
   const locale = useLocale()
@@ -109,7 +118,7 @@ export function Sidebar({ userEmail, role = 'admin' }: { userEmail: string; role
   }
 
   return (
-    <aside className="flex h-screen w-64 flex-shrink-0 flex-col overflow-hidden" style={{ background: 'linear-gradient(180deg, #0a0f1e 0%, #0d1221 50%, #0a0f1e 100%)' }}>
+    <aside className="flex h-full w-64 flex-shrink-0 flex-col overflow-hidden" style={{ background: 'linear-gradient(180deg, #0a0f1e 0%, #0d1221 50%, #0a0f1e 100%)' }}>
 
       {/* Logo */}
       <div className="px-5 pt-5 pb-4">
@@ -132,6 +141,7 @@ export function Sidebar({ userEmail, role = 'admin' }: { userEmail: string; role
                 <Link
                   key={href}
                   href={href}
+                  onClick={onNavigate}
                   className={`group flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-medium transition-all duration-150 ${
                     active
                       ? 'text-white'
@@ -165,6 +175,7 @@ export function Sidebar({ userEmail, role = 'admin' }: { userEmail: string; role
       <div className="px-3 py-3 space-y-0.5">
         <Link
           href="/dashboard/settings"
+          onClick={onNavigate}
           className={`group flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-medium transition-all ${
             pathname.startsWith('/dashboard/settings')
               ? 'text-white'

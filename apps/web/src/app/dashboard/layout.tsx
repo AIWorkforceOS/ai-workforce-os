@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getAppUser, ROLE_LABEL, type AppRole } from '@/lib/app-user'
 import { getLocale } from '@/lib/i18n/server'
 import { Sidebar } from '@/components/dashboard/sidebar'
+import { MobileSidebar } from '@/components/dashboard/mobile-sidebar'
 import { SignOutButton } from '@/components/dashboard/sign-out-button'
 
 const ROLE_LABEL_EN: Record<AppRole, string> = {
@@ -65,13 +66,16 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const initials = email.split('@')[0]?.slice(0, 2).toUpperCase() ?? 'AW'
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: '#0a0f1e' }}>
-      <Sidebar userEmail={email} role={appUser.role} />
+    <div className="flex h-dvh overflow-hidden" style={{ background: '#0a0f1e' }}>
+      {/* Sidebar fixa — só em desktop; em mobile vira drawer (MobileSidebar no header) */}
+      <div className="hidden flex-shrink-0 lg:flex">
+        <Sidebar userEmail={email} role={appUser.role} />
+      </div>
 
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Glassmorphism header — dark */}
         <header
-          className="sticky top-0 z-30 flex h-14 items-center justify-between px-6"
+          className="sticky top-0 z-30 flex h-14 items-center justify-between px-4 sm:px-6"
           style={{
             background: 'rgba(10,15,30,0.9)',
             backdropFilter: 'blur(12px)',
@@ -81,6 +85,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           }}
         >
           <div className="flex items-center gap-2">
+            <MobileSidebar userEmail={email} role={appUser.role} />
             <img src="/branding/alizo-icon.png" alt="Alizo" className="h-6 w-auto" />
             <p className="text-[14px] font-black tracking-tight text-white">alizo</p>
             <span style={{ color: 'rgba(255,255,255,0.2)' }}>/</span>
@@ -91,8 +96,8 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Live indicator */}
-            <div className="flex items-center gap-1.5">
+            {/* Live indicator — escondido em telas muito estreitas */}
+            <div className="hidden items-center gap-1.5 sm:flex">
               <span className="relative flex h-2 w-2">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-50" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-400" />
@@ -103,7 +108,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             </div>
 
             {/* Divider */}
-            <div className="h-5 w-px" style={{ background: 'rgba(255,255,255,0.08)' }} />
+            <div className="hidden h-5 w-px sm:block" style={{ background: 'rgba(255,255,255,0.08)' }} />
 
             {/* Role badge (real, vindo de public.users) */}
             <span
@@ -114,7 +119,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
               {(locale === 'en' ? ROLE_LABEL_EN : ROLE_LABEL)[appUser.role]}
             </span>
             {!appUser.isSuperAdmin && appUser.orgName && (
-              <span className="max-w-[160px] truncate text-[11px] font-semibold text-slate-400">
+              <span className="hidden max-w-[160px] truncate text-[11px] font-semibold text-slate-400 sm:inline">
                 {appUser.orgName}
               </span>
             )}
@@ -139,7 +144,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             background: 'radial-gradient(ellipse 70% 40% at 50% -5%, rgba(67,97,238,0.08) 0%, transparent 60%), #0a0f1e',
           }}
         >
-          <div className="mx-auto max-w-7xl px-6 py-6">{children}</div>
+          <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">{children}</div>
         </main>
       </div>
     </div>

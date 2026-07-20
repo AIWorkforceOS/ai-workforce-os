@@ -142,7 +142,8 @@ export default async function ConversationsPage({
             </p>
           </div>
         ) : (
-          <table className="w-full text-left text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] text-left text-sm">
             <TableShell>
               <Th>Lead</Th>
               <Th>Número</Th>
@@ -181,6 +182,7 @@ export default async function ConversationsPage({
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
     </div>

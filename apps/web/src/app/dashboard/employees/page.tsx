@@ -65,7 +65,8 @@ export default async function EmployeesPage() {
             actionLabel="Cadastrar funcionário"
           />
         ) : (
-          <table className="w-full text-left text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-left text-sm">
             <TableShell>
               <Th>Nome</Th>
               <Th>Empresa / Unidade</Th>
@@ -99,6 +100,7 @@ export default async function EmployeesPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
     </div>

@@ -183,7 +183,8 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ id: 
         {unitRows.length === 0 ? (
           <p className="px-5 py-8 text-center text-sm text-slate-500">Nenhuma unidade — o cliente não vai conseguir usar nada até ter uma.</p>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-sm">
             <TableShell>
               <Th>Unidade</Th>
               <Th>WhatsApp</Th>
@@ -230,6 +231,7 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ id: 
               })}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
 
@@ -244,7 +246,8 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ id: 
             Ninguém tem acesso ainda — libere o primeiro acesso acima.
           </p>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-sm">
             <TableShell>
               <Th>Usuário</Th>
               <Th>Papel</Th>
@@ -269,6 +272,7 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ id: 
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
     </div>
