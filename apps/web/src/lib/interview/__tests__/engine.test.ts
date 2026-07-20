@@ -232,6 +232,18 @@ describe('extractOrganizationIntake', () => {
       business_profile: { company_name: 'Clínica Bem-Estar', languages: ['pt', 'en'] },
     })
   })
+
+  it('aceita o segmento general_maintenance (catálogo em lib/verticals/catalog.ts)', () => {
+    const result = extractOrganizationIntake({
+      org_vertical_key: 'general_maintenance',
+      org_vertical_confirmed: true,
+      org_company_name: 'Manutenções Rápidas',
+    })
+    expect(result).toEqual({
+      vertical_key: 'general_maintenance',
+      business_profile: { company_name: 'Manutenções Rápidas' },
+    })
+  })
 })
 
 describe('runInterviewTurn — gate da Ficha da Empresa compartilhada', () => {
@@ -261,6 +273,11 @@ describe('runInterviewTurn — gate da Ficha da Empresa compartilhada', () => {
     const prompt = buildInterviewerPrompt({ config, unit, profile: {}, finalAlreadyAsked: false, includeOrgIntake: true })
     expect(prompt).toContain('segmento principal do negócio')
     expect(prompt).toContain('org_vertical_confirmed')
+  })
+
+  it('o schema do org_vertical_key inclui todos os segmentos do catálogo, inclusive general_maintenance', () => {
+    const prompt = buildInterviewerPrompt({ config, unit, profile: {}, finalAlreadyAsked: false, includeOrgIntake: true })
+    expect(prompt).toContain('"org_vertical_key": "cleaning_services"|"therapy_clinic"|"general_maintenance"|"other"')
   })
 })
 

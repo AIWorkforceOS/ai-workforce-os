@@ -1,6 +1,6 @@
 import { generateStructuredReply, type ChatMessage } from '@/lib/openai'
 import { interviewLanguageDirective, interviewLanguageLabel, unitDefaultLocale, type Locale } from '@/lib/i18n/config'
-import { VERTICAL_TEMPLATES, type VerticalKey } from '@/lib/verticals/catalog'
+import { VERTICAL_TEMPLATES, isVerticalKey, type VerticalKey } from '@/lib/verticals/catalog'
 import type { AgentConfig, AgentTone, InterviewTranscriptEntry, Organization, Unit } from '@/lib/types'
 
 // Motor de entrevista/treinamento dos funcionários digitais.
@@ -133,8 +133,12 @@ function orgIntakeTopics(locale: Locale): string[] {
   ]
 }
 
+const ORG_VERTICAL_KEY_SCHEMA_VALUES = Object.keys(VERTICAL_TEMPLATES)
+  .map((key) => `"${key}"`)
+  .join('|')
+
 const ORG_INTAKE_PROFILE_SCHEMA_FRAGMENT =
-  '"org_vertical_key": "cleaning_services"|"therapy_clinic"|"other", "org_vertical_confirmed": boolean (só true depois de confirmado com o chefe), "org_company_name": string, "org_description": string, "org_differentiators": string[], "org_tone_of_voice": string, "org_languages": string[], "org_business_hours": string, "org_channels": string[]'
+  `"org_vertical_key": ${ORG_VERTICAL_KEY_SCHEMA_VALUES}, "org_vertical_confirmed": boolean (só true depois de confirmado com o chefe), "org_company_name": string, "org_description": string, "org_differentiators": string[], "org_tone_of_voice": string, "org_languages": string[], "org_business_hours": string, "org_channels": string[]`
 
 export const FINAL_QUESTION =
   'Antes de eu começar a trabalhar: tem mais alguma coisa importante que eu deveria saber sobre a empresa ou sobre como você quer que eu trabalhe?'
@@ -419,10 +423,6 @@ const ORG_INTAKE_FIELD_MAP: [string, string][] = [
   ['org_business_hours', 'business_hours'],
   ['org_channels', 'channels'],
 ]
-
-function isVerticalKey(value: unknown): value is VerticalKey {
-  return value === 'cleaning_services' || value === 'therapy_clinic' || value === 'other'
-}
 
 /**
  * Função pura e separada de `mergeProfile` (que continua gravando só em
