@@ -1,9 +1,14 @@
 import type { InterviewAgentType } from '@/lib/interview/engine'
 
-export type VerticalKey = 'cleaning_services' | 'therapy_clinic' | 'other'
+export type VerticalKey = 'cleaning_services' | 'therapy_clinic' | 'general_maintenance' | 'other'
 
 export function isVerticalKey(value: unknown): value is VerticalKey {
-  return value === 'cleaning_services' || value === 'therapy_clinic' || value === 'other'
+  return (
+    value === 'cleaning_services' ||
+    value === 'therapy_clinic' ||
+    value === 'general_maintenance' ||
+    value === 'other'
+  )
 }
 
 export type DynamicField = {
@@ -189,6 +194,95 @@ export const VERTICAL_TEMPLATES: Record<VerticalKey, VerticalTemplate> = {
       {
         title: 'Pergunta médica que exige humano',
         openingMessage: 'Eu tomo um remédio controlado, isso pode ser um problema pra fazer terapia? O que vocês recomendam?',
+      },
+    ],
+  },
+
+  general_maintenance: {
+    key: 'general_maintenance',
+    labelPt: 'Manutenção Geral',
+    labelEn: 'General Maintenance',
+    terminology: {
+      customer: { pt: 'Cliente', en: 'Customer' },
+      appointment: { pt: 'Chamado de serviço', en: 'Service call' },
+      staff: { pt: 'Técnico', en: 'Technician' },
+      deal: { pt: 'Serviço fechado', en: 'Job booked' },
+    },
+    interviewExtra: {
+      receptionist: {
+        extraTopics: [
+          'Tipos de serviço oferecidos (elétrica, hidráulica, HVAC, reparos gerais, outros)',
+          'Área geográfica atendida',
+          'Como funciona a taxa de visita/orçamento (cobrada sempre, isenta se fechar o serviço, etc.)',
+          'Garantia oferecida sobre o serviço realizado (prazo e o que cobre)',
+          'Disponibilidade de atendimento de emergência 24h e o que caracteriza uma emergência',
+          'Informações de acesso ao imóvel (código de portão, chave, contato do síndico, presença de pets)',
+          'Janela de agendamento/chegada do técnico combinada com o cliente',
+        ],
+        profileSchemaFragment:
+          'service_types (string[]), service_area (string), dispatch_fee_model (string), warranty_policy (string), emergency_service_available (boolean)',
+      },
+      sdr: {
+        extraTopics: [
+          'Área de cobertura geográfica dos serviços',
+          'Ticket médio por tipo de serviço (elétrica, hidráulica, HVAC, reparo geral)',
+          'Diferencial competitivo da empresa (técnicos certificados, garantia, tempo de resposta, atendimento 24h)',
+        ],
+        profileSchemaFragment:
+          'coverage_area (string), avg_ticket_by_service_type (record), differentiators (string[])',
+      },
+    },
+    customerFieldSchema: [
+      {
+        key: 'property_type',
+        label: 'Tipo de imóvel',
+        type: 'select',
+        options: ['residencial', 'comercial'],
+      },
+      {
+        key: 'service_type',
+        label: 'Tipo de serviço',
+        type: 'select',
+        options: ['elétrica', 'hidráulica', 'hvac', 'reparos gerais', 'outro'],
+      },
+      {
+        key: 'urgency',
+        label: 'Urgência',
+        type: 'select',
+        options: ['rotina', 'urgente', 'emergência'],
+      },
+      { key: 'equipment_notes', label: 'Histórico de equipamento/sistema', type: 'textarea' },
+      { key: 'access_instructions', label: 'Instruções de acesso', type: 'textarea' },
+      { key: 'gate_code', label: 'Código do portão', type: 'text' },
+      { key: 'preferred_technician', label: 'Técnico preferido', type: 'text' },
+      { key: 'has_active_warranty', label: 'Garantia ativa', type: 'boolean' },
+      { key: 'warranty_details', label: 'Detalhes da garantia', type: 'textarea' },
+    ],
+    dashboardKpis: [
+      { key: 'active_service_contracts', labelPt: 'Contratos de manutenção ativos', labelEn: 'Active service contracts' },
+      { key: 'jobs_completed_this_month', labelPt: 'Chamados concluídos no mês', labelEn: 'Jobs completed this month' },
+      { key: 'avg_response_time', labelPt: 'Tempo médio de resposta', labelEn: 'Average response time' },
+    ],
+    testScenarios: [
+      {
+        title: 'Reparo emergencial',
+        openingMessage: 'Socorro, tá vazando água embaixo da pia da cozinha e não para, vocês têm alguém pra vir agora?',
+      },
+      {
+        title: 'Manutenção de rotina agendada',
+        openingMessage: 'Oi, queria agendar a manutenção anual do ar-condicionado, pode ser semana que vem?',
+      },
+      {
+        title: 'Pedido de orçamento',
+        openingMessage: 'Queria um orçamento pra trocar um disjuntor que caiu direto lá em casa, quanto fica mais ou menos?',
+      },
+      {
+        title: 'Reclamação de garantia',
+        openingMessage: 'O reparo hidráulico que vocês fizeram mês passado voltou a vazar no mesmo lugar, isso não devia estar na garantia?',
+      },
+      {
+        title: 'Conflito de agenda do técnico',
+        openingMessage: 'O técnico que ia vir hoje às 14h ainda não chegou e eu preciso sair em 1 hora, o que eu faço?',
       },
     ],
   },
