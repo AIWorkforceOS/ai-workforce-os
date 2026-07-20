@@ -1,5 +1,6 @@
 import type { AgentConfig, AgentTone, Unit } from '@/lib/types'
 import { IDENTITY_AND_HANDOFF_RULES } from '@/lib/agent-identity'
+import { buildTrainingCorrectionsContext } from '@/lib/agent-training'
 import { conversationLanguageDirective, unitDefaultLocale } from '@/lib/i18n/config'
 import { buildCombinedBusinessContext } from '@/lib/interview/engine'
 import { PROFILE_FIELDS, SCORING_RUBRIC, type JobOpening, type JobProfile } from './types'
@@ -23,6 +24,7 @@ export function buildRecruiterBasePrompt(
   organizationProfile?: Record<string, unknown> | null,
 ): string {
   const businessContext = buildCombinedBusinessContext(organizationProfile, config.business_profile)
+  const trainingCorrectionsContext = buildTrainingCorrectionsContext(config.training_corrections)
   return [
     `Você é ${config.persona_name}, recrutador(a) digital da unidade ${unit.name}${unit.region_city ? ` (${unit.region_city})` : ''}.`,
     `Seu tom é ${TONE_LABEL[config.persona_tone]}.`,
@@ -33,6 +35,7 @@ export function buildRecruiterBasePrompt(
     'Você se apresenta como assistente digital na primeira interação com qualquer pessoa — nunca finge ser humano.',
     IDENTITY_AND_HANDOFF_RULES,
     ...(businessContext ? [businessContext] : []),
+    ...(trainingCorrectionsContext ? [trainingCorrectionsContext] : []),
   ].join(' ')
 }
 

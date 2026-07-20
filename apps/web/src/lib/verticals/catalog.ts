@@ -14,6 +14,11 @@ export type DynamicField = {
   required?: boolean
 }
 
+export type TestScenario = {
+  title: string
+  openingMessage: string
+}
+
 export type VerticalTemplate = {
   key: VerticalKey
   labelPt: string
@@ -22,6 +27,8 @@ export type VerticalTemplate = {
   interviewExtra?: Partial<Record<InterviewAgentType, { extraTopics: string[]; profileSchemaFragment: string }>>
   customerFieldSchema: DynamicField[]
   dashboardKpis: { key: string; labelPt: string; labelEn: string }[]
+  /** Cenários prontos pra tela "Testar Funcionário" (sub-etapa 5/7) — abrem a simulação com uma mensagem inicial de cliente já pronta. Vazio em "other" (fallback pra mensagem livre). */
+  testScenarios?: TestScenario[]
 }
 
 export const VERTICAL_TEMPLATES: Record<VerticalKey, VerticalTemplate> = {
@@ -77,6 +84,28 @@ export const VERTICAL_TEMPLATES: Record<VerticalKey, VerticalTemplate> = {
       { key: 'active_recurring_customers', labelPt: 'Clientes recorrentes ativos', labelEn: 'Active recurring customers' },
       { key: 'jobs_this_month', labelPt: 'Serviços no mês', labelEn: 'Jobs this month' },
       { key: 'avg_ticket', labelPt: 'Ticket médio', labelEn: 'Average ticket' },
+    ],
+    testScenarios: [
+      {
+        title: 'Novo orçamento',
+        openingMessage: 'Oi, tudo bem? Queria um orçamento pra limpeza da minha casa, é apartamento de 2 quartos.',
+      },
+      {
+        title: 'Reagendamento',
+        openingMessage: 'Preciso remarcar a limpeza que estava agendada pra quinta-feira, pode ser pra semana que vem?',
+      },
+      {
+        title: 'Animal na casa',
+        openingMessage: 'Antes de fechar, só confirmando: eu tenho um cachorro grande em casa, isso é um problema pra equipe de vocês?',
+      },
+      {
+        title: 'Endereço fora da área',
+        openingMessage: 'Vocês atendem em Cotia? É um pouco fora do centro da cidade.',
+      },
+      {
+        title: 'Pedido de desconto',
+        openingMessage: 'O valor ficou um pouco acima do que eu esperava, vocês fazem algum desconto se eu fechar recorrente?',
+      },
     ],
   },
 
@@ -135,6 +164,32 @@ export const VERTICAL_TEMPLATES: Record<VerticalKey, VerticalTemplate> = {
       { key: 'active_patients', labelPt: 'Pacientes ativos', labelEn: 'Active patients' },
       { key: 'sessions_this_month', labelPt: 'Sessões no mês', labelEn: 'Sessions this month' },
       { key: 'waitlist_size', labelPt: 'Tamanho da lista de espera', labelEn: 'Waitlist size' },
+    ],
+    testScenarios: [
+      {
+        title: 'Novo paciente',
+        openingMessage: 'Oi, gostaria de marcar uma avaliação inicial. É a primeira vez que eu procuro terapia.',
+      },
+      {
+        title: 'Responsável por menor',
+        openingMessage: 'Quero marcar uma sessão pro meu filho de 8 anos, sou o responsável por ele. Como funciona?',
+      },
+      {
+        title: 'Cancelamento',
+        openingMessage: 'Preciso cancelar minha sessão de amanhã, vai dar algum problema?',
+      },
+      {
+        title: 'Lista de espera',
+        openingMessage: 'Vocês têm vaga com a terapeuta Fulana? Se não tiver, eu entro na lista de espera?',
+      },
+      {
+        title: 'Dúvida de preço',
+        openingMessage: 'Quanto custa a sessão e vocês aceitam algum convênio?',
+      },
+      {
+        title: 'Pergunta médica que exige humano',
+        openingMessage: 'Eu tomo um remédio controlado, isso pode ser um problema pra fazer terapia? O que vocês recomendam?',
+      },
     ],
   },
 

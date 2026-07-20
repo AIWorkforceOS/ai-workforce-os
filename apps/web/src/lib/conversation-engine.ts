@@ -12,6 +12,7 @@ import { sendEscalationEmail, sendTechnicalAlertEmail } from '@/lib/email'
 import { logSystemEvent, shouldNotifyForEvent, type SystemEventSource } from '@/lib/system-events'
 import { syncLeadToSmarterCrm } from '@/lib/sales/smarter-crm'
 import { IDENTITY_AND_HANDOFF_RULES } from '@/lib/agent-identity'
+import { buildTrainingCorrectionsContext } from '@/lib/agent-training'
 import { buildCombinedBusinessContext } from '@/lib/interview/engine'
 import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
 import type { AgentConfig, AgentTone, Conversation, Lead, Unit, ActiveHours } from '@/lib/types'
@@ -179,6 +180,7 @@ export function buildSystemPrompt(
   organizationProfile?: Record<string, unknown> | null,
 ): string {
   const businessContext = buildCombinedBusinessContext(organizationProfile, agentConfig.business_profile)
+  const trainingCorrectionsContext = buildTrainingCorrectionsContext(agentConfig.training_corrections)
   const profile = (agentConfig.business_profile ?? {}) as Record<string, unknown>
   const closesAlone = profile.fechamento === 'fecha_sozinho'
   const channelType = getUnitChannelType(unit)
@@ -227,6 +229,7 @@ export function buildSystemPrompt(
           'Responda dúvidas sobre produtos, preços e condições usando somente a ficha acima. Nunca ofereça desconto além da política de desconto registrada, e respeite o combinado sobre até onde você conduz a venda.',
         ]
       : []),
+    trainingCorrectionsContext ?? '',
     dealSection,
   ]
     .filter(Boolean)

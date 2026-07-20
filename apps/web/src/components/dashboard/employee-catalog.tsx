@@ -9,6 +9,7 @@ import {
   Briefcase,
   Check,
   ChevronRight,
+  FlaskConical,
   Headset,
   Loader2,
   Megaphone,
@@ -113,6 +114,7 @@ export function EmployeeCatalog({
           panelHref="/dashboard/agents"
           personaName={sdr?.persona_name ?? null}
           trainingScore={sdr ? computeTrainingCompleteness(sdr, verticalKey) : null}
+          testConfigId={sdr?.id ?? null}
         />
         <EmployeeCatalogCard
           icon={Briefcase}
@@ -129,6 +131,7 @@ export function EmployeeCatalog({
           personaName={recruiter?.persona_name ?? null}
           activation={{ agentType: 'recruiter', config: recruiter ?? null, units, askName: true, defaultName: 'Rafa' }}
           trainingScore={recruiter ? computeTrainingCompleteness(recruiter, verticalKey) : null}
+          testConfigId={recruiter?.id ?? null}
         />
         <EmployeeCatalogCard
           icon={Megaphone}
@@ -161,6 +164,7 @@ export function EmployeeCatalog({
           personaName={receptionist?.persona_name ?? null}
           activation={{ agentType: 'receptionist', config: receptionist ?? null, units, askName: true, defaultName: 'Ana' }}
           trainingScore={receptionist ? computeTrainingCompleteness(receptionist, verticalKey) : null}
+          testConfigId={receptionist?.id ?? null}
         />
       </div>
 
@@ -193,6 +197,7 @@ function EmployeeCatalogCard({
   personaName,
   activation,
   trainingScore,
+  testConfigId,
 }: {
   icon: typeof Bot
   name: string
@@ -206,6 +211,8 @@ function EmployeeCatalogCard({
   activation?: ActivationProps
   /** null = funcionário ainda não foi contratado (sem agent_configs) */
   trainingScore?: number | null
+  /** id do agent_config pra "Testar Funcionário" — ausente/null esconde o link (ex.: Tráfego, que não conversa com cliente simulado) */
+  testConfigId?: string | null
 }) {
   const stateMeta = STATE_META[state]
   const nextStep = steps.find((s) => !s.done)
@@ -266,6 +273,15 @@ function EmployeeCatalogCard({
         </Link>
         {activation?.config?.is_active && <PauseButton config={activation.config} />}
       </div>
+      {testConfigId && (
+        <Link
+          href={`/dashboard/equipe-digital/${testConfigId}/testar`}
+          className="flex items-center justify-center gap-1.5 rounded-xl py-2 text-[11px] font-bold text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-200"
+          style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+        >
+          <FlaskConical size={11} /> Testar funcionário
+        </Link>
+      )}
     </Card>
   )
 }

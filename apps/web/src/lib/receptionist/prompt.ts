@@ -1,4 +1,5 @@
 import { IDENTITY_AND_HANDOFF_RULES } from '@/lib/agent-identity'
+import { buildTrainingCorrectionsContext } from '@/lib/agent-training'
 import { buildCombinedBusinessContext } from '@/lib/interview/engine'
 import { conversationLanguageDirective, unitDefaultLocale } from '@/lib/i18n/config'
 import type { AgentConfig, AgentTone, Unit } from '@/lib/types'
@@ -28,6 +29,7 @@ export function buildReceptionistSystemPrompt(
   organizationProfile?: Record<string, unknown> | null,
 ): string {
   const businessContext = buildCombinedBusinessContext(organizationProfile, agentConfig.business_profile)
+  const trainingCorrectionsContext = buildTrainingCorrectionsContext(agentConfig.training_corrections)
   const profile = (agentConfig.business_profile ?? {}) as Record<string, unknown>
   const locale = unitDefaultLocale(unit)
 
@@ -51,6 +53,7 @@ export function buildReceptionistSystemPrompt(
           'Use a ficha acima para saber o que resolver sozinho(a) e o que escalar — nunca decida algo que a empresa ensinou que exige um humano.',
         ]
       : []),
+    trainingCorrectionsContext ?? '',
     quandoAvisar
       ? `Quando avisar um humano e esperar (não decidir sozinho): ${quandoAvisar}${quemAvisar ? ` — avise: ${quemAvisar}.` : '.'}`
       : '',

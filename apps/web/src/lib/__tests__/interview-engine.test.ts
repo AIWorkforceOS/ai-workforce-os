@@ -8,8 +8,9 @@ import {
 } from '@/lib/interview/engine'
 import { buildSystemPrompt } from '@/lib/conversation-engine'
 import { buildRecruiterBasePrompt } from '@/lib/recruiter/prompts'
+import { buildReceptionistSystemPrompt } from '@/lib/receptionist/prompt'
 import { strategyFromBusinessProfile } from '@/lib/traffic/strategy-engine'
-import type { AgentConfig, Unit } from '@/lib/types'
+import type { AgentConfig, TrainingCorrectionEntry, Unit } from '@/lib/types'
 
 // Integração da entrevista de contratação com o trabalho real dos 3
 // funcionários: roteiros por cargo e consumo do business_profile nos
@@ -142,5 +143,64 @@ describe('regressão — organização com business_profile={} não muda nenhum 
     expect(prompt).toContain('FICHA COMPARTILHADA DA EMPRESA')
     expect(prompt).toContain('Acme Ltda')
     expect(prompt).toContain('R$ 997/mês') // ficha específica do agente continua presente
+  })
+})
+
+// Sub-etapa 5/7 de Business Profile + Vertical Templates: correções
+// ensinadas na tela "Testar Funcionário" (agent_configs.training_corrections,
+// migration 025) passaram a somar-se ao prompt dos 3 funcionários que
+// conversam com cliente simulado. Garantia de não regressão: TODO
+// funcionário hoje tem training_corrections=[] (coluna recém-criada, sem
+// consumidor até esta mudança), então o texto produzido tem que ficar
+// byte-a-byte igual ao de antes desta mudança.
+describe('regressão — training_corrections=[] não muda nenhum prompt existente', () => {
+  const salesProfile = {
+    produtos: [{ nome: 'Plano Pro', preco: 'R$ 997/mês' }],
+    politica_desconto: 'até 15% pra fechar no ato',
+    fechamento: 'fecha_sozinho',
+  }
+  const corrections: TrainingCorrectionEntry[] = [
+    { timestamp: '2026-07-19T12:00:00.000Z', context: 'cliente perguntou sobre pets', correction: 'sempre confirmar a raça do cachorro' },
+  ]
+
+  it('buildSystemPrompt do SDR: com training_corrections=[] é idêntico a não passar o campo', () => {
+    const before = buildSystemPrompt(makeConfig({ business_profile: salesProfile }), unit)
+    const after = buildSystemPrompt(makeConfig({ business_profile: salesProfile, training_corrections: [] }), unit)
+    expect(after).toBe(before)
+    expect(
+      buildSystemPrompt(makeConfig({ business_profile: salesProfile, training_corrections: null }), unit),
+    ).toBe(before)
+  })
+
+  it('buildRecruiterBasePrompt: com training_corrections=[] é idêntico a não passar o campo', () => {
+    const config = makeConfig({ agent_type: 'recruiter', business_profile: { segmento: 'estágios em TI' } })
+    const before = buildRecruiterBasePrompt(config, unit)
+    const after = buildRecruiterBasePrompt({ ...config, training_corrections: [] }, unit)
+    expect(after).toBe(before)
+  })
+
+  it('buildReceptionistSystemPrompt: com training_corrections=[] é idêntico a não passar o campo', () => {
+    const config = makeConfig({ agent_type: 'receptionist', business_profile: { tipo_negocio: 'clínica' } })
+    const before = buildReceptionistSystemPrompt(config, unit)
+    const after = buildReceptionistSystemPrompt({ ...config, training_corrections: [] }, unit)
+    expect(after).toBe(before)
+  })
+
+  it('quando há correções, os 3 prompts passam a incluí-las', () => {
+    const sales = buildSystemPrompt(makeConfig({ business_profile: salesProfile, training_corrections: corrections }), unit)
+    expect(sales).toContain('CORREÇÕES DE TREINAMENTO')
+    expect(sales).toContain('sempre confirmar a raça do cachorro')
+
+    const recruiter = buildRecruiterBasePrompt(
+      makeConfig({ agent_type: 'recruiter', training_corrections: corrections }),
+      unit,
+    )
+    expect(recruiter).toContain('CORREÇÕES DE TREINAMENTO')
+
+    const receptionist = buildReceptionistSystemPrompt(
+      makeConfig({ agent_type: 'receptionist', training_corrections: corrections }),
+      unit,
+    )
+    expect(receptionist).toContain('CORREÇÕES DE TREINAMENTO')
   })
 })

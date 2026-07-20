@@ -77,6 +77,14 @@ export type InterviewTranscriptEntry = {
   asked_final?: boolean
 }
 
+/** Correção ensinada pelo dono ao testar o funcionário na tela "Testar Funcionário" (migration 025, sub-etapa 5/7). */
+export type TrainingCorrectionEntry = {
+  timestamp: string
+  /** resumo do momento da simulação em que a correção se aplica (ex.: o que o cliente simulado disse + o que o agente respondeu) */
+  context: string
+  correction: string
+}
+
 export type AgentConfig = {
   id: string
   unit_id: string
@@ -92,6 +100,8 @@ export type AgentConfig = {
   business_profile?: Record<string, unknown> | null
   interview_status?: InterviewStatus | null
   interview_transcript?: InterviewTranscriptEntry[] | null
+  /** correções aprendidas testando o funcionário na simulação (migration 025) */
+  training_corrections?: TrainingCorrectionEntry[] | null
   created_at: string
   updated_at: string
 }
