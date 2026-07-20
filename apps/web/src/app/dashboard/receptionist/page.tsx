@@ -5,6 +5,7 @@ import type { Customer } from '@/lib/types'
 import { getAppUser } from '@/lib/app-user'
 import { fetchOrganizationVerticalKey } from '@/lib/organizations'
 import { getCustomerTerm } from '@/lib/verticals/terminology'
+import { VERTICAL_TEMPLATES, type VerticalKey } from '@/lib/verticals/catalog'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,6 +24,44 @@ function daysAgo(n: number): Date {
   return d
 }
 
+type VerticalKpiRow = Pick<Customer, 'status' | 'custom_fields'>
+
+/**
+ * KPIs do catálogo (lib/verticals/catalog.ts dashboardKpis) — só os que
+ * dá pra computar de verdade com o que existe hoje (customers/custom_fields).
+ * Os demais (ex.: "jobs_this_month", "avg_ticket", "sessions_this_month")
+ * dependem de agenda/financeiro, que ainda não existem, então ficam de
+ * fora aqui em vez de mostrar um número inventado — a seção genérica
+ * (total/novos-na-semana/status) cobre esse caso.
+ */
+function computeVerticalKpis(
+  verticalKey: VerticalKey | null,
+  rows: VerticalKpiRow[],
+): { key: string; label: string; value: number }[] {
+  if (!verticalKey) return []
+  const template = VERTICAL_TEMPLATES[verticalKey]
+  const computed: Record<string, number> = {}
+
+  if (verticalKey === 'cleaning_services') {
+    computed.active_recurring_customers = rows.filter((c) => {
+      if (c.status !== 'active') return false
+      const freq = (c.custom_fields as Record<string, unknown> | null)?.cleaning_frequency
+      return typeof freq === 'string' && freq.trim().length > 0 && freq !== 'avulsa'
+    }).length
+  }
+
+  if (verticalKey === 'therapy_clinic') {
+    computed.active_patients = rows.filter((c) => c.status === 'active').length
+    computed.waitlist_size = rows.filter(
+      (c) => (c.custom_fields as Record<string, unknown> | null)?.on_waitlist === true,
+    ).length
+  }
+
+  return template.dashboardKpis
+    .filter((kpi) => kpi.key in computed)
+    .map((kpi) => ({ key: kpi.key, label: kpi.labelPt, value: computed[kpi.key]! }))
+}
+
 export default async function ReceptionistHomePage() {
   const supabase = await createClient()
   const appUser = await getAppUser()
@@ -32,9 +71,12 @@ export default async function ReceptionistHomePage() {
 
   const { data: customers } = await supabase
     .from('customers')
-    .select('id, status, source, tags, created_at')
+    .select('id, status, source, tags, created_at, custom_fields')
 
-  const rows = (customers ?? []) as Pick<Customer, 'id' | 'status' | 'source' | 'tags' | 'created_at'>[]
+  const rows = (customers ?? []) as Pick<
+    Customer,
+    'id' | 'status' | 'source' | 'tags' | 'created_at' | 'custom_fields'
+  >[]
 
   if (rows.length === 0) {
     return (
@@ -71,6 +113,8 @@ export default async function ReceptionistHomePage() {
     { label: 'Ativos', value: byStatus.get('active') ?? 0, sub: 'status ativo', icon: TrendingUp, grad: 'from-violet-400 to-purple-500' },
   ]
 
+  const verticalKpis = computeVerticalKpis(verticalKey, rows)
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -99,6 +143,21 @@ export default async function ReceptionistHomePage() {
           </div>
         ))}
       </div>
+
+      {verticalKpis.length > 0 && (
+        <Card className="p-5">
+          <p className="mb-3 text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">
+            Indicadores — {VERTICAL_TEMPLATES[verticalKey!].labelPt}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {verticalKpis.map((kpi) => (
+              <Badge key={kpi.key} variant="cyan">
+                {kpi.label} · {kpi.value}
+              </Badge>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card className="p-5">

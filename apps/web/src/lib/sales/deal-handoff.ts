@@ -66,8 +66,17 @@ export async function handleSalesDealHandoff(
   const lead = leadRow as Lead | null
   if (!lead) return
 
+  const { data: sdrConfigRow } = await supabase
+    .from('agent_configs')
+    .select('*')
+    .eq('unit_id', unit.id)
+    .eq('agent_type', 'sdr')
+    .maybeSingle()
+  const sdrConfig = sdrConfigRow as AgentConfig | null
+  const businessProfile = (sdrConfig?.business_profile ?? {}) as Record<string, unknown>
+
   try {
-    const result = await createCustomerFromDealLead(supabase, { lead, unit })
+    const result = await createCustomerFromDealLead(supabase, { lead, unit, businessProfile })
     if (result.error) {
       await logSystemEvent(supabase, {
         level: 'error',
@@ -90,15 +99,6 @@ export async function handleSalesDealHandoff(
       leadId: lead.id,
     })
   }
-
-  const { data: sdrConfigRow } = await supabase
-    .from('agent_configs')
-    .select('*')
-    .eq('unit_id', unit.id)
-    .eq('agent_type', 'sdr')
-    .maybeSingle()
-  const sdrConfig = sdrConfigRow as AgentConfig | null
-  const businessProfile = (sdrConfig?.business_profile ?? {}) as Record<string, unknown>
 
   if (!isAutoRecruitmentDeal(businessProfile)) {
     const dealAction =
