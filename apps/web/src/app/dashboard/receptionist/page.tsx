@@ -1,7 +1,7 @@
 import { Headset, TrendingUp, UserPlus, Users } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { Badge, type BadgeVariant, Card, EmptyState, PageHeader, PrimaryButton } from '@/components/ui/dashboard-ui'
-import type { Customer } from '@/lib/types'
+import type { Appointment, Customer } from '@/lib/types'
 import { getAppUser } from '@/lib/app-user'
 import { fetchOrganizationVerticalKey } from '@/lib/organizations'
 import { getCustomerTerm } from '@/lib/verticals/terminology'
@@ -28,15 +28,15 @@ type VerticalKpiRow = Pick<Customer, 'status' | 'custom_fields'>
 
 /**
  * KPIs do catálogo (lib/verticals/catalog.ts dashboardKpis) — só os que
- * dá pra computar de verdade com o que existe hoje (customers/custom_fields).
- * Os demais (ex.: "jobs_this_month", "avg_ticket", "sessions_this_month")
- * dependem de agenda/financeiro, que ainda não existem, então ficam de
- * fora aqui em vez de mostrar um número inventado — a seção genérica
- * (total/novos-na-semana/status) cobre esse caso.
+ * dá pra computar de verdade com o que existe hoje (customers/custom_fields
+ * e, desde a Fase 2, appointments). Os que dependem de financeiro (ex.:
+ * "avg_ticket", "avg_response_time") ainda ficam de fora — a seção
+ * genérica (total/novos-na-semana/status) cobre esse caso.
  */
 function computeVerticalKpis(
   verticalKey: VerticalKey | null,
   rows: VerticalKpiRow[],
+  appointmentsThisMonth: { total: number; completed: number },
 ): { key: string; label: string; value: number }[] {
   if (!verticalKey) return []
   const template = VERTICAL_TEMPLATES[verticalKey]
@@ -48,6 +48,7 @@ function computeVerticalKpis(
       const freq = (c.custom_fields as Record<string, unknown> | null)?.cleaning_frequency
       return typeof freq === 'string' && freq.trim().length > 0 && freq !== 'avulsa'
     }).length
+    computed.jobs_this_month = appointmentsThisMonth.total
   }
 
   if (verticalKey === 'therapy_clinic') {
@@ -55,6 +56,11 @@ function computeVerticalKpis(
     computed.waitlist_size = rows.filter(
       (c) => (c.custom_fields as Record<string, unknown> | null)?.on_waitlist === true,
     ).length
+    computed.sessions_this_month = appointmentsThisMonth.total
+  }
+
+  if (verticalKey === 'general_maintenance') {
+    computed.jobs_completed_this_month = appointmentsThisMonth.completed
   }
 
   return template.dashboardKpis
@@ -77,6 +83,21 @@ export default async function ReceptionistHomePage() {
     Customer,
     'id' | 'status' | 'source' | 'tags' | 'created_at' | 'custom_fields'
   >[]
+
+  const monthStart = new Date()
+  monthStart.setDate(1)
+  monthStart.setHours(0, 0, 0, 0)
+
+  const { data: monthAppointments } = await supabase
+    .from('appointments')
+    .select('status')
+    .gte('starts_at', monthStart.toISOString())
+
+  const monthAppointmentRows = (monthAppointments ?? []) as Pick<Appointment, 'status'>[]
+  const appointmentsThisMonth = {
+    total: monthAppointmentRows.filter((a) => a.status !== 'cancelled' && a.status !== 'no_show').length,
+    completed: monthAppointmentRows.filter((a) => a.status === 'completed').length,
+  }
 
   if (rows.length === 0) {
     return (
@@ -113,7 +134,7 @@ export default async function ReceptionistHomePage() {
     { label: 'Ativos', value: byStatus.get('active') ?? 0, sub: 'status ativo', icon: TrendingUp, grad: 'from-violet-400 to-purple-500' },
   ]
 
-  const verticalKpis = computeVerticalKpis(verticalKey, rows)
+  const verticalKpis = computeVerticalKpis(verticalKey, rows, appointmentsThisMonth)
 
   return (
     <div className="flex flex-col gap-6">

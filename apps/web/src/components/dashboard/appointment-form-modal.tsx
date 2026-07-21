@@ -67,6 +67,10 @@ export function AppointmentFormModal({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const [addingToWaitlist, setAddingToWaitlist] = useState(false)
+  const [waitlistAdded, setWaitlistAdded] = useState(false)
+  const [waitlistError, setWaitlistError] = useState<string | null>(null)
+
   useEffect(() => {
     if (!serviceId || !employeeId || !date) {
       setSlots([])
@@ -76,6 +80,8 @@ export function AppointmentFormModal({
 
     async function loadSlots() {
       setLoadingSlots(true)
+      setWaitlistAdded(false)
+      setWaitlistError(null)
       const supabase = createClient()
       const dayStartUtc = zonedTimeToUtc(date, '00:00', timezone).toISOString()
       const dayEndUtc = zonedTimeToUtc(addDays(date, 1), '00:00', timezone).toISOString()
@@ -139,6 +145,68 @@ export function AppointmentFormModal({
     return () => clearTimeout(handle)
   }, [customerQuery, mode, unitId])
 
+  /** Resolve o cliente selecionado (ou cadastra o novo, se aberto o formulário inline). Reusado pela criação normal de agendamento e pelo fallback de lista de espera. */
+  async function resolveCustomerId(
+    supabase: ReturnType<typeof createClient>,
+    reportError: (message: string) => void
+  ): Promise<string | null> {
+    if (selectedCustomer) return selectedCustomer.id
+
+    if (showNewCustomer) {
+      if (!newCustomerName.trim()) {
+        reportError('Informe o nome do cliente.')
+        return null
+      }
+      const { data: newCustomer, error: customerError } = await supabase
+        .from('customers')
+        .insert({
+          org_id: orgId,
+          unit_id: unitId,
+          name: newCustomerName.trim(),
+          phone: newCustomerPhone.trim() || null,
+          source: 'manual',
+        })
+        .select('id, name, phone')
+        .single()
+      if (customerError || !newCustomer) {
+        reportError('Não foi possível cadastrar o cliente.')
+        return null
+      }
+      return (newCustomer as CustomerOption).id
+    }
+
+    reportError('Escolha ou cadastre um cliente.')
+    return null
+  }
+
+  /** Fallback quando a busca de slots não encontra vaga: registra a preferência do cliente em waitlist_entries, sem matching automático — um humano converte manualmente depois (tela /agenda/waitlist). */
+  async function handleAddToWaitlist() {
+    setWaitlistError(null)
+    setAddingToWaitlist(true)
+    const supabase = createClient()
+
+    const customerId = await resolveCustomerId(supabase, setWaitlistError)
+    if (!customerId) {
+      setAddingToWaitlist(false)
+      return
+    }
+
+    const { error: insertError } = await supabase.from('waitlist_entries').insert({
+      org_id: orgId,
+      unit_id: unitId,
+      customer_id: customerId,
+      service_id: serviceId || null,
+      preferred_starts_at: zonedTimeToUtc(date, '00:00', timezone).toISOString(),
+      preferred_notes: notes.trim() || null,
+    })
+    setAddingToWaitlist(false)
+    if (insertError) {
+      setWaitlistError('Não foi possível adicionar à lista de espera.')
+      return
+    }
+    setWaitlistAdded(true)
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
@@ -175,35 +243,8 @@ export function AppointmentFormModal({
       return
     }
 
-    let customerId = selectedCustomer?.id ?? null
-
-    if (!customerId && showNewCustomer) {
-      if (!newCustomerName.trim()) {
-        setError('Informe o nome do cliente.')
-        setSaving(false)
-        return
-      }
-      const { data: newCustomer, error: customerError } = await supabase
-        .from('customers')
-        .insert({
-          org_id: orgId,
-          unit_id: unitId,
-          name: newCustomerName.trim(),
-          phone: newCustomerPhone.trim() || null,
-          source: 'manual',
-        })
-        .select('id, name, phone')
-        .single()
-      if (customerError || !newCustomer) {
-        setError('Não foi possível cadastrar o cliente.')
-        setSaving(false)
-        return
-      }
-      customerId = (newCustomer as CustomerOption).id
-    }
-
+    const customerId = await resolveCustomerId(supabase, setError)
     if (!customerId) {
-      setError('Escolha ou cadastre um cliente.')
       setSaving(false)
       return
     }
@@ -287,7 +328,23 @@ export function AppointmentFormModal({
               {loadingSlots ? (
                 <p className="text-sm text-slate-500">Calculando horários livres…</p>
               ) : slots.length === 0 ? (
-                <p className="text-sm text-slate-500">Nenhum horário livre neste dia para este serviço/profissional.</p>
+                <div className="flex flex-col items-start gap-2">
+                  <p className="text-sm text-slate-500">Nenhum horário livre neste dia para este serviço/profissional.</p>
+                  {waitlistAdded ? (
+                    <p className="text-sm font-semibold text-emerald-400">Adicionado à lista de espera.</p>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={addingToWaitlist}
+                      onClick={handleAddToWaitlist}
+                      className="rounded-lg px-3 py-1.5 text-xs font-bold text-cyan-400 transition-colors hover:text-cyan-300 disabled:opacity-40"
+                      style={{ border: '1px solid rgba(6,182,212,0.3)' }}
+                    >
+                      {addingToWaitlist ? 'Adicionando…' : 'Adicionar à lista de espera'}
+                    </button>
+                  )}
+                  {waitlistError && <p className="text-sm text-red-400">{waitlistError}</p>}
+                </div>
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {slots.map((slot) => (

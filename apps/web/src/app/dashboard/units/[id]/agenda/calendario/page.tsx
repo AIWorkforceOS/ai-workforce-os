@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ChevronLeft, ChevronRight, Settings } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Clock, Settings } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { CalendarView, type AppointmentWithRelations } from '@/components/dashboard/calendar-view'
 import { Card, PageHeader } from '@/components/ui/dashboard-ui'
@@ -72,14 +72,24 @@ export default async function UnitCalendarPage({
         title={`Calendário — ${unitRow.name}`}
         subtitle="Agendar, reagendar, cancelar ou marcar falta em atendimentos."
         action={
-          <Link
-            href={`/dashboard/units/${id}/agenda`}
-            className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-slate-300 transition-all hover:bg-white/5"
-            style={{ border: '1px solid rgba(255,255,255,0.08)' }}
-          >
-            <Settings size={13} />
-            Configurar agenda
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/dashboard/units/${id}/agenda/waitlist`}
+              className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-slate-300 transition-all hover:bg-white/5"
+              style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              <Clock size={13} />
+              Lista de espera
+            </Link>
+            <Link
+              href={`/dashboard/units/${id}/agenda`}
+              className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-slate-300 transition-all hover:bg-white/5"
+              style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              <Settings size={13} />
+              Configurar agenda
+            </Link>
+          </div>
         }
       />
 

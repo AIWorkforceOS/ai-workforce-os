@@ -306,6 +306,8 @@ export type WaitlistEntry = {
   customer_id: string
   service_id: string | null
   preferred_notes: string | null
+  /** Data/hora que o cliente gostaria de ser atendido (migration 028) — âncora, não um slot reservado. */
+  preferred_starts_at: string | null
   status: WaitlistStatus
   notified_at: string | null
   created_at: string
