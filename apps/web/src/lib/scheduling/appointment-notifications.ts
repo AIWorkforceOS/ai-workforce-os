@@ -61,6 +61,12 @@ function cancelledMessage(customerName: string, unitName: string, when: string, 
     : `Olá, ${customerName}. Seu agendamento na ${unitName} de ${when}${serviceSuffix(serviceName)} foi cancelado.`
 }
 
+function reminderMessage(customerName: string, unitName: string, when: string, serviceName: string | null, locale: Locale): string {
+  return locale === 'en'
+    ? `Hi ${customerName}! Reminder: you have an appointment at ${unitName} on ${when}${serviceSuffix(serviceName)}.`
+    : `Olá, ${customerName}! Lembrete: você tem um agendamento na ${unitName} em ${when}${serviceSuffix(serviceName)}.`
+}
+
 type AppointmentContext = {
   appointment: Appointment
   customer: Pick<Customer, 'id' | 'name' | 'phone' | 'email'>
@@ -231,6 +237,45 @@ export async function handleAppointmentCancelled(
   await supabase
     .from('appointments')
     .update({ cancelled_notified_at: new Date().toISOString() })
+    .eq('id', appointmentId)
+}
+
+/**
+ * Dispara pelo cron de lembrete (Fase 2, sub-etapa 6/7 — ver
+ * api/cron/appointment-reminders). Diferente dos outros 3 handlers,
+ * que reagem a um evento imediato (criar/reagendar/cancelar), este é
+ * chamado pelo cron já tendo decidido QUANDO lembrar (comparando
+ * scheduling_settings.reminder_hours_before com o horário atual) — este
+ * handler só cuida de respeitar reminders_enabled, montar a mensagem e
+ * garantir idempotência via reminder_sent_at.
+ */
+export async function handleAppointmentReminder(
+  supabase: SupabaseClient,
+  params: { appointmentId: string; unit: Unit },
+): Promise<void> {
+  const { appointmentId, unit } = params
+  if (!unit.org_id) return
+  if (!getSchedulingSettings(unit).reminders_enabled) return
+
+  const ctx = await loadAppointmentContext(supabase, appointmentId)
+  if (!ctx) return
+  if (ctx.appointment.reminder_sent_at) return // idempotência: já lembrado
+
+  const locale = unitDefaultLocale(unit)
+  const when = fmtMoment(ctx.appointment.starts_at, unit.timezone, locale)
+  const text = reminderMessage(ctx.customer.name, unit.name, when, ctx.serviceName, locale)
+
+  await sendCustomerMessage(supabase, {
+    unit,
+    customer: ctx.customer,
+    text,
+    eventType: 'appointment_reminder',
+    appointmentId,
+  })
+
+  await supabase
+    .from('appointments')
+    .update({ reminder_sent_at: new Date().toISOString() })
     .eq('id', appointmentId)
 }
 
