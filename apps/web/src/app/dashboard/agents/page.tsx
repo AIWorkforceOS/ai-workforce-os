@@ -9,7 +9,7 @@ import {
   ChevronRight,
   Sparkles,
 } from 'lucide-react'
-import { Card, PageHeader, PrimaryButton, TableShell, Td, Th, Tr } from '@/components/ui/dashboard-ui'
+import { Card, PageHeader, PrimaryButton, StatusPill, TableShell, Td, Th, Tr } from '@/components/ui/dashboard-ui'
 
 const CAPABILITIES = [
   {
@@ -81,10 +81,7 @@ export default async function AgentsPage() {
           <div className="flex-1">
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-bold text-white">AI Sales Representative</h2>
-              <span className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold" style={{ background: 'rgba(34,197,94,0.15)', color: '#4ade80' }}>
-                <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
-                Ativo via WhatsApp
-              </span>
+              <StatusPill variant="green">Ativo via WhatsApp</StatusPill>
             </div>
             <p className="mt-1 text-sm text-slate-400">
               O agente está operando nas unidades com WhatsApp conectado. Ele prospecta, qualifica e conduz as primeiras conversas com leads automaticamente.
@@ -166,15 +163,9 @@ export default async function AgentsPage() {
                   <Td className="text-slate-400">{unit.whatsapp_phone ?? '—'}</Td>
                   <Td>
                     {unit.whatsapp_phone ? (
-                      <span className="flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold" style={{ background: 'rgba(34,197,94,0.12)', color: '#4ade80' }}>
-                        <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
-                        Agente ativo
-                      </span>
+                      <StatusPill variant="green">Agente ativo</StatusPill>
                     ) : (
-                      <span className="flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium text-slate-500" style={{ background: 'rgba(255,255,255,0.05)' }}>
-                        <span className="h-1.5 w-1.5 rounded-full bg-slate-500" />
-                        Aguardando WhatsApp
-                      </span>
+                      <StatusPill variant="slate">Aguardando WhatsApp</StatusPill>
                     )}
                   </Td>
                   <Td className="text-right">

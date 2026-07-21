@@ -8,7 +8,7 @@ import { CopyWhatsAppLink } from '@/components/dashboard/copy-whatsapp-link'
 import { ProspectingPanel } from '@/components/dashboard/prospecting-panel'
 import { UnitOwnerPanel } from '@/components/dashboard/unit-owner-panel'
 import type { AgentConfig, DashboardSummaryRow, Unit } from '@/lib/types'
-import { Badge, Card } from '@/components/ui/dashboard-ui'
+import { Badge, Card, KpiCard, PageHeader } from '@/components/ui/dashboard-ui'
 
 const CLOSED_JOB_STATUSES = ['closed', 'cancelled', 'expired', 'handed_off']
 const TERMINAL_CANDIDATE_STAGES = ['approved', 'not_selected', 'unreachable', 'withdrew', 'disqualified']
@@ -65,16 +65,12 @@ export default async function UnitDetailPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-black tracking-tight text-white">{unitRow.name}</h1>
-          <p className="mt-1 text-sm text-slate-400">
-            {unitRow.region_city ?? '—'}
-            {unitRow.region_state ? `, ${unitRow.region_state}` : ''}
-          </p>
-        </div>
-        <Badge variant={unitRow.is_active ? 'green' : 'slate'}>{unitRow.is_active ? 'Ativa' : 'Inativa'}</Badge>
-      </div>
+      <PageHeader
+        eyebrow="unidade"
+        title={unitRow.name}
+        subtitle={`${unitRow.region_city ?? '—'}${unitRow.region_state ? `, ${unitRow.region_state}` : ''}`}
+        action={<Badge variant={unitRow.is_active ? 'green' : 'slate'}>{unitRow.is_active ? 'Ativa' : 'Inativa'}</Badge>}
+      />
 
       {welcome && (
         <Card className={`px-6 py-3 text-sm ${welcome === 'sent' ? 'text-emerald-400' : 'text-amber-400'}`}>
@@ -86,10 +82,7 @@ export default async function UnitDetailPage({
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         {metrics.map((metric) => (
-          <Card key={metric.label} className="p-5">
-            <p className="text-sm text-slate-400">{metric.label}</p>
-            <p className="mt-2 text-2xl font-black text-white">{metric.value}</p>
-          </Card>
+          <KpiCard key={metric.label} label={metric.label} value={metric.value} />
         ))}
       </div>
 

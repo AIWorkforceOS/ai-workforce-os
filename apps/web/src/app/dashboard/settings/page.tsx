@@ -157,7 +157,7 @@ export default async function SettingsPage() {
                     <CopyField label="Token (header Authorization: Bearer ...)" value={unit.intake_token} mask />
                   ) : (
                     <p className="self-end text-[11px] text-amber-400">
-                      Token ainda não gerado — aplique a migration 4 no Supabase.
+                      Token ainda não disponível para esta unidade — fale com o suporte para ativar.
                     </p>
                   )}
                 </div>
