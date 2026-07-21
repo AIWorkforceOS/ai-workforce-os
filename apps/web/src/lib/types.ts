@@ -285,9 +285,13 @@ export type Appointment = {
   source: string
   notes: string | null
   custom_fields: Record<string, unknown>
-  /** preenchidos pelos templates automáticos de comunicação (sub-etapas seguintes da Fase 2) */
+  /** preenchidos pelos templates automáticos de comunicação (sub-etapa 5/7 da Fase 2) */
   confirmation_sent_at: string | null
   reminder_sent_at: string | null
+  /** null = ainda não notificado para o horário atual; reagendar reseta para null (permite notificar de novo a cada reagendamento). */
+  rescheduled_notified_at: string | null
+  cancelled_notified_at: string | null
+  no_show_notified_at: string | null
   created_at: string
   updated_at: string
 }

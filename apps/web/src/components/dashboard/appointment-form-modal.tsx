@@ -11,6 +11,15 @@ import type { AppointmentWithRelations } from '@/components/dashboard/calendar-v
 
 type CustomerOption = { id: string; name: string; phone: string | null }
 
+/** Fire-and-forget: a mutação em `appointments` já foi gravada, o aviso automático nunca deve bloquear a UI nem virar erro pro usuário (falhas ficam em system_events). */
+function notifyAppointment(unitId: string, appointmentId: string, event: 'booked' | 'rescheduled') {
+  void fetch(`/api/units/${unitId}/appointments/${appointmentId}/notify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ event }),
+  }).catch(() => {})
+}
+
 export function AppointmentFormModal({
   unitId,
   orgId,
@@ -150,6 +159,9 @@ export function AppointmentFormModal({
           employee_id: employeeId,
           starts_at: selectedSlot.starts_at,
           ends_at: selectedSlot.ends_at,
+          // reseta o carimbo de aviso: um reagendamento é um evento novo,
+          // que merece seu próprio aviso automático (ver rescheduled_notified_at)
+          rescheduled_notified_at: null,
         })
         .eq('id', appointment!.id)
       setSaving(false)
@@ -157,6 +169,7 @@ export function AppointmentFormModal({
         setError('Não foi possível reagendar. O horário pode ter sido ocupado.')
         return
       }
+      notifyAppointment(unitId, appointment!.id, 'rescheduled')
       await onSaved()
       onClose()
       return
@@ -195,21 +208,26 @@ export function AppointmentFormModal({
       return
     }
 
-    const { error: insertError } = await supabase.from('appointments').insert({
-      org_id: orgId,
-      unit_id: unitId,
-      customer_id: customerId,
-      service_id: serviceId,
-      employee_id: employeeId,
-      starts_at: selectedSlot.starts_at,
-      ends_at: selectedSlot.ends_at,
-      notes: notes.trim() || null,
-    })
+    const { data: insertedAppointment, error: insertError } = await supabase
+      .from('appointments')
+      .insert({
+        org_id: orgId,
+        unit_id: unitId,
+        customer_id: customerId,
+        service_id: serviceId,
+        employee_id: employeeId,
+        starts_at: selectedSlot.starts_at,
+        ends_at: selectedSlot.ends_at,
+        notes: notes.trim() || null,
+      })
+      .select('id')
+      .single()
     setSaving(false)
     if (insertError) {
       setError('Não foi possível criar o agendamento. O horário pode ter sido ocupado.')
       return
     }
+    notifyAppointment(unitId, (insertedAppointment as { id: string }).id, 'booked')
     await onSaved()
     onClose()
   }

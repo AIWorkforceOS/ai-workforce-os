@@ -45,6 +45,15 @@ const STATUS_LABEL: Record<AppointmentStatus, string> = {
 
 const ACTIVE_STATUSES: AppointmentStatus[] = ['scheduled', 'confirmed']
 
+/** Fire-and-forget: a mutação em `appointments` já foi gravada, o aviso automático nunca deve bloquear a UI nem virar erro pro usuário (falhas ficam em system_events). */
+function notifyAppointment(unitId: string, appointmentId: string, event: 'cancelled' | 'no_show') {
+  void fetch(`/api/units/${unitId}/appointments/${appointmentId}/notify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ event }),
+  }).catch(() => {})
+}
+
 /** Formata 'YYYY-MM-DD' como cabeçalho do dia, sem depender do fuso local do processo. */
 function formatDayHeader(dateStr: string): string {
   const [year, month, day] = dateStr.split('-').map(Number) as [number, number, number]
@@ -117,6 +126,7 @@ export function CalendarView({
       setRowError('Não foi possível cancelar o agendamento.')
       return
     }
+    notifyAppointment(unitId, appointment.id, 'cancelled')
     await reload()
   }
 
@@ -131,6 +141,7 @@ export function CalendarView({
       setRowError('Não foi possível marcar falta.')
       return
     }
+    notifyAppointment(unitId, appointment.id, 'no_show')
     await reload()
   }
 
