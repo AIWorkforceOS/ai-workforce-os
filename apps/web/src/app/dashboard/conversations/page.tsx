@@ -1,7 +1,8 @@
 import Link from 'next/link'
+import { MessageSquare } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import type { Conversation, Unit } from '@/lib/types'
-import { Badge, type BadgeVariant, Card, Label, PageHeader, Select, TableShell, Td, Th, Tr } from '@/components/ui/dashboard-ui'
+import { Badge, type BadgeVariant, Card, EmptyState, Label, PageHeader, Select, TableShell, Td, Th, Tr } from '@/components/ui/dashboard-ui'
 
 const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: 'new', label: 'Novo' },
@@ -135,12 +136,11 @@ export default async function ConversationsPage({
 
       <Card className="overflow-hidden">
         {threads.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 px-5 py-16 text-center">
-            <p className="text-sm font-bold text-white">Nenhuma conversa encontrada</p>
-            <p className="text-sm text-slate-400">
-              As conversas aparecem aqui assim que o WhatsApp estiver conectado e leads responderem.
-            </p>
-          </div>
+          <EmptyState
+            icon={<MessageSquare size={22} className="text-white" />}
+            title="Nenhuma conversa encontrada"
+            subtitle="As conversas aparecem aqui assim que o WhatsApp estiver conectado e leads responderem."
+          />
         ) : (
           <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-sm">

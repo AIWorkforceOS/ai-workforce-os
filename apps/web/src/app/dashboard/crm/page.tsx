@@ -12,6 +12,7 @@ import {
   Label,
   PageHeader,
   Select,
+  Skeleton,
   Textarea,
   brandGradient,
   cardShadow,
@@ -537,8 +538,19 @@ export default function CrmPage() {
 
       {/* Kanban board */}
       {loading ? (
-        <div className="flex items-center justify-center py-20 text-sm text-slate-500">
-          Carregando leads...
+        <div className="flex gap-3 overflow-x-auto pb-4" style={{ minHeight: '60vh' }}>
+          {COLUMNS.map((col) => (
+            <div
+              key={col.status}
+              className="flex-shrink-0 w-56 flex flex-col gap-2 rounded-2xl p-2"
+              style={{ background: col.bg, border: '1px solid rgba(255,255,255,0.06)' }}
+            >
+              <div className="h-[3px] -m-2 mb-0 rounded-t-2xl" style={{ background: col.accent }} />
+              <Skeleton className="mx-1 mt-2 h-3 w-20" />
+              <Skeleton className="h-24 w-full rounded-2xl" />
+              <Skeleton className="h-24 w-full rounded-2xl" />
+            </div>
+          ))}
         </div>
       ) : (
         <div className="flex gap-3 overflow-x-auto pb-4" style={{ minHeight: '60vh' }}>

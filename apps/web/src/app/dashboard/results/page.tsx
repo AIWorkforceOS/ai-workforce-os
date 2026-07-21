@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { TrendingUp, Trophy, Target } from 'lucide-react'
 import type { Lead, Unit } from '@/lib/types'
-import { Badge, Card, CardHeader, PageHeader, TableShell, Td, Th, Tr } from '@/components/ui/dashboard-ui'
+import { Badge, Card, CardHeader, EmptyState, PageHeader, TableShell, Td, Th, Tr } from '@/components/ui/dashboard-ui'
 
 function fmt(val: number) {
   return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -86,11 +86,11 @@ export default async function ResultsPage() {
           <h2 className="text-sm font-bold text-white">Fechamentos recentes</h2>
         </div>
         {won.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 py-16 text-center">
-            <Trophy size={28} className="text-slate-600" />
-            <p className="text-sm text-slate-300">Nenhum fechamento registrado ainda.</p>
-            <p className="text-xs text-slate-500">Os leads com status &quot;Fechado&quot; aparecerão aqui.</p>
-          </div>
+          <EmptyState
+            icon={<Trophy size={22} className="text-white" />}
+            title="Nenhum fechamento registrado ainda"
+            subtitle='Os leads com status "Fechado" aparecerão aqui.'
+          />
         ) : (
           <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-sm">

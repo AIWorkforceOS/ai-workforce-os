@@ -15,6 +15,7 @@ import {
   type BadgeVariant,
   Card,
   CardHeader,
+  EmptyState,
   PageHeader,
   PrimaryButton,
   TableShell,
@@ -23,7 +24,7 @@ import {
   Tr,
 } from '@/components/ui/dashboard-ui'
 import { TrafficDecisionActions } from '@/components/dashboard/traffic-decision-actions'
-import { Plus } from 'lucide-react'
+import { BarChart3, ClipboardList, Plus, Sparkles } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -264,10 +265,11 @@ export default async function TrafficPage() {
           />
         </div>
         {decisions.length === 0 ? (
-          <div className="px-6 pb-8 text-sm text-slate-400">
-            Nada por aqui ainda. Assim que as contas estiverem conectadas, as recomendações do
-            especialista aparecem nesta lista todos os dias — e você aprova ou recusa cada uma.
-          </div>
+          <EmptyState
+            icon={<Sparkles size={22} className="text-white" />}
+            title="Nada por aqui ainda"
+            subtitle="Assim que as contas estiverem conectadas, as recomendações do especialista aparecem nesta lista todos os dias — e você aprova ou recusa cada uma."
+          />
         ) : (
           <div className="flex flex-col">
             {decisions.map((decision) => {
@@ -330,9 +332,11 @@ export default async function TrafficPage() {
           <CardHeader eyebrow="performance 7 dias" title="Campanhas monitoradas" />
         </div>
         {campaigns.length === 0 ? (
-          <div className="px-6 pb-8 text-sm text-slate-400">
-            Nenhuma campanha sincronizada ainda.
-          </div>
+          <EmptyState
+            icon={<BarChart3 size={22} className="text-white" />}
+            title="Nenhuma campanha sincronizada ainda"
+            subtitle="As campanhas aparecem aqui assim que uma conta de anúncio estiver conectada."
+          />
         ) : (
           <div className="overflow-x-auto">
           <table className="w-full min-w-[880px] text-left text-sm">
@@ -393,10 +397,11 @@ export default async function TrafficPage() {
           />
         </div>
         {actions.length === 0 ? (
-          <div className="px-6 pb-8 text-sm text-slate-400">
-            Nenhuma ação executada ainda. Toda mudança feita numa conta real fica registrada aqui,
-            com payload, estado anterior e resposta da plataforma.
-          </div>
+          <EmptyState
+            icon={<ClipboardList size={22} className="text-white" />}
+            title="Nenhuma ação executada ainda"
+            subtitle="Toda mudança feita numa conta real fica registrada aqui, com payload, estado anterior e resposta da plataforma."
+          />
         ) : (
           <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-left text-sm">

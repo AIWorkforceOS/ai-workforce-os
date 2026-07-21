@@ -137,6 +137,58 @@ export function EmptyState({
   )
 }
 
+// ---------------------------------------------------------------------------
+// Skeletons — placeholders com animate-pulse pro estado de carregamento,
+// usados no loading.tsx do dashboard e em telas com fetch client-side.
+// ---------------------------------------------------------------------------
+export function Skeleton({ className = '' }: { className?: string }) {
+  return <div className={`animate-pulse rounded-lg bg-white/[0.06] ${className}`} />
+}
+
+export function PageHeaderSkeleton() {
+  return (
+    <div>
+      <Skeleton className="h-2.5 w-24" />
+      <Skeleton className="mt-2.5 h-7 w-64" />
+    </div>
+  )
+}
+
+export function KpiCardSkeleton() {
+  return (
+    <div className="relative overflow-hidden rounded-2xl" style={{ background: '#141a2b', boxShadow: cardShadow }}>
+      <div className="p-4 pt-5">
+        <Skeleton className="h-10 w-10 rounded-xl" />
+        <Skeleton className="mt-4 h-6 w-16" />
+        <Skeleton className="mt-2 h-2.5 w-20" />
+      </div>
+    </div>
+  )
+}
+
+export function TableCardSkeleton({ rows = 5, cols = 4 }: { rows?: number; cols?: number }) {
+  return (
+    <Card className="overflow-hidden">
+      <div className="px-5 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <Skeleton className="h-4 w-36" />
+      </div>
+      <div className="flex flex-col">
+        {Array.from({ length: rows }).map((_, i) => (
+          <div
+            key={i}
+            className="flex items-center gap-6 px-5 py-4"
+            style={i < rows - 1 ? { borderBottom: '1px solid rgba(255,255,255,0.04)' } : undefined}
+          >
+            {Array.from({ length: cols }).map((_, j) => (
+              <Skeleton key={j} className="h-3.5 flex-1" />
+            ))}
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
 export function Th({ children }: { children: ReactNode }) {
   return (
     <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">

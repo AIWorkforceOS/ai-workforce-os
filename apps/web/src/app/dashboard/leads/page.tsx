@@ -1,7 +1,8 @@
 import Link from 'next/link'
+import { Users } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { SECTOR_OPTIONS, type Lead, type Unit } from '@/lib/types'
-import { Badge, type BadgeVariant, Card, Label, PageHeader, Select, TableShell, Td, Th, Tr } from '@/components/ui/dashboard-ui'
+import { Badge, type BadgeVariant, Card, EmptyState, Label, PageHeader, Select, TableShell, Td, Th, Tr } from '@/components/ui/dashboard-ui'
 
 const PAGE_SIZE = 20
 
@@ -148,10 +149,11 @@ export default async function LeadsPage({
 
       <Card className="overflow-hidden">
         {leadRows.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 px-5 py-16 text-center">
-            <p className="text-sm font-bold text-white">Nenhum lead encontrado</p>
-            <p className="text-sm text-slate-400">Ajuste os filtros ou prospecte novos leads em uma unidade.</p>
-          </div>
+          <EmptyState
+            icon={<Users size={22} className="text-white" />}
+            title="Nenhum lead encontrado"
+            subtitle="Ajuste os filtros ou prospecte novos leads em uma unidade."
+          />
         ) : (
           <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-sm">
