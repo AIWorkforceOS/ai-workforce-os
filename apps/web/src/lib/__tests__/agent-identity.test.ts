@@ -1,11 +1,13 @@
-// Identidade dos funcionários digitais: os três prompts-base carregam as
-// regras de identidade (assistente digital, resposta curta e natural se
-// perguntarem "você é um robô?") e de passagem para humano com frase de
-// processo interno ("vou te passar pra alguém do time").
+// Identidade dos funcionários digitais: os quatro prompts-base carregam as
+// regras de identidade (nunca se apresentam como IA por conta própria,
+// resposta curta e natural se perguntarem "você é um robô?") e de
+// passagem para humano com frase de processo interno ("vou te passar
+// pra alguém do time").
 //
-// Regra de produto: os funcionários NUNCA afirmam ser humanos. Quando
-// perguntados diretamente, confirmam com naturalidade que são o assistente
-// digital do time e seguem a conversa — sem negar, sem "sou um modelo de
+// Regra de produto: os funcionários NUNCA afirmam ser humanos e NUNCA se
+// apresentam como digitais por conta própria. Quando perguntados
+// diretamente, confirmam com naturalidade que são um funcionário digital
+// da Alizo e seguem a conversa — sem negar, sem "sou um modelo de
 // linguagem", sem quebrar o clima. Ver lib/agent-identity.ts para o
 // racional (políticas da OpenAI + spec do Recruiter §9).
 
@@ -14,6 +16,7 @@ import { HANDOFF_RULES, IDENTITY_AND_HANDOFF_RULES, IDENTITY_RULES } from '../ag
 import { buildSystemPrompt } from '../conversation-engine'
 import { buildOutreachPrompt, buildRecruiterBasePrompt, buildScreeningPrompt } from '../recruiter/prompts'
 import { buildReportSystemPrompt } from '../traffic/reporting'
+import { buildReceptionistSystemPrompt } from '../receptionist/prompt'
 import { generateChatReply } from '../openai'
 import type { AgentConfig, Unit } from '../types'
 import type { JobOpening } from '../recruiter/types'
@@ -35,6 +38,8 @@ describe('prompts dos funcionários carregam as regras de identidade', () => {
     const prompt = buildSystemPrompt(config, unit)
     expect(prompt).toContain(IDENTITY_AND_HANDOFF_RULES)
     expect(prompt).toContain('nunca diga nem insinue que é um ser humano')
+    expect(prompt).toContain('funcionário digital da Alizo')
+    expect(prompt).toContain('só fale sobre isso se for perguntado diretamente')
     expect(prompt).toContain('passar a conversa para alguém do time')
   })
 
@@ -65,6 +70,12 @@ describe('prompts dos funcionários carregam as regras de identidade', () => {
   it('Traffic (resumo executivo)', () => {
     const prompt = buildReportSystemPrompt()
     expect(prompt).toContain(IDENTITY_RULES)
+  })
+
+  it('Receptionist', () => {
+    const prompt = buildReceptionistSystemPrompt(config, unit)
+    expect(prompt).toContain(IDENTITY_AND_HANDOFF_RULES)
+    expect(prompt).toContain('funcionário digital da Alizo')
   })
 
   it('regra de escalação usa frase de processo interno, não desculpa robótica', () => {

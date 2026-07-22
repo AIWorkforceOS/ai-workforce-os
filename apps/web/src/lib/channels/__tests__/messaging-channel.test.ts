@@ -31,6 +31,7 @@ vi.mock('@/lib/evolution', () => ({
       ? { apiUrl: unit.evolution_api_url, apiKey: unit.evolution_api_key, instanceName: 'fake' }
       : null,
   sendWhatsAppMessage: vi.fn(async () => ({ ok: true })),
+  sendTypingPresence: vi.fn(async () => ({ ok: true })),
 }))
 
 function makeUnit(overrides: Partial<Unit> = {}): Unit {

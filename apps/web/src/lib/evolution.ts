@@ -96,3 +96,22 @@ export async function sendWhatsAppMessage(config: EvolutionUnitConfig, phone: st
   await logEvolutionUsage('message.sendText')
   return result
 }
+
+/**
+ * Mostra o indicador nativo de "digitando..." no WhatsApp do cliente por
+ * `delayMs`. Best-effort: quem chama não deve deixar uma falha aqui
+ * bloquear o envio da mensagem em si (ver EvolutionWhatsAppChannel em
+ * lib/channels/messaging-channel.ts).
+ */
+export async function sendTypingPresence(config: EvolutionUnitConfig, phone: string, delayMs: number) {
+  const result = await evolutionFetch(config, `/chat/sendPresence/${config.instanceName}`, {
+    method: 'POST',
+    body: JSON.stringify({
+      number: phone,
+      presence: 'composing',
+      delay: delayMs,
+    }),
+  })
+  await logEvolutionUsage('chat.sendPresence')
+  return result
+}

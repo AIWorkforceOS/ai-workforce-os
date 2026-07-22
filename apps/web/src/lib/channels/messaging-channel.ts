@@ -1,7 +1,8 @@
 import type { ConversationChannel, Lead, MessagingChannelType, Unit } from '@/lib/types'
-import { getEvolutionConfig, sendWhatsAppMessage, type EvolutionUnitConfig } from '@/lib/evolution'
+import { getEvolutionConfig, sendTypingPresence, sendWhatsAppMessage, type EvolutionUnitConfig } from '@/lib/evolution'
 import { getTwilioConfig, sendSmsMessage, type TwilioUnitConfig } from '@/lib/twilio'
 import { getResendApiKey, sendLeadEmail } from '@/lib/email'
+import { computeHumanTypingDelayMs, sleep } from '@/lib/humanized-timing'
 
 // Abstração de canal de mensagens (item 1): o funcionário de IA (SDR,
 // Sales Rep, Recruiter) fala com o cliente por WhatsApp (Evolution API),
@@ -27,6 +28,10 @@ class EvolutionWhatsAppChannel implements MessagingChannel {
   constructor(private readonly config: EvolutionUnitConfig) {}
 
   async sendMessage(phone: string, text: string): Promise<void> {
+    const delayMs = computeHumanTypingDelayMs(text)
+    // Indicador nativo de "digitando..." é cosmético — nunca deve derrubar o envio real.
+    await sendTypingPresence(this.config, phone, delayMs).catch(() => {})
+    await sleep(delayMs)
     await sendWhatsAppMessage(this.config, phone, text)
   }
 }
@@ -37,6 +42,8 @@ class TwilioSmsChannel implements MessagingChannel {
   constructor(private readonly config: TwilioUnitConfig) {}
 
   async sendMessage(phone: string, text: string): Promise<void> {
+    // Twilio não tem indicador de "digitando" — só o delay artificial (item b).
+    await sleep(computeHumanTypingDelayMs(text))
     await sendSmsMessage(this.config, phone, text)
   }
 }
@@ -70,6 +77,9 @@ class ResendEmailChannel implements MessagingChannel {
   constructor(private readonly unit: Unit) {}
 
   async sendMessage(email: string, text: string, context?: SendContext): Promise<void> {
+    // E-mail não tem indicador de "digitando" — só o delay artificial (item b),
+    // que também evita uma resposta automatizada com timestamp instantâneo demais.
+    await sleep(computeHumanTypingDelayMs(text))
     const result = await sendLeadEmail({
       to: email,
       unitName: this.unit.name,
