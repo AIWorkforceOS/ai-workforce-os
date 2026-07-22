@@ -31,7 +31,7 @@ type ProviderDef = {
   id: string
   name: string
   fields: FieldDef[]
-  /** campo de instruções mostradas ao cliente (ex.: dados da conta Zelle) */
+  /** campo de instruções mostradas ao cliente para métodos de recebimento manual */
   hasInstructions?: boolean
   hint?: string
 }
@@ -73,16 +73,6 @@ const PROVIDERS: Record<'BR' | 'US', ProviderDef[]> = {
         { key: 'webhook_secret', label: 'Webhook Signing Secret', secret: true, placeholder: 'whsec_...' },
       ],
       hint: 'Débito/crédito à vista e assinatura recorrente nos EUA.',
-    },
-    {
-      id: 'zelle_manual',
-      name: 'Zelle (recebimento manual)',
-      fields: [
-        { key: 'account_name', label: 'Nome da conta (como aparece no Zelle)' },
-        { key: 'account_email_or_phone', label: 'E-mail ou telefone Zelle' },
-      ],
-      hasInstructions: true,
-      hint: 'Zelle não tem API pública: o cliente transfere e você confirma o recebimento manualmente.',
     },
   ],
 }
@@ -226,7 +216,7 @@ function ProviderCard({
             onChange={(e) => setInstructions(e.target.value)}
             disabled={disabled}
             rows={3}
-            placeholder={'Ex.: Send your monthly payment via Zelle to payments@alizo.com (Alizo Inc). Include your company name in the memo.'}
+            placeholder={'Ex.: Send your monthly payment to payments@alizo.com (Alizo Inc). Include your company name in the memo.'}
             className="w-full rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600 outline-none focus:border-cyan-500/50 disabled:opacity-50"
             style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
           />

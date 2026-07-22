@@ -7,6 +7,7 @@ import {
   Bot, Check, Zap, BarChart3, MessageSquare, Shield, ArrowRight,
   TrendingUp, Clock, DollarSign, Users, ChevronDown, Play,
   Sparkles, Globe, Lock, HeadphonesIcon, Briefcase, Megaphone, Wallet, MapPin,
+  ClipboardList, Scale, Truck, Home, HeartHandshake,
 } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
@@ -17,7 +18,7 @@ export const dynamic = 'force-dynamic'
  *
  * Posicionamento: a Alizo se apresenta como empresa americana de
  * tecnologia sediada em Phoenix, Arizona, sempre na fronteira da IA.
- * Números de produto descrevem apenas o que existe hoje (3 funcionários
+ * Números de produto descrevem apenas o que existe hoje (4 funcionários
  * ativos, WhatsApp, prospecção, funil). A seção de economia usa valores
  * de mercado explicitamente marcados como ilustrativos. A conversa da
  * demonstração é uma simulação declarada como tal.
@@ -37,7 +38,7 @@ const COPY = {
       ctaDemo: 'Ver demonstração',
       techLine: 'Sempre rodando a última geração de IA de fronteira — atualizada continuamente',
       proof: [
-        { value: '3', label: 'Funcionários digitais prontos', sub: 'AI Sales Representative, RH e Tráfego Pago' },
+        { value: '4', label: 'Funcionários digitais prontos', sub: 'AI Sales Representative, RH, Tráfego Pago e Recepcionista' },
         { value: '24/7', label: 'Disponibilidade garantida', sub: 'Sem feriados, sem férias' },
         { value: '10 min', label: 'Para configurar e ativar', sub: 'Entrevista guiada, sem código' },
       ],
@@ -98,7 +99,7 @@ const COPY = {
       milestones: [
         { tag: 'A origem', title: 'Phoenix, Arizona', desc: 'Fundada no coração de um dos ecossistemas de tecnologia que mais crescem nos Estados Unidos.' },
         { tag: 'A tese', title: 'IA que trabalha, não que conversa', desc: 'Funcionários digitais com função, meta e responsabilidade — não assistentes genéricos.' },
-        { tag: 'Hoje', title: 'Operando em 2 países', desc: 'Funcionários digitais atendendo empresas nos Estados Unidos e no Brasil, 24/7.' },
+        { tag: 'Hoje', title: 'Alcance global', desc: 'Funcionários digitais prontos para atender empresas em qualquer lugar do mundo, 24/7.' },
       ],
     },
     how: {
@@ -119,7 +120,7 @@ const COPY = {
     },
     team: {
       eyebrow: 'Conheça o time',
-      titleA: 'Cinco funcionários digitais.',
+      titleA: 'Dez funcionários digitais.',
       titleB: 'Contrate os que sua operação precisa.',
       ready: 'Disponível',
       soon: 'Em breve',
@@ -127,8 +128,13 @@ const COPY = {
         { key: 'sdr', name: 'AI Sales Representative', ready: true, desc: 'Atende no WhatsApp em segundos, qualifica leads, faz follow-up automático e prospecta empresas no Google Maps.' },
         { key: 'rh', name: 'Recrutador (RH)', ready: true, desc: 'Cria a vaga com IA, tria currículos, pontua candidatos na régua certa e entrega uma shortlist pronta para entrevista.' },
         { key: 'traffic', name: 'Gestor de Tráfego Pago', ready: true, desc: 'Acompanha Meta Ads e Google Ads, detecta desperdício e sugere otimizações — você aprova, ele executa.' },
-        { key: 'finance', name: 'Financeiro', ready: false, desc: 'Cobranças, conciliação e relatórios financeiros automáticos.' },
-        { key: 'reception', name: 'Recepcionista Geral', ready: false, desc: 'Triagem de qualquer atendimento: dúvidas, agendamentos e direcionamento.' },
+        { key: 'reception', name: 'Recepcionista', ready: true, desc: 'Primeiro contato, triagem e direcionamento — dúvidas, agendamentos e atendimento ao cliente.' },
+        { key: 'admin', name: 'Assistente Administrativo', ready: false, desc: 'Rotinas administrativas, documentos, agenda e suporte operacional do dia a dia.' },
+        { key: 'finance', name: 'Assistente Financeiro', ready: false, desc: 'Cobranças, conciliação e relatórios de todo o departamento financeiro da empresa.' },
+        { key: 'legal', name: 'Assistente Jurídico', ready: false, desc: 'Contratos, documentos, compliance e suporte jurídico para o seu negócio.' },
+        { key: 'ops', name: 'Gestor de Operações', ready: false, desc: 'Compras, estoque, logística e relacionamento com fornecedores.' },
+        { key: 'realestate', name: 'Consultor Imobiliário', ready: false, desc: 'Atendimento, qualificação e agendamento de visitas para o setor imobiliário.' },
+        { key: 'cs', name: 'Gerente de Sucesso do Cliente', ready: false, desc: 'Onboarding, retenção, pós-venda e renovação de clientes.' },
       ],
     },
     benefits: {
@@ -211,9 +217,9 @@ const COPY = {
       eyebrow: 'Perguntas frequentes',
       title: 'Tudo que você precisa saber',
       items: [
-        { q: 'De onde é a Alizo?', a: 'A Alizo é uma empresa americana de tecnologia sediada em Phoenix, Arizona, operando nos Estados Unidos e no Brasil. Nossa plataforma roda sobre os modelos de IA mais recentes do mercado e é atualizada continuamente conforme a fronteira da IA avança.' },
+        { q: 'De onde é a Alizo?', a: 'A Alizo é uma empresa americana de tecnologia sediada em Phoenix, Arizona, com alcance global. Nossa plataforma roda sobre os modelos de IA mais recentes do mercado e é atualizada continuamente conforme a fronteira da IA avança.' },
         { q: 'Preciso de conhecimento técnico para configurar?', a: 'Não. Seu funcionário IA conduz uma entrevista guiada com você, passo a passo. Em menos de 10 minutos ele está ativo. Se precisar de ajuda, nossa equipe faz a configuração completa por você.' },
-        { q: 'Como funciona o pagamento? Aceitam PIX e boleto?', a: 'Sim. No Brasil aceitamos PIX, boleto bancário e cartão de débito ou crédito à vista (sem parcelamento no momento). Nos EUA, aceitamos Zelle e cartão de débito ou crédito.' },
+        { q: 'Como funciona o pagamento? Aceitam PIX e boleto?', a: 'Sim. No Brasil aceitamos PIX, boleto bancário e cartão de débito ou crédito à vista (sem parcelamento no momento). Nos EUA, aceitamos cartão de débito ou crédito.' },
         { q: 'O funcionário IA responde igual a um humano?', a: 'Sim. Ele é treinado com o tom de voz da sua empresa, conhece seus produtos e serviços, e responde de forma natural. Os clientes raramente percebem que é IA — e quando percebem, adoram a velocidade.' },
         { q: 'E se eu precisar de mais unidades depois?', a: 'É só fazer upgrade do plano. Fale com a gente e a transição é feita sem interromper sua operação.' },
         { q: 'Posso cancelar quando quiser?', a: 'Sim. Sem fidelidade, sem multa. Se não estiver satisfeito nos primeiros 7 dias, devolvemos 100% do valor pago.' },
@@ -250,7 +256,7 @@ const COPY = {
       ctaDemo: 'Watch the demo',
       techLine: 'Always running the latest generation of frontier AI — continuously updated',
       proof: [
-        { value: '3', label: 'Digital employees ready today', sub: 'AI Sales Representative, Recruiter and Paid Ads' },
+        { value: '4', label: 'Digital employees ready today', sub: 'AI Sales Representative, Recruiter, Paid Ads and Receptionist' },
         { value: '24/7', label: 'Guaranteed availability', sub: 'No holidays, no vacations' },
         { value: '10 min', label: 'To set up and go live', sub: 'Guided interview, no code' },
       ],
@@ -290,7 +296,7 @@ const COPY = {
       titleB: 'are already automating.',
       cards: [
         { title: 'Leads go cold in minutes', desc: 'When replies take too long, the customer has already moved on. Your AI employee replies in seconds.' },
-        { title: 'Thousands of dollars in payroll', desc: 'For repetitive tasks an AI employee handles for $97/month, 24 hours a day.' },
+        { title: 'Thousands of dollars in payroll', desc: 'For repetitive tasks an AI employee handles for $197/month, 24 hours a day.' },
         { title: 'Your team is burned out', desc: 'Answering the same basic questions on WhatsApp instead of closing sales.' },
       ],
       closerA: "The question isn't ",
@@ -311,7 +317,7 @@ const COPY = {
       milestones: [
         { tag: 'The origin', title: 'Phoenix, Arizona', desc: 'Founded in the heart of one of the fastest-growing tech ecosystems in the United States.' },
         { tag: 'The thesis', title: 'AI that works, not chats', desc: 'Digital employees with a role, a goal and accountability — not generic assistants.' },
-        { tag: 'Today', title: 'Operating in 2 countries', desc: 'Digital employees serving businesses across the United States and Brazil, 24/7.' },
+        { tag: 'Today', title: 'Built for global reach', desc: 'Digital employees ready to serve businesses anywhere in the world, 24/7.' },
       ],
     },
     how: {
@@ -319,7 +325,7 @@ const COPY = {
       titleA: 'From plan to first conversation',
       titleB: 'in under 10 minutes',
       steps: [
-        { title: 'Pick your plan', desc: 'Choose the plan that fits your operation and pay with Zelle or a debit/credit card.' },
+        { title: 'Pick your plan', desc: 'Choose the plan that fits your operation and pay with a debit or credit card.' },
         { title: 'Create your account', desc: 'Instant access. You set your password and go straight into the platform — no waiting for emails.' },
         { title: 'It interviews you', desc: 'Like a new hire on day one: your AI employee runs an adaptive interview and learns your business, services, pricing and tone of voice.' },
         { title: 'It starts working', desc: 'Live 24/7 on your business WhatsApp — answering, qualifying and following up.' },
@@ -332,16 +338,21 @@ const COPY = {
     },
     team: {
       eyebrow: 'Meet the team',
-      titleA: 'Five digital employees.',
+      titleA: 'Ten digital employees.',
       titleB: 'Hire the ones your operation needs.',
       ready: 'Available',
       soon: 'Coming soon',
       members: [
         { key: 'sdr', name: 'AI Sales Representative', ready: true, desc: 'Answers on WhatsApp in seconds, qualifies leads, follows up automatically and prospects companies on Google Maps.' },
-        { key: 'rh', name: 'Recruiter (HR)', ready: true, desc: 'Creates the job posting with AI, screens resumes, scores candidates consistently and delivers an interview-ready shortlist.' },
-        { key: 'traffic', name: 'Paid Ads Manager', ready: true, desc: 'Monitors Meta Ads and Google Ads, spots wasted spend and suggests optimizations — you approve, it executes.' },
-        { key: 'finance', name: 'Finance', ready: false, desc: 'Automatic billing, reconciliation and financial reports.' },
-        { key: 'reception', name: 'General Receptionist', ready: false, desc: 'Front-line triage for any inquiry: questions, scheduling and routing.' },
+        { key: 'rh', name: 'AI Recruiter (HR)', ready: true, desc: 'Creates the job posting with AI, screens resumes, scores candidates consistently and delivers an interview-ready shortlist.' },
+        { key: 'traffic', name: 'AI Marketing/Traffic Specialist', ready: true, desc: 'Monitors Meta Ads and Google Ads, spots wasted spend and suggests optimizations — you approve, it executes.' },
+        { key: 'reception', name: 'AI Receptionist', ready: true, desc: 'First point of contact, routing and customer service for any inquiry.' },
+        { key: 'admin', name: 'AI Administrative Assistant', ready: false, desc: 'Day-to-day admin work — documents, scheduling and operational support.' },
+        { key: 'finance', name: 'AI Financial Assistant', ready: false, desc: 'Runs your entire finance department — billing, reconciliation and reports.' },
+        { key: 'legal', name: 'AI Legal Assistant', ready: false, desc: 'Contracts, documents, compliance and legal support for your business.' },
+        { key: 'ops', name: 'AI Operations Manager', ready: false, desc: 'Purchasing, inventory, logistics and supplier management.' },
+        { key: 'realestate', name: 'AI Real Estate Consultant', ready: false, desc: 'Customer service, qualification and showing scheduling for real estate.' },
+        { key: 'cs', name: 'AI Customer Success Manager', ready: false, desc: 'Onboarding, retention, post-sale support and renewals.' },
       ],
     },
     benefits: {
@@ -364,7 +375,7 @@ const COPY = {
       sub: 'An illustrative example with typical market numbers — your own case is mapped out during onboarding.',
       cards: [
         { value: '$4,500+', label: 'Typical monthly cost of a full-time rep in the US', sub: 'salary + taxes + benefits' },
-        { value: '$97', label: 'Alizo digital employee (Starter)', sub: 'up to ~97% less per month' },
+        { value: '$197', label: 'Alizo digital employee (Starter)', sub: 'up to ~96% less per month' },
         { value: '168h', label: 'Of coverage per week with Alizo', sub: 'vs. ~40h of a standard shift' },
         { value: 'Seconds', label: 'To answer any lead', sub: 'any time — including 3am' },
       ],
@@ -381,7 +392,7 @@ const COPY = {
         'After-hours leads go unanswered',
       ],
       withEyebrow: 'With Alizo',
-      withTitle: 'You invest from $97/month',
+      withTitle: 'You invest from $197/month',
       withItems: [
         'AI employee active 24 hours a day, 7 days a week',
         'Never absent, never on vacation, never asks for a raise',
@@ -424,9 +435,9 @@ const COPY = {
       eyebrow: 'Frequently asked questions',
       title: 'Everything you need to know',
       items: [
-        { q: 'Where is Alizo based?', a: 'Alizo is an American technology company headquartered in Phoenix, Arizona, operating across the United States and Brazil. Our platform runs on the latest AI models on the market and is continuously updated as the AI frontier advances.' },
+        { q: 'Where is Alizo based?', a: 'Alizo is an American technology company headquartered in Phoenix, Arizona, built for global reach. Our platform runs on the latest AI models on the market and is continuously updated as the AI frontier advances.' },
         { q: 'Do I need technical knowledge to set it up?', a: 'No. Your AI employee runs a guided interview with you, step by step. In under 10 minutes it goes live. If you need help, our team does the full setup for you.' },
-        { q: 'How does payment work?', a: 'In the US we accept Zelle and debit or credit card (single monthly charge, no installment plans). In Brazil we accept PIX, boleto and debit/credit card.' },
+        { q: 'How does payment work?', a: 'In the US we accept debit or credit card (single monthly charge, no installment plans). In Brazil we accept PIX, boleto and debit/credit card.' },
         { q: 'Does the AI employee sound human?', a: "Yes. It's trained on your company's tone of voice, knows your products and services, and replies naturally. Customers rarely notice it's AI — and when they do, they love the speed." },
         { q: 'What if I need more locations later?', a: 'Just upgrade your plan. Talk to us and the transition happens without interrupting your operation.' },
         { q: 'Can I cancel anytime?', a: "Yes. No lock-in, no penalty. If you're not satisfied within the first 7 days, we refund 100% of what you paid." },
@@ -453,7 +464,10 @@ const COPY = {
 
 type Copy = (typeof COPY)[Locale]
 
-const TEAM_ICONS = { sdr: Bot, rh: Briefcase, traffic: Megaphone, finance: Wallet, reception: HeadphonesIcon } as const
+const TEAM_ICONS = {
+  sdr: Bot, rh: Briefcase, traffic: Megaphone, reception: HeadphonesIcon,
+  admin: ClipboardList, finance: Wallet, legal: Scale, ops: Truck, realestate: Home, cs: HeartHandshake,
+} as const
 const CONTACT_EMAIL = 'suporte@alizo.com.br'
 
 /** Grade de linhas ciano com máscara radial — o "fundo tecnológico" da marca. */

@@ -7,8 +7,9 @@ export const dynamic = 'force-dynamic'
 
 const PLAN_SLUGS = ['starter', 'pro'] as const
 
-// Sem parcelamento no lançamento: PIX/boleto só no Brasil, Zelle só nos EUA,
+// Sem parcelamento no lançamento: PIX/boleto só no Brasil,
 // cartão (débito/crédito à vista) nos dois mercados.
+// 'zelle' segue no enum por compatibilidade com registros antigos de financial_records.
 const PAYMENT_METHODS = ['pix', 'card', 'boleto', 'zelle'] as const
 type PaymentMethod = (typeof PAYMENT_METHODS)[number]
 
@@ -79,7 +80,7 @@ export async function POST(request: Request) {
   const currency: 'BRL' | 'USD' = locale === 'en' ? 'USD' : 'BRL'
   const paymentMethod: PaymentMethod = PAYMENT_METHODS.includes(body?.paymentMethod)
     ? body.paymentMethod
-    : locale === 'en' ? 'zelle' : 'pix'
+    : locale === 'en' ? 'card' : 'pix'
 
   if (!company || !name || !email || !email.includes('@')) {
     return NextResponse.json({ error: err.invalidFields }, { status: 400 })

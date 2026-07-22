@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { CreditCard, Landmark, AlertTriangle } from 'lucide-react'
+import { CreditCard, Landmark } from 'lucide-react'
 import { Card, PageHeader } from '@/components/ui/dashboard-ui'
 import { PaymentGatewayForm, type GatewayRow } from '@/components/admin/payment-gateway-form'
 
@@ -76,24 +76,13 @@ export default async function PaymentsSetupPage() {
           {/* EUA */}
           <div className="rounded-2xl p-5" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
             <p className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-cyan-400">
-              <CreditCard size={13} /> EUA — Zelle e cartão
+              <CreditCard size={13} /> EUA — cartão
             </p>
             <div className="mt-3 space-y-3 text-xs leading-relaxed text-slate-400">
               <p>
-                <strong className="text-white">1. Stripe (cartão)</strong> — padrão do mercado para SaaS:
+                <strong className="text-white">Stripe (cartão)</strong> — padrão do mercado para SaaS:
                 cartão de débito/crédito com cobrança recorrente (Billing), checkout pronto e webhooks.
                 ~2,9% + US$0,30 por transação. É a forma de automatizar 100% a mensalidade nos EUA.
-              </p>
-              <p className="flex items-start gap-2">
-                <AlertTriangle size={13} className="mt-0.5 flex-shrink-0 text-amber-400" />
-                <span>
-                  <strong className="text-white">2. Zelle — não existe integração automática.</strong> O Zelle
-                  não tem API pública nem cobrança recorrente: é transferência bancária pessoa-a-pessoa
-                  (Zelle for Business existe em alguns bancos, mas continua sem API). Na prática: você exibe os
-                  dados da conta (abaixo), o cliente transfere todo mês e <em>você confirma o recebimento
-                  manualmente</em> e dá baixa na cobrança em Cobranças. Funciona para começar, mas não escala —
-                  se o volume dos EUA crescer, empurre os clientes para cartão via Stripe.
-                </span>
               </p>
             </div>
           </div>

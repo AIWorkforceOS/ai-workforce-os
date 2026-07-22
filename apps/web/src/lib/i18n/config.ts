@@ -37,13 +37,12 @@ export function formatMoney(amount: number, locale: Locale): string {
 
 /**
  * Preços dos planos por moeda. O valor em dólar não é conversão de
- * câmbio ao centavo — é o preço de tabela para o mercado americano
- * (R$497 ≈ US$97, R$997 ≈ US$197). Enterprise não tem preço fixo:
- * é "sob consulta" nos dois mercados.
+ * câmbio ao centavo — é o preço de tabela para o mercado americano.
+ * Enterprise não tem preço fixo: é "sob consulta" nos dois mercados.
  */
 export const PLAN_PRICING: Record<'starter' | 'pro', { brl: number; usd: number }> = {
-  starter: { brl: 497, usd: 97 },
-  pro: { brl: 997, usd: 197 },
+  starter: { brl: 497, usd: 197 },
+  pro: { brl: 997, usd: 297 },
 }
 
 export type PaidPlanSlug = keyof typeof PLAN_PRICING

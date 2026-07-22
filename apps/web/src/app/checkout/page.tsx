@@ -14,7 +14,7 @@ const CONTACT_EMAIL = 'suporte@alizo.com.br'
 /**
  * Formas de pagamento do lançamento — sem parcelamento:
  * Brasil: PIX, cartão (débito/crédito à vista) e boleto.
- * EUA: Zelle e cartão (débito/crédito, cobrança única mensal).
+ * EUA: cartão (débito/crédito, cobrança única mensal).
  */
 type PaymentMethod = 'pix' | 'card' | 'boleto' | 'zelle'
 
@@ -105,7 +105,6 @@ const COPY = {
       },
     },
     paymentMethods: [
-      { id: 'zelle' as PaymentMethod, label: 'Zelle', flag: '💸', sub: 'Bank transfer, no fees' },
       { id: 'card' as PaymentMethod, label: 'Card', flag: '💳', sub: 'Debit or credit, single charge' },
     ],
     methodLabel: { pix: 'PIX', card: 'Card (single charge)', boleto: 'Boleto', zelle: 'Zelle' } as Record<PaymentMethod, string>,
@@ -216,7 +215,7 @@ function CheckoutForm() {
   const planSlug = resolvePlan(params.get('plan'))
 
   const [step, setStep] = useState<1 | 2 | 3>(1)
-  const [payMethod, setPayMethod] = useState<PaymentMethod>(locale === 'en' ? 'zelle' : 'pix')
+  const [payMethod, setPayMethod] = useState<PaymentMethod>(locale === 'en' ? 'card' : 'pix')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
@@ -235,6 +234,7 @@ function CheckoutForm() {
 
   const plan = t.plans[planSlug]
   const price = planPrice(planSlug, locale)
+  const paymentMethodCount: number = t.paymentMethods.length
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     setForm(f => ({ ...f, [e.target.name]: e.target.value }))
@@ -376,7 +376,9 @@ function CheckoutForm() {
             <div className="space-y-5">
               <h2 className="text-xl font-black text-white">{t.payment.title}</h2>
 
-              <div className={`grid gap-3 ${t.paymentMethods.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+              <div className={`grid gap-3 ${
+                paymentMethodCount === 1 ? 'grid-cols-1' : paymentMethodCount === 2 ? 'grid-cols-2' : 'grid-cols-3'
+              }`}>
                 {t.paymentMethods.map(m => (
                   <button
                     key={m.id}
