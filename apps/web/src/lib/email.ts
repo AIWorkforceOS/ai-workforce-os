@@ -238,6 +238,106 @@ function buildBrandedEmailHtml(params: {
 }
 
 /**
+ * Fatura/recibo de serviço prestado, enviada ao cliente final da empresa
+ * (migration 030 — tabela invoices). Sem gateway de pagamento nesta fase:
+ * o e-mail registra o valor e traz as instruções de pagamento que a
+ * empresa escreveu em `paymentNotes` (Zelle, PIX, link, etc). Bilíngue
+ * pelo idioma da unidade (unitDefaultLocale), como as mensagens da agenda.
+ */
+export async function sendInvoiceEmail(params: {
+  to: string
+  unitName: string
+  logoUrl: string | null
+  customerName: string
+  invoiceNumber: string
+  description: string
+  amount: number
+  currency: string
+  dueDate: string | null
+  paymentNotes: string | null
+  locale: 'pt' | 'en'
+  replyTo?: string | null
+}): Promise<SendResult> {
+  const domain = process.env.EMAIL_FROM_DOMAIN
+  if (!domain) return { ok: false, error: 'EMAIL_FROM_DOMAIN não está configurada.' }
+  const from = `${params.unitName} <billing@${domain}>`
+
+  const isEn = params.locale === 'en'
+  const intlLocale = isEn ? 'en-US' : 'pt-BR'
+  const amountLabel = params.amount.toLocaleString(intlLocale, { style: 'currency', currency: params.currency })
+  const dueLabel = params.dueDate
+    ? new Date(`${params.dueDate}T00:00:00`).toLocaleDateString(intlLocale, { day: '2-digit', month: '2-digit', year: 'numeric' })
+    : null
+
+  const t = isEn
+    ? {
+        subject: `Invoice ${params.invoiceNumber} — ${params.unitName}`,
+        greeting: `Hi ${params.customerName},`,
+        intro: `Here is your invoice from ${params.unitName}.`,
+        invoice: 'Invoice',
+        service: 'Service',
+        amount: 'Amount',
+        dueDate: 'Due date',
+        payment: 'Payment instructions',
+        footer: `Invoice sent by ${params.unitName}. Reply to this email if you have any questions.`,
+      }
+    : {
+        subject: `Fatura ${params.invoiceNumber} — ${params.unitName}`,
+        greeting: `Olá, ${params.customerName}!`,
+        intro: `Segue a sua fatura de ${params.unitName}.`,
+        invoice: 'Fatura',
+        service: 'Serviço',
+        amount: 'Valor',
+        dueDate: 'Vencimento',
+        payment: 'Como pagar',
+        footer: `Fatura enviada por ${params.unitName}. Responda este e-mail em caso de dúvidas.`,
+      }
+
+  const logoBlock = params.logoUrl
+    ? `<img src="${escapeHtml(params.logoUrl)}" alt="${escapeHtml(params.unitName)}" style="max-height:40px;max-width:220px;height:auto;width:auto;" />`
+    : `<span style="font-size:16px;font-weight:700;color:#0f172a;">${escapeHtml(params.unitName)}</span>`
+
+  const row = (label: string, value: string, highlight = false) => `
+    <tr>
+      <td style="padding:10px 0;border-bottom:1px solid #e2e8f0;font-size:13px;color:#64748b;">${label}</td>
+      <td style="padding:10px 0;border-bottom:1px solid #e2e8f0;font-size:${highlight ? '18px' : '14px'};font-weight:${highlight ? '800' : '600'};color:#0f172a;text-align:right;">${value}</td>
+    </tr>`
+
+  const paymentBlock = params.paymentNotes
+    ? `<div style="margin-top:24px;padding:16px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0;">
+         <p style="margin:0 0 8px;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:#64748b;">${t.payment}</p>
+         <p style="margin:0;font-size:14px;line-height:1.6;color:#1e293b;white-space:pre-line;">${escapeHtml(params.paymentNotes)}</p>
+       </div>`
+    : ''
+
+  const html = `
+    <div style="background:#f1f5f9;padding:32px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+      <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;">
+        <div style="padding:24px 32px;border-bottom:1px solid #e2e8f0;">
+          ${logoBlock}
+        </div>
+        <div style="padding:32px;">
+          <p style="margin:0 0 8px;font-size:15px;line-height:1.6;color:#1e293b;">${escapeHtml(t.greeting)}</p>
+          <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#1e293b;">${escapeHtml(t.intro)}</p>
+          <table style="width:100%;border-collapse:collapse;">
+            ${row(t.invoice, escapeHtml(params.invoiceNumber))}
+            ${row(t.service, escapeHtml(params.description))}
+            ${dueLabel ? row(t.dueDate, dueLabel) : ''}
+            ${row(t.amount, escapeHtml(amountLabel), true)}
+          </table>
+          ${paymentBlock}
+        </div>
+        <div style="padding:16px 32px;background:#f8fafc;border-top:1px solid #e2e8f0;">
+          <p style="margin:0;font-size:12px;color:#94a3b8;">${escapeHtml(t.footer)}</p>
+        </div>
+      </div>
+    </div>
+  `
+
+  return sendEmail({ to: params.to, from, subject: t.subject, html, replyTo: params.replyTo })
+}
+
+/**
  * E-mail de prospecção/acompanhamento do Sales Rep (item 1 do pedido:
  * e-mail como canal adicional, em paralelo ao WhatsApp/SMS). Usado por
  * lib/channels/messaging-channel.ts (EmailChannel) — mesma persona,

@@ -4,11 +4,12 @@ import {
   handleAppointmentBooked,
   handleAppointmentCancelled,
   handleAppointmentNoShow,
+  handleAppointmentOnMyWay,
   handleAppointmentRescheduled,
 } from '@/lib/scheduling/appointment-notifications'
 import type { Unit } from '@/lib/types'
 
-const NOTIFY_EVENTS = ['booked', 'rescheduled', 'cancelled', 'no_show'] as const
+const NOTIFY_EVENTS = ['booked', 'rescheduled', 'cancelled', 'no_show', 'on_my_way'] as const
 type NotifyEvent = (typeof NOTIFY_EVENTS)[number]
 
 function isNotifyEvent(value: unknown): value is NotifyEvent {
@@ -57,6 +58,8 @@ export async function POST(
       await handleAppointmentRescheduled(supabase, { appointmentId, unit: unitRow })
     } else if (event === 'cancelled') {
       await handleAppointmentCancelled(supabase, { appointmentId, unit: unitRow })
+    } else if (event === 'on_my_way') {
+      await handleAppointmentOnMyWay(supabase, { appointmentId, unit: unitRow })
     } else {
       await handleAppointmentNoShow(supabase, { appointmentId, unit: unitRow })
     }

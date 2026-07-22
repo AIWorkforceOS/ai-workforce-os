@@ -18,6 +18,7 @@ export type SystemEventSource =
   | 'smarter_crm'
   | 'receptionist'
   | 'scheduling'
+  | 'invoices'
 
 export type SystemEventInput = {
   level: SystemEventLevel

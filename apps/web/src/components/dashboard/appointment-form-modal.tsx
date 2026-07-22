@@ -9,7 +9,7 @@ import { Card, Input, Label, Select, Textarea } from '@/components/ui/dashboard-
 import type { SchedulingSettings, Service, Employee, WeeklySchedule } from '@/lib/types'
 import type { AppointmentWithRelations } from '@/components/dashboard/calendar-view'
 
-type CustomerOption = { id: string; name: string; phone: string | null }
+type CustomerOption = { id: string; name: string; phone: string | null; address?: string | null }
 
 /** Fire-and-forget: a mutação em `appointments` já foi gravada, o aviso automático nunca deve bloquear a UI nem virar erro pro usuário (falhas ficam em system_events). */
 function notifyAppointment(unitId: string, appointmentId: string, event: 'booked' | 'rescheduled') {
@@ -62,7 +62,9 @@ export function AppointmentFormModal({
   const [showNewCustomer, setShowNewCustomer] = useState(false)
   const [newCustomerName, setNewCustomerName] = useState('')
   const [newCustomerPhone, setNewCustomerPhone] = useState('')
+  const [newCustomerAddress, setNewCustomerAddress] = useState('')
 
+  const [address, setAddress] = useState(appointment?.address ?? '')
   const [notes, setNotes] = useState(appointment?.notes ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -136,7 +138,7 @@ export function AppointmentFormModal({
       const supabase = createClient()
       const { data } = await supabase
         .from('customers')
-        .select('id, name, phone')
+        .select('id, name, phone, address')
         .eq('unit_id', unitId)
         .ilike('name', `%${customerQuery.trim()}%`)
         .limit(8)
@@ -164,6 +166,7 @@ export function AppointmentFormModal({
           unit_id: unitId,
           name: newCustomerName.trim(),
           phone: newCustomerPhone.trim() || null,
+          address: newCustomerAddress.trim() || null,
           source: 'manual',
         })
         .select('id, name, phone')
@@ -227,6 +230,7 @@ export function AppointmentFormModal({
           employee_id: employeeId,
           starts_at: selectedSlot.starts_at,
           ends_at: selectedSlot.ends_at,
+          address: address.trim() || null,
           // reseta o carimbo de aviso: um reagendamento é um evento novo,
           // que merece seu próprio aviso automático (ver rescheduled_notified_at)
           rescheduled_notified_at: null,
@@ -259,6 +263,7 @@ export function AppointmentFormModal({
         employee_id: employeeId,
         starts_at: selectedSlot.starts_at,
         ends_at: selectedSlot.ends_at,
+        address: address.trim() || null,
         notes: notes.trim() || null,
       })
       .select('id')
@@ -398,6 +403,14 @@ export function AppointmentFormModal({
                       onChange={(e) => setNewCustomerPhone(e.target.value)}
                       placeholder="Telefone (opcional)"
                     />
+                    <Input
+                      value={newCustomerAddress}
+                      onChange={(e) => {
+                        setNewCustomerAddress(e.target.value)
+                        setAddress(e.target.value)
+                      }}
+                      placeholder="Endereço (opcional)"
+                    />
                     <button
                       type="button"
                       className="self-start text-xs font-bold text-slate-400 hover:text-slate-300"
@@ -424,6 +437,8 @@ export function AppointmentFormModal({
                               setSelectedCustomer(c)
                               setCustomerResults([])
                               setCustomerQuery('')
+                              // endereço cadastrado do cliente vira o padrão do atendimento, sem sobrescrever o que já foi digitado
+                              if (c.address && !address.trim()) setAddress(c.address)
                             }}
                           >
                             {c.name}
@@ -443,6 +458,15 @@ export function AppointmentFormModal({
                 )}
               </div>
             )}
+
+            <div className="flex flex-col gap-1.5">
+              <Label>Endereço do atendimento</Label>
+              <Input
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="Onde o serviço será prestado (opcional)"
+              />
+            </div>
 
             <div className="flex flex-col gap-1.5">
               <Label>Observações</Label>

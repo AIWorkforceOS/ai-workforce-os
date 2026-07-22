@@ -1,12 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { CalendarPlus } from 'lucide-react'
+import { CalendarPlus, MapPin } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { localDateString, zonedTimeToUtc } from '@/lib/slot-engine'
 import { addDays } from '@/lib/calendar-dates'
 import { AppointmentFormModal } from '@/components/dashboard/appointment-form-modal'
 import { Card, StatusPill, type BadgeVariant } from '@/components/ui/dashboard-ui'
+import { computeSuggestedPay } from '@/lib/service-pay'
 import type {
   Appointment,
   AppointmentStatus,
@@ -52,6 +53,15 @@ function notifyAppointment(unitId: string, appointmentId: string, event: 'cancel
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ event }),
   }).catch(() => {})
+}
+
+/** "A caminho" é diferente dos demais avisos: é ação humana deliberada, então aqui a resposta é aguardada para dar feedback visual (carimbo on_my_way_sent_at) na hora. */
+async function notifyOnMyWay(unitId: string, appointmentId: string): Promise<void> {
+  await fetch(`/api/units/${unitId}/appointments/${appointmentId}/notify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ event: 'on_my_way' }),
+  })
 }
 
 /** Formata 'YYYY-MM-DD' como cabeçalho do dia, sem depender do fuso local do processo. */
@@ -145,6 +155,63 @@ export function CalendarView({
     await reload()
   }
 
+  /**
+   * Concluir = o serviço aconteceu. Além do status, lança o registro em
+   * service_records (valor cobrado = preço do serviço; valor a pagar =
+   * default do profissional) — a base da folha operacional na tela
+   * Operação. O índice único por appointment_id garante que concluir
+   * duas vezes nunca duplica o lançamento.
+   */
+  async function handleComplete(appointment: AppointmentWithRelations) {
+    if (!window.confirm(`Concluir o atendimento de ${appointment.customer?.name ?? 'cliente'}? O serviço será lançado na Operação.`)) return
+    setRowError(null)
+    setBusyId(appointment.id)
+    const supabase = createClient()
+    const { error } = await supabase.from('appointments').update({ status: 'completed' }).eq('id', appointment.id)
+    if (error) {
+      setBusyId(null)
+      setRowError('Não foi possível concluir o atendimento.')
+      return
+    }
+
+    if (orgId) {
+      const service = services.find((s) => s.id === appointment.service_id) ?? null
+      const employee = employees.find((e) => e.id === appointment.employee_id) ?? null
+      const amountCharged = service?.price ?? null
+      const durationMinutes = Math.round(
+        (new Date(appointment.ends_at).getTime() - new Date(appointment.starts_at).getTime()) / 60000
+      )
+      // Falha aqui não desfaz a conclusão: o registro pode ser lançado manualmente na Operação
+      // (e o caso esperado de erro é o índice único, quando o registro já existe).
+      await supabase.from('service_records').insert({
+        org_id: orgId,
+        unit_id: unitId,
+        appointment_id: appointment.id,
+        employee_id: appointment.employee_id,
+        customer_id: appointment.customer_id,
+        service_id: appointment.service_id,
+        service_date: localDateString(new Date(appointment.starts_at), timezone),
+        amount_charged: amountCharged,
+        amount_due: computeSuggestedPay({ employee, amountCharged, durationMinutes }),
+      })
+    }
+
+    setBusyId(null)
+    await reload()
+  }
+
+  async function handleOnMyWay(appointment: AppointmentWithRelations) {
+    setRowError(null)
+    setBusyId(appointment.id)
+    try {
+      await notifyOnMyWay(unitId, appointment.id)
+    } catch {
+      setRowError('Não foi possível enviar o aviso "a caminho".')
+    }
+    setBusyId(null)
+    await reload()
+  }
+
   const now = Date.now()
 
   return (
@@ -206,10 +273,29 @@ export function CalendarView({
                           {appointment.service?.name ? ` · ${appointment.service.name}` : ''}
                           {appointment.employee?.name ? ` · ${appointment.employee.name}` : ''}
                         </p>
+                        {appointment.address && (
+                          <p className="flex items-center gap-1 text-xs text-slate-500">
+                            <MapPin size={11} />
+                            {appointment.address}
+                          </p>
+                        )}
                       </div>
 
                       {isActive && (
-                        <div className="flex gap-3 text-xs font-semibold">
+                        <div className="flex flex-wrap gap-3 text-xs font-semibold">
+                          {isToday &&
+                            (appointment.on_my_way_sent_at ? (
+                              <span className="text-emerald-400">A caminho avisado ✓</span>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={busyId === appointment.id}
+                                className="text-emerald-400 hover:text-emerald-300 disabled:opacity-40"
+                                onClick={() => handleOnMyWay(appointment)}
+                              >
+                                Avisar a caminho
+                              </button>
+                            ))}
                           <button
                             type="button"
                             disabled={busyId === appointment.id}
@@ -219,14 +305,24 @@ export function CalendarView({
                             Reagendar
                           </button>
                           {isPast && (
-                            <button
-                              type="button"
-                              disabled={busyId === appointment.id}
-                              className="text-amber-400 hover:text-amber-300 disabled:opacity-40"
-                              onClick={() => handleNoShow(appointment)}
-                            >
-                              Marcar falta
-                            </button>
+                            <>
+                              <button
+                                type="button"
+                                disabled={busyId === appointment.id}
+                                className="text-green-400 hover:text-green-300 disabled:opacity-40"
+                                onClick={() => handleComplete(appointment)}
+                              >
+                                Concluir
+                              </button>
+                              <button
+                                type="button"
+                                disabled={busyId === appointment.id}
+                                className="text-amber-400 hover:text-amber-300 disabled:opacity-40"
+                                onClick={() => handleNoShow(appointment)}
+                              >
+                                Marcar falta
+                              </button>
+                            </>
                           )}
                           <button
                             type="button"

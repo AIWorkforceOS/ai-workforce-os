@@ -84,7 +84,10 @@ export type Unit = {
   updated_at: string
 }
 
-/** Colaborador humano da unidade (tabela employees, migration 004; campos de agenda na 026). */
+/** Como o valor padrão a pagar ao colaborador é interpretado (migration 030). */
+export type EmployeePayType = 'per_service' | 'per_hour' | 'per_day' | 'percent'
+
+/** Colaborador humano da unidade (tabela employees, migration 004; campos de agenda na 026; operação na 030). */
 export type Employee = {
   id: string
   org_id: string | null
@@ -92,8 +95,13 @@ export type Employee = {
   name: string
   email: string | null
   phone: string | null
-  /** admin | manager | staff | sdr | support */
+  /** admin | manager | staff | technician | sdr | support */
   role: string
+  /** função/especialidade operacional livre (ex.: "Limpeza residencial") — migration 030 */
+  specialty: string | null
+  /** valor padrão a pagar por serviço executado, interpretado conforme default_pay_type. Null = sem padrão. */
+  default_pay: number | null
+  default_pay_type: EmployeePayType
   is_active: boolean
   /** true = aparece como profissional atendendo agenda (migration 026) */
   is_schedulable: boolean
@@ -288,14 +296,73 @@ export type Appointment = {
   cancellation_reason: string | null
   source: string
   notes: string | null
+  /** endereço onde o serviço será prestado (serviços de campo) — migration 030. Pré-preenchido com customers.address. */
+  address: string | null
   custom_fields: Record<string, unknown>
   /** preenchidos pelos templates automáticos de comunicação (sub-etapa 5/7 da Fase 2) */
   confirmation_sent_at: string | null
   reminder_sent_at: string | null
+  /** quando o aviso "estamos a caminho" foi enviado (migration 030) */
+  on_my_way_sent_at: string | null
   /** null = ainda não notificado para o horário atual; reagendar reseta para null (permite notificar de novo a cada reagendamento). */
   rescheduled_notified_at: string | null
   cancelled_notified_at: string | null
   no_show_notified_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type ServiceRecordPaymentStatus = 'pending' | 'paid'
+
+/**
+ * Serviço executado (tabela service_records, migration 030): "esse
+ * profissional fez esse serviço nesse dia, cobramos X e devemos Y a ele".
+ * Folha operacional, não folha de pagamento fiscal.
+ */
+export type ServiceRecord = {
+  id: string
+  org_id: string
+  unit_id: string
+  /** agendamento de origem quando o lançamento veio de "Concluir" no calendário; único quando presente */
+  appointment_id: string | null
+  employee_id: string | null
+  customer_id: string | null
+  service_id: string | null
+  /** dia da execução (date, sem hora) */
+  service_date: string
+  description: string | null
+  /** valor cobrado do cliente final */
+  amount_charged: number | null
+  /** valor a pagar ao profissional */
+  amount_due: number | null
+  payment_status: ServiceRecordPaymentStatus
+  paid_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'cancelled'
+
+/** Fatura/recibo enviado por e-mail ao cliente final (tabela invoices, migration 030). Sem gateway de pagamento nesta fase. */
+export type Invoice = {
+  id: string
+  org_id: string
+  unit_id: string
+  customer_id: string
+  service_record_id: string | null
+  /** gerado pela aplicação (ex.: INV-0007); único por unidade */
+  invoice_number: string
+  description: string
+  amount: number
+  /** BRL | USD, derivada do idioma da unidade na criação */
+  currency: string
+  due_date: string | null
+  status: InvoiceStatus
+  sent_to_email: string | null
+  sent_at: string | null
+  paid_at: string | null
+  /** texto livre incluído no e-mail (ex.: instruções de pagamento) */
+  notes: string | null
   created_at: string
   updated_at: string
 }

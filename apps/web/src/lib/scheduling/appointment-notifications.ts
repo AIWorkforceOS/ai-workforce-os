@@ -67,6 +67,26 @@ function reminderMessage(customerName: string, unitName: string, when: string, s
     : `Olá, ${customerName}! Lembrete: você tem um agendamento na ${unitName} em ${when}${serviceSuffix(serviceName)}.`
 }
 
+function onMyWayMessage(params: {
+  customerName: string
+  unitName: string
+  time: string
+  serviceName: string | null
+  employeeName: string | null
+  address: string | null
+  locale: Locale
+}): string {
+  const { customerName, unitName, time, serviceName, employeeName, address, locale } = params
+  if (locale === 'en') {
+    const who = employeeName ? `${employeeName} from ${unitName}` : `The ${unitName} team`
+    const addressPart = address ? ` Service address: ${address}.` : ''
+    return `Hi ${customerName}! ${who} is on the way to your appointment today at ${time}${serviceSuffix(serviceName)}.${addressPart}`
+  }
+  const who = employeeName ? `${employeeName}, da ${unitName},` : `A equipe da ${unitName}`
+  const addressPart = address ? ` Endereço do atendimento: ${address}.` : ''
+  return `Olá, ${customerName}! ${who} está a caminho do seu atendimento de hoje às ${time}${serviceSuffix(serviceName)}.${addressPart}`
+}
+
 type AppointmentContext = {
   appointment: Appointment
   customer: Pick<Customer, 'id' | 'name' | 'phone' | 'email'>
@@ -276,6 +296,65 @@ export async function handleAppointmentReminder(
   await supabase
     .from('appointments')
     .update({ reminder_sent_at: new Date().toISOString() })
+    .eq('id', appointmentId)
+}
+
+/**
+ * Aviso "estamos a caminho" (migration 030) — disparado por ação humana
+ * no calendário no dia do serviço (botão "Avisar a caminho"), não por
+ * cron: quem sabe que o técnico saiu é a operação, não o relógio.
+ * Idempotente via on_my_way_sent_at. Inclui o nome do profissional e o
+ * endereço do atendimento quando existirem.
+ */
+export async function handleAppointmentOnMyWay(
+  supabase: SupabaseClient,
+  params: { appointmentId: string; unit: Unit },
+): Promise<void> {
+  const { appointmentId, unit } = params
+  if (!unit.org_id) return
+
+  const ctx = await loadAppointmentContext(supabase, appointmentId)
+  if (!ctx) return
+  if (ctx.appointment.on_my_way_sent_at) return // idempotência: já avisado
+
+  let employeeName: string | null = null
+  if (ctx.appointment.employee_id) {
+    const { data: employeeRow } = await supabase
+      .from('employees')
+      .select('name')
+      .eq('id', ctx.appointment.employee_id)
+      .maybeSingle()
+    employeeName = (employeeRow as { name: string } | null)?.name ?? null
+  }
+
+  const locale = unitDefaultLocale(unit)
+  const time = new Date(ctx.appointment.starts_at).toLocaleTimeString(locale === 'en' ? 'en-US' : 'pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: unit.timezone,
+    hour12: locale === 'en',
+  })
+  const text = onMyWayMessage({
+    customerName: ctx.customer.name,
+    unitName: unit.name,
+    time,
+    serviceName: ctx.serviceName,
+    employeeName,
+    address: ctx.appointment.address,
+    locale,
+  })
+
+  await sendCustomerMessage(supabase, {
+    unit,
+    customer: ctx.customer,
+    text,
+    eventType: 'appointment_on_my_way',
+    appointmentId,
+  })
+
+  await supabase
+    .from('appointments')
+    .update({ on_my_way_sent_at: new Date().toISOString() })
     .eq('id', appointmentId)
 }
 
