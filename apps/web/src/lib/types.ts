@@ -298,6 +298,11 @@ export type Appointment = {
   notes: string | null
   /** endereço onde o serviço será prestado (serviços de campo) — migration 030. Pré-preenchido com customers.address. */
   address: string | null
+  /** null = agendamento único; 'weekly' = ocorrência de série semanal (migration 032). Cada ocorrência é uma linha real nesta tabela. */
+  recurrence: 'weekly' | null
+  /** une as ocorrências da mesma série recorrente (migration 032) */
+  recurrence_group_id: string | null
+  /** chave `price` = valor combinado deste atendimento (sobrepõe services.price no Concluir → service_records) */
   custom_fields: Record<string, unknown>
   /** preenchidos pelos templates automáticos de comunicação (sub-etapa 5/7 da Fase 2) */
   confirmation_sent_at: string | null
@@ -420,6 +425,14 @@ export type ProspectingJob = {
   created_at: string
 }
 
+/**
+ * Modo de uso do Alizo (migration 032):
+ *   digital_employees — só os funcionários digitais (CRM, RH, Tráfego), o modelo atual;
+ *   full_management   — sistema completo de gestão de empresa de serviços
+ *                       (Clientes/Agenda/Financeiro no centro da experiência).
+ */
+export type ManagementMode = 'digital_employees' | 'full_management'
+
 export type Organization = {
   id: string
   name: string
@@ -434,6 +447,8 @@ export type Organization = {
   is_smarter_partner: boolean
   /** Chave do segmento de negócio (ver lib/verticals/catalog.ts), migration 025. Null = ainda não definido. */
   vertical_key: string | null
+  /** Como o cliente usa o Alizo (migration 032), escolhido na configuração guiada. Null = não escolheu ainda (tratado como digital_employees). */
+  management_mode: ManagementMode | null
   /** Ficha da empresa COMPARTILHADA entre todos os AI Employees da organização (migration 025). Distinta de agent_configs.business_profile. */
   business_profile: Record<string, unknown>
   created_at: string

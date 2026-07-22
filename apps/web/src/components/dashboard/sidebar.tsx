@@ -24,10 +24,12 @@ import {
   CreditCard,
   Smartphone,
   ClipboardList,
+  CalendarDays,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useLocale } from '@/lib/i18n/client'
 import type { Locale } from '@/lib/i18n/config'
+import type { ManagementMode } from '@/lib/types'
 
 type NavItem = {
   href: string
@@ -36,6 +38,18 @@ type NavItem = {
   exact?: boolean
   /** visível apenas para super_admin (equipe Alizo) */
   superOnly?: boolean
+}
+
+// Grupo extra que aparece NO TOPO quando a org escolheu gestão completa
+// (organizations.management_mode = 'full_management'): Clientes, Agenda e
+// Operação viram o centro da navegação. No modo só-funcionários nada muda.
+const managementGroup: { label: Record<Locale, string>; items: NavItem[] } = {
+  label: { pt: 'Gestão do dia a dia', en: 'Day-to-day management' },
+  items: [
+    { href: '/dashboard/receptionist/customers', label: { pt: 'Clientes', en: 'Customers' }, icon: Users },
+    { href: '/dashboard/agenda', label: { pt: 'Agenda', en: 'Schedule' }, icon: CalendarDays },
+    { href: '/dashboard/operacao', label: { pt: 'Operação & financeiro', en: 'Operations & finances' }, icon: ClipboardList },
+  ],
 }
 
 const navGroups: { label: Record<Locale, string>; items: NavItem[] }[] = [
@@ -90,12 +104,15 @@ export function Sidebar({
   userEmail,
   role = 'admin',
   unitId = null,
+  managementMode = 'digital_employees',
   onNavigate,
 }: {
   userEmail: string
   role?: string
   /** users.unit_id — preenchido = dono de unidade (só acessa a própria unidade) */
   unitId?: string | null
+  /** organizations.management_mode efetivo — full_management adiciona o grupo de gestão no topo */
+  managementMode?: ManagementMode
   /** chamado ao clicar num link — usado pelo drawer mobile pra fechar */
   onNavigate?: () => void
 }) {
@@ -103,8 +120,17 @@ export function Sidebar({
   const router = useRouter()
   const locale = useLocale()
   const isSuperAdmin = role === 'super_admin'
+  const fullManagement = managementMode === 'full_management' && !isSuperAdmin
 
-  const visibleGroups = navGroups
+  const allGroups = fullManagement
+    ? [
+        managementGroup,
+        // Operação já está no grupo de gestão — sai do "Sua empresa" pra não duplicar
+        ...navGroups.map((g) => ({ ...g, items: g.items.filter((i) => i.href !== '/dashboard/operacao') })),
+      ]
+    : navGroups
+
+  const visibleGroups = allGroups
     .map((group) => ({
       ...group,
       items: group.items
@@ -114,9 +140,12 @@ export function Sidebar({
           if (item.href === '/dashboard/units' && unitId) {
             return { ...item, href: `/dashboard/units/${unitId}`, label: { pt: 'Minha unidade', en: 'My unit' } as Record<Locale, string> }
           }
-          // ...e a Operação dele é a da própria unidade, sem passar pelo hub
+          // ...e a Operação e a Agenda dele são as da própria unidade, sem passar pelo hub
           if (item.href === '/dashboard/operacao' && unitId) {
             return { ...item, href: `/dashboard/units/${unitId}/operacao` }
+          }
+          if (item.href === '/dashboard/agenda' && unitId) {
+            return { ...item, href: `/dashboard/units/${unitId}/agenda/calendario` }
           }
           return item
         }),

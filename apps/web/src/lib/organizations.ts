@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { isVerticalKey, type VerticalKey } from '@/lib/verticals/catalog'
+import type { ManagementMode } from '@/lib/types'
 
 /**
  * Busca organizations.vertical_key (migration 025) pra resolver a
@@ -15,6 +16,36 @@ export async function fetchOrganizationVerticalKey(
   const { data } = await supabase.from('organizations').select('vertical_key').eq('id', orgId).maybeSingle()
   const key = (data as { vertical_key?: string | null } | null)?.vertical_key
   return isVerticalKey(key) ? key : null
+}
+
+/**
+ * Busca organizations.management_mode (migration 032) — como o cliente usa
+ * o Alizo, escolhido na configuração guiada. Best-effort no mesmo espírito
+ * de fetchOrganizationVerticalKey: org sem escolha, erro (ex.: migration 032
+ * ainda não aplicada) ou org inexistente caem em 'digital_employees', o
+ * comportamento atual — nunca lança. Use `raw: true` pra distinguir "não
+ * escolheu ainda" (null) de uma escolha explícita (wizard de onboarding).
+ */
+export async function fetchOrganizationManagementMode(
+  supabase: SupabaseClient,
+  orgId: string | null | undefined,
+): Promise<ManagementMode>
+export async function fetchOrganizationManagementMode(
+  supabase: SupabaseClient,
+  orgId: string | null | undefined,
+  options: { raw: true },
+): Promise<ManagementMode | null>
+export async function fetchOrganizationManagementMode(
+  supabase: SupabaseClient,
+  orgId: string | null | undefined,
+  options?: { raw: true },
+): Promise<ManagementMode | null> {
+  const fallback = options?.raw ? null : 'digital_employees'
+  if (!orgId) return fallback
+  const { data } = await supabase.from('organizations').select('management_mode').eq('id', orgId).maybeSingle()
+  const mode = (data as { management_mode?: string | null } | null)?.management_mode
+  if (mode === 'full_management' || mode === 'digital_employees') return mode
+  return fallback
 }
 
 /**

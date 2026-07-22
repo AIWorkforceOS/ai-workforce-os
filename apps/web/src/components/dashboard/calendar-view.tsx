@@ -5,6 +5,7 @@ import { CalendarPlus, MapPin } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { localDateString, zonedTimeToUtc } from '@/lib/slot-engine'
 import { addDays } from '@/lib/calendar-dates'
+import { shiftOccurrenceByWeeks } from '@/lib/scheduling/recurrence'
 import { AppointmentFormModal } from '@/components/dashboard/appointment-form-modal'
 import { Card, StatusPill, type BadgeVariant } from '@/components/ui/dashboard-ui'
 import { computeSuggestedPay } from '@/lib/service-pay'
@@ -124,13 +125,23 @@ export function CalendarView({
 
   async function handleCancel(appointment: AppointmentWithRelations) {
     if (!window.confirm(`Cancelar o agendamento de ${appointment.customer?.name ?? 'cliente'}?`)) return
+    // Ocorrência de série semanal: oferece encerrar a recorrência inteira
+    // (esta e todas as próximas semanas) em vez de só esta ocorrência.
+    const cancelSeries =
+      appointment.recurrence_group_id != null &&
+      window.confirm('Este atendimento se repete toda semana. Cancelar também TODAS as próximas semanas?\n\nOK = encerrar a recorrência · Cancelar = só este atendimento')
     setRowError(null)
     setBusyId(appointment.id)
     const supabase = createClient()
-    const { error } = await supabase
-      .from('appointments')
-      .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
-      .eq('id', appointment.id)
+    const cancelPayload = { status: 'cancelled', cancelled_at: new Date().toISOString() }
+    const { error } = cancelSeries
+      ? await supabase
+          .from('appointments')
+          .update(cancelPayload)
+          .eq('recurrence_group_id', appointment.recurrence_group_id!)
+          .gte('starts_at', appointment.starts_at)
+          .in('status', ['scheduled', 'confirmed'])
+      : await supabase.from('appointments').update(cancelPayload).eq('id', appointment.id)
     setBusyId(null)
     if (error) {
       setRowError('Não foi possível cancelar o agendamento.')
@@ -177,7 +188,10 @@ export function CalendarView({
     if (orgId) {
       const service = services.find((s) => s.id === appointment.service_id) ?? null
       const employee = employees.find((e) => e.id === appointment.employee_id) ?? null
-      const amountCharged = service?.price ?? null
+      // Valor combinado do atendimento (custom_fields.price) sobrepõe o preço
+      // de tabela do serviço — é o que vale pro financeiro.
+      const customPrice = Number((appointment.custom_fields as { price?: unknown } | null)?.price)
+      const amountCharged = Number.isFinite(customPrice) && customPrice > 0 ? customPrice : service?.price ?? null
       const durationMinutes = Math.round(
         (new Date(appointment.ends_at).getTime() - new Date(appointment.starts_at).getTime()) / 60000
       )
@@ -194,6 +208,36 @@ export function CalendarView({
         amount_charged: amountCharged,
         amount_due: computeSuggestedPay({ employee, amountCharged, durationMinutes }),
       })
+
+      // Série semanal em uso não acaba: cada conclusão pendura +1 semana no
+      // fim da série (best-effort — se falhar, a série só para de crescer,
+      // e as 12 semanas geradas na criação continuam valendo).
+      if (appointment.recurrence_group_id) {
+        const { data: lastRows } = await supabase
+          .from('appointments')
+          .select('starts_at, ends_at')
+          .eq('recurrence_group_id', appointment.recurrence_group_id)
+          .neq('status', 'cancelled')
+          .order('starts_at', { ascending: false })
+          .limit(1)
+        const last = (lastRows ?? [])[0] as { starts_at: string; ends_at: string } | undefined
+        if (last) {
+          const next = shiftOccurrenceByWeeks(last, 1, timezone)
+          await supabase.from('appointments').insert({
+            org_id: orgId,
+            unit_id: unitId,
+            customer_id: appointment.customer_id,
+            service_id: appointment.service_id,
+            employee_id: appointment.employee_id,
+            address: appointment.address,
+            notes: appointment.notes,
+            custom_fields: appointment.custom_fields ?? {},
+            recurrence: 'weekly',
+            recurrence_group_id: appointment.recurrence_group_id,
+            ...next,
+          })
+        }
+      }
     }
 
     setBusyId(null)
@@ -267,6 +311,11 @@ export function CalendarView({
                           <StatusPill variant={STATUS_VARIANT[appointment.status]}>
                             {STATUS_LABEL[appointment.status]}
                           </StatusPill>
+                          {appointment.recurrence === 'weekly' && (
+                            <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: 'rgba(129,140,248,0.15)', color: '#a5b4fc' }}>
+                              Toda semana
+                            </span>
+                          )}
                         </div>
                         <p className="text-xs text-slate-400">
                           {appointment.customer?.name ?? 'Cliente removido'}

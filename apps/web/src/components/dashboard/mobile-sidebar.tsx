@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import { Menu, X } from 'lucide-react'
 import { useLocale } from '@/lib/i18n/client'
 import { Sidebar } from './sidebar'
+import type { ManagementMode } from '@/lib/types'
 
 /**
  * Hambúrguer + drawer da sidebar para telas < lg. Em desktop a sidebar fixa
@@ -15,10 +16,12 @@ export function MobileSidebar({
   userEmail,
   role = 'admin',
   unitId = null,
+  managementMode = 'digital_employees',
 }: {
   userEmail: string
   role?: string
   unitId?: string | null
+  managementMode?: ManagementMode
 }) {
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
@@ -62,7 +65,7 @@ export function MobileSidebar({
 
           {/* Painel do drawer */}
           <div className="absolute inset-y-0 left-0 w-64" style={{ boxShadow: '8px 0 24px rgba(0,0,0,0.5)' }}>
-            <Sidebar userEmail={userEmail} role={role} unitId={unitId} onNavigate={() => setOpen(false)} />
+            <Sidebar userEmail={userEmail} role={role} unitId={unitId} managementMode={managementMode} onNavigate={() => setOpen(false)} />
           </div>
 
           <button

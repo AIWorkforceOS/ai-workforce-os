@@ -4,26 +4,30 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
-  Bot, Check, ChevronRight, Loader2, MessageSquare, PartyPopper,
+  Bot, Briefcase, CalendarDays, Check, ChevronRight, Loader2, MessageSquare, PartyPopper,
   Play, Send, Smartphone, Sparkles, Wifi,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Card } from '@/components/ui/dashboard-ui'
 import { InterviewChat } from '@/components/dashboard/interview-chat'
-import type { AgentConfig, AgentTone, Unit } from '@/lib/types'
+import type { AgentConfig, AgentTone, ManagementMode, Unit } from '@/lib/types'
 import type { SetupStep } from '@/lib/setup-status'
 
 const brandGradient = 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)'
 const whatsGradient = 'linear-gradient(135deg, #25d366, #128c7e)'
 
-type StepId = 'welcome' | 'whatsapp' | 'agent' | 'test' | 'done'
+type StepId = 'welcome' | 'mode' | 'whatsapp' | 'agent' | 'done' | 'test'
 
+// Ordem pedida pelo Vinicius (2026-07-22): primeiro TREINA (entrevista de
+// contratação, passo 'done') e só depois TESTA a conversa — o teste passa
+// a ser o último passo, já com o funcionário treinado e ativo.
 const STEP_META: { id: StepId; title: string; short: string; subtitle: string; icon: typeof Bot; color: string }[] = [
-  { id: 'welcome', title: 'Bem-vindo ao Alizo!', short: 'Início', subtitle: 'Em 3 passos seu funcionário digital começa a atender', icon: Sparkles, color: '#06b6d4' },
+  { id: 'welcome', title: 'Bem-vindo ao Alizo!', short: 'Início', subtitle: 'Em poucos passos seu funcionário digital começa a atender', icon: Sparkles, color: '#06b6d4' },
+  { id: 'mode', title: 'Como você vai usar o Alizo?', short: 'Modo', subtitle: 'Gestão completa da sua empresa ou só os funcionários digitais', icon: Briefcase, color: '#22d3ee' },
   { id: 'whatsapp', title: 'Conecte seu WhatsApp', short: 'WhatsApp', subtitle: 'Escaneie o QR code com o celular da empresa', icon: Wifi, color: '#25d366' },
   { id: 'agent', title: 'Monte seu funcionário digital', short: 'Funcionário', subtitle: 'Nome e jeito de falar — salvos de verdade', icon: Bot, color: '#818cf8' },
-  { id: 'test', title: 'Converse com ele antes de ligar', short: 'Teste', subtitle: 'Uma conversa real de teste, sem afetar clientes', icon: Play, color: '#f59e0b' },
-  { id: 'done', title: 'Entrevista de contratação', short: 'Ativar', subtitle: 'Ele aprende sua empresa e começa a trabalhar sozinho, 24h por dia', icon: Check, color: '#4ade80' },
+  { id: 'done', title: 'Entrevista de contratação', short: 'Treinar', subtitle: 'Ele aprende sua empresa e começa a trabalhar sozinho, 24h por dia', icon: Check, color: '#4ade80' },
+  { id: 'test', title: 'Teste uma conversa', short: 'Testar', subtitle: 'Uma conversa real de teste, sem afetar clientes', icon: Play, color: '#f59e0b' },
 ]
 
 type WhatsStatus = 'open' | 'connecting' | 'close' | 'not_configured' | 'error' | 'loading'
@@ -33,11 +37,17 @@ export function OnboardingWizard({
   config,
   initialSteps,
   firstName,
+  orgId,
+  initialManagementMode,
 }: {
   unit: Unit | null
   config: AgentConfig | null
   initialSteps: SetupStep[]
   firstName: string
+  /** org do usuário — sem org (ex.: super admin sem vínculo) a etapa de modo não aparece */
+  orgId: string | null
+  /** organizations.management_mode — null = ainda não escolheu */
+  initialManagementMode: ManagementMode | null
 }) {
   const router = useRouter()
 
@@ -45,19 +55,25 @@ export function OnboardingWizard({
   const agentDone = initialSteps.find((s) => s.id === 'agent')?.done ?? false
   const activeDone = initialSteps.find((s) => s.id === 'active')?.done ?? false
 
+  // A escolha de modo vive na org; sem org não há o que perguntar.
+  const stepMeta = orgId ? STEP_META : STEP_META.filter((s) => s.id !== 'mode')
+  const [managementMode, setManagementMode] = useState<ManagementMode | null>(initialManagementMode)
+
   // Retoma de onde a pessoa parou — derivado do banco, não de estado local.
-  const initialStep: StepId = !whatsappDone ? 'welcome' : !agentDone ? 'agent' : !activeDone ? 'test' : 'done'
+  // Treinar ('done') vem antes de testar ('test'): com tudo pronto, cai no teste.
+  const initialStep: StepId = !whatsappDone ? 'welcome' : !agentDone ? 'agent' : !activeDone ? 'done' : 'test'
   const [step, setStep] = useState<StepId>(initialStep)
 
-  const stepIndex = STEP_META.findIndex((s) => s.id === step)
-  const meta = STEP_META[stepIndex]!
+  const stepIndex = stepMeta.findIndex((s) => s.id === step)
+  const meta = stepMeta[stepIndex]!
 
   const doneFlags: Record<StepId, boolean> = {
     welcome: true,
+    mode: managementMode !== null,
     whatsapp: whatsappDone,
     agent: agentDone,
-    test: agentDone, // teste é recomendado, não obrigatório
     done: activeDone,
+    test: activeDone, // teste é recomendado, não obrigatório
   }
   const completedCount = [whatsappDone, agentDone, activeDone].filter(Boolean).length
   const progress = Math.round((completedCount / 3) * 100)
@@ -107,7 +123,7 @@ export function OnboardingWizard({
         </div>
 
         <div className="mt-4 flex items-center justify-between">
-          {STEP_META.map((s, i) => {
+          {stepMeta.map((s, i) => {
             const done = s.id !== 'welcome' && doneFlags[s.id] && s.id !== step
             return (
               <button key={s.id} onClick={() => setStep(s.id)} className="flex flex-col items-center gap-1">
@@ -141,7 +157,7 @@ export function OnboardingWizard({
                 </div>
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                    Passo {stepIndex + 1} de {STEP_META.length}
+                    Passo {stepIndex + 1} de {stepMeta.length}
                   </p>
                   <h2 className="text-lg font-black text-white">{meta.title}</h2>
                   <p className="text-sm text-slate-400">{meta.subtitle}</p>
@@ -150,14 +166,25 @@ export function OnboardingWizard({
             </div>
 
             <div className="p-6">
-              {step === 'welcome' && <WelcomeStep firstName={firstName} unitName={unit.name} onNext={() => setStep('whatsapp')} />}
+              {step === 'welcome' && (
+                <WelcomeStep firstName={firstName} unitName={unit.name} onNext={() => setStep(stepMeta[1]?.id ?? 'whatsapp')} />
+              )}
+              {step === 'mode' && (
+                <ModeStep
+                  currentMode={managementMode}
+                  onSaved={(mode) => {
+                    setManagementMode(mode)
+                    router.refresh()
+                    setStep('whatsapp')
+                  }}
+                />
+              )}
               {step === 'whatsapp' && (
                 <WhatsAppStep unitId={unit.id} alreadyConnected={whatsappDone} onConnected={() => { router.refresh() }} />
               )}
               {step === 'agent' && (
                 <AgentStep unitId={unit.id} config={config} onSaved={() => { router.refresh() }} />
               )}
-              {step === 'test' && <TestStep unitId={unit.id} personaName={config?.persona_name ?? 'Assistente'} />}
               {step === 'done' && (
                 <ActivateStep
                   unitId={unit.id}
@@ -166,21 +193,22 @@ export function OnboardingWizard({
                   onActivated={() => { router.refresh() }}
                 />
               )}
+              {step === 'test' && <TestStep unitId={unit.id} personaName={config?.persona_name ?? 'Assistente'} />}
             </div>
 
             {/* Navegação */}
             <div className="flex items-center justify-between px-6 py-4" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
               <button
-                onClick={() => stepIndex > 0 && setStep(STEP_META[stepIndex - 1]!.id)}
+                onClick={() => stepIndex > 0 && setStep(stepMeta[stepIndex - 1]!.id)}
                 disabled={stepIndex === 0}
                 className="rounded-xl px-4 py-2 text-sm font-bold text-slate-400 disabled:opacity-30 hover:bg-white/5"
                 style={{ border: '1px solid rgba(255,255,255,0.08)' }}
               >
                 ← Voltar
               </button>
-              {stepIndex < STEP_META.length - 1 ? (
+              {stepIndex < stepMeta.length - 1 ? (
                 <button
-                  onClick={() => setStep(STEP_META[stepIndex + 1]!.id)}
+                  onClick={() => setStep(stepMeta[stepIndex + 1]!.id)}
                   className="flex items-center gap-2 rounded-xl px-6 py-2.5 text-sm font-black text-white"
                   style={{ background: brandGradient, boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
                 >
@@ -227,7 +255,7 @@ function WelcomeStep({ firstName, unitName, onNext }: { firstName: string; unitN
         {[
           { n: '1', label: 'Conectar o WhatsApp', desc: 'escaneando um QR code', time: '2 min' },
           { n: '2', label: 'Montar o funcionário', desc: 'nome e jeito de falar', time: '3 min' },
-          { n: '3', label: 'Testar e ligar', desc: 'você conversa com ele antes', time: '2 min' },
+          { n: '3', label: 'Treinar e testar', desc: 'ele aprende sua empresa, você testa', time: '5 min' },
         ].map(({ n, label, desc, time }) => (
           <div key={n} className="rounded-xl p-4 text-center" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
             <div className="mx-auto flex h-8 w-8 items-center justify-center rounded-full text-sm font-black text-white" style={{ background: brandGradient }}>
@@ -245,14 +273,133 @@ function WelcomeStep({ firstName, unitName, onNext }: { firstName: string; unitN
         className="flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-black text-white"
         style={{ background: brandGradient, boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
       >
-        Começar pela conexão do WhatsApp
+        Começar
         <ChevronRight size={14} />
       </button>
     </div>
   )
 }
 
-// ─── Passo 2: WhatsApp com QR inline ─────────────────────────────────────────
+// ─── Passo 2: modo de uso (gestão completa × só funcionários digitais) ──────
+
+const MODE_OPTIONS: {
+  id: ManagementMode
+  icon: typeof Bot
+  label: string
+  headline: string
+  bullets: string[]
+}[] = [
+  {
+    id: 'full_management',
+    icon: CalendarDays,
+    label: 'Sistema completo de gestão',
+    headline: 'Pra empresas de serviços (limpeza, manutenção, campo...)',
+    bullets: [
+      'Painel com seus clientes, serviços da semana e financeiro',
+      'Aba de Clientes com cadastro completo (serviço, valor, recorrência)',
+      'Agenda semanal com serviços recorrentes (ex.: toda semana no mesmo horário)',
+      'E todos os funcionários digitais inclusos também',
+    ],
+  },
+  {
+    id: 'digital_employees',
+    icon: Bot,
+    label: 'Só os funcionários digitais',
+    headline: 'Atendimento, vendas, RH e tráfego — cada um no seu módulo',
+    bullets: [
+      'AI Sales Representative com CRM e funil de vendas',
+      'Recrutador (RH) com vagas e triagem de candidatos',
+      'Gestor de tráfego pago',
+      'Você pode mudar pra gestão completa depois',
+    ],
+  },
+]
+
+function ModeStep({ currentMode, onSaved }: { currentMode: ManagementMode | null; onSaved: (mode: ManagementMode) => void }) {
+  const [saving, setSaving] = useState<ManagementMode | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  async function choose(mode: ManagementMode) {
+    setSaving(mode)
+    setError(null)
+    try {
+      const res = await fetch('/api/organizations/management-mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setError(data.error ?? 'Não foi possível salvar sua escolha. Tente de novo.')
+        setSaving(null)
+        return
+      }
+      setSaving(null)
+      onSaved(mode)
+    } catch {
+      setError('Falha de conexão. Tente de novo.')
+      setSaving(null)
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      <p className="text-sm leading-relaxed text-slate-300">
+        Isso define <strong className="text-white">como o seu painel vai funcionar</strong>. Não se
+        preocupe: dá pra mudar depois, e nada é apagado.
+      </p>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {MODE_OPTIONS.map(({ id, icon: Icon, label, headline, bullets }) => {
+          const selected = currentMode === id
+          return (
+            <button
+              key={id}
+              type="button"
+              disabled={saving !== null}
+              onClick={() => choose(id)}
+              className="flex flex-col gap-3 rounded-2xl p-5 text-left transition-all disabled:opacity-60"
+              style={selected
+                ? { border: '1px solid rgba(6,182,212,0.5)', background: 'rgba(6,182,212,0.08)' }
+                : { border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: brandGradient }}>
+                  {saving === id ? <Loader2 size={16} className="animate-spin text-white" /> : <Icon size={16} className="text-white" />}
+                </div>
+                <div>
+                  <p className="text-sm font-black text-white">{label}</p>
+                  <p className="text-[11px] text-slate-400">{headline}</p>
+                </div>
+                {selected && (
+                  <span className="ml-auto flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full" style={{ background: brandGradient }}>
+                    <Check size={11} className="text-white" />
+                  </span>
+                )}
+              </div>
+              <ul className="space-y-1.5">
+                {bullets.map((b) => (
+                  <li key={b} className="flex items-start gap-2 text-xs leading-relaxed text-slate-300">
+                    <Check size={11} className="mt-0.5 flex-shrink-0 text-cyan-400" />
+                    {b}
+                  </li>
+                ))}
+              </ul>
+            </button>
+          )
+        })}
+      </div>
+
+      {error && <p className="text-sm text-red-400">{error}</p>}
+
+      <p className="text-xs text-slate-500">
+        Escolheu errado? É só voltar aqui em Primeiros passos e trocar — o painel se adapta na hora.
+      </p>
+    </div>
+  )
+}
+
+// ─── Passo: WhatsApp com QR inline ───────────────────────────────────────────
 
 function WhatsAppStep({ unitId, alreadyConnected, onConnected }: { unitId: string; alreadyConnected: boolean; onConnected: () => void }) {
   const [status, setStatus] = useState<WhatsStatus>(alreadyConnected ? 'open' : 'loading')
@@ -392,7 +539,7 @@ function WhatsAppStep({ unitId, alreadyConnected, onConnected }: { unitId: strin
   )
 }
 
-// ─── Passo 3: montar o funcionário (salva de verdade) ────────────────────────
+// ─── Passo: montar o funcionário (salva de verdade) ──────────────────────────
 
 const TONES: { id: AgentTone; label: string; emoji: string; desc: string }[] = [
   { id: 'friendly', label: 'Amigável', emoji: '😊', desc: 'caloroso e próximo' },
@@ -504,7 +651,7 @@ function AgentStep({ unitId, config, onSaved }: { unitId: string; config: AgentC
   )
 }
 
-// ─── Passo 4: teste de conversa real ─────────────────────────────────────────
+// ─── Passo final: teste de conversa real (depois do treino) ──────────────────
 
 type TestMessage = { role: 'user' | 'assistant'; content: string }
 
@@ -632,7 +779,7 @@ function TestStep({ unitId, personaName }: { unitId: string; personaName: string
   )
 }
 
-// ─── Passo 5: ativar ─────────────────────────────────────────────────────────
+// ─── Passo de treino: entrevista de contratação + ativação ───────────────────
 
 function ActivateStep({
   unitId,
@@ -733,11 +880,12 @@ function ActivateStep({
     return (
       <div className="space-y-4">
         <p className="text-sm leading-relaxed text-slate-300">
-          Último passo — a <strong className="text-white">entrevista de contratação</strong>.{' '}
+          Hora de treinar: a <strong className="text-white">entrevista de contratação</strong>.{' '}
           Antes de atender seus clientes, <strong className="text-white">{config.persona_name}</strong>{' '}
           precisa aprender sobre sua empresa: o que você vende, preços, até onde pode dar desconto,
           quem ele deve prospectar. Responda às perguntas dele como responderia a um funcionário
-          novo. Quando ele tiver aprendido tudo, ele avisa que está pronto — e já começa a trabalhar.
+          novo. Quando ele tiver aprendido tudo, ele avisa que está pronto — e no próximo passo você
+          testa uma conversa pra ver como ele ficou.
         </p>
         <InterviewChat
           configId={config.id}
@@ -755,9 +903,9 @@ function ActivateStep({
   return (
     <div className="space-y-5">
       <p className="text-sm leading-relaxed text-slate-300">
-        Último passo! Ao ligar o atendimento, <strong className="text-white">{config?.persona_name ?? 'seu funcionário'}</strong>{' '}
+        Ao ligar o atendimento, <strong className="text-white">{config?.persona_name ?? 'seu funcionário'}</strong>{' '}
         passa a responder automaticamente as mensagens que chegarem no WhatsApp conectado. Você pode
-        desligar quando quiser.
+        desligar quando quiser — e testar uma conversa no próximo passo.
       </p>
 
       {error && <p className="text-sm text-red-400">{error}</p>}

@@ -15,10 +15,13 @@ export function NewCustomerForm({
   customerTerm,
   customerTermPlural,
   customFieldSchema,
+  showServiceFields = false,
 }: {
   customerTerm: string
   customerTermPlural: string
   customFieldSchema: DynamicField[]
+  /** modo gestão completa: cadastro ganha tipo de serviço, valor e recorrência (custom_fields) */
+  showServiceFields?: boolean
 }) {
   const router = useRouter()
   const [units, setUnits] = useState<UnitOption[]>([])
@@ -33,6 +36,9 @@ export function NewCustomerForm({
     notes: '',
   })
   const [customFields, setCustomFields] = useState<Record<string, unknown>>({})
+  // Serviço contratado (modo gestão completa) — vira chaves em custom_fields:
+  // service_type / service_value / service_recurrence ('once' | 'weekly').
+  const [service, setService] = useState({ type: '', value: '', recurrence: 'once' })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -70,7 +76,16 @@ export function NewCustomerForm({
           city: form.city.trim() || null,
           tags: form.tags.split(',').map((t) => t.trim()).filter(Boolean),
           notes: form.notes.trim() || null,
-          custom_fields: customFields,
+          custom_fields: {
+            ...customFields,
+            ...(showServiceFields
+              ? {
+                  ...(service.type.trim() ? { service_type: service.type.trim() } : {}),
+                  ...(Number(service.value) > 0 ? { service_value: Number(service.value) } : {}),
+                  service_recurrence: service.recurrence,
+                }
+              : {}),
+          },
         }),
       })
       const data = await res.json()
@@ -141,6 +156,33 @@ export function NewCustomerForm({
             <Textarea rows={3} value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} placeholder={`Qualquer detalhe útil sobre este ${customerTerm.toLowerCase()}`} />
           </div>
         </FormSection>
+
+        {showServiceFields && (
+          <div className="mt-6">
+            <FormSection title="Serviço contratado">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <Label>Tipo de serviço</Label>
+                  <Input value={service.type} onChange={(e) => setService((s) => ({ ...s, type: e.target.value }))} placeholder="Ex: limpeza residencial, deep clean" />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>Valor do serviço</Label>
+                  <Input type="number" min="0" step="0.01" value={service.value} onChange={(e) => setService((s) => ({ ...s, value: e.target.value }))} placeholder="Ex: 150" />
+                </div>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>Recorrência</Label>
+                <Select value={service.recurrence} onChange={(e) => setService((s) => ({ ...s, recurrence: e.target.value }))}>
+                  <option value="once">Serviço único</option>
+                  <option value="weekly">Recorrente — toda semana</option>
+                </Select>
+                <p className="text-[11px] text-slate-500">
+                  Esses dados viram o padrão ao agendar: valor pré-preenchido e, se recorrente, a agenda já sugere repetir toda semana.
+                </p>
+              </div>
+            </FormSection>
+          </div>
+        )}
 
         {customFieldSchema.length > 0 && (
           <div className="mt-6">

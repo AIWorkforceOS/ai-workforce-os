@@ -4,8 +4,11 @@ import { ArrowLeft } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/dashboard-ui'
 import { CustomerDetailForm } from '@/components/dashboard/customer-detail-form'
-import type { Customer, Unit } from '@/lib/types'
-import { fetchOrganizationVerticalKey } from '@/lib/organizations'
+import { CustomerAppointmentsPanel } from '@/components/dashboard/customer-appointments-panel'
+import type { AppointmentWithRelations } from '@/components/dashboard/calendar-view'
+import type { Customer, Employee, Service, Unit } from '@/lib/types'
+import { fetchOrganizationManagementMode, fetchOrganizationVerticalKey } from '@/lib/organizations'
+import { getBusinessHours, getSchedulingSettings } from '@/lib/scheduling'
 import { getCustomerTerm } from '@/lib/verticals/terminology'
 import { VERTICAL_TEMPLATES } from '@/lib/verticals/catalog'
 
@@ -19,13 +22,38 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
   const customerRow = customer as Customer | null
   if (!customerRow) notFound()
 
-  const { data: unit } = await supabase.from('units').select('id, name').eq('id', customerRow.unit_id).maybeSingle()
-  const unitRow = unit as Pick<Unit, 'id' | 'name'> | null
+  const { data: unit } = await supabase.from('units').select('*').eq('id', customerRow.unit_id).maybeSingle()
+  const unitRow = unit as Unit | null
 
-  const verticalKey = await fetchOrganizationVerticalKey(supabase, customerRow.org_id)
+  const [verticalKey, managementMode] = await Promise.all([
+    fetchOrganizationVerticalKey(supabase, customerRow.org_id),
+    fetchOrganizationManagementMode(supabase, customerRow.org_id),
+  ])
   const term = getCustomerTerm(verticalKey, 'pt')
   const termPlural = getCustomerTerm(verticalKey, 'pt', { plural: true })
   const customFieldSchema = verticalKey ? VERTICAL_TEMPLATES[verticalKey].customerFieldSchema : []
+  const fullManagement = managementMode === 'full_management'
+
+  // Modo gestão completa: a ficha do cliente também agenda/remarca serviços,
+  // então carrega o contexto de agenda da unidade dele.
+  const [{ data: services }, { data: employees }, { data: appointments }] = fullManagement && unitRow
+    ? await Promise.all([
+        supabase.from('services').select('*').eq('unit_id', unitRow.id).eq('is_active', true).order('name'),
+        supabase
+          .from('employees')
+          .select('*')
+          .eq('unit_id', unitRow.id)
+          .eq('is_active', true)
+          .eq('is_schedulable', true)
+          .order('name'),
+        supabase
+          .from('appointments')
+          .select('*, customer:customers(id,name,phone), service:services(id,name), employee:employees(id,name)')
+          .eq('customer_id', customerRow.id)
+          .order('starts_at', { ascending: false })
+          .limit(20),
+      ])
+    : [{ data: null }, { data: null }, { data: null }]
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
@@ -43,8 +71,29 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
         </p>
       </div>
 
+      {fullManagement && unitRow && unitRow.org_id && (
+        <Card className="p-6">
+          <CustomerAppointmentsPanel
+            customer={customerRow}
+            unitId={unitRow.id}
+            orgId={unitRow.org_id}
+            timezone={unitRow.timezone}
+            businessHours={getBusinessHours(unitRow)}
+            schedulingSettings={getSchedulingSettings(unitRow)}
+            services={(services ?? []) as Service[]}
+            employees={(employees ?? []) as Employee[]}
+            initialAppointments={(appointments ?? []) as unknown as AppointmentWithRelations[]}
+          />
+        </Card>
+      )}
+
       <Card className="p-6">
-        <CustomerDetailForm customer={customerRow} customerTerm={term} customFieldSchema={customFieldSchema} />
+        <CustomerDetailForm
+          customer={customerRow}
+          customerTerm={term}
+          customFieldSchema={customFieldSchema}
+          showServiceFields={fullManagement}
+        />
       </Card>
     </div>
   )

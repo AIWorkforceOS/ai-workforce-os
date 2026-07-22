@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getAppUser } from '@/lib/app-user'
 import { computeSetupStatus } from '@/lib/setup-status'
+import { fetchOrganizationManagementMode } from '@/lib/organizations'
 import { OnboardingWizard } from '@/components/onboarding/wizard'
 import type { AgentConfig, Unit } from '@/lib/types'
 
@@ -12,9 +13,11 @@ export default async function OnboardingPage() {
   const appUser = await getAppUser()
   if (!appUser) redirect('/login')
 
-  const [{ data: units }, { data: configs }] = await Promise.all([
+  const [{ data: units }, { data: configs }, managementMode] = await Promise.all([
     supabase.from('units').select('*').order('created_at', { ascending: true }),
     supabase.from('agent_configs').select('*').eq('agent_type', 'sdr'),
+    // raw: o wizard precisa distinguir "ainda não escolheu" (null) de escolha feita
+    fetchOrganizationManagementMode(supabase, appUser.orgId, { raw: true }),
   ])
 
   const unitRows = (units ?? []) as Unit[]
@@ -31,6 +34,8 @@ export default async function OnboardingPage() {
       config={config}
       initialSteps={status.steps}
       firstName={(appUser.name ?? appUser.email).split(/[\s@]/)[0] ?? 'você'}
+      orgId={appUser.orgId}
+      initialManagementMode={managementMode}
     />
   )
 }

@@ -5,6 +5,7 @@ import { X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { getAvailableSlots, zonedTimeToUtc, type AvailableSlot, type SlotEngineAppointment } from '@/lib/slot-engine'
 import { addDays } from '@/lib/calendar-dates'
+import { buildWeeklyOccurrences, RECURRENCE_WEEKS_AHEAD } from '@/lib/scheduling/recurrence'
 import { Card, Input, Label, Select, Textarea } from '@/components/ui/dashboard-ui'
 import type { SchedulingSettings, Service, Employee, WeeklySchedule } from '@/lib/types'
 import type { AppointmentWithRelations } from '@/components/dashboard/calendar-view'
@@ -31,6 +32,9 @@ export function AppointmentFormModal({
   mode,
   initialDate,
   appointment,
+  initialCustomer,
+  defaultPrice,
+  defaultWeekly,
   onClose,
   onSaved,
 }: {
@@ -44,6 +48,12 @@ export function AppointmentFormModal({
   mode: 'create' | 'reschedule'
   initialDate: string
   appointment?: AppointmentWithRelations
+  /** cliente pré-selecionado (agendamento a partir da ficha do cliente) */
+  initialCustomer?: CustomerOption
+  /** valor combinado padrão (ex.: custom_fields.service_value do cliente) — sobrepõe o preço do serviço */
+  defaultPrice?: number | null
+  /** pré-marca "repetir toda semana" (cliente cadastrado como recorrente) */
+  defaultWeekly?: boolean
   onClose: () => void
   onSaved: () => void | Promise<void>
 }) {
@@ -57,15 +67,28 @@ export function AppointmentFormModal({
   const [customerQuery, setCustomerQuery] = useState('')
   const [customerResults, setCustomerResults] = useState<CustomerOption[]>([])
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerOption | null>(
-    appointment?.customer ? { id: appointment.customer.id, name: appointment.customer.name, phone: appointment.customer.phone } : null
+    appointment?.customer
+      ? { id: appointment.customer.id, name: appointment.customer.name, phone: appointment.customer.phone }
+      : initialCustomer ?? null
   )
   const [showNewCustomer, setShowNewCustomer] = useState(false)
   const [newCustomerName, setNewCustomerName] = useState('')
   const [newCustomerPhone, setNewCustomerPhone] = useState('')
   const [newCustomerAddress, setNewCustomerAddress] = useState('')
 
-  const [address, setAddress] = useState(appointment?.address ?? '')
+  const [address, setAddress] = useState(appointment?.address ?? initialCustomer?.address ?? '')
   const [notes, setNotes] = useState(appointment?.notes ?? '')
+  // Valor combinado deste atendimento: custom_fields.price sobrepõe services.price
+  // no "Concluir" → service_records (financeiro). Vazio = usa o preço do serviço.
+  const existingPrice = Number((appointment?.custom_fields as { price?: unknown } | undefined)?.price)
+  const [price, setPrice] = useState<string>(
+    Number.isFinite(existingPrice) && existingPrice > 0
+      ? String(existingPrice)
+      : defaultPrice && defaultPrice > 0
+        ? String(defaultPrice)
+        : ''
+  )
+  const [weekly, setWeekly] = useState(defaultWeekly ?? false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -222,7 +245,13 @@ export function AppointmentFormModal({
     const supabase = createClient()
     setSaving(true)
 
+    const priceValue = Number(price)
+    const priceCustomFields = Number.isFinite(priceValue) && priceValue > 0 ? { price: priceValue } : {}
+
     if (mode === 'reschedule') {
+      // Preserva as demais chaves de custom_fields; só o valor combinado muda aqui.
+      const otherCustomFields = { ...(appointment!.custom_fields ?? {}) } as Record<string, unknown>
+      delete otherCustomFields.price
       const { error: updateError } = await supabase
         .from('appointments')
         .update({
@@ -231,6 +260,8 @@ export function AppointmentFormModal({
           starts_at: selectedSlot.starts_at,
           ends_at: selectedSlot.ends_at,
           address: address.trim() || null,
+          notes: notes.trim() || null,
+          custom_fields: { ...otherCustomFields, ...priceCustomFields },
           // reseta o carimbo de aviso: um reagendamento é um evento novo,
           // que merece seu próprio aviso automático (ver rescheduled_notified_at)
           rescheduled_notified_at: null,
@@ -253,27 +284,43 @@ export function AppointmentFormModal({
       return
     }
 
-    const { data: insertedAppointment, error: insertError } = await supabase
+    const baseRow = {
+      org_id: orgId,
+      unit_id: unitId,
+      customer_id: customerId,
+      service_id: serviceId,
+      employee_id: employeeId,
+      address: address.trim() || null,
+      notes: notes.trim() || null,
+      custom_fields: priceCustomFields,
+    }
+
+    // Recorrência semanal: gera as próximas semanas como agendamentos reais,
+    // todos no mesmo grupo — agenda e financeiro são alimentados sem passo
+    // manual (lembrete, "a caminho" e Concluir → service_records já valem
+    // pra cada ocorrência). Só a disponibilidade da PRIMEIRA semana é
+    // validada pelo motor de slots; as seguintes assumem o mesmo horário.
+    const occurrences = weekly
+      ? buildWeeklyOccurrences({ starts_at: selectedSlot.starts_at, ends_at: selectedSlot.ends_at }, timezone)
+      : [{ starts_at: selectedSlot.starts_at, ends_at: selectedSlot.ends_at }]
+    const recurrenceFields = weekly
+      ? { recurrence: 'weekly', recurrence_group_id: crypto.randomUUID() }
+      : {}
+
+    const { data: insertedAppointments, error: insertError } = await supabase
       .from('appointments')
-      .insert({
-        org_id: orgId,
-        unit_id: unitId,
-        customer_id: customerId,
-        service_id: serviceId,
-        employee_id: employeeId,
-        starts_at: selectedSlot.starts_at,
-        ends_at: selectedSlot.ends_at,
-        address: address.trim() || null,
-        notes: notes.trim() || null,
-      })
-      .select('id')
-      .single()
+      .insert(occurrences.map((occ) => ({ ...baseRow, ...recurrenceFields, ...occ })))
+      .select('id, starts_at')
     setSaving(false)
     if (insertError) {
       setError('Não foi possível criar o agendamento. O horário pode ter sido ocupado.')
       return
     }
-    notifyAppointment(unitId, (insertedAppointment as { id: string }).id, 'booked')
+    // Aviso automático só da primeira ocorrência — os lembretes de cada
+    // semana seguinte já são cobertos pelo cron de lembretes.
+    const firstId = ((insertedAppointments ?? []) as { id: string; starts_at: string }[])
+      .sort((a, b) => a.starts_at.localeCompare(b.starts_at))[0]?.id
+    if (firstId) notifyAppointment(unitId, firstId, 'booked')
     await onSaved()
     onClose()
   }
@@ -469,9 +516,52 @@ export function AppointmentFormModal({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <Label>Observações</Label>
+              <Label>Valor combinado</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                placeholder={
+                  services.find((s) => s.id === serviceId)?.price
+                    ? `Vazio = preço do serviço (${services.find((s) => s.id === serviceId)!.price})`
+                    : 'Opcional — usado no financeiro ao concluir'
+                }
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label>Descrição / observações</Label>
               <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Opcional" />
             </div>
+
+            {mode === 'create' && (
+              <label
+                className="flex cursor-pointer items-start gap-2.5 rounded-xl px-3.5 py-3"
+                style={{ background: 'rgba(129,140,248,0.06)', border: '1px solid rgba(129,140,248,0.2)' }}
+              >
+                <input
+                  type="checkbox"
+                  checked={weekly}
+                  onChange={(e) => setWeekly(e.target.checked)}
+                  className="mt-0.5 accent-cyan-500"
+                />
+                <span className="text-sm text-slate-200">
+                  <span className="font-bold">Repetir toda semana neste horário</span>
+                  <span className="block text-xs text-slate-400">
+                    Já deixamos as próximas {RECURRENCE_WEEKS_AHEAD} semanas agendadas — e a série se
+                    estende sozinha a cada serviço concluído. Cancele quando quiser.
+                  </span>
+                </span>
+              </label>
+            )}
+
+            {mode === 'reschedule' && appointment?.recurrence === 'weekly' && (
+              <p className="text-xs text-slate-500">
+                Este atendimento faz parte de uma série semanal — só esta ocorrência será alterada.
+              </p>
+            )}
 
             {error && <p className="text-sm text-red-400">{error}</p>}
 
