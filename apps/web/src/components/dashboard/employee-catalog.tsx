@@ -60,21 +60,39 @@ export function EmployeeCatalog({
   customers: number
   verticalKey?: VerticalKey | null
 }) {
-  const whatsappConnected = units.some((u) => !!u.whatsapp_phone)
-  const sdr = configs.find((c) => c.agent_type === 'sdr')
-  const recruiter = configs.find((c) => c.agent_type === 'recruiter')
-  const traffic = configs.find((c) => c.agent_type === 'traffic_specialist')
-  const receptionist = configs.find((c) => c.agent_type === 'receptionist')
+  // A primeira unidade é a "principal" (mesma que /dashboard/onboarding
+  // configura). Cada unidade tem sua própria linha em agent_configs
+  // (unit_id) — o seletor abaixo decide qual delas este catálogo mostra,
+  // já que organizações com mais de uma unidade (ex.: franquias) precisam
+  // de perfis de negócio e treinamentos diferentes por unidade.
+  const mainUnitId = units[0]?.id ?? null
+  const [selectedUnitId, setSelectedUnitId] = useState(
+    units.find((u) => u.is_active)?.id ?? mainUnitId ?? '',
+  )
+  const selectedUnit = units.find((u) => u.id === selectedUnitId) ?? null
+  const isMainUnit = selectedUnitId === mainUnitId
+
+  // O assistente guiado (/dashboard/onboarding) só existe pra unidade
+  // principal; unidades adicionais configuram WhatsApp e persona nas
+  // telas de unidade dedicadas.
+  const whatsappHref = isMainUnit ? '/dashboard/onboarding' : `/dashboard/units/${selectedUnitId}`
+  const sdrConfigHref = isMainUnit ? '/dashboard/onboarding' : `/dashboard/units/${selectedUnitId}/agent`
+
+  const whatsappConnected = !!selectedUnit?.whatsapp_phone
+  const sdr = configs.find((c) => c.agent_type === 'sdr' && c.unit_id === selectedUnitId)
+  const recruiter = configs.find((c) => c.agent_type === 'recruiter' && c.unit_id === selectedUnitId)
+  const traffic = configs.find((c) => c.agent_type === 'traffic_specialist' && c.unit_id === selectedUnitId)
+  const receptionist = configs.find((c) => c.agent_type === 'receptionist' && c.unit_id === selectedUnitId)
 
   const sdrSteps: Step[] = [
-    { label: 'Conectar o WhatsApp da empresa', desc: 'Escaneando um QR code, igual ao WhatsApp Web.', done: whatsappConnected, href: '/dashboard/onboarding' },
-    { label: 'Dar um nome e um jeito de falar', desc: 'É assim que ele vai se apresentar aos seus clientes.', done: !!sdr, href: '/dashboard/onboarding' },
-    { label: 'Testar uma conversa e ligar', desc: 'Você conversa com ele antes — e liga quando gostar.', done: !!sdr?.is_active, href: '/dashboard/onboarding' },
+    { label: 'Conectar o WhatsApp da empresa', desc: 'Escaneando um QR code, igual ao WhatsApp Web.', done: whatsappConnected, href: whatsappHref },
+    { label: 'Dar um nome e um jeito de falar', desc: 'É assim que ele vai se apresentar aos seus clientes.', done: !!sdr, href: sdrConfigHref },
+    { label: 'Testar uma conversa e ligar', desc: 'Você conversa com ele antes — e liga quando gostar.', done: !!sdr?.is_active, href: sdrConfigHref },
   ]
 
   const recruiterSteps: Step[] = [
     { label: 'Contratar o recrutador', desc: 'Escolha o nome dele e responda a entrevista de contratação — ele aprende sua empresa.', done: !!recruiter?.is_active, inline: true },
-    { label: 'Conectar o WhatsApp da empresa', desc: 'Ele usa o mesmo WhatsApp do vendedor pra falar com candidatos.', done: whatsappConnected, href: '/dashboard/onboarding' },
+    { label: 'Conectar o WhatsApp da empresa', desc: 'Ele usa o mesmo WhatsApp do vendedor pra falar com candidatos.', done: whatsappConnected, href: whatsappHref },
     { label: 'Abrir sua primeira vaga', desc: 'Conte a vaga que precisa preencher; ele cuida do resto.', done: openJobs > 0, href: '/dashboard/recruiter/jobs/new' },
   ]
 
@@ -99,6 +117,27 @@ export function EmployeeCatalog({
           cada um tem um passo a passo curto, e você pode pausar quando quiser.
         </p>
       </div>
+
+      {units.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Unidade</span>
+          {units.map((u) => (
+            <button
+              key={u.id}
+              type="button"
+              onClick={() => setSelectedUnitId(u.id)}
+              className="rounded-full px-3 py-1.5 text-xs font-bold transition-colors"
+              style={
+                u.id === selectedUnitId
+                  ? { background: brandGradient, color: '#fff' }
+                  : { border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }
+              }
+            >
+              {u.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-4">
         <EmployeeCatalogCard
@@ -132,7 +171,7 @@ export function EmployeeCatalog({
           state={recruiter?.is_active ? (openJobs > 0 ? 'working' : 'configuring') : 'available'}
           panelHref="/dashboard/recruiter"
           personaName={recruiter?.persona_name ?? null}
-          activation={{ agentType: 'recruiter', config: recruiter ?? null, units, askName: true, defaultName: 'Rafa' }}
+          activation={{ agentType: 'recruiter', config: recruiter ?? null, unitId: selectedUnitId, askName: true, defaultName: 'Rafa' }}
           trainingScore={recruiter ? computeTrainingCompleteness(recruiter, verticalKey) : null}
           testConfigId={recruiter?.id ?? null}
           trainConfigId={recruiter?.id ?? null}
@@ -151,7 +190,7 @@ export function EmployeeCatalog({
           state={traffic?.is_active ? (adAccounts > 0 ? 'working' : 'configuring') : 'available'}
           panelHref="/dashboard/traffic"
           personaName={null}
-          activation={{ agentType: 'traffic_specialist', config: traffic ?? null, units, askName: false, defaultName: 'Gestor de Tráfego' }}
+          activation={{ agentType: 'traffic_specialist', config: traffic ?? null, unitId: selectedUnitId, askName: false, defaultName: 'Gestor de Tráfego' }}
           trainingScore={traffic ? computeTrainingCompleteness(traffic, verticalKey) : null}
           trainConfigId={traffic?.id ?? null}
           lastTrainedAt={traffic?.last_trained_at ?? null}
@@ -169,7 +208,7 @@ export function EmployeeCatalog({
           state={receptionist?.is_active ? (customers > 0 ? 'working' : 'configuring') : 'available'}
           panelHref="/dashboard/receptionist"
           personaName={receptionist?.persona_name ?? null}
-          activation={{ agentType: 'receptionist', config: receptionist ?? null, units, askName: true, defaultName: 'Ana' }}
+          activation={{ agentType: 'receptionist', config: receptionist ?? null, unitId: selectedUnitId, askName: true, defaultName: 'Ana' }}
           trainingScore={receptionist ? computeTrainingCompleteness(receptionist, verticalKey) : null}
           testConfigId={receptionist?.id ?? null}
           trainConfigId={receptionist?.id ?? null}
@@ -188,8 +227,10 @@ export function EmployeeCatalog({
 
 type ActivationProps = {
   agentType: 'recruiter' | 'traffic_specialist' | 'receptionist'
+  /** config já filtrado pra unitId — nunca de outra unidade */
   config: AgentConfig | null
-  units: Unit[]
+  /** unidade selecionada no catálogo (seletor no topo da tela) */
+  unitId: string
   /** true = pede nome (funcionário que conversa com pessoas) */
   askName: boolean
   defaultName: string
@@ -355,7 +396,7 @@ function StepRow({
         {number}
         <div className="min-w-0 flex-1">
           {body}
-          {isNext && <ActivateForm {...activation} />}
+          {isNext && <ActivateForm key={activation.unitId} {...activation} />}
         </div>
       </div>
     )
@@ -380,15 +421,11 @@ function StepRow({
   return row
 }
 
-function ActivateForm({ agentType, config, units, askName, defaultName }: ActivationProps) {
+function ActivateForm({ agentType, config, unitId, askName, defaultName }: ActivationProps) {
   const router = useRouter()
-  const activeUnits = units.filter((u) => u.is_active)
   const [name, setName] = useState(config?.persona_name ?? defaultName)
-  const [unitId, setUnitId] = useState(activeUnits[0]?.id ?? units[0]?.id ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  const selectableUnits = activeUnits.length > 0 ? activeUnits : units
 
   const interviewDone = config?.interview_status === 'completed'
 
@@ -440,18 +477,6 @@ function ActivateForm({ agentType, config, units, askName, defaultName }: Activa
           className="w-full rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600 outline-none focus:border-cyan-500/50"
           style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
         />
-      )}
-      {selectableUnits.length > 1 && (
-        <select
-          value={unitId}
-          onChange={(e) => setUnitId(e.target.value)}
-          className="w-full rounded-lg px-3 py-2 text-xs text-white outline-none"
-          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
-        >
-          {selectableUnits.map((u) => (
-            <option key={u.id} value={u.id} style={{ background: '#141a2b' }}>{u.name}</option>
-          ))}
-        </select>
       )}
       {error && <p className="text-[11px] text-red-400">{error}</p>}
       <button
