@@ -98,6 +98,29 @@ export async function sendWhatsAppMessage(config: EvolutionUnitConfig, phone: st
 }
 
 /**
+ * Baixa e decodifica (Baileys) o conteúdo de uma mensagem de mídia recebida
+ * (ex.: áudio/nota de voz), a partir do id da mensagem no payload do
+ * webhook. A URL que vem no payload é criptografada — não dá pra baixar
+ * direto, por isso a Evolution API expõe esse endpoint que faz a
+ * descriptografia e devolve em base64.
+ */
+export async function getBase64FromMediaMessage(
+  config: EvolutionUnitConfig,
+  messageId: string,
+): Promise<{ base64: string; mimetype: string | null } | null> {
+  const data = await evolutionFetch(config, `/chat/getBase64FromMediaMessage/${config.instanceName}`, {
+    method: 'POST',
+    body: JSON.stringify({
+      message: { key: { id: messageId } },
+      convertToMp4: false,
+    }),
+  })
+  await logEvolutionUsage('chat.getBase64FromMediaMessage')
+  if (!data?.base64) return null
+  return { base64: data.base64, mimetype: data.mimetype ?? null }
+}
+
+/**
  * Mostra o indicador nativo de "digitando..." no WhatsApp do cliente por
  * `delayMs`. Best-effort: quem chama não deve deixar uma falha aqui
  * bloquear o envio da mensagem em si (ver EvolutionWhatsAppChannel em

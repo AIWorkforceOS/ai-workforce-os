@@ -77,6 +77,41 @@ export async function generateStructuredReply<T = Record<string, unknown>>(param
 }
 
 /**
+ * Transcreve um áudio (ex.: nota de voz do WhatsApp) para texto via Whisper.
+ * Recebe o arquivo em base64 (formato em que a Evolution API devolve mídia
+ * descriptografada) e devolve o texto já pronto para entrar no motor de
+ * conversa como se o cliente tivesse digitado. `durationSeconds` vem do
+ * próprio Whisper (verbose_json) e alimenta o registro de custo/uso.
+ */
+export async function transcribeAudio(params: {
+  apiKey: string
+  base64Audio: string
+  mimeType: string
+}): Promise<{ text: string; durationSeconds: number }> {
+  const audioBuffer = Buffer.from(params.base64Audio, 'base64')
+  const extension = params.mimeType.includes('ogg') ? 'ogg' : params.mimeType.split('/')[1]?.split(';')[0] || 'ogg'
+
+  const formData = new FormData()
+  formData.append('file', new Blob([audioBuffer], { type: params.mimeType }), `audio.${extension}`)
+  formData.append('model', 'whisper-1')
+  formData.append('response_format', 'verbose_json')
+
+  const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${params.apiKey}` },
+    body: formData,
+  })
+
+  const data = await response.json()
+
+  if (!response.ok) {
+    throw new Error(data?.error?.message ?? `OpenAI retornou status ${response.status}`)
+  }
+
+  return { text: (data.text ?? '').trim(), durationSeconds: Number(data.duration ?? 0) }
+}
+
+/**
  * Gera embeddings (text-embedding-3-small, 1536 dims — par com o
  * vector(1536) de candidates.profile_embedding). Aceita lote.
  */

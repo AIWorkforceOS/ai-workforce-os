@@ -41,6 +41,14 @@ export function estimateOpenAICost(model: string, inputTokens: number, outputTok
   return (inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000
 }
 
+// USD por minuto de áudio transcrito (Whisper, tabela pública jul/2026) —
+// cobrança por duração, não por token, por isso fica fora de OPENAI_PRICING_PER_1M.
+const OPENAI_WHISPER_COST_PER_MINUTE_USD = 0.006
+
+export function estimateWhisperCost(durationSeconds: number): number {
+  return (durationSeconds / 60) * OPENAI_WHISPER_COST_PER_MINUTE_USD
+}
+
 export type ApiUsageInput = {
   provider: ApiProvider
   endpoint: string
@@ -105,6 +113,19 @@ export async function logOpenAIUsage(params: {
     outputTokens,
     totalTokens: params.usage?.total_tokens ?? inputTokens + outputTokens,
     estimatedCostUsd: estimateOpenAICost(params.model, inputTokens, outputTokens),
+  })
+}
+
+/** Atalho para openai.ts (transcribeAudio): custo estimado por duração transcrita. */
+export async function logOpenAIAudioUsage(params: { durationSeconds: number; unitId?: string | null; orgId?: string | null }): Promise<void> {
+  await logApiUsage({
+    provider: 'openai',
+    endpoint: 'audio.transcriptions',
+    model: 'whisper-1',
+    estimatedCostUsd: estimateWhisperCost(params.durationSeconds),
+    unitId: params.unitId,
+    orgId: params.orgId,
+    metadata: { duration_seconds: params.durationSeconds },
   })
 }
 
