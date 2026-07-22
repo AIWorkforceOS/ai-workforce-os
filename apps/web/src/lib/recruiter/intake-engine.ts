@@ -129,9 +129,17 @@ function mergeProfile(current: JobProfile, extracted: ExtractedProfile): JobProf
  */
 export async function handleCompanyIntakeInbound(
   supabase: SupabaseClient,
-  params: { job: JobOpening; unit: Unit; config: AgentConfig; lead: Lead; text: string },
+  params: {
+    job: JobOpening
+    unit: Unit
+    config: AgentConfig
+    lead: Lead
+    text: string
+    /** empresa mandou a mensagem por áudio → resposta também deve ser em áudio (mesma mecânica do Sales Rep) */
+    wasAudioMessage?: boolean
+  },
 ): Promise<void> {
-  const { job, unit, config, lead, text } = params
+  const { job, unit, config, lead, text, wasAudioMessage } = params
   const apiKey = getOpenAIApiKey()
   if (!apiKey) throw new Error('OPENAI_API_KEY não está configurada.')
 
@@ -180,6 +188,7 @@ export async function handleCompanyIntakeInbound(
           text: reply,
           templateKey: 'recruiter_intake_confirmed',
           skipRateLimits: true,
+          voiceReply: wasAudioMessage,
         })
       }
 
@@ -282,6 +291,7 @@ export async function handleCompanyIntakeInbound(
         text: confirmText,
         templateKey: 'recruiter_intake_confirm_profile',
         skipRateLimits: true,
+        voiceReply: wasAudioMessage,
       })
     }
     return
@@ -316,6 +326,7 @@ export async function handleCompanyIntakeInbound(
       text: nextQuestion,
       templateKey: 'recruiter_intake_question',
       skipRateLimits: true,
+      voiceReply: wasAudioMessage,
     })
   }
 }

@@ -449,6 +449,7 @@ export async function routeInboundMessage(params: InboundRouteParams): Promise<R
       unit: unitRow, config,
       lead: jobLead,
       text,
+      wasAudioMessage,
     })
     return { ok: true, routed: 'recruiter_candidate' }
   }
@@ -482,9 +483,9 @@ export async function routeInboundMessage(params: InboundRouteParams): Promise<R
     }
 
     if (recruiterJob.status === 'profiling' || recruiterJob.profile.awaiting_confirmation) {
-      await handleCompanyIntakeInbound(supabase, { job: recruiterJob, unit: unitRow, config, lead, text })
+      await handleCompanyIntakeInbound(supabase, { job: recruiterJob, unit: unitRow, config, lead, text, wasAudioMessage })
     } else if (['company_review', 'presented', 'shortlist_ready'].includes(recruiterJob.status)) {
-      await handleCompanyReviewInbound(supabase, { job: recruiterJob, unit: unitRow, config, lead, text })
+      await handleCompanyReviewInbound(supabase, { job: recruiterJob, unit: unitRow, config, lead, text, wasAudioMessage })
     } else {
       // Vaga em sourcing/outreach/screening: resposta de status honesta
       const apiKey = getOpenAIApiKey()

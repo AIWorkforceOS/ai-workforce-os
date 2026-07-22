@@ -274,9 +274,11 @@ export async function handleCandidateInbound(
     config: AgentConfig
     lead: Lead | null
     text: string
+    /** candidato mandou a mensagem por áudio → resposta também deve ser em áudio (mesma mecânica do Sales Rep) */
+    wasAudioMessage?: boolean
   },
 ): Promise<void> {
-  const { job, jc, candidate, unit, config, text } = params
+  const { job, jc, candidate, unit, config, text, wasAudioMessage } = params
   const apiKey = getOpenAIApiKey()
   if (!apiKey) throw new Error('OPENAI_API_KEY não está configurada.')
 
@@ -302,6 +304,7 @@ export async function handleCandidateInbound(
       text: 'Entendido, você não receberá mais mensagens nossas. Removemos seu contato da nossa lista. Obrigado e sucesso na sua jornada!',
       templateKey: 'recruiter_opt_out_confirm',
       skipRateLimits: true,
+      voiceReply: wasAudioMessage,
     })
     await recalculateShortlist(supabase, { job, unit, config })
     return
@@ -400,6 +403,7 @@ export async function handleCandidateInbound(
         supabase, unit, config, candidate,
         jobId: job.id, text: bye,
         templateKey: 'recruiter_screening_goodbye', skipRateLimits: true,
+        voiceReply: wasAudioMessage,
       })
     }
     await recalculateShortlist(supabase, { job, unit, config })
@@ -470,6 +474,7 @@ export async function handleCandidateInbound(
         supabase, unit, config, candidate,
         jobId: job.id, text: closing,
         templateKey: 'recruiter_screening_done', skipRateLimits: true,
+        voiceReply: wasAudioMessage,
       })
     }
 
@@ -488,6 +493,7 @@ export async function handleCandidateInbound(
       supabase, unit, config, candidate,
       jobId: job.id, text: reply,
       templateKey: 'recruiter_screening_reply', skipRateLimits: true,
+      voiceReply: wasAudioMessage,
     })
   }
 }

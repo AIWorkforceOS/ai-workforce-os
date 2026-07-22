@@ -368,9 +368,17 @@ type ReviewClassification = {
  */
 export async function handleCompanyReviewInbound(
   supabase: SupabaseClient,
-  params: { job: JobOpening; unit: Unit; config: AgentConfig; lead: Lead; text: string },
+  params: {
+    job: JobOpening
+    unit: Unit
+    config: AgentConfig
+    lead: Lead
+    text: string
+    /** empresa mandou a mensagem por áudio → resposta também deve ser em áudio (mesma mecânica do Sales Rep) */
+    wasAudioMessage?: boolean
+  },
 ): Promise<void> {
-  const { job, unit, config, lead, text } = params
+  const { job, unit, config, lead, text, wasAudioMessage } = params
   const apiKey = getOpenAIApiKey()
   if (!apiKey) throw new Error('OPENAI_API_KEY não está configurada.')
 
@@ -403,6 +411,7 @@ export async function handleCompanyReviewInbound(
           supabase, unit, config,
           leadId: lead.id, leadPhone: lead.phone, leadEmail: lead.email,
           text: reply, templateKey: 'recruiter_selection_confirmed', skipRateLimits: true,
+          voiceReply: wasAudioMessage,
         })
       }
       await finalizeSelection(supabase, {
@@ -452,6 +461,7 @@ export async function handleCompanyReviewInbound(
         supabase, unit, config,
         leadId: lead.id, leadPhone: lead.phone, leadEmail: lead.email,
         text: reply, templateKey: 'recruiter_adjust_confirmed', skipRateLimits: true,
+        voiceReply: wasAudioMessage,
       })
     }
 
@@ -482,6 +492,7 @@ export async function handleCompanyReviewInbound(
         supabase, unit, config,
         leadId: lead.id, leadPhone: lead.phone, leadEmail: lead.email,
         text: reply, templateKey: 'recruiter_cancel_confirmed', skipRateLimits: true,
+        voiceReply: wasAudioMessage,
       })
     }
     return
@@ -508,6 +519,7 @@ export async function handleCompanyReviewInbound(
       supabase, unit, config,
       leadId: lead.id, leadPhone: lead.phone, leadEmail: lead.email,
       text: reply, templateKey: 'recruiter_review_reply', skipRateLimits: true,
+      voiceReply: wasAudioMessage,
     })
   }
 }

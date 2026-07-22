@@ -29,6 +29,8 @@ export async function sendToCandidate(params: {
   templateKey: string
   /** pula horário/limite (ex.: confirmação de opt-out é resposta imediata) */
   skipRateLimits?: boolean
+  /** candidato mandou a mensagem por áudio → responde em áudio também (mesma mecânica do Sales Rep) */
+  voiceReply?: boolean
 }): Promise<SendOutcome> {
   const { supabase, unit, config, candidate, jobId, text, templateKey } = params
 
@@ -69,10 +71,10 @@ export async function sendToCandidate(params: {
 
   // Preferência WhatsApp/SMS (conforme o canal configurado na unidade)
   const channelType = getUnitChannelType(unit)
-  const messagingChannel = getMessagingChannel(unit)
+  const messagingChannel = getMessagingChannel(unit, supabase)
   if (messagingChannel && candidate.phone) {
     try {
-      await messagingChannel.sendMessage(candidate.phone, text)
+      await messagingChannel.sendMessage(candidate.phone, text, { voiceReply: params.voiceReply })
       await record(channelType, 'sent')
       return { sent: true, channel: channelType }
     } catch (error) {
@@ -118,6 +120,8 @@ export async function sendToCompany(params: {
   text: string
   templateKey: string
   skipRateLimits?: boolean
+  /** empresa mandou a mensagem por áudio → responde em áudio também (mesma mecânica do Sales Rep) */
+  voiceReply?: boolean
 }): Promise<SendOutcome> {
   const { supabase, unit, config, leadId, text, templateKey } = params
 
@@ -144,10 +148,10 @@ export async function sendToCompany(params: {
   }
 
   const channelType = getUnitChannelType(unit)
-  const messagingChannel = getMessagingChannel(unit)
+  const messagingChannel = getMessagingChannel(unit, supabase)
   if (messagingChannel && params.leadPhone) {
     try {
-      await messagingChannel.sendMessage(params.leadPhone, text)
+      await messagingChannel.sendMessage(params.leadPhone, text, { voiceReply: params.voiceReply })
       await record(channelType, 'sent')
       return { sent: true, channel: channelType }
     } catch (error) {
