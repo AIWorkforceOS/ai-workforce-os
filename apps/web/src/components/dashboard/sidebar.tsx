@@ -23,6 +23,7 @@ import {
   Sparkles,
   CreditCard,
   Smartphone,
+  ClipboardList,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useLocale } from '@/lib/i18n/client'
@@ -68,6 +69,7 @@ const navGroups: { label: Record<Locale, string>; items: NavItem[] }[] = [
     label: { pt: 'Sua empresa', en: 'Your company' },
     items: [
       { href: '/dashboard/units', label: { pt: 'Unidades', en: 'Units' }, icon: MapPin },
+      { href: '/dashboard/operacao', label: { pt: 'Operação de serviços', en: 'Service operations' }, icon: ClipboardList },
       { href: '/dashboard/messaging/connect', label: { pt: 'Canal de mensagens (SMS)', en: 'Messaging channel (SMS)' }, icon: Smartphone },
       { href: '/dashboard/employees', label: { pt: 'Equipe (pessoas)', en: 'Team (people)' }, icon: Users },
       { href: '/dashboard/results', label: { pt: 'Resultados', en: 'Results' }, icon: TrendingUp },
@@ -107,12 +109,17 @@ export function Sidebar({
       ...group,
       items: group.items
         .filter((item) => isSuperAdmin || !item.superOnly)
-        .map((item) =>
+        .map((item) => {
           // Dono de unidade não gerencia a lista de unidades — vai direto pra sua
-          item.href === '/dashboard/units' && unitId
-            ? { ...item, href: `/dashboard/units/${unitId}`, label: { pt: 'Minha unidade', en: 'My unit' } as Record<Locale, string> }
-            : item,
-        ),
+          if (item.href === '/dashboard/units' && unitId) {
+            return { ...item, href: `/dashboard/units/${unitId}`, label: { pt: 'Minha unidade', en: 'My unit' } as Record<Locale, string> }
+          }
+          // ...e a Operação dele é a da própria unidade, sem passar pelo hub
+          if (item.href === '/dashboard/operacao' && unitId) {
+            return { ...item, href: `/dashboard/units/${unitId}/operacao` }
+          }
+          return item
+        }),
     }))
     .filter((group) => group.items.length > 0)
 
