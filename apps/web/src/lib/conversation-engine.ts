@@ -415,8 +415,10 @@ export async function processInboundMessage(params: {
   unit: Unit
   lead: Lead
   incomingText: string
+  /** Cliente mandou a mensagem por áudio → resposta também deve ser em áudio (item 1 do pedido de voz). */
+  wasAudioMessage?: boolean
 }): Promise<ProcessInboundResult> {
-  const { supabase, unit, lead, incomingText } = params
+  const { supabase, unit, lead, incomingText, wasAudioMessage } = params
   const noHandoff: ProcessInboundResult = { dealHandoffReady: false }
 
   const { data: agentConfig } = await supabase
@@ -518,7 +520,7 @@ export async function processInboundMessage(params: {
   }
 
   const channelType = getUnitChannelType(unit)
-  const channel = getMessagingChannel(unit)
+  const channel = getMessagingChannel(unit, supabase)
   if (!channel) {
     await reportAgentFailure({
       supabase,
@@ -608,7 +610,7 @@ export async function processInboundMessage(params: {
   }
 
   try {
-    await channel.sendMessage(lead.phone, reply)
+    await channel.sendMessage(lead.phone, reply, { voiceReply: wasAudioMessage })
   } catch (error) {
     // Registra a resposta que falhou no histórico (status 'failed') para
     // que a falha fique visível na tela de Conversas, não só no log.

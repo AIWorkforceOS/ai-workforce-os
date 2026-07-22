@@ -98,6 +98,25 @@ export async function sendWhatsAppMessage(config: EvolutionUnitConfig, phone: st
 }
 
 /**
+ * Envia uma nota de voz (ptt) — resposta em áudio, espelhando o cliente
+ * que mandou áudio (ver EvolutionWhatsAppChannel em
+ * lib/channels/messaging-channel.ts). `base64Audio` já vem em Ogg/Opus
+ * de synthesizeSpeech (lib/openai.ts), o formato que este endpoint da
+ * Evolution API espera para nota de voz.
+ */
+export async function sendWhatsAppAudio(config: EvolutionUnitConfig, phone: string, base64Audio: string) {
+  const result = await evolutionFetch(config, `/message/sendWhatsAppAudio/${config.instanceName}`, {
+    method: 'POST',
+    body: JSON.stringify({
+      number: phone,
+      audio: base64Audio,
+    }),
+  })
+  await logEvolutionUsage('message.sendWhatsAppAudio')
+  return result
+}
+
+/**
  * Baixa e decodifica (Baileys) o conteúdo de uma mensagem de mídia recebida
  * (ex.: áudio/nota de voz), a partir do id da mensagem no payload do
  * webhook. A URL que vem no payload é criptografada — não dá pra baixar
@@ -126,15 +145,24 @@ export async function getBase64FromMediaMessage(
  * bloquear o envio da mensagem em si (ver EvolutionWhatsAppChannel em
  * lib/channels/messaging-channel.ts).
  */
-export async function sendTypingPresence(config: EvolutionUnitConfig, phone: string, delayMs: number) {
+async function sendPresence(config: EvolutionUnitConfig, phone: string, presence: 'composing' | 'recording', delayMs: number) {
   const result = await evolutionFetch(config, `/chat/sendPresence/${config.instanceName}`, {
     method: 'POST',
     body: JSON.stringify({
       number: phone,
-      presence: 'composing',
+      presence,
       delay: delayMs,
     }),
   })
   await logEvolutionUsage('chat.sendPresence')
   return result
+}
+
+export async function sendTypingPresence(config: EvolutionUnitConfig, phone: string, delayMs: number) {
+  return sendPresence(config, phone, 'composing', delayMs)
+}
+
+/** Indicador nativo de "gravando áudio..." — usado antes de uma resposta em voz (ver sendTypingPresence). */
+export async function sendRecordingPresence(config: EvolutionUnitConfig, phone: string, delayMs: number) {
+  return sendPresence(config, phone, 'recording', delayMs)
 }

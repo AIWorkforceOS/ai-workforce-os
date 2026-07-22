@@ -1,8 +1,19 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ConversationChannel, Lead, MessagingChannelType, Unit } from '@/lib/types'
-import { getEvolutionConfig, sendTypingPresence, sendWhatsAppMessage, type EvolutionUnitConfig } from '@/lib/evolution'
+import {
+  getEvolutionConfig,
+  sendRecordingPresence,
+  sendTypingPresence,
+  sendWhatsAppAudio,
+  sendWhatsAppMessage,
+  type EvolutionUnitConfig,
+} from '@/lib/evolution'
 import { getTwilioConfig, sendSmsMessage, type TwilioUnitConfig } from '@/lib/twilio'
 import { getResendApiKey, sendLeadEmail } from '@/lib/email'
 import { computeHumanTypingDelayMs, sleep } from '@/lib/humanized-timing'
+import { getOpenAIApiKey, synthesizeSpeech } from '@/lib/openai'
+import { logOpenAITtsUsage } from '@/lib/api-usage'
+import { logSystemEvent } from '@/lib/system-events'
 
 // Abstração de canal de mensagens (item 1): o funcionário de IA (SDR,
 // Sales Rep, Recruiter) fala com o cliente por WhatsApp (Evolution API),
@@ -15,7 +26,12 @@ import { computeHumanTypingDelayMs, sleep } from '@/lib/humanized-timing'
 
 export type ChannelType = ConversationChannel
 
-export type SendContext = { subject?: string; personaName?: string }
+export type SendContext = {
+  subject?: string
+  personaName?: string
+  /** Espelha a modalidade: cliente mandou áudio → responde em áudio (só WhatsApp — ver item 7 do pedido). */
+  voiceReply?: boolean
+}
 
 export interface MessagingChannel {
   readonly type: ChannelType
@@ -25,14 +41,70 @@ export interface MessagingChannel {
 class EvolutionWhatsAppChannel implements MessagingChannel {
   readonly type: ChannelType = 'whatsapp'
 
-  constructor(private readonly config: EvolutionUnitConfig) {}
+  constructor(
+    private readonly config: EvolutionUnitConfig,
+    private readonly unit: Unit,
+    private readonly supabase: SupabaseClient | null,
+  ) {}
 
-  async sendMessage(phone: string, text: string): Promise<void> {
+  async sendMessage(phone: string, text: string, context?: SendContext): Promise<void> {
+    if (context?.voiceReply) {
+      const sentAsVoice = await this.trySendVoice(phone, text)
+      if (sentAsVoice) return
+    }
+    await this.sendText(phone, text)
+  }
+
+  private async sendText(phone: string, text: string): Promise<void> {
     const delayMs = computeHumanTypingDelayMs(text)
     // Indicador nativo de "digitando..." é cosmético — nunca deve derrubar o envio real.
     await sendTypingPresence(this.config, phone, delayMs).catch(() => {})
     await sleep(delayMs)
     await sendWhatsAppMessage(this.config, phone, text)
+  }
+
+  /**
+   * Tenta responder em nota de voz (TTS + envio de áudio). Sempre que
+   * falhar por qualquer motivo (sem OPENAI_API_KEY, TTS fora do ar,
+   * envio de mídia recusado pela Evolution API), cai para texto — nunca
+   * trava nem fica em silêncio (item 5 do pedido). Devolve `true` só
+   * quando o áudio foi de fato enviado.
+   */
+  private async trySendVoice(phone: string, text: string): Promise<boolean> {
+    const apiKey = getOpenAIApiKey()
+    if (!apiKey) return false
+
+    try {
+      const { base64Audio } = await synthesizeSpeech({ apiKey, text })
+
+      const delayMs = computeHumanTypingDelayMs(text)
+      // Indicador nativo de "gravando áudio..." em vez de "digitando..." — também cosmético.
+      await sendRecordingPresence(this.config, phone, delayMs).catch(() => {})
+      await sleep(delayMs)
+      await sendWhatsAppAudio(this.config, phone, base64Audio)
+
+      await logOpenAITtsUsage({ characterCount: text.length, unitId: this.unit.id, orgId: this.unit.org_id })
+      await logSystemEvent(this.supabase, {
+        level: 'info',
+        source: 'openai',
+        eventType: 'audio_synthesized',
+        message: `Resposta em áudio sintetizada e enviada na unidade "${this.unit.name}" (${text.length} caracteres).`,
+        orgId: this.unit.org_id,
+        unitId: this.unit.id,
+        metadata: { character_count: text.length },
+      })
+      return true
+    } catch (error) {
+      await logSystemEvent(this.supabase, {
+        level: 'warning',
+        source: 'openai',
+        eventType: 'audio_synthesis_failed',
+        message: `Falha ao sintetizar/enviar resposta em áudio na unidade "${this.unit.name}": ${error instanceof Error ? error.message : 'erro desconhecido'}. Respondendo em texto.`,
+        orgId: this.unit.org_id,
+        unitId: this.unit.id,
+      })
+      return false
+    }
   }
 }
 
@@ -103,15 +175,21 @@ export function getUnitChannelType(unit: Unit): MessagingChannelType {
   return unit.messaging_channel === 'sms' ? 'sms' : 'whatsapp'
 }
 
-/** Instancia o provider de telefone certo para a unidade, ou null se não configurado. */
-export function getMessagingChannel(unit: Unit): MessagingChannel | null {
+/**
+ * Instancia o provider de telefone certo para a unidade, ou null se não
+ * configurado. `supabase` é opcional — só é usado pelo canal WhatsApp
+ * para registrar em system_events o resultado de uma resposta em áudio
+ * (ver SendContext.voiceReply); chamadas que nunca pedem voiceReply
+ * podem omiti-lo.
+ */
+export function getMessagingChannel(unit: Unit, supabase: SupabaseClient | null = null): MessagingChannel | null {
   if (getUnitChannelType(unit) === 'sms') {
     const config = getTwilioConfig(unit)
     return config ? new TwilioSmsChannel(config) : null
   }
 
   const config = getEvolutionConfig(unit)
-  return config ? new EvolutionWhatsAppChannel(config) : null
+  return config ? new EvolutionWhatsAppChannel(config, unit, supabase) : null
 }
 
 /** Canal de e-mail da unidade, ou null se Resend não está configurado na plataforma. */

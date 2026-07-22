@@ -129,6 +129,28 @@ export async function logOpenAIAudioUsage(params: { durationSeconds: number; uni
   })
 }
 
+// USD por 1K caracteres de texto sintetizado em áudio (gpt-4o-mini-tts,
+// tabela pública jul/2026) — cobrança por caractere de entrada, não por
+// token/minuto, por isso fica fora das tabelas acima.
+const OPENAI_TTS_COST_PER_1K_CHARS_USD = 0.015
+
+export function estimateTtsCost(characterCount: number): number {
+  return (characterCount / 1000) * OPENAI_TTS_COST_PER_1K_CHARS_USD
+}
+
+/** Atalho para openai.ts (synthesizeSpeech): custo estimado por caracteres sintetizados. */
+export async function logOpenAITtsUsage(params: { characterCount: number; unitId?: string | null; orgId?: string | null }): Promise<void> {
+  await logApiUsage({
+    provider: 'openai',
+    endpoint: 'audio.speech',
+    model: 'gpt-4o-mini-tts',
+    estimatedCostUsd: estimateTtsCost(params.characterCount),
+    unitId: params.unitId,
+    orgId: params.orgId,
+    metadata: { character_count: params.characterCount },
+  })
+}
+
 /** Atalho para google-places.ts: custo fixo por request. */
 export async function logGooglePlacesUsage(endpoint: 'places.textsearch' | 'places.details'): Promise<void> {
   await logApiUsage({

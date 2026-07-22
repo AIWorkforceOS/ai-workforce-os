@@ -113,12 +113,13 @@ type UnknownInboundContext = {
   text: string
   externalMessageId: string | null
   sentAt: string
+  wasAudioMessage?: boolean
 }
 
 async function handleUnknownInbound(params: UnknownInboundContext): Promise<void> {
-  const { supabase, unit, channel, incomingPhone, incomingEmail, text, externalMessageId, sentAt } = params
+  const { supabase, unit, channel, incomingPhone, incomingEmail, text, externalMessageId, sentAt, wasAudioMessage } = params
   const apiKey = getOpenAIApiKey()
-  const messagingChannel = getMessagingChannel(unit)
+  const messagingChannel = getMessagingChannel(unit, supabase)
 
   if (!apiKey || !messagingChannel) return
 
@@ -268,7 +269,7 @@ async function handleUnknownInbound(params: UnknownInboundContext): Promise<void
 
     if (followUpQuestion) {
       try {
-        await messagingChannel.sendMessage(incomingPhone, followUpQuestion)
+        await messagingChannel.sendMessage(incomingPhone, followUpQuestion, { voiceReply: wasAudioMessage })
         await supabase.from('conversations').insert({
           lead_id: existingScreeningLead.id,
           unit_id: unit.id,
@@ -341,7 +342,7 @@ async function handleUnknownInbound(params: UnknownInboundContext): Promise<void
 
   // Envia a pergunta de triagem
   try {
-    await messagingChannel.sendMessage(incomingPhone, triageQuestion)
+    await messagingChannel.sendMessage(incomingPhone, triageQuestion, { voiceReply: wasAudioMessage })
     await supabase.from('conversations').insert({
       lead_id: leadRow.id,
       unit_id: unit.id,
@@ -375,10 +376,12 @@ export type InboundRouteParams = {
   text: string
   externalMessageId: string | null
   sentAt: string
+  /** Mensagem recebida era um áudio (nota de voz) — resposta deve espelhar a modalidade (item 1 do pedido de voz). */
+  wasAudioMessage?: boolean
 }
 
 export async function routeInboundMessage(params: InboundRouteParams): Promise<Record<string, unknown>> {
-  const { supabase, unit: unitRow, channel, incomingPhone, incomingEmail, text, externalMessageId, sentAt } = params
+  const { supabase, unit: unitRow, channel, incomingPhone, incomingEmail, text, externalMessageId, sentAt, wasAudioMessage } = params
 
   // Contextos possíveis
   const candidateContext = await findCandidateContext(supabase, unitRow, incomingPhone, incomingEmail)
@@ -520,6 +523,7 @@ export async function routeInboundMessage(params: InboundRouteParams): Promise<R
       text,
       externalMessageId,
       sentAt,
+      wasAudioMessage,
     })
     return { ok: true, routed: 'unknown_inbound_screening' }
   }
@@ -546,7 +550,13 @@ export async function routeInboundMessage(params: InboundRouteParams): Promise<R
     .update({ status: updatedLead.status, last_contacted_at: sentAt })
     .eq('id', lead.id)
 
-  const result = await processInboundMessage({ supabase, unit: unitRow, lead: updatedLead, incomingText: text })
+  const result = await processInboundMessage({
+    supabase,
+    unit: unitRow,
+    lead: updatedLead,
+    incomingText: text,
+    wasAudioMessage,
+  })
 
   if (result.dealHandoffReady) {
     try {

@@ -112,6 +112,40 @@ export async function transcribeAudio(params: {
 }
 
 /**
+ * Sintetiza um texto em áudio (voz) via TTS da OpenAI — espelha
+ * `transcribeAudio` no sentido contrário. Devolve já em Ogg/Opus, o
+ * formato que o WhatsApp espera para nota de voz (ptt), evitando
+ * depender de ffmpeg (indisponível no runtime serverless da Vercel).
+ */
+export async function synthesizeSpeech(params: {
+  apiKey: string
+  text: string
+  voice?: string
+}): Promise<{ base64Audio: string; mimeType: string }> {
+  const response = await fetch('https://api.openai.com/v1/audio/speech', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${params.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini-tts',
+      input: params.text,
+      voice: params.voice ?? 'alloy',
+      response_format: 'opus',
+    }),
+  })
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => null)
+    throw new Error(data?.error?.message ?? `OpenAI retornou status ${response.status}`)
+  }
+
+  const arrayBuffer = await response.arrayBuffer()
+  return { base64Audio: Buffer.from(arrayBuffer).toString('base64'), mimeType: 'audio/ogg; codecs=opus' }
+}
+
+/**
  * Gera embeddings (text-embedding-3-small, 1536 dims — par com o
  * vector(1536) de candidates.profile_embedding). Aceita lote.
  */

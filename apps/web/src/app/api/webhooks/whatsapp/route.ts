@@ -198,6 +198,7 @@ export async function POST(request: Request) {
     text,
     externalMessageId: key.id ?? null,
     sentAt,
+    wasAudioMessage: extracted.kind === 'audio',
   })
 
   return NextResponse.json(result)
