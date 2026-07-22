@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, KeyRound, Loader2, Power, Trash2, UserPlus, X } from 'lucide-react'
-import { Input, Label } from '@/components/ui/dashboard-ui'
+import { AlertTriangle, KeyRound, Loader2, Power, RefreshCw, Trash2, UserPlus, X } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
+import { Input, Label, Select } from '@/components/ui/dashboard-ui'
 
 /** Liga/desliga a empresa (super admin). */
 export function ToggleOrgActive({ orgId, isActive }: { orgId: string; isActive: boolean }) {
@@ -43,6 +44,91 @@ export function ToggleOrgActive({ orgId, isActive }: { orgId: string; isActive: 
         {busy ? <Loader2 size={12} className="animate-spin" /> : <Power size={12} />}
         {isActive ? 'Desativar empresa' : 'Reativar empresa'}
       </button>
+    </div>
+  )
+}
+
+type PlanOption = { id: string; name: string; max_units: number }
+
+/** Troca o plano contratado da empresa a qualquer momento (super admin). */
+export function ChangePlanForm({ orgId, currentPlanId }: { orgId: string; currentPlanId: string | null }) {
+  const router = useRouter()
+  const [open, setOpen] = useState(false)
+  const [plans, setPlans] = useState<PlanOption[]>([])
+  const [selected, setSelected] = useState(currentPlanId ?? '')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open || plans.length > 0) return
+    const supabase = createClient()
+    supabase
+      .from('plans')
+      .select('id, name, max_units')
+      .eq('is_active', true)
+      .order('sort_order')
+      .then(({ data }) => setPlans((data ?? []) as PlanOption[]))
+  }, [open, plans.length])
+
+  async function save() {
+    if (!selected) return
+    setBusy(true)
+    setError(null)
+    const res = await fetch(`/api/admin/orgs/${orgId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan_id: selected }),
+    })
+    const data = await res.json().catch(() => null)
+    setBusy(false)
+    if (!res.ok) {
+      setError(data?.error ?? 'Erro ao trocar plano.')
+      return
+    }
+    setOpen(false)
+    router.refresh()
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold text-slate-200 transition-all hover:bg-white/5"
+        style={{ border: '1px solid rgba(255,255,255,0.1)' }}
+      >
+        <RefreshCw size={12} />
+        Trocar plano
+      </button>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <Select value={selected} onChange={(e) => setSelected(e.target.value)} className="w-52">
+        <option value="" disabled>Selecione um plano</option>
+        {plans.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name} — até {p.max_units} unidade{p.max_units > 1 ? 's' : ''}
+          </option>
+        ))}
+      </Select>
+      <button
+        onClick={save}
+        disabled={busy || !selected}
+        className="flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-black text-white disabled:opacity-40"
+        style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)' }}
+      >
+        {busy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+        Salvar
+      </button>
+      <button
+        onClick={() => { setOpen(false); setSelected(currentPlanId ?? ''); setError(null) }}
+        disabled={busy}
+        className="rounded-xl px-3 py-2 text-xs font-bold text-slate-400 hover:bg-white/5 disabled:opacity-40"
+      >
+        Cancelar
+      </button>
+      {error && <span className="text-xs text-red-400">{error}</span>}
     </div>
   )
 }

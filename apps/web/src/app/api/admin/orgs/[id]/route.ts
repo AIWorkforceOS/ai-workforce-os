@@ -4,8 +4,8 @@ import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 
 /**
- * PATCH /api/admin/orgs/[id] — ativa/desativa uma empresa cliente
- * (apenas super_admin; a escrita passa pelo RLS da sessão).
+ * PATCH /api/admin/orgs/[id] — ativa/desativa uma empresa cliente, ou troca
+ * o plano contratado (apenas super_admin; a escrita passa pelo RLS da sessão).
  */
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const appUser = await getAppUser()
@@ -15,11 +15,34 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const { id } = await params
   const body = await request.json().catch(() => null)
-  if (typeof body?.is_active !== 'boolean') {
-    return NextResponse.json({ error: 'is_active (boolean) é obrigatório.' }, { status: 400 })
-  }
 
   const supabase = await createClient()
+
+  if (typeof body?.plan_id === 'string' && body.plan_id) {
+    const { data: plan, error: planError } = await supabase
+      .from('plans')
+      .select('id, name')
+      .eq('id', body.plan_id)
+      .maybeSingle()
+    if (planError || !plan) {
+      return NextResponse.json({ error: 'Plano não encontrado.' }, { status: 400 })
+    }
+    // Mantém organizations.plan (texto legado, usado no badge) sincronizado
+    // com organizations.plan_id — não mexe em monthly_fee: valor pode ter
+    // sido negociado à parte do preço de tabela do plano.
+    const { error } = await supabase
+      .from('organizations')
+      .update({ plan_id: plan.id, plan: plan.name.toLowerCase() })
+      .eq('id', id)
+    if (error) {
+      return NextResponse.json({ error: `Erro ao trocar plano: ${error.message}` }, { status: 500 })
+    }
+    return NextResponse.json({ ok: true })
+  }
+
+  if (typeof body?.is_active !== 'boolean') {
+    return NextResponse.json({ error: 'is_active (boolean) ou plan_id (uuid) é obrigatório.' }, { status: 400 })
+  }
   // Desativar = cancelamento (grava o timestamp que alimenta as métricas
   // de churn e o cálculo de reembolso da garantia de 7 dias); reativar limpa.
   const update: Record<string, unknown> = body.is_active

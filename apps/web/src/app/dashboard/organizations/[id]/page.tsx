@@ -3,7 +3,7 @@ import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getAppUser } from '@/lib/app-user'
 import { computeSetupStatus } from '@/lib/setup-status'
-import { DeleteOrgButton, ProvisionUserForm, ResetPasswordButton, ToggleOrgActive } from '@/components/admin/org-actions'
+import { ChangePlanForm, DeleteOrgButton, ProvisionUserForm, ResetPasswordButton, ToggleOrgActive } from '@/components/admin/org-actions'
 import { Badge, Card, TableShell, Td, Th, Tr } from '@/components/ui/dashboard-ui'
 import { AlertTriangle, ArrowLeft, Check, CheckCircle2, WifiOff } from 'lucide-react'
 import type { AgentConfig, DashboardSummaryRow, Organization, Unit } from '@/lib/types'
@@ -82,6 +82,7 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ id: 
           <div className="flex items-center gap-3">
             <Badge variant={orgRow.is_active ? 'green' : 'slate'}>{orgRow.is_active ? 'Ativa' : 'Inativa'}</Badge>
             <Badge variant="purple">{orgRow.plan}</Badge>
+            <ChangePlanForm orgId={orgRow.id} currentPlanId={orgRow.plan_id} />
             <ToggleOrgActive orgId={orgRow.id} isActive={orgRow.is_active} />
             <DeleteOrgButton
               orgId={orgRow.id}
