@@ -119,23 +119,30 @@ export function EmployeeCatalog({
       </div>
 
       {units.length > 1 && (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Unidade</span>
-          {units.map((u) => (
-            <button
-              key={u.id}
-              type="button"
-              onClick={() => setSelectedUnitId(u.id)}
-              className="rounded-full px-3 py-1.5 text-xs font-bold transition-colors"
-              style={
-                u.id === selectedUnitId
-                  ? { background: brandGradient, color: '#fff' }
-                  : { border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }
-              }
-            >
-              {u.name}
-            </button>
-          ))}
+        <div className="rounded-2xl p-4" style={{ background: 'rgba(6,182,212,0.06)', border: '1px solid rgba(6,182,212,0.25)' }}>
+          <p className="text-[10px] font-black uppercase tracking-widest text-cyan-400">
+            Contratando e treinando para qual unidade?
+          </p>
+          <p className="mt-0.5 text-xs text-slate-400">
+            Cada unidade tem seus próprios funcionários — nome, treinamento e ativação de uma não afetam a outra.
+          </p>
+          <div className="mt-2.5 flex flex-wrap items-center gap-2">
+            {units.map((u) => (
+              <button
+                key={u.id}
+                type="button"
+                onClick={() => setSelectedUnitId(u.id)}
+                className="rounded-full px-3 py-1.5 text-xs font-bold transition-colors"
+                style={
+                  u.id === selectedUnitId
+                    ? { background: brandGradient, color: '#fff' }
+                    : { border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }
+                }
+              >
+                {u.name}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
