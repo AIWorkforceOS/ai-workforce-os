@@ -10,6 +10,7 @@ import {
   Check,
   ChevronRight,
   FlaskConical,
+  GraduationCap,
   Headset,
   Loader2,
   Megaphone,
@@ -115,6 +116,8 @@ export function EmployeeCatalog({
           personaName={sdr?.persona_name ?? null}
           trainingScore={sdr ? computeTrainingCompleteness(sdr, verticalKey) : null}
           testConfigId={sdr?.id ?? null}
+          trainConfigId={sdr?.id ?? null}
+          lastTrainedAt={sdr?.last_trained_at ?? null}
         />
         <EmployeeCatalogCard
           icon={Briefcase}
@@ -132,6 +135,8 @@ export function EmployeeCatalog({
           activation={{ agentType: 'recruiter', config: recruiter ?? null, units, askName: true, defaultName: 'Rafa' }}
           trainingScore={recruiter ? computeTrainingCompleteness(recruiter, verticalKey) : null}
           testConfigId={recruiter?.id ?? null}
+          trainConfigId={recruiter?.id ?? null}
+          lastTrainedAt={recruiter?.last_trained_at ?? null}
         />
         <EmployeeCatalogCard
           icon={Megaphone}
@@ -148,6 +153,8 @@ export function EmployeeCatalog({
           personaName={null}
           activation={{ agentType: 'traffic_specialist', config: traffic ?? null, units, askName: false, defaultName: 'Gestor de Tráfego' }}
           trainingScore={traffic ? computeTrainingCompleteness(traffic, verticalKey) : null}
+          trainConfigId={traffic?.id ?? null}
+          lastTrainedAt={traffic?.last_trained_at ?? null}
         />
         <EmployeeCatalogCard
           icon={Headset}
@@ -165,6 +172,8 @@ export function EmployeeCatalog({
           activation={{ agentType: 'receptionist', config: receptionist ?? null, units, askName: true, defaultName: 'Ana' }}
           trainingScore={receptionist ? computeTrainingCompleteness(receptionist, verticalKey) : null}
           testConfigId={receptionist?.id ?? null}
+          trainConfigId={receptionist?.id ?? null}
+          lastTrainedAt={receptionist?.last_trained_at ?? null}
         />
       </div>
 
@@ -186,6 +195,10 @@ type ActivationProps = {
   defaultName: string
 }
 
+function formatTrainedDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
 function EmployeeCatalogCard({
   icon: Icon,
   name,
@@ -198,6 +211,8 @@ function EmployeeCatalogCard({
   activation,
   trainingScore,
   testConfigId,
+  trainConfigId,
+  lastTrainedAt,
 }: {
   icon: typeof Bot
   name: string
@@ -213,6 +228,10 @@ function EmployeeCatalogCard({
   trainingScore?: number | null
   /** id do agent_config pra "Testar Funcionário" — ausente/null esconde o link (ex.: Tráfego, que não conversa com cliente simulado) */
   testConfigId?: string | null
+  /** id do agent_config pra "Treinar Funcionário" (entrevista/retreinamento) — ausente/null esconde o link (funcionário ainda não contratado) */
+  trainConfigId?: string | null
+  /** quando business_profile foi atualizado pela última vez — null = nunca foi treinado (migration 029) */
+  lastTrainedAt?: string | null
 }) {
   const stateMeta = STATE_META[state]
   const nextStep = steps.find((s) => !s.done)
@@ -273,14 +292,30 @@ function EmployeeCatalogCard({
         </Link>
         {activation?.config?.is_active && <PauseButton config={activation.config} />}
       </div>
-      {testConfigId && (
-        <Link
-          href={`/dashboard/equipe-digital/${testConfigId}/testar`}
-          className="flex items-center justify-center gap-1.5 rounded-xl py-2 text-[11px] font-bold text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-200"
-          style={{ border: '1px solid rgba(255,255,255,0.08)' }}
-        >
-          <FlaskConical size={11} /> Testar funcionário
-        </Link>
+      {trainConfigId && (
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/dashboard/equipe-digital/${trainConfigId}/entrevista`}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2 text-[11px] font-bold transition-colors hover:brightness-110"
+              style={{ border: '1px solid rgba(6,182,212,0.4)', color: '#22d3ee', background: 'rgba(6,182,212,0.1)' }}
+            >
+              <GraduationCap size={11} /> {lastTrainedAt ? 'Treinar de novo' : 'Treinar funcionário'}
+            </Link>
+            {testConfigId && (
+              <Link
+                href={`/dashboard/equipe-digital/${testConfigId}/testar`}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2 text-[11px] font-bold text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-200"
+                style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+              >
+                <FlaskConical size={11} /> Testar funcionário
+              </Link>
+            )}
+          </div>
+          <p className="text-center text-[10px] font-semibold text-slate-500">
+            {lastTrainedAt ? `Treinado em ${formatTrainedDate(lastTrainedAt)}` : 'Ainda não foi treinado'}
+          </p>
+        </div>
       )}
     </Card>
   )

@@ -18,13 +18,16 @@ export function InterviewChat({
   personaName,
   height = 'h-96',
   onDone,
+  retrain = false,
 }: {
   configId: string
   personaName: string
   /** classe tailwind de altura da área do chat */
   height?: string
-  /** chamado quando a entrevista termina (funcionário ativado) */
+  /** chamado quando a entrevista termina (funcionário ativado, ou retreinamento concluído) */
   onDone?: () => void
+  /** true = refazer a entrevista de um funcionário já treinado, atualizando o perfil existente (migration 029) */
+  retrain?: boolean
 }) {
   const router = useRouter()
   const [messages, setMessages] = useState<ChatEntry[]>([])
@@ -46,7 +49,7 @@ export function InterviewChat({
 
     async function bootstrap() {
       try {
-        const res = await fetch(`/api/agent/interview?configId=${configId}`)
+        const res = await fetch(`/api/agent/interview?configId=${configId}${retrain ? '&retrain=1' : ''}`)
         const data = await res.json()
         if (cancelled) return
         if (!res.ok) {
@@ -67,7 +70,7 @@ export function InterviewChat({
           const opening = await fetch('/api/agent/interview', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ configId, message: null }),
+            body: JSON.stringify({ configId, message: null, retrain }),
           })
           const openingData = await opening.json()
           if (cancelled) return
@@ -104,7 +107,7 @@ export function InterviewChat({
       const res = await fetch('/api/agent/interview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ configId, message: content }),
+        body: JSON.stringify({ configId, message: content, retrain }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -142,7 +145,13 @@ export function InterviewChat({
                 : { background: 'rgba(6,182,212,0.15)', color: '#22d3ee' }
             }
           >
-            {status === 'completed' ? 'Treinado e pronto' : 'Entrevista de contratação'}
+            {status === 'completed'
+              ? retrain
+                ? 'Retreinamento concluído'
+                : 'Treinado e pronto'
+              : retrain
+                ? 'Retreinamento'
+                : 'Entrevista de contratação'}
           </span>
         </div>
 
@@ -183,7 +192,10 @@ export function InterviewChat({
               className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-bold text-emerald-300"
               style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)' }}
             >
-              <Check size={14} /> Entrevista concluída — {personaName} aprendeu sua empresa e já está trabalhando.
+              <Check size={14} />{' '}
+              {retrain
+                ? `Retreinamento concluído — ${personaName} atualizou o que sabe sobre a empresa.`
+                : `Entrevista concluída — ${personaName} aprendeu sua empresa e já está trabalhando.`}
             </div>
           )}
           <div ref={bottomRef} />

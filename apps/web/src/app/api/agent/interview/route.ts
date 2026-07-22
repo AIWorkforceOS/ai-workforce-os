@@ -9,11 +9,19 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 30
 
 // Entrevista de contratação do funcionário digital (SDR, Recrutador,
-// Gestor de Tráfego). GET devolve o estado atual (pra retomar de onde
-// parou); POST processa um turno — message=null gera a abertura.
-// Quando o próprio modelo conclui que cobriu tudo (sempre depois da
-// pergunta final "tem mais alguma coisa?"), a rota marca
+// Gestor de Tráfego, Receptionist). GET devolve o estado atual (pra
+// retomar de onde parou); POST processa um turno — message=null gera
+// a abertura. Quando o próprio modelo conclui que cobriu tudo (sempre
+// depois da pergunta final "tem mais alguma coisa?"), a rota marca
 // interview_status='completed' e ativa o funcionário (is_active=true).
+//
+// Retreinamento (retrain=true, migration 029): permite refazer a
+// entrevista a qualquer momento depois de completed, pra atualizar
+// business_profile. Usa uma conversa separada (retrain_transcript) e
+// NUNCA toca em interview_status/is_active — o trigger
+// enforce_interview_before_activation exige interview_status='completed'
+// sempre que is_active=true, então mexer nesse campo derrubaria um
+// funcionário já ativo no meio do retreinamento.
 
 async function loadConfig(configId: string) {
   const supabase = await createClient()
@@ -48,12 +56,32 @@ export async function GET(request: Request) {
   const appUser = await getAppUser()
   if (!appUser) return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 })
 
-  const configId = new URL(request.url).searchParams.get('configId')
+  const url = new URL(request.url)
+  const configId = url.searchParams.get('configId')
+  const retrain = url.searchParams.get('retrain') === '1'
   if (!configId) return NextResponse.json({ error: 'configId é obrigatório.' }, { status: 400 })
 
   const { config } = await loadConfig(configId)
   if (!config) {
     return NextResponse.json({ error: 'Funcionário não encontrado ou sem acesso.' }, { status: 404 })
+  }
+
+  if (retrain) {
+    if (config.interview_status !== 'completed') {
+      return NextResponse.json(
+        { error: 'Ainda não concluiu a entrevista inicial — conclua-a antes de retreinar.' },
+        { status: 400 },
+      )
+    }
+    const retrainTranscript = (config.retrain_transcript ?? []) as InterviewTranscriptEntry[]
+    return NextResponse.json({
+      status: retrainTranscript.length > 0 ? 'in_progress' : 'pending',
+      personaName: config.persona_name,
+      agentType: config.agent_type,
+      isActive: config.is_active,
+      lastTrainedAt: config.last_trained_at ?? null,
+      transcript: retrainTranscript.map(({ role, content }) => ({ role, content })),
+    })
   }
 
   const transcript = (config.interview_transcript ?? []) as InterviewTranscriptEntry[]
@@ -62,6 +90,7 @@ export async function GET(request: Request) {
     personaName: config.persona_name,
     agentType: config.agent_type,
     isActive: config.is_active,
+    lastTrainedAt: config.last_trained_at ?? null,
     transcript: transcript.map(({ role, content }) => ({ role, content })),
   })
 }
@@ -73,6 +102,7 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null)
   const configId: string | undefined = body?.configId
   const message: string | null = typeof body?.message === 'string' ? body.message : null
+  const retrain: boolean = body?.retrain === true
 
   if (!configId) return NextResponse.json({ error: 'configId é obrigatório.' }, { status: 400 })
 
@@ -83,7 +113,13 @@ export async function POST(request: Request) {
   if (!isInterviewAgentType(config.agent_type)) {
     return NextResponse.json({ error: 'Este tipo de agente não tem entrevista.' }, { status: 400 })
   }
-  if (config.interview_status === 'completed') {
+  if (retrain && config.interview_status !== 'completed') {
+    return NextResponse.json(
+      { error: 'Ainda não concluiu a entrevista inicial — conclua-a antes de retreinar.' },
+      { status: 400 },
+    )
+  }
+  if (!retrain && config.interview_status === 'completed') {
     return NextResponse.json({ reply: null, done: true, alreadyCompleted: true })
   }
 
@@ -95,31 +131,46 @@ export async function POST(request: Request) {
     )
   }
 
+  // Retreinamento roda numa conversa separada (retrain_transcript) pra não
+  // sobrescrever o histórico da entrevista inicial (interview_transcript).
+  const configForTurn = retrain ? { ...config, interview_transcript: config.retrain_transcript ?? [] } : config
+
   let result
   try {
-    result = await runInterviewTurn({ apiKey, config, unit, organization, userMessage: message })
+    result = await runInterviewTurn({ apiKey, config: configForTurn, unit, organization, userMessage: message })
   } catch (error) {
     console.error('[interview] OpenAI error:', error instanceof Error ? error.message : error)
     return NextResponse.json({ error: 'Não consegui gerar a próxima pergunta. Tente de novo.' }, { status: 502 })
   }
 
-  const update: Record<string, unknown> = {
-    interview_transcript: result.transcript,
-    business_profile: result.profile,
-    interview_status: result.done ? 'completed' : 'in_progress',
-  }
-  // Entrevista concluída = funcionário pronto pra trabalhar
-  if (result.done) update.is_active = true
+  const update: Record<string, unknown> = retrain
+    ? {
+        // Nunca toca interview_status/is_active aqui — funcionário já ativo
+        // continua ativo durante todo o retreinamento (ver comentário no topo).
+        retrain_transcript: result.done ? [] : result.transcript,
+        business_profile: result.profile,
+        ...(result.done ? { last_trained_at: new Date().toISOString() } : {}),
+      }
+    : {
+        interview_transcript: result.transcript,
+        business_profile: result.profile,
+        interview_status: result.done ? 'completed' : 'in_progress',
+        // Entrevista concluída = funcionário pronto pra trabalhar
+        ...(result.done ? { is_active: true, last_trained_at: new Date().toISOString() } : {}),
+      }
 
   const { error: saveError } = await supabase.from('agent_configs').update(update).eq('id', config.id)
   if (saveError) {
     console.error('[interview] persist error:', saveError.message)
+    const retrainMigrationMissing = /last_trained_at|retrain_transcript/.test(saveError.message)
     const migrationMissing = /business_profile|interview_status|interview_transcript/.test(saveError.message)
     return NextResponse.json(
       {
-        error: migrationMissing
-          ? 'O banco ainda não tem as colunas da entrevista — aplique a migration 20260715000012_agent_interview.sql no Supabase.'
-          : 'Não foi possível salvar o andamento da entrevista. Tente de novo.',
+        error: retrainMigrationMissing
+          ? 'O banco ainda não tem as colunas de retreinamento — aplique a migration 20260721000029_agent_retraining.sql no Supabase.'
+          : migrationMissing
+            ? 'O banco ainda não tem as colunas da entrevista — aplique a migration 20260715000012_agent_interview.sql no Supabase.'
+            : 'Não foi possível salvar o andamento da entrevista. Tente de novo.',
       },
       { status: 500 },
     )

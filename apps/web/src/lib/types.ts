@@ -160,6 +160,10 @@ export type AgentConfig = {
   interview_transcript?: InterviewTranscriptEntry[] | null
   /** correções aprendidas testando o funcionário na simulação (migration 025) */
   training_corrections?: TrainingCorrectionEntry[] | null
+  /** quando business_profile foi atualizado pela última vez (entrevista inicial ou retreinamento) — migration 029 */
+  last_trained_at?: string | null
+  /** conversa de retreinamento em andamento, zerada quando concluída — migration 029 */
+  retrain_transcript?: InterviewTranscriptEntry[] | null
   created_at: string
   updated_at: string
 }

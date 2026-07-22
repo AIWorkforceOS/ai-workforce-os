@@ -13,6 +13,11 @@ export const dynamic = 'force-dynamic'
 // trabalhar, ele conversa com o dono/gestor pra aprender 100% da empresa.
 // Ao concluir (o próprio funcionário decide, sempre depois da pergunta
 // final "tem mais alguma coisa?"), ele é ativado automaticamente.
+//
+// Esta mesma tela também é o "Treinar de novo" (migration 029): se a
+// entrevista inicial já foi concluída, ela automaticamente entra em modo
+// de retreinamento — refaz a conversa e atualiza o perfil existente sem
+// desativar o funcionário nem duplicar nada.
 export default async function InterviewPage({ params }: { params: { configId: string } }) {
   const supabase = await createClient()
 
@@ -33,6 +38,16 @@ export default async function InterviewPage({ params }: { params: { configId: st
   const unitRow = unit as Unit | null
 
   const playbook = INTERVIEW_PLAYBOOKS[configRow.agent_type]
+  const isRetrain = configRow.interview_status === 'completed'
+  const lastTrainedLabel = configRow.last_trained_at
+    ? new Date(configRow.last_trained_at).toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : null
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
@@ -44,14 +59,27 @@ export default async function InterviewPage({ params }: { params: { configId: st
           <ArrowLeft size={12} /> Voltar pra equipe digital
         </Link>
         <h1 className="mt-2 text-2xl font-black tracking-tight text-white">
-          Entrevista de contratação — {configRow.persona_name}
+          {isRetrain ? 'Treinar de novo' : 'Entrevista de contratação'} — {configRow.persona_name}
         </h1>
         <p className="mt-1 max-w-2xl text-sm text-slate-400">
-          {configRow.persona_name} é seu novo {playbook.roleLabel} digital
-          {unitRow ? ` da unidade ${unitRow.name}` : ''}. Antes de começar a trabalhar, ele precisa
-          conhecer sua empresa: responda às perguntas dele como você responderia a um funcionário
-          novo. Quando ele tiver aprendido tudo, ele mesmo avisa que está pronto — e já começa a
-          trabalhar.
+          {isRetrain ? (
+            <>
+              {configRow.persona_name} continua trabalhando normalmente enquanto vocês conversam.
+              Conte o que mudou ou o que ele deveria saber — as respostas atualizam a ficha que ele já
+              tem, sem apagar o que já foi ensinado antes.
+            </>
+          ) : (
+            <>
+              {configRow.persona_name} é seu novo {playbook.roleLabel} digital
+              {unitRow ? ` da unidade ${unitRow.name}` : ''}. Antes de começar a trabalhar, ele precisa
+              conhecer sua empresa: responda às perguntas dele como você responderia a um funcionário
+              novo. Quando ele tiver aprendido tudo, ele mesmo avisa que está pronto — e já começa a
+              trabalhar.
+            </>
+          )}
+        </p>
+        <p className="mt-1 text-xs font-semibold text-slate-500">
+          {lastTrainedLabel ? `Último treino: ${lastTrainedLabel}` : 'Ainda não foi treinado'}
         </p>
       </div>
 
@@ -60,11 +88,13 @@ export default async function InterviewPage({ params }: { params: { configId: st
           configId={configRow.id}
           personaName={configRow.persona_name}
           height="h-[520px]"
+          retrain={isRetrain}
         />
       </Card>
 
       <p className="text-xs text-slate-500">
-        Pode sair e voltar quando quiser — a entrevista continua de onde parou.
+        Pode sair e voltar quando quiser — {isRetrain ? 'o retreinamento' : 'a entrevista'} continua de
+        onde parou.
       </p>
     </div>
   )
