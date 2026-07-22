@@ -61,6 +61,29 @@ export function NewUnitForm({
     }
   }
 
+  function buildUnitPayload(candidateSlug: string) {
+    return {
+      org_id: orgId,
+      name,
+      slug: candidateSlug,
+      region_city: city || null,
+      region_state: state || null,
+      whatsapp_phone: whatsapp || null,
+      email_from: emailFrom || null,
+      messaging_channel: messagingChannel,
+      default_conversation_language: language,
+      evolution_api_url: evolutionApiUrl || null,
+      evolution_api_key: evolutionApiKey || null,
+      evolution_instance_name: evolutionInstanceName || null,
+      crm_integration_mode: crmIntegrationMode,
+      smarter_crm_partner_token: smarterCrmPartnerToken || null,
+      recruiting_integration_mode: recruitingIntegrationMode,
+      smarter_recruiting_partner_token: smarterRecruitingPartnerToken || null,
+      smarter_recruiting_company_id: smarterRecruitingCompanyId || null,
+      smarter_marketing_partner_token: smarterMarketingPartnerToken || null,
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
@@ -77,34 +100,41 @@ export function NewUnitForm({
     setLoading(true)
     const supabase = createClient()
 
-    const { data: unit, error: insertError } = await supabase
-      .from('units')
-      .insert({
-        org_id: orgId,
-        name,
-        slug,
-        region_city: city || null,
-        region_state: state || null,
-        whatsapp_phone: whatsapp || null,
-        email_from: emailFrom || null,
-        messaging_channel: messagingChannel,
-        default_conversation_language: language,
-        evolution_api_url: evolutionApiUrl || null,
-        evolution_api_key: evolutionApiKey || null,
-        evolution_instance_name: evolutionInstanceName || null,
-        crm_integration_mode: crmIntegrationMode,
-        smarter_crm_partner_token: smarterCrmPartnerToken || null,
-        recruiting_integration_mode: recruitingIntegrationMode,
-        smarter_recruiting_partner_token: smarterRecruitingPartnerToken || null,
-        smarter_recruiting_company_id: smarterRecruitingCompanyId || null,
-        smarter_marketing_partner_token: smarterMarketingPartnerToken || null,
-      })
-      .select('id')
-      .single()
+    // O slug é único GLOBALMENTE (units.slug unique), mas o RLS só deixa o
+    // usuário enxergar as unidades da própria org — não dá pra checar
+    // colisão com outras empresas antes do insert. Estratégia: tenta o slug
+    // digitado; a cada violação de unicidade (23505), tenta o próximo
+    // candidato com sufixo. Só o slug varia entre tentativas.
+    const slugCandidates = [slug, `${slug}-2`, `${slug}-3`, `${slug}-${Math.random().toString(36).slice(2, 6)}`]
+
+    let unit: { id: string } | null = null
+    let insertError: { code?: string; message?: string } | null = null
+    for (const candidateSlug of slugCandidates) {
+      const { data, error: attemptError } = await supabase
+        .from('units')
+        .insert(buildUnitPayload(candidateSlug))
+        .select('id')
+        .single()
+      if (data) {
+        unit = data as { id: string }
+        insertError = null
+        break
+      }
+      insertError = attemptError
+      if (attemptError?.code !== '23505') break // só colisão de unicidade justifica tentar outro slug
+    }
 
     if (insertError || !unit) {
       setLoading(false)
-      setError('Não foi possível criar a unidade. Verifique se o slug já está em uso.')
+      // Mensagem pelo erro REAL — a antiga chutava "slug em uso" para
+      // qualquer falha e mascarou uma violação de RLS por dias.
+      if (insertError?.code === '42501') {
+        setError('Sua conta não tem permissão para criar unidades. Fale com a equipe Alizo (a correção de permissão é a migration 031).')
+      } else if (insertError?.code === '23505') {
+        setError('Este slug já está em uso (inclusive por outra empresa) — edite o campo Slug e tente de novo.')
+      } else {
+        setError(`Não foi possível criar a unidade.${insertError?.message ? ` Detalhe técnico: ${insertError.message}` : ''}`)
+      }
       return
     }
 
