@@ -73,10 +73,9 @@ export function EmployeeCatalog({
   const isMainUnit = selectedUnitId === mainUnitId
 
   // O assistente guiado (/dashboard/onboarding) só existe pra unidade
-  // principal; unidades adicionais configuram WhatsApp e persona nas
-  // telas de unidade dedicadas.
+  // principal; unidades adicionais configuram WhatsApp na tela de
+  // unidade dedicada.
   const whatsappHref = isMainUnit ? '/dashboard/onboarding' : `/dashboard/units/${selectedUnitId}`
-  const sdrConfigHref = isMainUnit ? '/dashboard/onboarding' : `/dashboard/units/${selectedUnitId}/agent`
 
   const whatsappConnected = !!selectedUnit?.whatsapp_phone
   const sdr = configs.find((c) => c.agent_type === 'sdr' && c.unit_id === selectedUnitId)
@@ -84,10 +83,14 @@ export function EmployeeCatalog({
   const traffic = configs.find((c) => c.agent_type === 'traffic_specialist' && c.unit_id === selectedUnitId)
   const receptionist = configs.find((c) => c.agent_type === 'receptionist' && c.unit_id === selectedUnitId)
 
+  // Mesmo padrão dos outros 3: "Contratar" é resolvido aqui mesmo (igual
+  // recruiter/traffic/receptionist), não mais um passo que manda pra outra
+  // tela — assim o botão "Contratar e entrevistar" aparece sempre, mesmo
+  // em unidades que não são a principal do onboarding guiado.
   const sdrSteps: Step[] = [
+    { label: 'Contratar o Sales Rep', desc: 'Escolha o nome dele e responda a entrevista de contratação — ele aprende sua empresa.', done: !!sdr?.is_active, inline: true },
     { label: 'Conectar o WhatsApp da empresa', desc: 'Escaneando um QR code, igual ao WhatsApp Web.', done: whatsappConnected, href: whatsappHref },
-    { label: 'Dar um nome e um jeito de falar', desc: 'É assim que ele vai se apresentar aos seus clientes.', done: !!sdr, href: sdrConfigHref },
-    { label: 'Testar uma conversa e ligar', desc: 'Você conversa com ele antes — e liga quando gostar.', done: !!sdr?.is_active, href: sdrConfigHref },
+    { label: 'Testar uma conversa e ligar', desc: 'Você conversa com ele antes — e liga quando gostar.', done: !!sdr?.is_active, href: sdr ? `/dashboard/equipe-digital/${sdr.id}/testar` : undefined },
   ]
 
   const recruiterSteps: Step[] = [
@@ -160,6 +163,7 @@ export function EmployeeCatalog({
           state={sdr?.is_active && whatsappConnected ? 'working' : sdr || whatsappConnected ? 'configuring' : 'available'}
           panelHref="/dashboard/agents"
           personaName={sdr?.persona_name ?? null}
+          activation={{ agentType: 'sdr', config: sdr ?? null, unitId: selectedUnitId, askName: true, defaultName: 'Kai' }}
           trainingScore={sdr ? computeTrainingCompleteness(sdr, verticalKey) : null}
           testConfigId={sdr?.id ?? null}
           trainConfigId={sdr?.id ?? null}
@@ -233,7 +237,7 @@ export function EmployeeCatalog({
 }
 
 type ActivationProps = {
-  agentType: 'recruiter' | 'traffic_specialist' | 'receptionist'
+  agentType: 'sdr' | 'recruiter' | 'traffic_specialist' | 'receptionist'
   /** config já filtrado pra unitId — nunca de outra unidade */
   config: AgentConfig | null
   /** unidade selecionada no catálogo (seletor no topo da tela) */
@@ -270,7 +274,6 @@ function EmployeeCatalogCard({
   state: EmployeeState
   panelHref: string
   personaName: string | null
-  /** ausente no SDR — a ativação dele acontece no passo a passo guiado */
   activation?: ActivationProps
   /** null = funcionário ainda não foi contratado (sem agent_configs) */
   trainingScore?: number | null
