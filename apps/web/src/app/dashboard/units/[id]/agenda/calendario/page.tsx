@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { CalendarView, type AppointmentWithRelations } from '@/components/dashboard/calendar-view'
 import { Card, PageHeader } from '@/components/ui/dashboard-ui'
 import { getBusinessHours, getSchedulingSettings } from '@/lib/scheduling'
+import { ensureDefaultService } from '@/lib/scheduling/ensure-default-service'
 import { localDateString, zonedTimeToUtc } from '@/lib/slot-engine'
 import { addDays } from '@/lib/calendar-dates'
 import type { Employee, Service, Unit } from '@/lib/types'
@@ -59,7 +60,7 @@ export default async function UnitCalendarPage({
       .order('starts_at'),
   ])
 
-  const servicesRows = (services ?? []) as Service[]
+  const servicesRows = await ensureDefaultService(supabase, unitRow, (services ?? []) as Service[])
   const employeesRows = (employees ?? []) as Employee[]
   const appointmentsRows = (appointments ?? []) as unknown as AppointmentWithRelations[]
 

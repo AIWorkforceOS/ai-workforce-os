@@ -74,7 +74,7 @@ function intersectIntervals(a: TimeInterval[], b: TimeInterval[]): TimeInterval[
   return result
 }
 
-function weekdayOfDateString(dateStr: string): Weekday {
+export function weekdayOfDateString(dateStr: string): Weekday {
   const [year, month, day] = dateStr.split('-').map(Number) as [number, number, number]
   const utcDate = new Date(Date.UTC(year, month - 1, day))
   return WEEKDAYS_BY_UTC_DAY[utcDate.getUTCDay()]!

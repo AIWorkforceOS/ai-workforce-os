@@ -40,6 +40,7 @@ export default function NewEmployeePage() {
     default_pay_type: 'per_service',
     org_id: '',
     unit_id: '',
+    is_schedulable: true,
   })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -70,6 +71,7 @@ export default function NewEmployeePage() {
       default_pay_type: form.default_pay_type,
       org_id: form.org_id || null,
       unit_id: form.unit_id || null,
+      is_schedulable: form.is_schedulable,
     })
     setBusy(false)
     if (err) { setError(err.message); return }
@@ -145,6 +147,16 @@ export default function NewEmployeePage() {
               {filteredUnits.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
             </Select>
           </div>
+
+          <label className="flex items-center gap-2 text-sm text-slate-300">
+            <input
+              type="checkbox"
+              checked={form.is_schedulable}
+              onChange={e => setForm(f => ({ ...f, is_schedulable: e.target.checked }))}
+              className="accent-cyan-500"
+            />
+            Atende agenda (aparece pra ser escalado em agendamentos)
+          </label>
 
           {error && <p className="text-sm text-red-400">{error}</p>}
 

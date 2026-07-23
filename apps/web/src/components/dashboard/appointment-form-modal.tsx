@@ -5,10 +5,29 @@ import { X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { getAvailableSlots, zonedTimeToUtc, type AvailableSlot, type SlotEngineAppointment } from '@/lib/slot-engine'
 import { addDays } from '@/lib/calendar-dates'
-import { buildWeeklyOccurrences, RECURRENCE_WEEKS_AHEAD } from '@/lib/scheduling/recurrence'
+import { buildRecurringOccurrences, WEEKDAY_ORDER, type RecurrenceType } from '@/lib/scheduling/recurrence'
+import type { ServiceRecurrence } from '@/lib/scheduling/service-recurrence'
 import { Card, Input, Label, Select, Textarea } from '@/components/ui/dashboard-ui'
-import type { SchedulingSettings, Service, Employee, WeeklySchedule } from '@/lib/types'
+import type { SchedulingSettings, Service, Employee, Weekday, WeeklySchedule } from '@/lib/types'
 import type { AppointmentWithRelations } from '@/components/dashboard/calendar-view'
+
+const RECURRENCE_OPTIONS: { value: 'none' | RecurrenceType; label: string }[] = [
+  { value: 'none', label: 'Não se repete' },
+  { value: 'weekly', label: 'Toda semana' },
+  { value: 'biweekly', label: 'A cada 15 dias' },
+  { value: 'monthly', label: 'Todo mês' },
+  { value: 'custom', label: 'Personalizado (2+ vezes por semana)' },
+]
+
+const WEEKDAY_LABEL: Record<Weekday, string> = {
+  mon: 'Seg',
+  tue: 'Ter',
+  wed: 'Qua',
+  thu: 'Qui',
+  fri: 'Sex',
+  sat: 'Sáb',
+  sun: 'Dom',
+}
 
 type CustomerOption = { id: string; name: string; phone: string | null; address?: string | null }
 
@@ -34,7 +53,7 @@ export function AppointmentFormModal({
   appointment,
   initialCustomer,
   defaultPrice,
-  defaultWeekly,
+  defaultRecurrence,
   onClose,
   onSaved,
 }: {
@@ -52,8 +71,8 @@ export function AppointmentFormModal({
   initialCustomer?: CustomerOption
   /** valor combinado padrão (ex.: custom_fields.service_value do cliente) — sobrepõe o preço do serviço */
   defaultPrice?: number | null
-  /** pré-marca "repetir toda semana" (cliente cadastrado como recorrente) */
-  defaultWeekly?: boolean
+  /** pré-marca a recorrência (cliente cadastrado como recorrente, service_recurrence) */
+  defaultRecurrence?: ServiceRecurrence
   onClose: () => void
   onSaved: () => void | Promise<void>
 }) {
@@ -88,7 +107,12 @@ export function AppointmentFormModal({
         ? String(defaultPrice)
         : ''
   )
-  const [weekly, setWeekly] = useState(defaultWeekly ?? false)
+  const [recurrence, setRecurrence] = useState<'none' | RecurrenceType>(
+    mode === 'create' && defaultRecurrence && defaultRecurrence.type !== 'once' ? defaultRecurrence.type : 'none'
+  )
+  const [recurrenceDays, setRecurrenceDays] = useState<Weekday[]>(
+    defaultRecurrence?.type === 'custom' && defaultRecurrence.days ? defaultRecurrence.days : []
+  )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -241,6 +265,10 @@ export function AppointmentFormModal({
       setError('Escolha um horário livre.')
       return
     }
+    if (mode === 'create' && recurrence === 'custom' && recurrenceDays.length === 0) {
+      setError('Escolha pelo menos um dia da semana pra recorrência personalizada.')
+      return
+    }
 
     const supabase = createClient()
     setSaving(true)
@@ -295,17 +323,24 @@ export function AppointmentFormModal({
       custom_fields: priceCustomFields,
     }
 
-    // Recorrência semanal: gera as próximas semanas como agendamentos reais,
-    // todos no mesmo grupo — agenda e financeiro são alimentados sem passo
-    // manual (lembrete, "a caminho" e Concluir → service_records já valem
-    // pra cada ocorrência). Só a disponibilidade da PRIMEIRA semana é
-    // validada pelo motor de slots; as seguintes assumem o mesmo horário.
-    const occurrences = weekly
-      ? buildWeeklyOccurrences({ starts_at: selectedSlot.starts_at, ends_at: selectedSlot.ends_at }, timezone)
-      : [{ starts_at: selectedSlot.starts_at, ends_at: selectedSlot.ends_at }]
-    const recurrenceFields = weekly
-      ? { recurrence: 'weekly', recurrence_group_id: crypto.randomUUID() }
-      : {}
+    // Recorrência: gera o horizonte da série como agendamentos reais, todos
+    // no mesmo grupo — agenda e financeiro são alimentados sem passo manual
+    // (lembrete, "a caminho" e Concluir → service_records já valem pra cada
+    // ocorrência). Só a disponibilidade da PRIMEIRA ocorrência é validada
+    // pelo motor de slots; as seguintes assumem o mesmo horário.
+    const firstOccurrence = { starts_at: selectedSlot.starts_at, ends_at: selectedSlot.ends_at }
+    const occurrences =
+      recurrence === 'none'
+        ? [firstOccurrence]
+        : buildRecurringOccurrences(firstOccurrence, timezone, recurrence, recurrenceDays)
+    const recurrenceFields =
+      recurrence === 'none'
+        ? {}
+        : {
+            recurrence,
+            recurrence_group_id: crypto.randomUUID(),
+            recurrence_days: recurrence === 'custom' ? recurrenceDays : null,
+          }
 
     const { data: insertedAppointments, error: insertError } = await supabase
       .from('appointments')
@@ -537,29 +572,55 @@ export function AppointmentFormModal({
             </div>
 
             {mode === 'create' && (
-              <label
-                className="flex cursor-pointer items-start gap-2.5 rounded-xl px-3.5 py-3"
+              <div
+                className="flex flex-col gap-2.5 rounded-xl px-3.5 py-3"
                 style={{ background: 'rgba(129,140,248,0.06)', border: '1px solid rgba(129,140,248,0.2)' }}
               >
-                <input
-                  type="checkbox"
-                  checked={weekly}
-                  onChange={(e) => setWeekly(e.target.checked)}
-                  className="mt-0.5 accent-cyan-500"
-                />
-                <span className="text-sm text-slate-200">
-                  <span className="font-bold">Repetir toda semana neste horário</span>
-                  <span className="block text-xs text-slate-400">
-                    Já deixamos as próximas {RECURRENCE_WEEKS_AHEAD} semanas agendadas — e a série se
-                    estende sozinha a cada serviço concluído. Cancele quando quiser.
-                  </span>
-                </span>
-              </label>
+                <div className="flex flex-col gap-1.5">
+                  <Label>Recorrência</Label>
+                  <Select value={recurrence} onChange={(e) => setRecurrence(e.target.value as 'none' | RecurrenceType)}>
+                    {RECURRENCE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+
+                {recurrence === 'custom' && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {WEEKDAY_ORDER.map((day) => (
+                      <button
+                        key={day}
+                        type="button"
+                        onClick={() =>
+                          setRecurrenceDays((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]))
+                        }
+                        className="rounded-lg px-2.5 py-1 text-xs font-bold transition-colors"
+                        style={
+                          recurrenceDays.includes(day)
+                            ? { background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', color: 'white' }
+                            : { background: 'rgba(255,255,255,0.05)', color: '#cbd5e1', border: '1px solid rgba(255,255,255,0.08)' }
+                        }
+                      >
+                        {WEEKDAY_LABEL[day]}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {recurrence !== 'none' && (
+                  <p className="text-xs text-slate-400">
+                    Já deixamos os próximos atendimentos agendados — e a série se estende sozinha a cada
+                    serviço concluído. Cancele quando quiser.
+                  </p>
+                )}
+              </div>
             )}
 
-            {mode === 'reschedule' && appointment?.recurrence === 'weekly' && (
+            {mode === 'reschedule' && appointment?.recurrence && (
               <p className="text-xs text-slate-500">
-                Este atendimento faz parte de uma série semanal — só esta ocorrência será alterada.
+                Este atendimento faz parte de uma série recorrente — só esta ocorrência será alterada.
               </p>
             )}
 

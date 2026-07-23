@@ -5,7 +5,7 @@ import { CalendarPlus, MapPin } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { localDateString, zonedTimeToUtc } from '@/lib/slot-engine'
 import { addDays } from '@/lib/calendar-dates'
-import { shiftOccurrenceByWeeks } from '@/lib/scheduling/recurrence'
+import { nextOccurrenceAfter, RECURRENCE_PILL_LABEL, type RecurrenceType } from '@/lib/scheduling/recurrence'
 import { AppointmentFormModal } from '@/components/dashboard/appointment-form-modal'
 import { Card, StatusPill, type BadgeVariant } from '@/components/ui/dashboard-ui'
 import { computeSuggestedPay } from '@/lib/service-pay'
@@ -221,8 +221,8 @@ export function CalendarView({
           .order('starts_at', { ascending: false })
           .limit(1)
         const last = (lastRows ?? [])[0] as { starts_at: string; ends_at: string } | undefined
-        if (last) {
-          const next = shiftOccurrenceByWeeks(last, 1, timezone)
+        if (last && appointment.recurrence) {
+          const next = nextOccurrenceAfter(last, timezone, appointment.recurrence as RecurrenceType)
           await supabase.from('appointments').insert({
             org_id: orgId,
             unit_id: unitId,
@@ -232,8 +232,9 @@ export function CalendarView({
             address: appointment.address,
             notes: appointment.notes,
             custom_fields: appointment.custom_fields ?? {},
-            recurrence: 'weekly',
+            recurrence: appointment.recurrence,
             recurrence_group_id: appointment.recurrence_group_id,
+            recurrence_days: appointment.recurrence_days,
             ...next,
           })
         }
@@ -311,9 +312,9 @@ export function CalendarView({
                           <StatusPill variant={STATUS_VARIANT[appointment.status]}>
                             {STATUS_LABEL[appointment.status]}
                           </StatusPill>
-                          {appointment.recurrence === 'weekly' && (
+                          {appointment.recurrence && (
                             <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: 'rgba(129,140,248,0.15)', color: '#a5b4fc' }}>
-                              Toda semana
+                              {RECURRENCE_PILL_LABEL[appointment.recurrence]}
                             </span>
                           )}
                         </div>

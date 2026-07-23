@@ -9,6 +9,7 @@ import type { AppointmentWithRelations } from '@/components/dashboard/calendar-v
 import type { Customer, Employee, Service, Unit } from '@/lib/types'
 import { fetchOrganizationManagementMode, fetchOrganizationVerticalKey } from '@/lib/organizations'
 import { getBusinessHours, getSchedulingSettings } from '@/lib/scheduling'
+import { ensureDefaultService } from '@/lib/scheduling/ensure-default-service'
 import { getCustomerTerm } from '@/lib/verticals/terminology'
 import { VERTICAL_TEMPLATES } from '@/lib/verticals/catalog'
 
@@ -55,6 +56,9 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
       ])
     : [{ data: null }, { data: null }, { data: null }]
 
+  const servicesRows =
+    fullManagement && unitRow ? await ensureDefaultService(supabase, unitRow, (services ?? []) as Service[]) : []
+
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
       <div>
@@ -80,7 +84,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
             timezone={unitRow.timezone}
             businessHours={getBusinessHours(unitRow)}
             schedulingSettings={getSchedulingSettings(unitRow)}
-            services={(services ?? []) as Service[]}
+            services={servicesRows}
             employees={(employees ?? []) as Employee[]}
             initialAppointments={(appointments ?? []) as unknown as AppointmentWithRelations[]}
           />

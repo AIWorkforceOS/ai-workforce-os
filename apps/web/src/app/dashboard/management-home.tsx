@@ -31,6 +31,7 @@ import {
   Users,
   Wallet,
 } from 'lucide-react'
+import { RECURRENCE_PILL_LABEL, type RecurrenceType } from '@/lib/scheduling/recurrence'
 import type { AgentConfig, AppointmentStatus, Unit } from '@/lib/types'
 
 function startOfDay(date: Date) {
@@ -61,7 +62,7 @@ type UpcomingAppointment = {
   ends_at: string
   status: AppointmentStatus
   address: string | null
-  recurrence: 'weekly' | null
+  recurrence: RecurrenceType | null
   custom_fields: Record<string, unknown> | null
   customer: { name: string } | null
   service: { name: string; price: number | null } | null
@@ -306,9 +307,9 @@ export async function ManagementHome({ firstName, unitId }: { firstName: string;
                     </Td>
                     <Td className="text-slate-400">
                       {a.service?.name ?? '—'}
-                      {a.recurrence === 'weekly' && (
+                      {a.recurrence && (
                         <span className="ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold" style={{ background: 'rgba(129,140,248,0.15)', color: '#a5b4fc' }}>
-                          semanal
+                          {RECURRENCE_PILL_LABEL[a.recurrence]}
                         </span>
                       )}
                     </Td>

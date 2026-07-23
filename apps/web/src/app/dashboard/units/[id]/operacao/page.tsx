@@ -28,7 +28,7 @@ export default async function UnitOperationsPage({ params }: { params: Promise<{
     await Promise.all([
       supabase.from('employees').select('*').eq('unit_id', id).eq('is_active', true).order('name'),
       supabase.from('services').select('*').eq('unit_id', id).eq('is_active', true).order('name'),
-      supabase.from('customers').select('id, name, email, address').eq('unit_id', id).eq('status', 'active').order('name').limit(500),
+      supabase.from('customers').select('id, name, email, address, custom_fields').eq('unit_id', id).eq('status', 'active').order('name').limit(500),
       supabase
         .from('service_records')
         .select('*, employee:employees(id,name), customer:customers(id,name,email), service:services(id,name)')
@@ -80,7 +80,7 @@ export default async function UnitOperationsPage({ params }: { params: Promise<{
           currency={unitDefaultLocale(unitRow) === 'en' ? 'USD' : 'BRL'}
           employees={(employees ?? []) as Employee[]}
           services={(services ?? []) as Service[]}
-          customers={(customers ?? []) as Pick<Customer, 'id' | 'name' | 'email' | 'address'>[]}
+          customers={(customers ?? []) as Pick<Customer, 'id' | 'name' | 'email' | 'address' | 'custom_fields'>[]}
           initialRecords={(records ?? []) as unknown as ServiceRecordWithRelations[]}
           initialInvoices={(invoices ?? []) as unknown as InvoiceWithRelations[]}
         />

@@ -7,6 +7,8 @@ import { localDateString } from '@/lib/slot-engine'
 import { AppointmentFormModal } from '@/components/dashboard/appointment-form-modal'
 import type { AppointmentWithRelations } from '@/components/dashboard/calendar-view'
 import { StatusPill, type BadgeVariant } from '@/components/ui/dashboard-ui'
+import { RECURRENCE_PILL_LABEL } from '@/lib/scheduling/recurrence'
+import { normalizeServiceRecurrence } from '@/lib/scheduling/service-recurrence'
 import type {
   AppointmentStatus,
   Customer,
@@ -78,7 +80,7 @@ export function CustomerAppointmentsPanel({
 
   const cf = (customer.custom_fields ?? {}) as { service_value?: unknown; service_recurrence?: unknown }
   const defaultPrice = Number(cf.service_value) > 0 ? Number(cf.service_value) : null
-  const defaultWeekly = cf.service_recurrence === 'weekly'
+  const defaultRecurrence = normalizeServiceRecurrence(cf.service_recurrence)
 
   async function reload() {
     const supabase = createClient()
@@ -170,9 +172,9 @@ export function CustomerAppointmentsPanel({
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold text-white">{formatWhen(a)}</span>
                     <StatusPill variant={STATUS_VARIANT[a.status]}>{STATUS_LABEL[a.status]}</StatusPill>
-                    {a.recurrence === 'weekly' && (
+                    {a.recurrence && (
                       <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: 'rgba(129,140,248,0.15)', color: '#a5b4fc' }}>
-                        Toda semana
+                        {RECURRENCE_PILL_LABEL[a.recurrence]}
                       </span>
                     )}
                   </div>
@@ -234,7 +236,7 @@ export function CustomerAppointmentsPanel({
           appointment={modal.mode === 'reschedule' ? modal.appointment : undefined}
           initialCustomer={{ id: customer.id, name: customer.name, phone: customer.phone, address: customer.address }}
           defaultPrice={defaultPrice}
-          defaultWeekly={defaultWeekly}
+          defaultRecurrence={defaultRecurrence}
           onClose={() => setModal(null)}
           onSaved={reload}
         />

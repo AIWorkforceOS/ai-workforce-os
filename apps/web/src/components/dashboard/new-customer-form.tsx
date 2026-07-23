@@ -7,6 +7,8 @@ import { UserPlus } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { FormSection, Input, Label, Select, Textarea } from '@/components/ui/dashboard-ui'
 import { DynamicFieldsForm } from '@/components/dashboard/dynamic-fields-form'
+import { ServiceRecurrenceFields } from '@/components/dashboard/service-recurrence-fields'
+import type { ServiceRecurrence } from '@/lib/scheduling/service-recurrence'
 import type { DynamicField } from '@/lib/verticals/catalog'
 
 type UnitOption = { id: string; name: string }
@@ -37,8 +39,12 @@ export function NewCustomerForm({
   })
   const [customFields, setCustomFields] = useState<Record<string, unknown>>({})
   // Serviço contratado (modo gestão completa) — vira chaves em custom_fields:
-  // service_type / service_value / service_recurrence ('once' | 'weekly').
-  const [service, setService] = useState({ type: '', value: '', recurrence: 'once' })
+  // service_type / service_value / service_recurrence ({ type, days? }).
+  const [service, setService] = useState<{ type: string; value: string; recurrence: ServiceRecurrence }>({
+    type: '',
+    value: '',
+    recurrence: { type: 'once' },
+  })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -170,16 +176,10 @@ export function NewCustomerForm({
                   <Input type="number" min="0" step="0.01" value={service.value} onChange={(e) => setService((s) => ({ ...s, value: e.target.value }))} placeholder="Ex: 150" />
                 </div>
               </div>
-              <div className="flex flex-col gap-1.5">
-                <Label>Recorrência</Label>
-                <Select value={service.recurrence} onChange={(e) => setService((s) => ({ ...s, recurrence: e.target.value }))}>
-                  <option value="once">Serviço único</option>
-                  <option value="weekly">Recorrente — toda semana</option>
-                </Select>
-                <p className="text-[11px] text-slate-500">
-                  Esses dados viram o padrão ao agendar: valor pré-preenchido e, se recorrente, a agenda já sugere repetir toda semana.
-                </p>
-              </div>
+              <ServiceRecurrenceFields
+                value={service.recurrence}
+                onChange={(recurrence) => setService((s) => ({ ...s, recurrence }))}
+              />
             </FormSection>
           </div>
         )}

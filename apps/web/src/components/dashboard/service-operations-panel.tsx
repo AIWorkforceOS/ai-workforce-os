@@ -3,6 +3,7 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { computeSuggestedPay } from '@/lib/service-pay'
+import { normalizeServiceRecurrence, projectedMonthlyRevenue } from '@/lib/scheduling/service-recurrence'
 import {
   FormSection,
   Input,
@@ -17,6 +18,14 @@ import {
   Textarea,
 } from '@/components/ui/dashboard-ui'
 import type { Customer, Employee, Invoice, Service, ServiceRecord } from '@/lib/types'
+
+const SERVICE_RECURRENCE_LABEL: Record<string, string> = {
+  once: 'Único',
+  weekly: 'Semanal',
+  biweekly: 'Quinzenal',
+  monthly: 'Mensal',
+  custom: 'Personalizado',
+}
 
 // Painel da tela Operação (migration 030): duas seções irmãs no mesmo
 // client component porque uma ação cruza as duas — "Gerar fatura" a
@@ -33,7 +42,7 @@ export type InvoiceWithRelations = Invoice & {
   customer: Pick<Customer, 'id' | 'name' | 'email'> | null
 }
 
-type CustomerOption = Pick<Customer, 'id' | 'name' | 'email' | 'address'>
+type CustomerOption = Pick<Customer, 'id' | 'name' | 'email' | 'address' | 'custom_fields'>
 
 type RecordFormState = {
   service_date: string
@@ -238,6 +247,45 @@ export function ServiceOperationsPanel({
   }, [records])
 
   // -------------------------------------------------------------------
+  // A receber (projetado) — direto do cadastro do cliente, não depende de
+  // agendamento nem de lançamento manual: valor da visita × frequência
+  // mensal da recorrência (ver lib/scheduling/service-recurrence).
+  // -------------------------------------------------------------------
+  const recurringCustomers = useMemo(() => {
+    return customers
+      .map((c) => {
+        const cf = (c.custom_fields ?? {}) as { service_value?: unknown; service_recurrence?: unknown; service_type?: unknown }
+        const rawValue = Number(cf.service_value)
+        const value = Number.isFinite(rawValue) && rawValue > 0 ? rawValue : null
+        const recurrence = normalizeServiceRecurrence(cf.service_recurrence)
+        const monthly = projectedMonthlyRevenue(value, recurrence)
+        return {
+          id: c.id,
+          name: c.name,
+          serviceType: typeof cf.service_type === 'string' ? cf.service_type : null,
+          value,
+          recurrence,
+          monthly,
+        }
+      })
+      .filter((c) => c.monthly > 0)
+      .sort((a, b) => b.monthly - a.monthly)
+  }, [customers])
+
+  const projectedReceivable = useMemo(
+    () => recurringCustomers.reduce((sum, c) => sum + c.monthly, 0),
+    [recurringCustomers]
+  )
+
+  const receivedThisMonth = useMemo(() => {
+    const now = new Date()
+    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    return invoices
+      .filter((i) => i.status === 'paid' && i.paid_at && i.paid_at.slice(0, 7) === monthKey)
+      .reduce((sum, i) => sum + Number(i.amount), 0)
+  }, [invoices])
+
+  // -------------------------------------------------------------------
   // Faturas
   // -------------------------------------------------------------------
   const emptyInvoiceForm: InvoiceFormState = { customer_id: '', description: '', amount: '', due_date: '', notes: '' }
@@ -386,26 +434,21 @@ export function ServiceOperationsPanel({
     setInvoices((prev) => prev.map((i) => (i.id === invoice.id ? (data as unknown as InvoiceWithRelations) : i)))
   }
 
-  const openInvoicesTotal = useMemo(
-    () =>
-      invoices
-        .filter((i) => i.status === 'sent' || i.status === 'draft')
-        .reduce((sum, i) => sum + Number(i.amount), 0),
-    [invoices]
-  )
-
   // -------------------------------------------------------------------
 
   return (
     <div className="flex flex-col gap-8">
-      {/* Resumo */}
+      {/* Resumo — as 4 categorias do financeiro: projetado (a receber) e
+          realizado (recebido) de um lado, equipe (a pagar/pago) do outro.
+          Alimentado automaticamente pelo cadastro do cliente e pela agenda,
+          sem depender de lançamento manual. */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          { label: 'A pagar à equipe', value: fmtMoney(totals.pendingDue) },
-          { label: 'Pago à equipe', value: fmtMoney(totals.paidDue) },
-          { label: 'Faturado em serviços', value: fmtMoney(totals.charged) },
-          { label: 'Faturas em aberto', value: fmtMoney(openInvoicesTotal) },
-        ].map(({ label, value }) => (
+          { label: 'A receber (projetado este mês)', value: fmtMoney(projectedReceivable), sub: 'clientes recorrentes cadastrados' },
+          { label: 'Recebido (este mês)', value: fmtMoney(receivedThisMonth), sub: 'faturas pagas' },
+          { label: 'A pagar à equipe', value: fmtMoney(totals.pendingDue), sub: 'serviços pendentes' },
+          { label: 'Pago à equipe', value: fmtMoney(totals.paidDue), sub: 'já quitado' },
+        ].map(({ label, value, sub }) => (
           <div
             key={label}
             className="rounded-2xl bg-[#141a2b] p-4"
@@ -413,9 +456,53 @@ export function ServiceOperationsPanel({
           >
             <p className="text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">{label}</p>
             <p className="mt-1 text-lg font-black tracking-tight text-white">{value}</p>
+            <p className="mt-0.5 text-[11px] text-slate-500">{sub}</p>
           </div>
         ))}
       </div>
+
+      {/* Clientes recorrentes — projeção automática, direto do cadastro */}
+      {recurringCustomers.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <SectionLabel>Clientes recorrentes (a receber)</SectionLabel>
+          <div
+            className="overflow-hidden rounded-2xl bg-[#141a2b]"
+            style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px] text-sm">
+                <TableShell>
+                  <Th>Cliente</Th>
+                  <Th>Serviço</Th>
+                  <Th>Valor da visita</Th>
+                  <Th>Recorrência</Th>
+                  <Th>Projeção mensal</Th>
+                </TableShell>
+                <tbody>
+                  {recurringCustomers.map((c) => (
+                    <Tr key={c.id}>
+                      <Td className="font-semibold text-white">{c.name}</Td>
+                      <Td className="text-slate-400">{c.serviceType ?? '—'}</Td>
+                      <Td className="text-slate-300">{fmtMoney(c.value)}</Td>
+                      <Td className="text-slate-400">
+                        {SERVICE_RECURRENCE_LABEL[c.recurrence.type]}
+                        {c.recurrence.type === 'custom' && c.recurrence.days
+                          ? ` (${c.recurrence.days.length}x/semana)`
+                          : ''}
+                      </Td>
+                      <Td className="font-black text-white">{fmtMoney(c.monthly)}</Td>
+                    </Tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <p className="text-[11px] text-slate-500">
+            Projeção automática a partir do valor e da recorrência cadastrados no cliente — some se o cliente
+            for marcado como serviço único ou ficar sem valor.
+          </p>
+        </div>
+      )}
 
       {/* Serviços executados */}
       <div className="flex flex-col gap-3">

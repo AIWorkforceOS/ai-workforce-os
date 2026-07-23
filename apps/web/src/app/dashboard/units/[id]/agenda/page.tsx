@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { CalendarDays } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
+import { ensureDefaultService } from '@/lib/scheduling/ensure-default-service'
 import { SchedulingConfigForm } from '@/components/dashboard/scheduling-config-form'
 import { ServicesPanel } from '@/components/dashboard/services-panel'
 import { ResourcesPanel } from '@/components/dashboard/resources-panel'
@@ -25,7 +26,7 @@ export default async function UnitAgendaPage({ params }: { params: Promise<{ id:
   }
 
   const unitRow = unit as Unit
-  const servicesRows = (services ?? []) as Service[]
+  const servicesRows = await ensureDefaultService(supabase, unitRow, (services ?? []) as Service[])
   const resourcesRows = (resources ?? []) as Resource[]
   const employeesRows = (employees ?? []) as Employee[]
 

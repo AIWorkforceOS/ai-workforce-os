@@ -298,10 +298,12 @@ export type Appointment = {
   notes: string | null
   /** endereço onde o serviço será prestado (serviços de campo) — migration 030. Pré-preenchido com customers.address. */
   address: string | null
-  /** null = agendamento único; 'weekly' = ocorrência de série semanal (migration 032). Cada ocorrência é uma linha real nesta tabela. */
-  recurrence: 'weekly' | null
+  /** null = agendamento único; ocorrência de série recorrente (migration 032, tipos ampliados na 035). Cada ocorrência é uma linha real nesta tabela. */
+  recurrence: 'weekly' | 'biweekly' | 'monthly' | 'custom' | null
   /** une as ocorrências da mesma série recorrente (migration 032) */
   recurrence_group_id: string | null
+  /** só usado quando recurrence === 'custom' — dias da semana atendidos (migration 035) */
+  recurrence_days: Weekday[] | null
   /** chave `price` = valor combinado deste atendimento (sobrepõe services.price no Concluir → service_records) */
   custom_fields: Record<string, unknown>
   /** preenchidos pelos templates automáticos de comunicação (sub-etapa 5/7 da Fase 2) */

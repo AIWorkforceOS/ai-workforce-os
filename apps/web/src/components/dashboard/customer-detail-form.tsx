@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import { Check, Loader2 } from 'lucide-react'
 import { FormSection, Input, Label, Select, Textarea } from '@/components/ui/dashboard-ui'
 import { DynamicFieldsForm } from '@/components/dashboard/dynamic-fields-form'
+import { ServiceRecurrenceFields } from '@/components/dashboard/service-recurrence-fields'
+import { normalizeServiceRecurrence } from '@/lib/scheduling/service-recurrence'
 import type { Customer, CustomerStatus } from '@/lib/types'
 import type { DynamicField } from '@/lib/verticals/catalog'
 
@@ -32,12 +34,12 @@ export function CustomerDetailForm({
   })
   const [customFields, setCustomFields] = useState<Record<string, unknown>>(customer.custom_fields ?? {})
   // Serviço contratado (modo gestão completa) — mesmas chaves do cadastro:
-  // service_type / service_value / service_recurrence ('once' | 'weekly').
+  // service_type / service_value / service_recurrence ({ type, days? }).
   const cf = customer.custom_fields ?? {}
   const [service, setService] = useState({
     type: typeof cf.service_type === 'string' ? cf.service_type : '',
     value: Number(cf.service_value) > 0 ? String(cf.service_value) : '',
-    recurrence: cf.service_recurrence === 'weekly' ? 'weekly' : 'once',
+    recurrence: normalizeServiceRecurrence(cf.service_recurrence),
   })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -142,16 +144,10 @@ export function CustomerDetailForm({
               <Input type="number" min="0" step="0.01" value={service.value} onChange={(e) => setService((s) => ({ ...s, value: e.target.value }))} placeholder="Ex: 150" />
             </div>
           </div>
-          <div className="flex flex-col gap-1.5">
-            <Label>Recorrência</Label>
-            <Select value={service.recurrence} onChange={(e) => setService((s) => ({ ...s, recurrence: e.target.value }))}>
-              <option value="once">Serviço único</option>
-              <option value="weekly">Recorrente — toda semana</option>
-            </Select>
-            <p className="text-[11px] text-slate-500">
-              Usado como padrão nos agendamentos deste cliente: valor pré-preenchido e sugestão de repetir toda semana.
-            </p>
-          </div>
+          <ServiceRecurrenceFields
+            value={service.recurrence}
+            onChange={(recurrence) => setService((s) => ({ ...s, recurrence }))}
+          />
         </FormSection>
       </div>
     )}
