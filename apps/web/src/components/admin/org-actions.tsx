@@ -133,6 +133,80 @@ export function ChangePlanForm({ orgId, currentPlanId }: { orgId: string; curren
   )
 }
 
+const MANAGEMENT_MODE_LABELS: Record<'digital_employees' | 'full_management', string> = {
+  digital_employees: 'Só funcionários digitais',
+  full_management: 'Gestão completa',
+}
+
+/** Troca o modo de uso da empresa (super admin) — mesmo par que a configuração guiada grava em organizations.management_mode. */
+export function ManagementModeForm({ orgId, currentMode }: { orgId: string; currentMode: 'digital_employees' | 'full_management' | null }) {
+  const router = useRouter()
+  const [open, setOpen] = useState(false)
+  const [selected, setSelected] = useState<'digital_employees' | 'full_management'>(currentMode ?? 'digital_employees')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function save() {
+    setBusy(true)
+    setError(null)
+    const res = await fetch(`/api/admin/orgs/${orgId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ management_mode: selected }),
+    })
+    const data = await res.json().catch(() => null)
+    setBusy(false)
+    if (!res.ok) {
+      setError(data?.error ?? 'Erro ao trocar modo de uso.')
+      return
+    }
+    setOpen(false)
+    router.refresh()
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold text-slate-200 transition-all hover:bg-white/5"
+        style={{ border: '1px solid rgba(255,255,255,0.1)' }}
+      >
+        <RefreshCw size={12} />
+        Trocar modo de uso
+      </button>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <Select value={selected} onChange={(e) => setSelected(e.target.value as 'digital_employees' | 'full_management')} className="w-56">
+        {(Object.keys(MANAGEMENT_MODE_LABELS) as (keyof typeof MANAGEMENT_MODE_LABELS)[]).map((mode) => (
+          <option key={mode} value={mode}>
+            {MANAGEMENT_MODE_LABELS[mode]}
+          </option>
+        ))}
+      </Select>
+      <button
+        onClick={save}
+        disabled={busy}
+        className="flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-black text-white disabled:opacity-40"
+        style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)' }}
+      >
+        {busy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+        Salvar
+      </button>
+      <button
+        onClick={() => { setOpen(false); setSelected(currentMode ?? 'digital_employees'); setError(null) }}
+        disabled={busy}
+        className="rounded-xl px-3 py-2 text-xs font-bold text-slate-400 hover:bg-white/5 disabled:opacity-40"
+      >
+        Cancelar
+      </button>
+      {error && <span className="text-xs text-red-400">{error}</span>}
+    </div>
+  )
+}
+
 /** Reset de senha de um usuário do cliente — mostra a senha temporária uma vez. */
 export function ResetPasswordButton({ email }: { email: string }) {
   const [busy, setBusy] = useState(false)

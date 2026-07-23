@@ -4,8 +4,9 @@ import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 
 /**
- * PATCH /api/admin/orgs/[id] — ativa/desativa uma empresa cliente, ou troca
- * o plano contratado (apenas super_admin; a escrita passa pelo RLS da sessão).
+ * PATCH /api/admin/orgs/[id] — ativa/desativa uma empresa cliente, troca o
+ * plano contratado, ou troca o modo de uso (apenas super_admin; a escrita
+ * passa pelo RLS da sessão).
  */
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const appUser = await getAppUser()
@@ -17,6 +18,21 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const body = await request.json().catch(() => null)
 
   const supabase = await createClient()
+
+  if (body?.management_mode === 'digital_employees' || body?.management_mode === 'full_management') {
+    const { error } = await supabase
+      .from('organizations')
+      .update({ management_mode: body.management_mode })
+      .eq('id', id)
+    if (error) {
+      const migrationMissing = /management_mode/.test(error.message)
+      return NextResponse.json(
+        { error: migrationMissing ? 'A plataforma ainda está sendo atualizada (migration 032 pendente).' : `Erro ao trocar modo de uso: ${error.message}` },
+        { status: 500 },
+      )
+    }
+    return NextResponse.json({ ok: true })
+  }
 
   if (typeof body?.plan_id === 'string' && body.plan_id) {
     const { data: plan, error: planError } = await supabase
