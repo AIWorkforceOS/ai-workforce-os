@@ -410,6 +410,29 @@ export type Conversation = {
   created_at: string
 }
 
+export type AttachmentKind = 'pdf' | 'link'
+
+/**
+ * Biblioteca de anexos do funcionário (migration 036): PDFs (upload no
+ * Storage) ou links que o cliente cadastra, cada um com uma instrução de
+ * quando usar — o funcionário de IA decide sozinho na conversa se manda
+ * (ver lib/attachments.ts e lib/conversation-engine.ts).
+ */
+export type EmployeeAttachment = {
+  id: string
+  org_id: string
+  unit_id: string
+  agent_type: string
+  kind: AttachmentKind
+  title: string
+  usage_instructions: string
+  file_url: string
+  file_name: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
 export type ProspectingJobStatus = 'pending' | 'running' | 'done' | 'failed'
 
 export type ProspectingJob = {

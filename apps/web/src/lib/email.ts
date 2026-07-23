@@ -11,12 +11,15 @@ function defaultFrom(): string | null {
 
 type SendResult = { ok: boolean; error?: string }
 
+type EmailAttachment = { filename: string; content: string }
+
 async function sendEmail(params: {
   to: string
   from: string
   subject: string
   html: string
   replyTo?: string | null
+  attachments?: EmailAttachment[]
 }): Promise<SendResult> {
   const apiKey = getResendApiKey()
   if (!apiKey) {
@@ -36,6 +39,7 @@ async function sendEmail(params: {
         subject: params.subject,
         html: params.html,
         ...(params.replyTo ? { reply_to: params.replyTo } : {}),
+        ...(params.attachments && params.attachments.length > 0 ? { attachments: params.attachments } : {}),
       }),
     })
 
@@ -208,6 +212,8 @@ function buildBrandedEmailHtml(params: {
   unitName: string
   logoUrl: string | null
   bodyText: string
+  /** Título do material da biblioteca de anexos (migration 036) anexado a este e-mail, se houver. */
+  attachmentTitle?: string | null
 }): string {
   const paragraphs = params.bodyText
     .split(/\n+/)
@@ -220,6 +226,12 @@ function buildBrandedEmailHtml(params: {
     ? `<img src="${escapeHtml(params.logoUrl)}" alt="${escapeHtml(params.unitName)}" style="max-height:40px;max-width:220px;height:auto;width:auto;" />`
     : `<span style="font-size:16px;font-weight:700;color:#0f172a;">${escapeHtml(params.unitName)}</span>`
 
+  const attachmentBlock = params.attachmentTitle
+    ? `<div style="margin-top:8px;padding:12px 16px;border-radius:10px;background:#f8fafc;border:1px solid #e2e8f0;">
+         <p style="margin:0;font-size:13px;color:#475569;">Anexo: <strong>${escapeHtml(params.attachmentTitle)}</strong></p>
+       </div>`
+    : ''
+
   return `
     <div style="background:#f1f5f9;padding:32px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
       <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;">
@@ -228,6 +240,7 @@ function buildBrandedEmailHtml(params: {
         </div>
         <div style="padding:32px;">
           ${paragraphs}
+          ${attachmentBlock}
         </div>
         <div style="padding:16px 32px;background:#f8fafc;border-top:1px solid #e2e8f0;">
           <p style="margin:0;font-size:12px;color:#94a3b8;">Mensagem enviada por ${escapeHtml(params.unitName)}. Basta responder este e-mail para continuar a conversa.</p>
@@ -235,6 +248,30 @@ function buildBrandedEmailHtml(params: {
       </div>
     </div>
   `
+}
+
+/**
+ * Busca o arquivo público (Storage) do anexo e devolve em base64 pro
+ * formato de attachments do Resend. Best-effort: se o fetch falhar
+ * (arquivo removido, URL inválida, tamanho acima do aceito pelo Resend),
+ * devolve null e quem chama segue o envio do e-mail sem o anexo em vez
+ * de bloquear a conversa inteira por causa de um arquivo.
+ */
+async function fetchAttachmentContent(url: string): Promise<string | null> {
+  try {
+    const response = await fetch(url)
+    if (!response.ok) return null
+    const buffer = Buffer.from(await response.arrayBuffer())
+    return buffer.toString('base64')
+  } catch {
+    return null
+  }
+}
+
+function attachmentFileName(attachment: { title: string; url: string; fileName?: string | null }): string {
+  if (attachment.fileName) return attachment.fileName
+  const fromUrl = attachment.url.split('/').pop()?.split('?')[0]
+  return fromUrl && fromUrl.includes('.') ? fromUrl : `${attachment.title}.pdf`
 }
 
 /**
@@ -352,15 +389,29 @@ export async function sendLeadEmail(params: {
   subject: string
   bodyText: string
   replyTo?: string | null
+  /** PDF da biblioteca de anexos (migration 036) a anexar de verdade neste e-mail via Resend. */
+  attachment?: { title: string; url: string; fileName?: string | null } | null
 }): Promise<SendResult> {
   const from = salesFrom(`${params.personaName} · ${params.unitName}`)
   if (!from) return { ok: false, error: 'EMAIL_FROM_DOMAIN não está configurada.' }
+
+  let attachments: EmailAttachment[] | undefined
+  if (params.attachment) {
+    const content = await fetchAttachmentContent(params.attachment.url)
+    if (content) attachments = [{ filename: attachmentFileName(params.attachment), content }]
+  }
 
   return sendEmail({
     to: params.to,
     from,
     subject: params.subject,
-    html: buildBrandedEmailHtml({ unitName: params.unitName, logoUrl: params.logoUrl, bodyText: params.bodyText }),
+    html: buildBrandedEmailHtml({
+      unitName: params.unitName,
+      logoUrl: params.logoUrl,
+      bodyText: params.bodyText,
+      attachmentTitle: params.attachment?.title ?? null,
+    }),
     replyTo: params.replyTo,
+    attachments,
   })
 }

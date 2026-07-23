@@ -5,6 +5,7 @@ import {
   sendRecordingPresence,
   sendTypingPresence,
   sendWhatsAppAudio,
+  sendWhatsAppDocument,
   sendWhatsAppMessage,
   type EvolutionUnitConfig,
 } from '@/lib/evolution'
@@ -26,11 +27,15 @@ import { logSystemEvent } from '@/lib/system-events'
 
 export type ChannelType = ConversationChannel
 
+/** PDF da biblioteca de anexos (migration 036) a enviar junto com a resposta — nunca aparece aqui pra `kind: 'link'` nem no canal SMS, que já embutem a URL no texto (ver processInboundMessage em lib/conversation-engine.ts). */
+export type AttachmentToSend = { title: string; url: string; fileName?: string | null }
+
 export type SendContext = {
   subject?: string
   personaName?: string
   /** Espelha a modalidade: cliente mandou áudio → responde em áudio (só WhatsApp — ver item 7 do pedido). */
   voiceReply?: boolean
+  attachment?: AttachmentToSend
 }
 
 export interface MessagingChannel {
@@ -48,11 +53,16 @@ class EvolutionWhatsAppChannel implements MessagingChannel {
   ) {}
 
   async sendMessage(phone: string, text: string, context?: SendContext): Promise<void> {
+    let sentAsVoice = false
     if (context?.voiceReply) {
-      const sentAsVoice = await this.trySendVoice(phone, text)
-      if (sentAsVoice) return
+      sentAsVoice = await this.trySendVoice(phone, text)
     }
-    await this.sendText(phone, text)
+    if (!sentAsVoice) {
+      await this.sendText(phone, text)
+    }
+    if (context?.attachment) {
+      await this.trySendDocument(phone, context.attachment)
+    }
   }
 
   private async sendText(phone: string, text: string): Promise<void> {
@@ -104,6 +114,34 @@ class EvolutionWhatsAppChannel implements MessagingChannel {
         unitId: this.unit.id,
       })
       return false
+    }
+  }
+
+  /**
+   * Envia o PDF escolhido pelo modelo (biblioteca de anexos — migration
+   * 036) como mensagem de mídia separada, depois da resposta em texto/voz.
+   * Best-effort igual ao trySendVoice: uma falha aqui (contrato da
+   * Evolution API diferente do assumido, arquivo inválido) só vira log —
+   * nunca derruba a resposta de texto que já foi enviada com sucesso.
+   */
+  private async trySendDocument(phone: string, attachment: AttachmentToSend): Promise<void> {
+    try {
+      await sendWhatsAppDocument(
+        this.config,
+        phone,
+        attachment.url,
+        attachment.fileName || `${attachment.title}.pdf`,
+        attachment.title,
+      )
+    } catch (error) {
+      await logSystemEvent(this.supabase, {
+        level: 'warning',
+        source: 'evolution',
+        eventType: 'attachment_send_failed',
+        message: `Falha ao enviar anexo "${attachment.title}" via WhatsApp na unidade "${this.unit.name}": ${error instanceof Error ? error.message : 'erro desconhecido'}`,
+        orgId: this.unit.org_id,
+        unitId: this.unit.id,
+      })
     }
   }
 }
@@ -160,6 +198,7 @@ class ResendEmailChannel implements MessagingChannel {
       subject: context?.subject || this.unit.name,
       bodyText: text,
       replyTo: getEmailReplyTo(this.unit),
+      attachment: context?.attachment ?? null,
     })
     if (!result.ok) throw new Error(result.error || 'Falha ao enviar e-mail.')
   }

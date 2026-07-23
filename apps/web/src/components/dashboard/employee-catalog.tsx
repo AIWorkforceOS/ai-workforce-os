@@ -14,6 +14,7 @@ import {
   Headset,
   Loader2,
   Megaphone,
+  Paperclip,
   Pause,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -168,6 +169,7 @@ export function EmployeeCatalog({
           testConfigId={sdr?.id ?? null}
           trainConfigId={sdr?.id ?? null}
           lastTrainedAt={sdr?.last_trained_at ?? null}
+          attachmentsConfigId={sdr?.id ?? null}
         />
         <EmployeeCatalogCard
           icon={Briefcase}
@@ -265,6 +267,7 @@ function EmployeeCatalogCard({
   testConfigId,
   trainConfigId,
   lastTrainedAt,
+  attachmentsConfigId,
 }: {
   icon: typeof Bot
   name: string
@@ -283,6 +286,8 @@ function EmployeeCatalogCard({
   trainConfigId?: string | null
   /** quando business_profile foi atualizado pela última vez — null = nunca foi treinado (migration 029) */
   lastTrainedAt?: string | null
+  /** id do agent_config pra "Biblioteca de anexos" (migration 036) — ausente/null esconde o link (funcionário ainda não contratado, ou motor de conversa não liga essa decisão pra este agent_type) */
+  attachmentsConfigId?: string | null
 }) {
   const stateMeta = STATE_META[state]
   const nextStep = steps.find((s) => !s.done)
@@ -363,6 +368,15 @@ function EmployeeCatalogCard({
               </Link>
             )}
           </div>
+          {attachmentsConfigId && (
+            <Link
+              href={`/dashboard/equipe-digital/${attachmentsConfigId}/anexos`}
+              className="flex items-center justify-center gap-1.5 rounded-xl py-2 text-[11px] font-bold text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-200"
+              style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              <Paperclip size={11} /> Biblioteca de anexos
+            </Link>
+          )}
           <p className="text-center text-[10px] font-semibold text-slate-500">
             {lastTrainedAt ? `Treinado em ${formatTrainedDate(lastTrainedAt)}` : 'Ainda não foi treinado'}
           </p>

@@ -15,7 +15,8 @@ import { IDENTITY_AND_HANDOFF_RULES } from '@/lib/agent-identity'
 import { buildTrainingCorrectionsContext } from '@/lib/agent-training'
 import { buildCombinedBusinessContext } from '@/lib/interview/engine'
 import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
-import type { AgentConfig, AgentTone, Conversation, Lead, Unit, ActiveHours } from '@/lib/types'
+import { fetchActiveAttachments, buildAttachmentsContext } from '@/lib/attachments'
+import type { AgentConfig, AgentTone, Conversation, Lead, Unit, ActiveHours, EmployeeAttachment } from '@/lib/types'
 
 // Dados levantados pelo Sales Rep (AI) direto na conversa quando o
 // cliente confirma um fechamento de verdade. As chaves não são fixas:
@@ -170,14 +171,24 @@ const SALES_EXPERTISE_RULES = [
   'Trate objeções com naturalidade, sem se justificar demais: em "é caro" reforce o retorno/valor; em "vou pensar" identifique a dúvida real por trás disso e proponha um próximo passo concreto; em "não é prioridade agora" mostre o custo de adiar; diante de concorrência, destaque diferenciais reais sem falar mal de ninguém.',
   'Use gatilhos de urgência e escassez COM ÉTICA — só quando forem verdadeiros; nunca minta sobre estoque, vagas ou prazos que não existem.',
   'Ao reabrir uma conversa fria/parada, nunca comece só com "oi, tudo bem?" — retome com um ângulo novo (uma novidade, um benefício ainda não explorado, ou uma pergunta que reconecte com a dor do cliente).',
-  'Se o cliente pedir uma apresentação, catálogo, portfólio ou material sobre o negócio: você NÃO tem como enviar arquivos, então nunca prometa mandar um documento. Em vez disso, resuma ali mesmo na conversa, em poucas frases: a dor/problema do cliente, o que o produto/serviço resolve, e a vantagem concreta de fechar agora — sempre usando o que você aprendeu sobre a empresa.',
 ].join(' ')
+
+/**
+ * Aplicada só quando a empresa NÃO configurou nenhum material na
+ * biblioteca de anexos desta unidade (migration 036) — com materiais
+ * configurados, a regra é o oposto (ver buildAttachmentsContext em
+ * lib/attachments.ts, injetado no lugar desta linha).
+ */
+const NO_ATTACHMENTS_RULE =
+  'Se o cliente pedir uma apresentação, catálogo, portfólio ou material sobre o negócio: você NÃO tem como enviar arquivos, então nunca prometa mandar um documento. Em vez disso, resuma ali mesmo na conversa, em poucas frases: a dor/problema do cliente, o que o produto/serviço resolve, e a vantagem concreta de fechar agora — sempre usando o que você aprendeu sobre a empresa.'
 
 export function buildSystemPrompt(
   agentConfig: AgentConfig,
   unit: Unit,
   dealProfile?: SalesDealProfile,
   organizationProfile?: Record<string, unknown> | null,
+  /** Contexto da biblioteca de anexos (lib/attachments.ts) — vazio/omitido = sem materiais configurados, aplica NO_ATTACHMENTS_RULE. */
+  attachmentsContext?: string,
 ): string {
   const businessContext = buildCombinedBusinessContext(organizationProfile, agentConfig.business_profile)
   const trainingCorrectionsContext = buildTrainingCorrectionsContext(agentConfig.training_corrections)
@@ -223,6 +234,7 @@ export function buildSystemPrompt(
     conversationLanguageDirective(locale),
     IDENTITY_AND_HANDOFF_RULES,
     SALES_EXPERTISE_RULES,
+    attachmentsContext || NO_ATTACHMENTS_RULE,
     ...(businessContext
       ? [
           businessContext,
@@ -575,13 +587,39 @@ export async function processInboundMessage(params: {
   // específica deste Sales Rep sem substituí-la (buildCombinedBusinessContext).
   const organizationProfile = await fetchOrganizationBusinessProfile(supabase, unit.org_id)
 
+  // Biblioteca de anexos deste funcionário (migration 036). Só quando há
+  // pelo menos um material ativo é que a resposta passa a sair em JSON
+  // (schema com attachment_id) — sem nenhum configurado, mantém o caminho
+  // de texto puro de sempre (generateChatReply), sem custo/risco extra.
+  const attachments = await fetchActiveAttachments(supabase, unit.id, 'sdr')
+  const attachmentsContext = buildAttachmentsContext(attachments)
+
   let reply: string
+  let chosenAttachment: EmployeeAttachment | null = null
   try {
-    reply = await generateChatReply({
-      apiKey,
-      systemPrompt: buildSystemPrompt(config, unit, dealProfile, organizationProfile),
-      history: chatHistory,
-    })
+    if (attachments.length > 0) {
+      const structured = await generateStructuredReply<{ reply?: string; attachment_id?: string | null }>({
+        apiKey,
+        systemPrompt: [
+          buildSystemPrompt(config, unit, dealProfile, organizationProfile, attachmentsContext),
+          'Responda SOMENTE um JSON válido: {"reply": string, "attachment_id": string|null}. O campo "reply" é a mensagem normal que você mandaria ao cliente, seguindo à risca todas as regras de tom, tamanho e idioma já combinadas acima. O campo "attachment_id" é o id do material a enviar agora (ver MATERIAIS DISPONÍVEIS PARA ENVIAR acima), ou null se nenhum se aplica a esta mensagem.',
+        ].join(' '),
+        history: chatHistory,
+        // Preserva o tom conversacional de generateChatReply (0.7) — o
+        // default 0.2 de generateStructuredReply é pensado pra extractors
+        // determinísticos, não pra esta resposta que o cliente vai ler.
+        temperature: 0.7,
+      })
+      reply = (structured.reply ?? '').trim()
+      const attachmentId = structured.attachment_id ?? null
+      chosenAttachment = attachmentId ? attachments.find((a) => a.id === attachmentId) ?? null : null
+    } else {
+      reply = await generateChatReply({
+        apiKey,
+        systemPrompt: buildSystemPrompt(config, unit, dealProfile, organizationProfile),
+        history: chatHistory,
+      })
+    }
   } catch (error) {
     await reportAgentFailure({
       supabase,
@@ -609,8 +647,25 @@ export async function processInboundMessage(params: {
     return noHandoff
   }
 
+  // Anexo escolhido pelo modelo (se algum): links (e PDFs no SMS, que não
+  // segura arquivo real) sempre viram URL embutida no próprio texto; PDFs
+  // em WhatsApp/e-mail viram um anexo de verdade, enviado pelo canal.
+  let outgoingText = reply
+  let attachmentPayload: { title: string; url: string; fileName?: string | null } | undefined
+  if (chosenAttachment) {
+    if (chosenAttachment.kind === 'link' || channelType === 'sms') {
+      outgoingText = `${reply}\n\n${chosenAttachment.title}: ${chosenAttachment.file_url}`
+    } else {
+      attachmentPayload = {
+        title: chosenAttachment.title,
+        url: chosenAttachment.file_url,
+        fileName: chosenAttachment.file_name,
+      }
+    }
+  }
+
   try {
-    await channel.sendMessage(lead.phone, reply, { voiceReply: wasAudioMessage })
+    await channel.sendMessage(lead.phone, outgoingText, { voiceReply: wasAudioMessage, attachment: attachmentPayload })
   } catch (error) {
     // Registra a resposta que falhou no histórico (status 'failed') para
     // que a falha fique visível na tela de Conversas, não só no log.
@@ -619,7 +674,7 @@ export async function processInboundMessage(params: {
       unit_id: unit.id,
       channel: channelType,
       direction: 'outbound',
-      content: reply,
+      content: outgoingText,
       status: 'failed',
       sent_at: new Date().toISOString(),
     })
@@ -642,7 +697,7 @@ export async function processInboundMessage(params: {
     unit_id: unit.id,
     channel: channelType,
     direction: 'outbound',
-    content: reply,
+    content: outgoingText,
     status: 'sent',
     sent_at: sentAt,
   })

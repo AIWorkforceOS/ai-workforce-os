@@ -117,6 +117,36 @@ export async function sendWhatsAppAudio(config: EvolutionUnitConfig, phone: stri
 }
 
 /**
+ * Envia um documento (PDF da biblioteca de anexos — migration 036) via
+ * mídia da Evolution API. Contrato assumido a partir da documentação
+ * pública do endpoint /message/sendMedia (mediatype 'document', media
+ * como URL pública, fileName, caption opcional) — NÃO foi confirmado
+ * contra a instância real de produção; se a Evolution API em uso tiver
+ * um contrato diferente, este envio falha e cai no tratamento best-effort
+ * de EvolutionWhatsAppChannel (loga e segue, nunca derruba a resposta de texto).
+ */
+export async function sendWhatsAppDocument(
+  config: EvolutionUnitConfig,
+  phone: string,
+  documentUrl: string,
+  fileName: string,
+  caption?: string,
+) {
+  const result = await evolutionFetch(config, `/message/sendMedia/${config.instanceName}`, {
+    method: 'POST',
+    body: JSON.stringify({
+      number: phone,
+      mediatype: 'document',
+      media: documentUrl,
+      fileName,
+      ...(caption ? { caption } : {}),
+    }),
+  })
+  await logEvolutionUsage('message.sendMedia')
+  return result
+}
+
+/**
  * Baixa e decodifica (Baileys) o conteúdo de uma mensagem de mídia recebida
  * (ex.: áudio/nota de voz), a partir do id da mensagem no payload do
  * webhook. A URL que vem no payload é criptografada — não dá pra baixar

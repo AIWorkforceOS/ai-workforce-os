@@ -48,6 +48,8 @@ export async function generateStructuredReply<T = Record<string, unknown>>(param
   history: ChatMessage[]
   model?: string
   maxTokens?: number
+  /** Default 0.2 (extractors determinísticos). Suba pra manter tom conversacional quando a resposta em si vier deste schema (ex.: reply + attachment_id). */
+  temperature?: number
 }): Promise<T> {
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -58,7 +60,7 @@ export async function generateStructuredReply<T = Record<string, unknown>>(param
     body: JSON.stringify({
       model: params.model ?? 'gpt-4o-mini',
       messages: [{ role: 'system', content: params.systemPrompt }, ...params.history],
-      temperature: 0.2,
+      temperature: params.temperature ?? 0.2,
       max_tokens: params.maxTokens ?? 1500,
       response_format: { type: 'json_object' },
     }),
