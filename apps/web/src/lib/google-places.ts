@@ -11,6 +11,7 @@ export type PlaceSearchResult = {
 export type PlaceDetails = {
   formatted_phone_number?: string
   international_phone_number?: string
+  website?: string
 }
 
 export function getGoogleMapsApiKey(): string | null {
@@ -32,7 +33,7 @@ export async function textSearch(query: string, apiKey: string): Promise<PlaceSe
 }
 
 export async function placeDetails(placeId: string, apiKey: string): Promise<PlaceDetails> {
-  const url = `${PLACES_BASE}/details/json?place_id=${placeId}&fields=formatted_phone_number,international_phone_number&key=${apiKey}`
+  const url = `${PLACES_BASE}/details/json?place_id=${placeId}&fields=formatted_phone_number,international_phone_number,website&key=${apiKey}`
   const response = await fetch(url, { cache: 'no-store' })
   const data = await response.json()
 

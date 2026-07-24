@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getMessagingChannel, getEmailChannel } from '@/lib/channels/messaging-channel'
 import { countSentToday, generateFirstContactMessage, isWithinActiveHours, sendAcrossChannels } from '@/lib/conversation-engine'
+import { ensureLeadEnrichment } from '@/lib/leads/enrichment'
 import { sendNewLeadEmail } from '@/lib/email'
 import type { AgentConfig, Lead, Unit } from '@/lib/types'
 
@@ -59,9 +60,11 @@ export async function POST(
     return NextResponse.json({ error: 'Limite diário de mensagens do agente foi atingido.' }, { status: 429 })
   }
 
+  const enrichedLead = await ensureLeadEnrichment(supabase, leadRow)
+
   let message: string
   try {
-    message = await generateFirstContactMessage(config, unitRow, leadRow)
+    message = await generateFirstContactMessage(config, unitRow, enrichedLead)
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Erro ao gerar mensagem.' },
@@ -72,7 +75,7 @@ export async function POST(
   const { anySent, attempts } = await sendAcrossChannels({
     supabase,
     unit: unitRow,
-    lead: leadRow,
+    lead: enrichedLead,
     text: message,
     subject: `${config.persona_name} · ${unitRow.name}`,
     personaName: config.persona_name,

@@ -194,6 +194,14 @@ export type LeadStatus =
   | 'lost'
   | 'paused'
 
+/** Pesquisa automática da empresa do lead antes do 1º contato (migration 037, lib/leads/enrichment.ts). Campos são melhor esforço: qualquer um pode faltar. */
+export type LeadEnrichmentData = {
+  website: string | null
+  summary: string | null
+  contact_email: string | null
+  place_id: string | null
+}
+
 export type Lead = {
   id: string
   unit_id: string
@@ -207,6 +215,9 @@ export type Lead = {
   source: string
   status: LeadStatus
   google_place_id: string | null
+  /** Pesquisa automática (Maps + site) antes do primeiro contato (migration 037). Null = ainda não pesquisado ou pesquisa não achou nada. */
+  enrichment_data: LeadEnrichmentData | null
+  enriched_at: string | null
   notes: string | null
   last_contacted_at: string | null
   /** dados de vaga levantados pelo Sales Rep na própria conversa ao fechar negócio (migration 013) */

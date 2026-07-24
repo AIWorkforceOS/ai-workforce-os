@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { getMessagingChannel, getEmailChannel } from '@/lib/channels/messaging-channel'
-import { sendAcrossChannels } from '@/lib/conversation-engine'
+import { generateFirstContactMessage, sendAcrossChannels } from '@/lib/conversation-engine'
+import { ensureLeadEnrichment } from '@/lib/leads/enrichment'
 import { syncLeadToSmarterCrm } from '@/lib/sales/smarter-crm'
 import { logSystemEvent } from '@/lib/system-events'
 import type { AgentConfig, Lead, Unit } from '@/lib/types'
@@ -122,17 +123,38 @@ export async function POST(request: Request) {
     }
 
     if (hasAnyChannel && agentConfig) {
-      const agentName = (agentConfig as AgentConfig).persona_name || 'Assistente'
-      const firstName = name ? name.split(' ')[0] : null
-      const initialMessage = `Olá${firstName ? `, ${firstName}` : ''}! Sou o ${agentName}. Vi que você tem interesse e quero te ajudar. Pode me contar um pouco mais sobre o que está buscando?`
+      const config = agentConfig as AgentConfig
+
+      // Pesquisa a empresa (Maps + site) antes do primeiro contato pra
+      // personalizar a mensagem em vez do template fixo que existia aqui
+      // (lib/leads/enrichment.ts) — mesmo motor de conversa usado pelos
+      // outros pontos de entrada de lead (lib/leads/lead-intake.ts).
+      const enrichedLead = await ensureLeadEnrichment(supabase, newLead as Lead)
+
+      let message: string
+      try {
+        message = await generateFirstContactMessage(config, unit, enrichedLead)
+      } catch (error) {
+        await logSystemEvent(supabase, {
+          level: 'error',
+          source: 'openai',
+          eventType: 'intake_message_failed',
+          message: `Falha ao gerar a primeira mensagem para lead do intake: ${error instanceof Error ? error.message : 'erro desconhecido'}`,
+          orgId: unit.org_id,
+          unitId: unit.id,
+          leadId: newLead.id,
+        })
+        return NextResponse.json({ ok: true, lead_id: newLead.id })
+      }
 
       const { anySent, attempts } = await sendAcrossChannels({
         supabase,
         unit,
-        lead: { id: newLead.id, phone: normalizedPhone, email: email ?? null },
-        text: initialMessage,
-        subject: `${agentName} · ${unit.name}`,
-        personaName: agentName,
+        lead: enrichedLead,
+        text: message,
+        subject: `${config.persona_name} · ${unit.name}`,
+        personaName: config.persona_name,
+        templateKey: 'primeiro_contato',
       })
 
       if (anySent) {
@@ -144,7 +166,7 @@ export async function POST(request: Request) {
         await syncLeadToSmarterCrm(
           supabase,
           unit,
-          { ...(newLead as Lead), status: 'contacted', last_contacted_at: sentAt },
+          { ...enrichedLead, status: 'contacted', last_contacted_at: sentAt },
           { statusChanged: true },
         )
       } else {

@@ -16,7 +16,16 @@ import { buildTrainingCorrectionsContext } from '@/lib/agent-training'
 import { buildCombinedBusinessContext } from '@/lib/interview/engine'
 import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
 import { fetchActiveAttachments, buildAttachmentsContext } from '@/lib/attachments'
-import type { AgentConfig, AgentTone, Conversation, Lead, Unit, ActiveHours, EmployeeAttachment } from '@/lib/types'
+import type {
+  AgentConfig,
+  AgentTone,
+  Conversation,
+  Lead,
+  LeadEnrichmentData,
+  Unit,
+  ActiveHours,
+  EmployeeAttachment,
+} from '@/lib/types'
 
 // Dados levantados pelo Sales Rep (AI) direto na conversa quando o
 // cliente confirma um fechamento de verdade. As chaves não são fixas:
@@ -182,6 +191,23 @@ const SALES_EXPERTISE_RULES = [
 const NO_ATTACHMENTS_RULE =
   'Se o cliente pedir uma apresentação, catálogo, portfólio ou material sobre o negócio: você NÃO tem como enviar arquivos, então nunca prometa mandar um documento. Em vez disso, resuma ali mesmo na conversa, em poucas frases: a dor/problema do cliente, o que o produto/serviço resolve, e a vantagem concreta de fechar agora — sempre usando o que você aprendeu sobre a empresa.'
 
+/**
+ * Contexto da pesquisa automática da empresa do lead (Google Places +
+ * website, ver lib/leads/enrichment.ts, migration 037) — é o que permite
+ * a primeira mensagem (e o resto da conversa) mostrar que já se conhece a
+ * empresa em vez de um template genérico. Vazio quando não há pesquisa,
+ * ou quando a pesquisa não encontrou nada de útil.
+ */
+function buildLeadResearchContext(leadEnrichment?: LeadEnrichmentData | null): string {
+  if (!leadEnrichment) return ''
+  const parts: string[] = []
+  if (leadEnrichment.summary) parts.push(`o que a empresa faz: ${leadEnrichment.summary}`)
+  if (leadEnrichment.website) parts.push(`site: ${leadEnrichment.website}`)
+  if (parts.length === 0) return ''
+
+  return `PESQUISA SOBRE ESTA EMPRESA (feita antes do contato, para personalizar a abordagem e ligar o que oferecemos à necessidade real dela — use com naturalidade, nunca cite que "pesquisou" ou invente além do que está aqui): ${parts.join('; ')}.`
+}
+
 export function buildSystemPrompt(
   agentConfig: AgentConfig,
   unit: Unit,
@@ -189,6 +215,8 @@ export function buildSystemPrompt(
   organizationProfile?: Record<string, unknown> | null,
   /** Contexto da biblioteca de anexos (lib/attachments.ts) — vazio/omitido = sem materiais configurados, aplica NO_ATTACHMENTS_RULE. */
   attachmentsContext?: string,
+  /** Pesquisa automática da empresa do lead (lib/leads/enrichment.ts) — vazio/omitido = sem pesquisa disponível. */
+  leadEnrichment?: LeadEnrichmentData | null,
 ): string {
   const businessContext = buildCombinedBusinessContext(organizationProfile, agentConfig.business_profile)
   const trainingCorrectionsContext = buildTrainingCorrectionsContext(agentConfig.training_corrections)
@@ -235,6 +263,7 @@ export function buildSystemPrompt(
     IDENTITY_AND_HANDOFF_RULES,
     SALES_EXPERTISE_RULES,
     attachmentsContext || NO_ATTACHMENTS_RULE,
+    buildLeadResearchContext(leadEnrichment),
     ...(businessContext
       ? [
           businessContext,
@@ -321,9 +350,11 @@ export async function generateFirstContactMessage(
   if (!apiKey) throw new Error('OPENAI_API_KEY não está configurada.')
 
   const systemPrompt = [
-    buildSystemPrompt(agentConfig, unit),
+    buildSystemPrompt(agentConfig, unit, undefined, undefined, undefined, lead.enrichment_data),
     `Escreva a mensagem de primeiro contato para a empresa "${lead.company_name}"${lead.sector ? `, do setor de ${lead.sector}` : ''}.`,
-    'Apresente-se, explique brevemente o motivo do contato e pergunte se pode compartilhar mais informações.',
+    lead.enrichment_data?.summary || lead.enrichment_data?.website
+      ? 'Personalize a mensagem com base na pesquisa sobre esta empresa: mostre que você entende o que ela faz e conecte com o que oferecemos, em vez de uma abertura genérica.'
+      : 'Apresente-se, explique brevemente o motivo do contato e pergunte se pode compartilhar mais informações.',
   ].join(' ')
 
   return generateChatReply({
@@ -343,7 +374,7 @@ export async function generateFollowUpMessage(
   if (!apiKey) throw new Error('OPENAI_API_KEY não está configurada.')
 
   const systemPrompt = [
-    buildSystemPrompt(agentConfig, unit),
+    buildSystemPrompt(agentConfig, unit, undefined, undefined, undefined, lead.enrichment_data),
     `A empresa "${lead.company_name}" está sem responder há alguns dias.`,
     'Escreva UMA mensagem curta de follow-up: retome o assunto da conversa com leveza, sem pressionar, e termine com uma pergunta simples que facilite a resposta.',
     'Não repita a mensagem anterior nem peça desculpas por insistir.',
@@ -601,7 +632,7 @@ export async function processInboundMessage(params: {
       const structured = await generateStructuredReply<{ reply?: string; attachment_id?: string | null }>({
         apiKey,
         systemPrompt: [
-          buildSystemPrompt(config, unit, dealProfile, organizationProfile, attachmentsContext),
+          buildSystemPrompt(config, unit, dealProfile, organizationProfile, attachmentsContext, lead.enrichment_data),
           'Responda SOMENTE um JSON válido: {"reply": string, "attachment_id": string|null}. O campo "reply" é a mensagem normal que você mandaria ao cliente, seguindo à risca todas as regras de tom, tamanho e idioma já combinadas acima. O campo "attachment_id" é o id do material a enviar agora (ver MATERIAIS DISPONÍVEIS PARA ENVIAR acima), ou null se nenhum se aplica a esta mensagem.',
         ].join(' '),
         history: chatHistory,
@@ -616,7 +647,7 @@ export async function processInboundMessage(params: {
     } else {
       reply = await generateChatReply({
         apiKey,
-        systemPrompt: buildSystemPrompt(config, unit, dealProfile, organizationProfile),
+        systemPrompt: buildSystemPrompt(config, unit, dealProfile, organizationProfile, undefined, lead.enrichment_data),
         history: chatHistory,
       })
     }
