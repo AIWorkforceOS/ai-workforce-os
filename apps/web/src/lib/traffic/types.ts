@@ -228,7 +228,7 @@ export type DecisionProposal = {
   metrics_context: Record<string, unknown>
 }
 
-export type AdActionResult = 'success' | 'failed' | 'dry_run'
+export type AdActionResult = 'success' | 'failed' | 'partial' | 'dry_run' | 'mock'
 
 export type AdActionLog = {
   id: string
@@ -294,4 +294,63 @@ export type PlatformMetricsRow = {
   reach: number | null
   frequency: number | null
   extra?: Record<string, unknown>
+}
+
+// ---------------------------------------------------------------------------
+// Criação de campanhas do zero (lib/traffic/launcher.ts)
+// ---------------------------------------------------------------------------
+
+/** Texto do anúncio — sem imagem/vídeo nesta rodada (ver launcher.ts). */
+export type CampaignCreative = {
+  headline: string
+  body: string
+  linkUrl: string
+  /** Meta: nome do call-to-action (ex: 'LEARN_MORE', 'SHOP_NOW'). Ignorado no Google (RSA não tem CTA próprio). */
+  callToAction?: string
+}
+
+export type CampaignTargeting = {
+  /** códigos de país ISO-2 (ex: 'BR', 'US') */
+  countries: string[]
+  ageMin?: number
+  ageMax?: number
+  /** ids de interesse da Meta (Graph API /search?type=adinterest). Ignorado no Google. */
+  interests?: string[]
+  /** palavras-chave para Google Search. Não usado nesta rodada (ad group nasce sem keywords — ver limitação no google-ads.ts). */
+  keywords?: string[]
+}
+
+/**
+ * Especificação plataforma-agnóstica de uma campanha nova, entrada de
+ * launchCampaign(). Campos platform-specific (metaPageId/metaPixelId,
+ * objective) são interpretados por cada branch do launcher.
+ */
+export type NewCampaignSpec = {
+  name: string
+  /** Meta: código do objective (ex: 'OUTCOME_SALES'). Google: advertising_channel_type (ex: 'SEARCH'). */
+  objective: string
+  dailyBudgetCents: number
+  targeting: CampaignTargeting
+  creative: CampaignCreative
+  /** obrigatório na Meta — id da Página do Facebook por trás do anúncio (sem ela, campanha+conjunto são criados mas o anúncio não). */
+  metaPageId?: string
+  /** obrigatório na Meta para objetivos de conversão (OUTCOME_SALES etc.) — pixel já configurado na conta. */
+  metaPixelId?: string
+}
+
+export type CampaignLaunchStep = 'budget' | 'campaign' | 'ad_set' | 'creative' | 'ad'
+
+export type CampaignLaunchStepResult = {
+  step: CampaignLaunchStep
+  externalId: string | null
+  error?: string
+}
+
+export type CampaignLaunchOutcome = {
+  result: AdActionResult
+  campaignExternalId: string | null
+  adSetExternalId: string | null
+  adExternalId: string | null
+  steps: CampaignLaunchStepResult[]
+  error?: string
 }

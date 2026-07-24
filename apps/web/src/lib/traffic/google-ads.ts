@@ -4,14 +4,45 @@
 //   - Auth REST: header Authorization (Bearer), developer-token e
 //     login-customer-id (quando MCC opera contas de clientes).
 //   - GAQL:   POST https://googleads.googleapis.com/v24/customers/{cid}/googleAds:search
-//   - Mutate: POST .../v24/customers/{cid}/campaigns:mutate  (e campaignBudgets:mutate)
+//   - Mutate: POST .../v24/customers/{cid}/campaigns:mutate  (e campaignBudgets:mutate,
+//             adGroups:mutate, adGroupAds:mutate — criação usa os mesmos endpoints
+//             de mutação, com operations[].create em vez de .update)
 //   - Escopo OAuth: https://www.googleapis.com/auth/adwords
 //   - Access token obtido do refresh token em https://www.googleapis.com/oauth2/v3/token
 //
 // Exige Developer Token aprovado pelo Google (nível Basic/Standard) —
-// ver docs/setup/traffic-apis-setup.md.
+// ver docs/setup/traffic-apis-setup.md. Criação de campanha também exige
+// billing ativo na conta (sem forma de pagamento, o mutate de campaigns
+// falha mesmo com token/developer token válidos).
 //
-// Degradação graciosa: sem credenciais, getGoogleAdsConfig retorna null.
+// Degradação graciosa: sem credenciais, getGoogleAdsConfig retorna null. A
+// criação de campanhas cai no fallback de mock em lib/traffic/launcher.ts
+// quando isso acontece.
+//
+// -----------------------------------------------------------------------
+// Cadeia de dependência para criar uma campanha do zero (a API do Google
+// Ads é burocrática por design — cada recurso referencia o resourceName
+// do anterior, criado numa chamada :mutate própria; não dá pra criar tudo
+// numa chamada só como na Meta):
+//
+//   1. campaignBudgets:mutate  → cria o orçamento (recurso independente,
+//      pode ser compartilhado entre campanhas — aqui sempre 1:1)
+//   2. campaigns:mutate        → referencia campaignBudget=<resourceName do passo 1>;
+//      exige também a estratégia de lance (oneof: manual_cpc, maximize_conversions,
+//      target_spend... — ver createGoogleCampaign) e advertising_channel_type
+//   3. adGroups:mutate         → referencia campaign=<resourceName do passo 2>
+//   4. adGroupAds:mutate       → referencia adGroup=<resourceName do passo 3>
+//
+// Limitação desta rodada: só SEARCH tem o fluxo de anúncio completo
+// (Responsive Search Ad — texto puro, sem imagem). DISPLAY/PERFORMANCE_MAX/
+// VIDEO/DEMAND_GEN usam "asset groups" com creative de imagem/vídeo
+// obrigatório — infraestrutura mais complexa que não foi construída aqui.
+// Para esses canais, createGoogleCampaign funciona (campanha+orçamento
+// criados), mas o launcher não tenta criar ad group/anúncio — documentar
+// isso pro cliente antes de oferecer campanhas Display/PMax "completas".
+// Keywords do ad group de Search (adGroupCriteria:mutate) também não são
+// criadas nesta rodada — o ad group nasce sem termos de busca; alguém
+// precisa adicionar keywords manualmente antes de tirar a campanha de PAUSED.
 
 import type { AdEntityStatus, PlatformEntity, PlatformMetricsRow } from './types'
 
@@ -345,4 +376,185 @@ export async function setGoogleCampaignBudget(
       ],
     },
   )
+}
+
+// ---------------------------------------------------------------------------
+// Criação (campanha do zero) — ver cadeia de dependência no topo do arquivo
+// ---------------------------------------------------------------------------
+
+type MutateResult = { results?: { resourceName?: string }[] }
+
+function firstResourceName(data: MutateResult, step: string): string {
+  const resourceName = data.results?.[0]?.resourceName
+  if (!resourceName) throw new Error(`Google Ads ${step}: resposta sem resourceName.`)
+  return resourceName
+}
+
+/** Passo 1: campaignBudgets:mutate — orçamento independente, referenciado pela campanha. */
+export async function createGoogleCampaignBudget(
+  config: GoogleAdsConfig,
+  accessToken: string,
+  name: string,
+  dailyBudgetCents: number,
+): Promise<{ resourceName: string }> {
+  const data = await googleAdsPost<MutateResult>(
+    config,
+    accessToken,
+    `customers/${config.customerId}/campaignBudgets:mutate`,
+    {
+      operations: [
+        {
+          create: {
+            name: `${name} — Orçamento`,
+            amountMicros: String(Math.round(dailyBudgetCents) * 10_000),
+            deliveryMethod: 'STANDARD',
+            explicitlyShared: false,
+          },
+        },
+      ],
+    },
+  )
+  return { resourceName: firstResourceName(data, 'campaignBudgets:mutate') }
+}
+
+export type GoogleBiddingStrategy = 'MANUAL_CPC' | 'MAXIMIZE_CONVERSIONS' | 'TARGET_SPEND'
+
+/**
+ * Campo de bidding scheme (oneof) exigido pela API no create — não basta
+ * mandar biddingStrategyType (é somente-leitura, derivado do oneof setado).
+ * MAXIMIZE_CONVERSIONS/TARGET_CPA exigem conversion tracking configurado
+ * na conta para funcionar de verdade; sem isso a Google aceita a criação
+ * mas a campanha não otimiza (mesma ressalva do OFFSITE_CONVERSIONS na Meta).
+ */
+function googleBiddingSchemeField(strategy: GoogleBiddingStrategy): Record<string, unknown> {
+  switch (strategy) {
+    case 'MAXIMIZE_CONVERSIONS':
+      return { maximizeConversions: {} }
+    case 'TARGET_SPEND':
+      return { targetSpend: {} }
+    case 'MANUAL_CPC':
+    default:
+      return { manualCpc: { enhancedCpcEnabled: false } }
+  }
+}
+
+export type GoogleCampaignCreateSpec = {
+  name: string
+  /** SEARCH é o único canal com fluxo de anúncio completo nesta rodada — ver header do arquivo. */
+  channelType: string
+  biddingStrategy?: GoogleBiddingStrategy
+  status?: 'ENABLED' | 'PAUSED'
+}
+
+/** Passo 2: campaigns:mutate — referencia o resourceName do orçamento (passo 1). */
+export async function createGoogleCampaign(
+  config: GoogleAdsConfig,
+  accessToken: string,
+  spec: GoogleCampaignCreateSpec,
+  budgetResourceName: string,
+): Promise<{ resourceName: string }> {
+  const data = await googleAdsPost<MutateResult>(
+    config,
+    accessToken,
+    `customers/${config.customerId}/campaigns:mutate`,
+    {
+      operations: [
+        {
+          create: {
+            name: spec.name,
+            advertisingChannelType: spec.channelType,
+            status: spec.status ?? 'PAUSED',
+            campaignBudget: budgetResourceName,
+            ...googleBiddingSchemeField(spec.biddingStrategy ?? 'MANUAL_CPC'),
+            ...(spec.channelType === 'SEARCH'
+              ? { networkSettings: { targetGoogleSearch: true, targetSearchNetwork: false, targetContentNetwork: false } }
+              : {}),
+          },
+        },
+      ],
+    },
+  )
+  return { resourceName: firstResourceName(data, 'campaigns:mutate') }
+}
+
+export type GoogleAdGroupCreateSpec = {
+  name: string
+  status?: 'ENABLED' | 'PAUSED'
+  cpcBidCents?: number
+}
+
+/** Passo 3: adGroups:mutate — referencia o resourceName da campanha (passo 2). */
+export async function createGoogleAdGroup(
+  config: GoogleAdsConfig,
+  accessToken: string,
+  spec: GoogleAdGroupCreateSpec,
+  campaignResourceName: string,
+): Promise<{ resourceName: string }> {
+  const data = await googleAdsPost<MutateResult>(
+    config,
+    accessToken,
+    `customers/${config.customerId}/adGroups:mutate`,
+    {
+      operations: [
+        {
+          create: {
+            name: spec.name,
+            campaign: campaignResourceName,
+            status: spec.status ?? 'PAUSED',
+            type: 'SEARCH_STANDARD',
+            ...(spec.cpcBidCents ? { cpcBidMicros: String(Math.round(spec.cpcBidCents) * 10_000) } : {}),
+          },
+        },
+      ],
+    },
+  )
+  return { resourceName: firstResourceName(data, 'adGroups:mutate') }
+}
+
+export type GoogleResponsiveSearchAdSpec = {
+  /** mínimo 3 exigido pela API (máx. 15, 30 caracteres cada) */
+  headlines: string[]
+  /** mínimo 2 exigido pela API (máx. 4, 90 caracteres cada) */
+  descriptions: string[]
+  finalUrls: string[]
+  status?: 'ENABLED' | 'PAUSED'
+}
+
+/** Passo 4: adGroupAds:mutate — Responsive Search Ad (texto puro, sem imagem/vídeo). */
+export async function createGoogleResponsiveSearchAd(
+  config: GoogleAdsConfig,
+  accessToken: string,
+  spec: GoogleResponsiveSearchAdSpec,
+  adGroupResourceName: string,
+): Promise<{ resourceName: string }> {
+  if (spec.headlines.length < 3) {
+    throw new Error('Responsive Search Ad exige ao menos 3 headlines.')
+  }
+  if (spec.descriptions.length < 2) {
+    throw new Error('Responsive Search Ad exige ao menos 2 descriptions.')
+  }
+
+  const data = await googleAdsPost<MutateResult>(
+    config,
+    accessToken,
+    `customers/${config.customerId}/adGroupAds:mutate`,
+    {
+      operations: [
+        {
+          create: {
+            adGroup: adGroupResourceName,
+            status: spec.status ?? 'PAUSED',
+            ad: {
+              finalUrls: spec.finalUrls,
+              responsiveSearchAd: {
+                headlines: spec.headlines.map((text) => ({ text })),
+                descriptions: spec.descriptions.map((text) => ({ text })),
+              },
+            },
+          },
+        },
+      ],
+    },
+  )
+  return { resourceName: firstResourceName(data, 'adGroupAds:mutate') }
 }

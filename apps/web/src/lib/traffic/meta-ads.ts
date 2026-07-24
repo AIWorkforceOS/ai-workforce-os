@@ -5,13 +5,46 @@
 //   GET  /act_{account_id}/adsets?fields=...
 //   GET  /act_{account_id}/insights?level=...&time_range=...&fields=...
 //   POST /{object_id}                     — atualizar status/orçamento
+//   POST /act_{account_id}/campaigns      — criar campanha
+//   POST /act_{account_id}/adsets         — criar conjunto de anúncios
+//   POST /act_{account_id}/adcreatives    — criar criativo (texto)
+//   POST /act_{account_id}/ads            — criar anúncio (liga adset + criativo)
 //
 // Escopos exigidos no access token: ads_read (leitura/insights) e
-// ads_management (mutações). Permissão avançada de ads_management exige
-// App Review aprovado no app da Meta — ver docs/setup/traffic-apis-setup.md.
+// ads_management (mutações, inclusive criação). Permissão avançada de
+// ads_management exige App Review aprovado no app da Meta — ver
+// docs/setup/traffic-apis-setup.md.
 //
 // Degradação graciosa: sem token configurado, getMetaConfig retorna null e
-// o chamador registra system_event em vez de quebrar (padrão do OS).
+// o chamador registra system_event em vez de quebrar (padrão do OS). A
+// criação de campanhas cai no fallback de mock em lib/traffic/launcher.ts
+// quando isso acontece.
+//
+// -----------------------------------------------------------------------
+// Pré-requisitos de criação por objective (não é possível criar QUALQUER
+// campanha sem preparo prévio na conta — a Meta valida isso no servidor):
+//   OUTCOME_AWARENESS / OUTCOME_TRAFFIC / OUTCOME_ENGAGEMENT
+//     — nenhum pré-requisito além da conta ativa e uma Página do Facebook
+//       (page_id) para servir de dono do criativo.
+//   OUTCOME_LEADS
+//     — sem formulário/CRM configurado, cai em LINK_CLICKS apontando pra
+//       landing page; formulário instantâneo (Leads Ads nativo) não é
+//       criado por este cliente (fora de escopo desta rodada).
+//   OUTCOME_SALES (conversões)
+//     — exige Pixel do Meta (ou Conversions API) já instalado no site E
+//       um evento de conversão configurado; sem `metaPixelId` no spec,
+//       a otimização cai para LINK_CLICKS em vez de OFFSITE_CONVERSIONS
+//       (a campanha É criada, mas otimiza por clique, não por conversão —
+//       documentar isso pro cliente antes de usar OUTCOME_SALES).
+//   OUTCOME_APP_PROMOTION
+//     — exige app registrado no Meta App Dashboard + SDK de app events;
+//       não suportado por este cliente.
+//   Special Ad Categories (crédito, emprego, moradia, política/eleições)
+//     — campanhas nessas categorias têm segmentação restrita (sem idade/
+//       gênero/CEP granular) e a Meta rejeita a criação se `targeting`
+//       não respeitar essas regras. Este cliente sempre envia
+//       special_ad_categories=[] — campanhas dessas categorias não são
+//       suportadas nesta rodada.
 
 import type {
   AdEntityStatus,
@@ -300,5 +333,145 @@ export async function setMetaDailyBudget(
 ): Promise<Record<string, unknown>> {
   return metaPost<Record<string, unknown>>(externalId, config, {
     daily_budget: String(Math.round(dailyBudgetCents)),
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Criação (campanha do zero) — ver pré-requisitos por objective no topo do arquivo
+// ---------------------------------------------------------------------------
+
+/** Mapeia objective → optimization_goal do ad set (o que a Meta cobra no leilão). */
+export function metaOptimizationGoalFor(objective: string, hasPixel: boolean): string {
+  switch (objective) {
+    case 'OUTCOME_SALES':
+    case 'OUTCOME_LEADS':
+      return hasPixel ? 'OFFSITE_CONVERSIONS' : 'LINK_CLICKS'
+    case 'OUTCOME_AWARENESS':
+      return 'REACH'
+    case 'OUTCOME_ENGAGEMENT':
+      return 'POST_ENGAGEMENT'
+    case 'OUTCOME_TRAFFIC':
+    default:
+      return 'LINK_CLICKS'
+  }
+}
+
+export type MetaCampaignCreateSpec = {
+  name: string
+  /** OUTCOME_AWARENESS | OUTCOME_TRAFFIC | OUTCOME_ENGAGEMENT | OUTCOME_LEADS | OUTCOME_SALES | OUTCOME_APP_PROMOTION */
+  objective: string
+  /** Campanha nasce sempre PAUSED — revisão humana liga (mesma trava de segurança do resto do OS). */
+  status?: 'ACTIVE' | 'PAUSED'
+}
+
+/** POST /act_{account_id}/campaigns. Nunca cria em Special Ad Categories (ver header do arquivo). */
+export async function createMetaCampaign(
+  config: MetaConfig,
+  spec: MetaCampaignCreateSpec,
+): Promise<{ id: string }> {
+  return metaPost<{ id: string }>(`${config.adAccountId}/campaigns`, config, {
+    name: spec.name,
+    objective: spec.objective,
+    status: spec.status ?? 'PAUSED',
+    special_ad_categories: JSON.stringify([]),
+  })
+}
+
+export type MetaAdSetCreateSpec = {
+  name: string
+  campaignId: string
+  dailyBudgetCents: number
+  optimizationGoal: string
+  billingEvent?: string
+  bidAmountCents?: number
+  status?: 'ACTIVE' | 'PAUSED'
+  targeting: {
+    countries: string[]
+    ageMin?: number
+    ageMax?: number
+    interestIds?: string[]
+  }
+  /** Pixel do Meta — obrigatório quando optimizationGoal === 'OFFSITE_CONVERSIONS'. */
+  promotedObjectPixelId?: string
+}
+
+/** POST /act_{account_id}/adsets. */
+export async function createMetaAdSet(
+  config: MetaConfig,
+  spec: MetaAdSetCreateSpec,
+): Promise<{ id: string }> {
+  const targeting = {
+    geo_locations: { countries: spec.targeting.countries },
+    age_min: spec.targeting.ageMin ?? 18,
+    age_max: spec.targeting.ageMax ?? 65,
+    ...(spec.targeting.interestIds?.length
+      ? { flexible_spec: [{ interests: spec.targeting.interestIds.map((id) => ({ id })) }] }
+      : {}),
+  }
+
+  const body: Record<string, string> = {
+    name: spec.name,
+    campaign_id: spec.campaignId,
+    daily_budget: String(Math.round(spec.dailyBudgetCents)),
+    billing_event: spec.billingEvent ?? 'IMPRESSIONS',
+    optimization_goal: spec.optimizationGoal,
+    targeting: JSON.stringify(targeting),
+    status: spec.status ?? 'PAUSED',
+  }
+  if (spec.bidAmountCents) body.bid_amount = String(Math.round(spec.bidAmountCents))
+  if (spec.optimizationGoal === 'OFFSITE_CONVERSIONS' && spec.promotedObjectPixelId) {
+    body.promoted_object = JSON.stringify({
+      pixel_id: spec.promotedObjectPixelId,
+      custom_event_type: 'PURCHASE',
+    })
+  }
+
+  return metaPost<{ id: string }>(`${config.adAccountId}/adsets`, config, body)
+}
+
+export type MetaAdCreativeCreateSpec = {
+  name: string
+  /** obrigatório — id da Página do Facebook dona do anúncio */
+  pageId: string
+  message: string
+  linkUrl: string
+  headline?: string
+  callToActionType?: string
+}
+
+/** POST /act_{account_id}/adcreatives — só texto/link nesta rodada (sem imagem/vídeo). */
+export async function createMetaAdCreative(
+  config: MetaConfig,
+  spec: MetaAdCreativeCreateSpec,
+): Promise<{ id: string }> {
+  const objectStorySpec = {
+    page_id: spec.pageId,
+    link_data: {
+      message: spec.message,
+      link: spec.linkUrl,
+      name: spec.headline,
+      call_to_action: { type: spec.callToActionType ?? 'LEARN_MORE' },
+    },
+  }
+  return metaPost<{ id: string }>(`${config.adAccountId}/adcreatives`, config, {
+    name: spec.name,
+    object_story_spec: JSON.stringify(objectStorySpec),
+  })
+}
+
+export type MetaAdCreateSpec = {
+  name: string
+  adSetId: string
+  creativeId: string
+  status?: 'ACTIVE' | 'PAUSED'
+}
+
+/** POST /act_{account_id}/ads — liga ad set + criativo. */
+export async function createMetaAd(config: MetaConfig, spec: MetaAdCreateSpec): Promise<{ id: string }> {
+  return metaPost<{ id: string }>(`${config.adAccountId}/ads`, config, {
+    name: spec.name,
+    adset_id: spec.adSetId,
+    creative: JSON.stringify({ creative_id: spec.creativeId }),
+    status: spec.status ?? 'PAUSED',
   })
 }
