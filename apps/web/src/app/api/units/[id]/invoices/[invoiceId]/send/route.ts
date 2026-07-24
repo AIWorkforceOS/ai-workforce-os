@@ -1,17 +1,21 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { sendInvoiceEmail } from '@/lib/email'
+import { buildInvoiceMessageText, getMessagingChannel } from '@/lib/channels/messaging-channel'
 import { logSystemEvent } from '@/lib/system-events'
 import { unitDefaultLocale } from '@/lib/i18n/config'
 import type { Customer, Invoice, Unit } from '@/lib/types'
 
 /**
- * Envia (ou reenvia) a fatura por e-mail ao cliente final e marca
- * status='sent' (migration 030). Diferente dos avisos de agenda, aqui a
- * falha É erro para o usuário: quem clicou "Enviar fatura" precisa saber
- * na hora se o e-mail não saiu (destinatário sem e-mail, Resend fora do
- * ar) — não existe um "depois" implícito que corrija sozinho.
- * Todas as leituras/escritas passam pelo client com RLS do usuário.
+ * Envia (ou reenvia) a fatura ao cliente final por todos os canais que
+ * ele tiver cadastrado — e-mail (Resend) e telefone (WhatsApp/SMS,
+ * conforme getMessagingChannel da unidade) — e marca status='sent'
+ * (migration 030/039). Cada canal falha de forma independente (mesmo
+ * padrão gracioso de sendToLeadChannels): só retorna erro ao usuário se
+ * NENHUM canal disponível conseguiu enviar, porque quem clicou "Enviar
+ * fatura" precisa saber na hora se nada saiu — não existe um "depois"
+ * implícito que corrija sozinho. Todas as leituras/escritas passam pelo
+ * client com RLS do usuário.
  */
 export async function POST(
   _request: Request,
@@ -56,39 +60,80 @@ export async function POST(
   if (!customer) {
     return NextResponse.json({ error: 'Cliente da fatura não encontrado.' }, { status: 404 })
   }
-  if (!customer.email) {
+  if (!customer.email && !customer.phone) {
     return NextResponse.json(
-      { error: 'Este cliente não tem e-mail cadastrado. Adicione um e-mail na tela de Clientes antes de enviar.' },
+      { error: 'Este cliente não tem e-mail nem telefone cadastrado. Adicione um contato na tela de Clientes antes de enviar.' },
       { status: 400 },
     )
   }
 
-  const result = await sendInvoiceEmail({
-    to: customer.email,
-    unitName: unit.name,
-    logoUrl: unit.logo_url,
-    customerName: customer.name,
-    invoiceNumber: invoice.invoice_number,
-    description: invoice.description,
-    amount: Number(invoice.amount),
-    currency: invoice.currency,
-    dueDate: invoice.due_date,
-    paymentNotes: invoice.notes,
-    locale: unitDefaultLocale(unit),
-    // Resposta do cliente cai na caixa real da empresa (não no agente): fatura é assunto humano.
-    replyTo: unit.email_reply_to,
-  })
+  const locale = unitDefaultLocale(unit)
+  const attempts: { channel: 'email' | 'phone'; ok: boolean; error?: string }[] = []
 
-  if (!result.ok) {
+  if (customer.email) {
+    const result = await sendInvoiceEmail({
+      to: customer.email,
+      unitName: unit.name,
+      logoUrl: unit.logo_url,
+      customerName: customer.name,
+      invoiceNumber: invoice.invoice_number,
+      description: invoice.description,
+      amount: Number(invoice.amount),
+      currency: invoice.currency,
+      dueDate: invoice.due_date,
+      paymentNotes: invoice.notes,
+      locale,
+      // Resposta do cliente cai na caixa real da empresa (não no agente): fatura é assunto humano.
+      replyTo: unit.email_reply_to,
+    })
+    attempts.push({ channel: 'email', ok: result.ok, error: result.error })
+  }
+
+  if (customer.phone) {
+    const channel = getMessagingChannel(unit)
+    if (channel) {
+      try {
+        const text = buildInvoiceMessageText({
+          unitName: unit.name,
+          customerName: customer.name,
+          invoiceNumber: invoice.invoice_number,
+          description: invoice.description,
+          amount: Number(invoice.amount),
+          currency: invoice.currency,
+          dueDate: invoice.due_date,
+          paymentNotes: invoice.notes,
+          locale,
+        })
+        await channel.sendMessage(customer.phone, text)
+        attempts.push({ channel: 'phone', ok: true })
+      } catch (error) {
+        attempts.push({
+          channel: 'phone',
+          ok: false,
+          error: error instanceof Error ? error.message : 'Erro desconhecido.',
+        })
+      }
+    }
+  }
+
+  for (const attempt of attempts) {
+    if (attempt.ok) continue
     await logSystemEvent(supabase, {
       level: 'warning',
       source: 'invoices',
       eventType: 'invoice_send_failed',
-      message: `Falha ao enviar a fatura ${invoice.invoice_number} para ${customer.email}: ${result.error ?? 'erro desconhecido'}.`,
+      message: `Falha ao enviar a fatura ${invoice.invoice_number} por ${attempt.channel === 'email' ? 'e-mail' : 'telefone'}: ${attempt.error ?? 'erro desconhecido'}.`,
       orgId: unit.org_id,
       unitId: unit.id,
     })
-    return NextResponse.json({ error: result.error ?? 'Não foi possível enviar o e-mail.' }, { status: 502 })
+  }
+
+  const sentByEmail = attempts.some((a) => a.channel === 'email' && a.ok)
+  const sentByPhone = attempts.some((a) => a.channel === 'phone' && a.ok)
+
+  if (!sentByEmail && !sentByPhone) {
+    const combinedError = attempts.map((a) => a.error).filter(Boolean).join(' / ') || 'Não foi possível enviar a fatura.'
+    return NextResponse.json({ error: combinedError }, { status: 502 })
   }
 
   // status 'paid' não regride para 'sent' num reenvio (recibo de cortesia).
@@ -97,17 +142,19 @@ export async function POST(
     .update({
       status: invoice.status === 'paid' ? 'paid' : 'sent',
       sent_at: new Date().toISOString(),
-      sent_to_email: customer.email,
+      ...(sentByEmail ? { sent_to_email: customer.email } : {}),
+      ...(sentByPhone ? { sent_to_phone: customer.phone } : {}),
     })
     .eq('id', invoice.id)
     .select()
     .single()
 
+  const channelsSent = [sentByEmail ? 'e-mail' : null, sentByPhone ? 'telefone' : null].filter(Boolean).join(' e ')
   await logSystemEvent(supabase, {
     level: 'info',
     source: 'invoices',
     eventType: 'invoice_sent',
-    message: `Fatura ${invoice.invoice_number} (${invoice.currency} ${invoice.amount}) enviada para ${customer.email}.`,
+    message: `Fatura ${invoice.invoice_number} (${invoice.currency} ${invoice.amount}) enviada por ${channelsSent} para ${customer.name}.`,
     orgId: unit.org_id,
     unitId: unit.id,
   })

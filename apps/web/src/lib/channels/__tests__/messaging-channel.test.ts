@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  buildInvoiceMessageText,
   getMessagingChannel,
   getUnitChannelType,
   getEmailChannel,
@@ -223,6 +224,39 @@ describe('sendToLeadChannels — e-mail é sempre adicional ao telefone, nunca s
       text: 'Olá!',
     })
     expect(attempts).toEqual([])
+  })
+})
+
+describe('buildInvoiceMessageText — resumo de cobrança para WhatsApp/SMS', () => {
+  const base = {
+    unitName: 'Mawi Cleaning',
+    customerName: 'Ana',
+    invoiceNumber: 'INV-0007',
+    description: 'Limpeza residencial',
+    amount: 250,
+    currency: 'BRL',
+    dueDate: '2026-08-01',
+    paymentNotes: 'Pague via PIX: (11) 99999-9999',
+  } as const
+
+  it('inclui número, valor, vencimento e instruções de pagamento em pt', () => {
+    const text = buildInvoiceMessageText({ ...base, locale: 'pt' })
+    expect(text).toContain('INV-0007')
+    expect(text).toContain('Ana')
+    expect(text).toContain('Vencimento')
+    expect(text).toContain('Pague via PIX')
+  })
+
+  it('traduz os rótulos em en sem perder os dados', () => {
+    const text = buildInvoiceMessageText({ ...base, locale: 'en' })
+    expect(text).toContain('Due date')
+    expect(text).toContain('INV-0007')
+  })
+
+  it('omite o bloco de vencimento/pagamento quando ausentes', () => {
+    const text = buildInvoiceMessageText({ ...base, dueDate: null, paymentNotes: null, locale: 'pt' })
+    expect(text).not.toContain('Vencimento')
+    expect(text).not.toContain('Como pagar')
   })
 })
 

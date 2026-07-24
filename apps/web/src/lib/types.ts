@@ -377,6 +377,7 @@ export type Invoice = {
   due_date: string | null
   status: InvoiceStatus
   sent_to_email: string | null
+  sent_to_phone: string | null
   sent_at: string | null
   paid_at: string | null
   /** texto livre incluído no e-mail (ex.: instruções de pagamento) */

@@ -24,6 +24,7 @@ export function CustomerDetailForm({
 }) {
   const router = useRouter()
   const [form, setForm] = useState({
+    name: customer.name ?? '',
     phone: customer.phone ?? '',
     email: customer.email ?? '',
     address: customer.address ?? '',
@@ -50,10 +51,16 @@ export function CustomerDetailForm({
     setError(null)
     setSaved(false)
     try {
+      if (!form.name.trim()) {
+        setError(`Informe o nome do ${customerTerm.toLowerCase()}.`)
+        setBusy(false)
+        return
+      }
       const res = await fetch(`/api/customers/${customer.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          name: form.name.trim(),
           phone: form.phone.trim() || null,
           email: form.email.trim() || null,
           address: form.address.trim() || null,
@@ -90,6 +97,11 @@ export function CustomerDetailForm({
   return (
     <>
     <FormSection title={`Dados do ${customerTerm.toLowerCase()}`}>
+      <div className="flex flex-col gap-1.5">
+        <Label>Nome *</Label>
+        <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder={`Nome do ${customerTerm.toLowerCase()} ou da empresa`} />
+      </div>
+
       <div className="grid grid-cols-2 gap-3">
         <div className="flex flex-col gap-1.5">
           <Label>Telefone</Label>

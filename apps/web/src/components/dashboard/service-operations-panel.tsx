@@ -39,7 +39,7 @@ export type ServiceRecordWithRelations = ServiceRecord & {
 }
 
 export type InvoiceWithRelations = Invoice & {
-  customer: Pick<Customer, 'id' | 'name' | 'email'> | null
+  customer: Pick<Customer, 'id' | 'name' | 'email' | 'phone'> | null
 }
 
 type CustomerOption = Pick<Customer, 'id' | 'name' | 'email' | 'address' | 'custom_fields'>
@@ -330,7 +330,7 @@ export function ServiceOperationsPanel({
           currency,
           ...payload,
         })
-        .select('*, customer:customers(id,name,email)')
+        .select('*, customer:customers(id,name,email,phone)')
         .single()
       if (!error && data) return { invoice: data as unknown as InvoiceWithRelations }
       if (error?.code !== '23505') return { error: 'Não foi possível criar a fatura.' }
@@ -424,7 +424,7 @@ export function ServiceOperationsPanel({
       .from('invoices')
       .update({ status, paid_at: status === 'paid' ? new Date().toISOString() : null })
       .eq('id', invoice.id)
-      .select('*, customer:customers(id,name,email)')
+      .select('*, customer:customers(id,name,email,phone)')
       .single()
     setInvoiceRowBusyId(null)
     if (error || !data) {
@@ -820,7 +820,11 @@ export function ServiceOperationsPanel({
                       <Td className="font-semibold text-white">{invoice.invoice_number}</Td>
                       <Td>
                         <p className="font-medium text-slate-300">{invoice.customer?.name ?? '—'}</p>
-                        <p className="text-[11px] text-slate-500">{invoice.sent_to_email ?? invoice.customer?.email ?? 'sem e-mail'}</p>
+                        <p className="text-[11px] text-slate-500">
+                          {[invoice.sent_to_email ?? invoice.customer?.email, invoice.sent_to_phone ?? invoice.customer?.phone]
+                            .filter(Boolean)
+                            .join(' · ') || 'sem e-mail nem telefone'}
+                        </p>
                       </Td>
                       <Td className="text-slate-400">{invoice.description}</Td>
                       <Td className="font-black text-white">{fmtMoney(Number(invoice.amount))}</Td>
@@ -842,8 +846,8 @@ export function ServiceOperationsPanel({
                               {invoiceRowBusyId === invoice.id
                                 ? 'Enviando…'
                                 : invoice.status === 'sent'
-                                  ? 'Reenviar e-mail'
-                                  : 'Enviar por e-mail'}
+                                  ? 'Reenviar fatura'
+                                  : 'Enviar fatura'}
                             </button>
                           )}
                           {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (

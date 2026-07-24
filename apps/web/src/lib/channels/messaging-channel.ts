@@ -297,3 +297,46 @@ export async function sendToLeadChannels(params: {
 
   return attempts
 }
+
+/**
+ * Texto curto de cobrança para o canal "de telefone" da unidade (WhatsApp
+ * via Evolution ou SMS via Twilio, conforme getMessagingChannel) — a
+ * mesma fatura que já sai por e-mail em HTML (sendInvoiceEmail), aqui
+ * resumida em texto simples porque nenhum dos dois canais renderiza HTML.
+ */
+export function buildInvoiceMessageText(params: {
+  unitName: string
+  customerName: string
+  invoiceNumber: string
+  description: string
+  amount: number
+  currency: string
+  dueDate: string | null
+  paymentNotes: string | null
+  locale: 'pt' | 'en'
+}): string {
+  const isEn = params.locale === 'en'
+  const intlLocale = isEn ? 'en-US' : 'pt-BR'
+  const amountLabel = params.amount.toLocaleString(intlLocale, { style: 'currency', currency: params.currency })
+  const dueLabel = params.dueDate
+    ? new Date(`${params.dueDate}T00:00:00`).toLocaleDateString(intlLocale, { day: '2-digit', month: '2-digit', year: 'numeric' })
+    : null
+
+  const lines = isEn
+    ? [
+        `Hi ${params.customerName}! Here is your invoice ${params.invoiceNumber} from ${params.unitName}.`,
+        `Service: ${params.description}`,
+        `Amount: ${amountLabel}`,
+        ...(dueLabel ? [`Due date: ${dueLabel}`] : []),
+        ...(params.paymentNotes ? ['', 'Payment instructions:', params.paymentNotes] : []),
+      ]
+    : [
+        `Olá, ${params.customerName}! Segue sua fatura ${params.invoiceNumber} de ${params.unitName}.`,
+        `Serviço: ${params.description}`,
+        `Valor: ${amountLabel}`,
+        ...(dueLabel ? [`Vencimento: ${dueLabel}`] : []),
+        ...(params.paymentNotes ? ['', 'Como pagar:', params.paymentNotes] : []),
+      ]
+
+  return lines.join('\n')
+}

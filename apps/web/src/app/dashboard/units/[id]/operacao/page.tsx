@@ -38,7 +38,7 @@ export default async function UnitOperationsPage({ params }: { params: Promise<{
         .limit(200),
       supabase
         .from('invoices')
-        .select('*, customer:customers(id,name,email)')
+        .select('*, customer:customers(id,name,email,phone)')
         .eq('unit_id', id)
         .order('created_at', { ascending: false })
         .limit(100),
