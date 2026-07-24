@@ -110,11 +110,19 @@ export async function sendRecruiterEmail(params: {
   to: string
   subject: string
   html: string
+  /** PDF da biblioteca de anexos (migration 036) a anexar de verdade neste e-mail via Resend — mesmo mecanismo de sendLeadEmail. */
+  attachment?: { title: string; url: string; fileName?: string | null } | null
 }): Promise<SendResult> {
   const from = defaultFrom()
   if (!from) return { ok: false, error: 'EMAIL_FROM_DOMAIN não está configurada.' }
 
-  return sendEmail({ to: params.to, from, subject: params.subject, html: params.html })
+  let attachments: EmailAttachment[] | undefined
+  if (params.attachment) {
+    const content = await fetchAttachmentContent(params.attachment.url)
+    if (content) attachments = [{ filename: attachmentFileName(params.attachment), content }]
+  }
+
+  return sendEmail({ to: params.to, from, subject: params.subject, html: params.html, attachments })
 }
 
 /**
@@ -257,7 +265,7 @@ function buildBrandedEmailHtml(params: {
  * devolve null e quem chama segue o envio do e-mail sem o anexo em vez
  * de bloquear a conversa inteira por causa de um arquivo.
  */
-async function fetchAttachmentContent(url: string): Promise<string | null> {
+export async function fetchAttachmentContent(url: string): Promise<string | null> {
   try {
     const response = await fetch(url)
     if (!response.ok) return null
@@ -268,7 +276,7 @@ async function fetchAttachmentContent(url: string): Promise<string | null> {
   }
 }
 
-function attachmentFileName(attachment: { title: string; url: string; fileName?: string | null }): string {
+export function attachmentFileName(attachment: { title: string; url: string; fileName?: string | null }): string {
   if (attachment.fileName) return attachment.fileName
   const fromUrl = attachment.url.split('/').pop()?.split('?')[0]
   return fromUrl && fromUrl.includes('.') ? fromUrl : `${attachment.title}.pdf`

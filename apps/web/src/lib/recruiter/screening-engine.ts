@@ -1,7 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { generateChatReply, generateStructuredReply, getOpenAIApiKey, type ChatMessage } from '@/lib/openai'
 import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
-import type { AgentConfig, Lead, Unit } from '@/lib/types'
+import { fetchActiveAttachments, buildAttachmentsContext } from '@/lib/attachments'
+import { getUnitChannelType, type AttachmentToSend } from '@/lib/channels/messaging-channel'
+import type { AgentConfig, EmployeeAttachment, Lead, Unit } from '@/lib/types'
 import {
   buildOutreachPrompt,
   buildScreeningEvaluatorPrompt,
@@ -482,18 +484,67 @@ export async function handleCandidateInbound(
     return
   }
 
-  // 8. Triagem continua: próxima resposta conversacional
-  const reply = await generateChatReply({
-    apiKey,
-    systemPrompt: buildScreeningPrompt({ config, unit, job, companyName, pendingTopics: pending, organizationProfile }),
-    history: [...history, { role: 'user', content: text }],
-  })
+  // 8. Triagem continua: próxima resposta conversacional. Biblioteca de
+  // anexos deste Recruiter (migration 036, ex.: link de cadastro/matrícula
+  // do processo): só quando há material ativo é que a resposta sai em
+  // JSON com a decisão de anexo — mesmo mecanismo do AI Sales
+  // Representative (ver lib/conversation-engine.ts). Não aplicado aos
+  // outros envios deste arquivo (outreach, nudge, despedida, encerramento)
+  // — são mensagens transacionais de ponto único, não a conversa orgânica.
+  const attachments = await fetchActiveAttachments(supabase, unit.id, 'recruiter')
+  let reply: string
+  let chosenAttachment: EmployeeAttachment | null = null
+
+  if (attachments.length > 0) {
+    const structured = await generateStructuredReply<{ reply?: string; attachment_id?: string | null }>({
+      apiKey,
+      systemPrompt: [
+        buildScreeningPrompt({
+          config, unit, job, companyName, pendingTopics: pending, organizationProfile,
+          attachmentsContext: buildAttachmentsContext(attachments),
+        }),
+        'Responda SOMENTE um JSON válido: {"reply": string, "attachment_id": string|null}. O campo "reply" é a mensagem normal que você mandaria ao candidato, seguindo à risca as regras de tom, tamanho e idioma já combinadas acima. O campo "attachment_id" é o id do material a enviar agora (ver MATERIAIS DISPONÍVEIS PARA ENVIAR acima), ou null se nenhum se aplica a esta mensagem.',
+      ].join(' '),
+      history: [...history, { role: 'user', content: text }],
+      // Preserva o tom conversacional de generateChatReply (0.7) — o
+      // default 0.2 de generateStructuredReply é pra extractors determinísticos.
+      temperature: 0.7,
+    })
+    reply = (structured.reply ?? '').trim()
+    const attachmentId = structured.attachment_id ?? null
+    chosenAttachment = attachmentId ? attachments.find((a) => a.id === attachmentId) ?? null : null
+  } else {
+    reply = await generateChatReply({
+      apiKey,
+      systemPrompt: buildScreeningPrompt({ config, unit, job, companyName, pendingTopics: pending, organizationProfile }),
+      history: [...history, { role: 'user', content: text }],
+    })
+  }
+
   if (reply) {
+    // Link (e PDF no SMS, que não segura arquivo real) sempre embutido no
+    // próprio texto; PDF em WhatsApp/e-mail vira anexo de verdade.
+    let outgoingText = reply
+    let attachmentPayload: AttachmentToSend | undefined
+    if (chosenAttachment) {
+      const channelType = getUnitChannelType(unit)
+      if (chosenAttachment.kind === 'link' || channelType === 'sms') {
+        outgoingText = `${reply}\n\n${chosenAttachment.title}: ${chosenAttachment.file_url}`
+      } else {
+        attachmentPayload = {
+          title: chosenAttachment.title,
+          url: chosenAttachment.file_url,
+          fileName: chosenAttachment.file_name,
+        }
+      }
+    }
+
     await sendToCandidate({
       supabase, unit, config, candidate,
-      jobId: job.id, text: reply,
+      jobId: job.id, text: outgoingText,
       templateKey: 'recruiter_screening_reply', skipRateLimits: true,
       voiceReply: wasAudioMessage,
+      attachment: attachmentPayload,
     })
   }
 }

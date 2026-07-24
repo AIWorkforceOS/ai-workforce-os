@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getMessagingChannel, getUnitChannelType, channelLabel } from '@/lib/channels/messaging-channel'
+import { getMessagingChannel, getUnitChannelType, channelLabel, type AttachmentToSend } from '@/lib/channels/messaging-channel'
 import { sendRecruiterEmail } from '@/lib/email'
 import { logSystemEvent } from '@/lib/system-events'
 import type { AgentConfig, Unit } from '@/lib/types'
@@ -31,6 +31,8 @@ export async function sendToCandidate(params: {
   skipRateLimits?: boolean
   /** candidato mandou a mensagem por áudio → responde em áudio também (mesma mecânica do Sales Rep) */
   voiceReply?: boolean
+  /** PDF da biblioteca de anexos (migration 036) a enviar de verdade junto — links já vêm embutidos em `text` por quem chama (ver screening-engine.ts). */
+  attachment?: AttachmentToSend
 }): Promise<SendOutcome> {
   const { supabase, unit, config, candidate, jobId, text, templateKey } = params
 
@@ -74,7 +76,7 @@ export async function sendToCandidate(params: {
   const messagingChannel = getMessagingChannel(unit, supabase)
   if (messagingChannel && candidate.phone) {
     try {
-      await messagingChannel.sendMessage(candidate.phone, text, { voiceReply: params.voiceReply })
+      await messagingChannel.sendMessage(candidate.phone, text, { voiceReply: params.voiceReply, attachment: params.attachment })
       await record(channelType, 'sent')
       return { sent: true, channel: channelType }
     } catch (error) {
@@ -97,6 +99,7 @@ export async function sendToCandidate(params: {
       to: candidate.email,
       subject: `${config.persona_name} — ${unit.name}`,
       html: `<p>${text.replace(/\n/g, '<br/>')}</p>`,
+      attachment: params.attachment,
     })
     await record('email', result.ok ? 'sent' : 'failed')
     if (result.ok) return { sent: true, channel: 'email' }

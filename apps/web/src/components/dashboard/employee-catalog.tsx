@@ -189,6 +189,7 @@ export function EmployeeCatalog({
           testConfigId={recruiter?.id ?? null}
           trainConfigId={recruiter?.id ?? null}
           lastTrainedAt={recruiter?.last_trained_at ?? null}
+          attachmentsConfigId={recruiter?.id ?? null}
         />
         <EmployeeCatalogCard
           icon={Megaphone}
@@ -226,6 +227,7 @@ export function EmployeeCatalog({
           testConfigId={receptionist?.id ?? null}
           trainConfigId={receptionist?.id ?? null}
           lastTrainedAt={receptionist?.last_trained_at ?? null}
+          attachmentsConfigId={receptionist?.id ?? null}
         />
       </div>
 

@@ -118,6 +118,8 @@ export function buildScreeningPrompt(params: {
   companyName: string
   pendingTopics: string[]
   organizationProfile?: Record<string, unknown> | null
+  /** Contexto da biblioteca de anexos deste Recruiter (lib/attachments.ts, migration 036) — só passado pela resposta contínua da triagem (screening-engine.ts, passo 8). */
+  attachmentsContext?: string
 }): string {
   return [
     buildRecruiterBasePrompt(params.config, params.unit, params.organizationProfile),
@@ -127,7 +129,10 @@ export function buildScreeningPrompt(params: {
     'Seja acolhedor(a) e transparente. Confirme um ou dois pontos por mensagem, respondendo dúvidas dele usando somente os dados da vaga.',
     'Se ele perguntar algo que você não sabe, diga que vai confirmar com a empresa e anote.',
     'Se ele pedir para negociar bolsa ou salário, explique com respeito que isso é tratado diretamente com a empresa na etapa final.',
-  ].join(' ')
+    params.attachmentsContext || '',
+  ]
+    .filter(Boolean)
+    .join(' ')
 }
 
 /** Extractor da triagem (JSON mode): atualiza o checklist de qualificação. */
