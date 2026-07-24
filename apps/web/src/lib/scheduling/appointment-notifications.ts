@@ -21,7 +21,8 @@ import type { Appointment, Customer, Unit } from '@/lib/types'
 // no-show) que varia por negócio e não foi ensinada em lugar nenhum
 // desta configuração — mandar isso errado é pior do que não mandar.
 
-function fmtMoment(iso: string, timezone: string, locale: Locale): string {
+/** Exportado para reuso pelo motor de conversa do Receptionist (lib/receptionist/scheduling.ts), que também precisa formatar data+hora local ao confirmar/reagendar/cancelar em texto. */
+export function fmtMoment(iso: string, timezone: string, locale: Locale): string {
   const date = new Date(iso)
   const dateLocale = locale === 'en' ? 'en-US' : 'pt-BR'
   const datePart = date.toLocaleDateString(dateLocale, {

@@ -63,6 +63,8 @@ export async function sendEscalationEmail(params: {
   leadPhone: string | null
   reason: string
   lastMessage: string
+  /** Rótulo de quem está escalando, para o corpo do e-mail. Default preserva o texto histórico (SDR era o único emissor até o Receptionist ganhar canal real). */
+  agentLabel?: string
 }): Promise<SendResult> {
   const from = defaultFrom()
   if (!from) return { ok: false, error: 'EMAIL_FROM_DOMAIN não está configurada.' }
@@ -72,7 +74,7 @@ export async function sendEscalationEmail(params: {
     from,
     subject: `[${params.unitName}] Escalação: ${params.leadName}`,
     html: `
-      <p>O AI Sales Representative da unidade <strong>${params.unitName}</strong> escalou uma conversa para atendimento humano.</p>
+      <p>O ${params.agentLabel ?? 'AI Sales Representative'} da unidade <strong>${params.unitName}</strong> escalou uma conversa para atendimento humano.</p>
       <p><strong>Lead:</strong> ${params.leadName}${params.leadPhone ? ` (${params.leadPhone})` : ''}</p>
       <p><strong>Motivo:</strong> ${params.reason}</p>
       <p><strong>Última mensagem:</strong> ${params.lastMessage}</p>

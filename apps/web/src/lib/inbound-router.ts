@@ -9,11 +9,12 @@ import { buildRecruiterBasePrompt } from '@/lib/recruiter/prompts'
 import { sendToCompany } from '@/lib/recruiter/messaging'
 import { logDecision } from '@/lib/recruiter/log'
 import { handleSalesDealHandoff } from '@/lib/sales/deal-handoff'
+import { processReceptionistInbound } from '@/lib/receptionist/engine'
 import { logSystemEvent } from '@/lib/system-events'
 import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
 import { getMessagingChannel } from '@/lib/channels/messaging-channel'
 import type { ChannelType } from '@/lib/channels/messaging-channel'
-import type { Lead, Unit } from '@/lib/types'
+import type { Customer, Lead, Unit } from '@/lib/types'
 import type { Candidate, JobCandidate, JobOpening } from '@/lib/recruiter/types'
 
 // Roteamento em cascata (§7.0) da mensagem recebida, compartilhado entre
@@ -86,6 +87,19 @@ async function findCandidateContext(
   if (!row?.job_openings) return null
   const { job_openings: job, ...jc } = row
   return { candidate, jc: jc as JobCandidate, job }
+}
+
+/** Rota 2.5 (§7.0): telefone/e-mail bate com um cliente já cadastrado (Receptionist) — dono do relacionamento pós-venda, com prioridade sobre o fluxo genérico de lead (Rota 4) e sobre a triagem de número desconhecido (Rota 3). */
+async function findCustomerContext(
+  supabase: SupabaseClient,
+  unit: Unit,
+  incomingPhone: string | null,
+  incomingEmail: string | null,
+): Promise<Customer | null> {
+  if (!unit.org_id) return null
+
+  const { data } = await supabase.from('customers').select('*').eq('unit_id', unit.id)
+  return ((data as Customer[] | null) ?? []).find((row) => identifierMatches(row, incomingPhone, incomingEmail)) ?? null
 }
 
 /** Rota 2 (§7.0): telefone bate com lead que tem vaga ativa com o Recruiter. */
@@ -510,6 +524,40 @@ export async function routeInboundMessage(params: InboundRouteParams): Promise<R
       }
     }
     return { ok: true, routed: 'recruiter_company' }
+  }
+
+  // ── Rota 2.5: cliente cadastrado (Receptionist) ─────────────────────
+  // Só é alcançada quando as Rotas 1 e 2 não bateram (ambas retornam
+  // sempre que o if delas é verdadeiro) — um cliente que também é
+  // candidato/empresa com processo ativo no Recrutador continua
+  // priorizando esse processo, igual ao comportamento de antes desta
+  // rota existir.
+  const customer = await findCustomerContext(supabase, unitRow, incomingPhone, incomingEmail)
+  if (customer) {
+    await supabase.from('customer_messages').insert({
+      customer_id: customer.id,
+      unit_id: unitRow.id,
+      channel,
+      direction: 'inbound',
+      content: text,
+      external_message_id: externalMessageId,
+      status: 'delivered',
+      sent_at: sentAt,
+    })
+
+    const recipient = incomingPhone ?? incomingEmail
+    if (!recipient) return { ok: true, routed: 'receptionist', skipped: 'no_recipient' }
+
+    const result = await processReceptionistInbound({
+      supabase,
+      unit: unitRow,
+      customer,
+      incomingText: text,
+      channel,
+      recipient,
+      wasAudioMessage,
+    })
+    return { ok: true, routed: 'receptionist', handled: result.handled }
   }
 
   // ── Rota 3: número desconhecido ou em triagem ──────────────────────
