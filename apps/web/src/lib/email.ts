@@ -285,6 +285,90 @@ export function attachmentFileName(attachment: { title: string; url: string; fil
 }
 
 /**
+ * `from` do e-mail de campanha (newsletter em massa) — mesmo raciocínio de
+ * salesFrom: domínio sempre da plataforma (verificado no Resend), nome de
+ * exibição carrega a marca da unidade. Subdomínio próprio (news@) para não
+ * misturar reputação de envio com o 1:1 do Sales Rep (sales@) nem com
+ * transacional (billing@/alerts@).
+ */
+function marketingFrom(unitName: string): string | null {
+  const domain = process.env.EMAIL_FROM_DOMAIN
+  return domain ? `${unitName} <news@${domain}>` : null
+}
+
+/**
+ * Template HTML da campanha de e-mail marketing em massa (migration 043) —
+ * mesma marca (logo/nome da unidade) do template transacional
+ * (buildBrandedEmailHtml/sendInvoiceEmail), mas com um rodapé de
+ * descadastro OBRIGATÓRIO: e-mail em massa sem opt-out é risco de
+ * reputação/spam e má prática, então o link nunca fica a critério da IA
+ * ou de quem aprova a campanha — é sempre montado aqui, por destinatário.
+ */
+export function buildMarketingEmailHtml(params: {
+  unitName: string
+  logoUrl: string | null
+  bodyText: string
+  unsubscribeUrl: string
+}): string {
+  const paragraphs = params.bodyText
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => `<p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#1e293b;">${escapeHtml(line)}</p>`)
+    .join('')
+
+  const logoBlock = params.logoUrl
+    ? `<img src="${escapeHtml(params.logoUrl)}" alt="${escapeHtml(params.unitName)}" style="max-height:40px;max-width:220px;height:auto;width:auto;" />`
+    : `<span style="font-size:16px;font-weight:700;color:#0f172a;">${escapeHtml(params.unitName)}</span>`
+
+  return `
+    <div style="background:#f1f5f9;padding:32px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+      <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;">
+        <div style="padding:24px 32px;border-bottom:1px solid #e2e8f0;">
+          ${logoBlock}
+        </div>
+        <div style="padding:32px;">
+          ${paragraphs}
+        </div>
+        <div style="padding:16px 32px;background:#f8fafc;border-top:1px solid #e2e8f0;">
+          <p style="margin:0 0 6px;font-size:12px;color:#94a3b8;">Você recebeu este e-mail porque tem contato com ${escapeHtml(params.unitName)}.</p>
+          <p style="margin:0;font-size:12px;color:#94a3b8;"><a href="${escapeHtml(params.unsubscribeUrl)}" style="color:#64748b;text-decoration:underline;">Não quero mais receber estes e-mails</a></p>
+        </div>
+      </div>
+    </div>
+  `
+}
+
+/**
+ * Envia UM e-mail de uma campanha em massa (migration 043) para um único
+ * destinatário — quem chama (lib/marketing-email/sender.ts) itera a lista
+ * de destinatários e monta a URL de descadastro por pessoa (token único).
+ */
+export async function sendMarketingCampaignEmail(params: {
+  to: string
+  unitName: string
+  logoUrl: string | null
+  subject: string
+  bodyText: string
+  unsubscribeUrl: string
+}): Promise<SendResult> {
+  const from = marketingFrom(params.unitName)
+  if (!from) return { ok: false, error: 'EMAIL_FROM_DOMAIN não está configurada.' }
+
+  return sendEmail({
+    to: params.to,
+    from,
+    subject: params.subject,
+    html: buildMarketingEmailHtml({
+      unitName: params.unitName,
+      logoUrl: params.logoUrl,
+      bodyText: params.bodyText,
+      unsubscribeUrl: params.unsubscribeUrl,
+    }),
+  })
+}
+
+/**
  * Fatura/recibo de serviço prestado, enviada ao cliente final da empresa
  * (migration 030 — tabela invoices). Sem gateway de pagamento nesta fase:
  * o e-mail registra o valor e traz as instruções de pagamento que a

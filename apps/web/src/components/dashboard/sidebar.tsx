@@ -25,6 +25,7 @@ import {
   Smartphone,
   ClipboardList,
   CalendarDays,
+  Mail,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useLocale } from '@/lib/i18n/client'
@@ -77,6 +78,7 @@ const navGroups: { label: Record<Locale, string>; items: NavItem[] }[] = [
       { href: '/dashboard/conversations', label: { pt: 'Conversas', en: 'Conversations' }, icon: MessageSquare },
       { href: '/dashboard/crm', label: { pt: 'Funil de vendas', en: 'Sales pipeline' }, icon: Kanban },
       { href: '/dashboard/leads', label: { pt: 'Contatos (leads)', en: 'Contacts (leads)' }, icon: UserCircle },
+      { href: '/dashboard/email-marketing', label: { pt: 'E-mail marketing', en: 'Email marketing' }, icon: Mail },
     ],
   },
   {
