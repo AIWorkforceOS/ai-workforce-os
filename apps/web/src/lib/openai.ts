@@ -1,4 +1,4 @@
-import { logOpenAIUsage } from '@/lib/api-usage'
+import { logOpenAIImageUsage, logOpenAIUsage } from '@/lib/api-usage'
 
 export function getOpenAIApiKey(): string | null {
   return process.env.OPENAI_API_KEY || null
@@ -145,6 +145,50 @@ export async function synthesizeSpeech(params: {
 
   const arrayBuffer = await response.arrayBuffer()
   return { base64Audio: Buffer.from(arrayBuffer).toString('base64'), mimeType: 'audio/ogg; codecs=opus' }
+}
+
+/**
+ * Gera uma imagem (gpt-image-1) a partir de um prompt em texto — usada
+ * pelo funcionário digital de Conteúdo/Social para ilustrar posts.
+ * Sempre devolve base64 (gpt-image-1 não aceita response_format: 'url';
+ * quem chama decide o que fazer com os bytes — aqui, upload no Storage).
+ */
+export async function generateImage(params: {
+  apiKey: string
+  prompt: string
+  size?: '1024x1024' | '1024x1536' | '1536x1024'
+  quality?: 'low' | 'medium' | 'high'
+}): Promise<{ base64Image: string }> {
+  const quality = params.quality ?? 'medium'
+  const response = await fetch('https://api.openai.com/v1/images/generations', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${params.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-image-1',
+      prompt: params.prompt,
+      size: params.size ?? '1024x1024',
+      quality,
+      n: 1,
+    }),
+  })
+
+  const data = await response.json()
+
+  if (!response.ok) {
+    throw new Error(data?.error?.message ?? `OpenAI retornou status ${response.status}`)
+  }
+
+  const base64Image = data?.data?.[0]?.b64_json
+  if (!base64Image) {
+    throw new Error('OpenAI não retornou a imagem gerada.')
+  }
+
+  await logOpenAIImageUsage({ quality })
+
+  return { base64Image }
 }
 
 /**

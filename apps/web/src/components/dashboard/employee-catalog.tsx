@@ -7,6 +7,7 @@ import {
   ArrowRight,
   Bot,
   Briefcase,
+  Camera,
   Check,
   ChevronRight,
   FlaskConical,
@@ -52,6 +53,7 @@ export function EmployeeCatalog({
   openJobs,
   adAccounts,
   customers,
+  socialAccounts,
   verticalKey,
 }: {
   units: Unit[]
@@ -59,6 +61,7 @@ export function EmployeeCatalog({
   openJobs: number
   adAccounts: number
   customers: number
+  socialAccounts: number
   verticalKey?: VerticalKey | null
 }) {
   // A primeira unidade é a "principal" (mesma que /dashboard/onboarding
@@ -83,6 +86,7 @@ export function EmployeeCatalog({
   const recruiter = configs.find((c) => c.agent_type === 'recruiter' && c.unit_id === selectedUnitId)
   const traffic = configs.find((c) => c.agent_type === 'traffic_specialist' && c.unit_id === selectedUnitId)
   const receptionist = configs.find((c) => c.agent_type === 'receptionist' && c.unit_id === selectedUnitId)
+  const content = configs.find((c) => c.agent_type === 'content_specialist' && c.unit_id === selectedUnitId)
 
   // Mesmo padrão dos outros 3: "Contratar" é resolvido aqui mesmo (igual
   // recruiter/traffic/receptionist), não mais um passo que manda pra outra
@@ -109,6 +113,12 @@ export function EmployeeCatalog({
   const receptionistSteps: Step[] = [
     { label: 'Contratar o AI Receptionist', desc: 'Escolha o nome dele e responda a entrevista de contratação — ele aprende como funciona seu atendimento.', done: !!receptionist?.is_active, inline: true },
     { label: 'Acompanhar o cadastro de clientes', desc: 'Todo negócio fechado pelo Sales Rep já entra automaticamente como cliente.', done: customers > 0, href: '/dashboard/receptionist/customers' },
+  ]
+
+  const contentSteps: Step[] = [
+    { label: 'Contratar o Gestor de Conteúdo', desc: 'Ele te entrevista sobre os temas, o tom e a frequência de postagem — e fica de prontidão.', done: !!content?.is_active, inline: true },
+    { label: 'Conectar Instagram e Facebook', desc: 'Você mesmo conecta pelo painel a Página do Facebook (e o Instagram vinculado a ela) — testamos e confirmamos na hora.', done: socialAccounts > 0, href: '/dashboard/content/connect' },
+    { label: 'Acompanhar a fila de conteúdo', desc: 'Ele gera posts com legenda e imagem todo dia — você escolhe se ele posta sozinho ou se cada um passa por aprovação sua.', done: socialAccounts > 0, href: '/dashboard/content' },
   ]
 
   return (
@@ -229,6 +239,24 @@ export function EmployeeCatalog({
           lastTrainedAt={receptionist?.last_trained_at ?? null}
           attachmentsConfigId={receptionist?.id ?? null}
         />
+        <EmployeeCatalogCard
+          icon={Camera}
+          name="Gestor de conteúdo"
+          tagline="Cria e publica posts no Instagram e Facebook"
+          bullets={[
+            'Gera legenda e imagem de cada post com base no seu negócio de verdade',
+            'Posta sozinho ou deixa pendente pra você aprovar — você escolhe',
+            'Mantém o calendário de conteúdo sempre ativo, todo dia',
+          ]}
+          steps={contentSteps}
+          state={content?.is_active ? (socialAccounts > 0 ? 'working' : 'configuring') : 'available'}
+          panelHref="/dashboard/content"
+          personaName={null}
+          activation={{ agentType: 'content_specialist', config: content ?? null, unitId: selectedUnitId, askName: false, defaultName: 'Gestor de Conteúdo' }}
+          trainingScore={content ? computeTrainingCompleteness(content, verticalKey) : null}
+          trainConfigId={content?.id ?? null}
+          lastTrainedAt={content?.last_trained_at ?? null}
+        />
       </div>
 
       <p className="text-xs text-slate-500">
@@ -241,7 +269,7 @@ export function EmployeeCatalog({
 }
 
 type ActivationProps = {
-  agentType: 'sdr' | 'recruiter' | 'traffic_specialist' | 'receptionist'
+  agentType: 'sdr' | 'recruiter' | 'traffic_specialist' | 'receptionist' | 'content_specialist'
   /** config já filtrado pra unitId — nunca de outra unidade */
   config: AgentConfig | null
   /** unidade selecionada no catálogo (seletor no topo da tela) */

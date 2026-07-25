@@ -22,14 +22,15 @@ import type { AgentConfig, AgentTone, InterviewTranscriptEntry, Organization, Un
 // Tráfego). A entrevista do Recrutador cobre a EMPRESA; o levantamento
 // de cada vaga continua com o intake-engine assíncrono existente.
 
-export type InterviewAgentType = 'sdr' | 'recruiter' | 'traffic_specialist' | 'receptionist'
+export type InterviewAgentType = 'sdr' | 'recruiter' | 'traffic_specialist' | 'receptionist' | 'content_specialist'
 
 export function isInterviewAgentType(agentType: string): agentType is InterviewAgentType {
   return (
     agentType === 'sdr' ||
     agentType === 'recruiter' ||
     agentType === 'traffic_specialist' ||
-    agentType === 'receptionist'
+    agentType === 'receptionist' ||
+    agentType === 'content_specialist'
   )
 }
 
@@ -93,6 +94,22 @@ export const INTERVIEW_PLAYBOOKS: Record<InterviewAgentType, InterviewPlaybook> 
     ],
     profileSchema:
       '{"sobre_a_empresa": string, "segmento": string, "cargos_tipicos": string[], "cultura_valores": string[], "locais": string[], "processo_seletivo": string, "observacoes": string[]}',
+  },
+  content_specialist: {
+    roleLabel: 'gestor(a) de conteúdo e redes sociais',
+    mission:
+      'criar e publicar posts (legenda + imagem) para o Instagram e o Facebook da empresa, mantendo a presença nas redes sempre ativa e alinhada à marca',
+    requiredTopics: [
+      'quais são os principais pilares/temas de conteúdo da empresa — peça pelo menos 3 (ex.: bastidores da equipe, depoimentos de clientes, dicas relacionadas ao negócio, promoções, resultados de trabalhos feitos)',
+      'em quais plataformas publicar: Instagram, Facebook, ou os dois',
+      'quantas vezes por semana idealmente a empresa gostaria de postar',
+      'como deve ser o tom visual das imagens e o tom de voz das legendas (cores da marca, estilo fotográfico, uso de emojis, formalidade)',
+      'quem é o público-alvo que os posts devem atrair',
+      'o que NUNCA deve aparecer ou ser dito nos posts (ex.: falar de concorrentes, citar preço, prometer resultado, temas sensíveis)',
+      'existe alguma chamada para ação (call to action) padrão que os posts devem ter quando fizer sentido (ex.: "chama no WhatsApp", "visite nosso site", "agende pelo link da bio")',
+    ],
+    profileSchema:
+      '{"pilares_conteudo": string[], "plataformas": ("instagram"|"facebook")[], "frequencia_semanal": number, "tom_visual": string, "publico_alvo": string, "proibicoes": string[], "call_to_action_padrao": string, "observacoes": string[]}',
   },
   receptionist: {
     roleLabel: 'recepcionista/gerente de operações',

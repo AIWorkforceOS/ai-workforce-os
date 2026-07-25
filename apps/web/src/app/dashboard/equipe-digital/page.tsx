@@ -13,13 +13,14 @@ export default async function DigitalTeamPage() {
   const supabase = await createClient()
   const appUser = await getAppUser()
 
-  const [{ data: units }, { data: configs }, { count: openJobs }, { count: adAccounts }, { count: customers }, verticalKey] =
+  const [{ data: units }, { data: configs }, { count: openJobs }, { count: adAccounts }, { count: customers }, { count: socialAccounts }, verticalKey] =
     await Promise.all([
       supabase.from('units').select('*').order('created_at', { ascending: true }),
       supabase.from('agent_configs').select('*'),
       supabase.from('job_openings').select('id', { count: 'exact', head: true }),
       supabase.from('ad_accounts').select('id', { count: 'exact', head: true }),
       supabase.from('customers').select('id', { count: 'exact', head: true }),
+      supabase.from('social_accounts').select('id', { count: 'exact', head: true }),
       fetchOrganizationVerticalKey(supabase, appUser?.orgId),
     ])
 
@@ -30,6 +31,7 @@ export default async function DigitalTeamPage() {
       openJobs={openJobs ?? 0}
       adAccounts={adAccounts ?? 0}
       customers={customers ?? 0}
+      socialAccounts={socialAccounts ?? 0}
       verticalKey={verticalKey}
     />
   )

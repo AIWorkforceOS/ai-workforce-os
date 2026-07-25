@@ -129,6 +129,36 @@ export async function logOpenAIAudioUsage(params: { durationSeconds: number; uni
   })
 }
 
+// USD por imagem gerada (gpt-image-1, 1024x1024, tabela pública jul/2026) —
+// cobrança por imagem+qualidade, não por token, por isso fica fora de
+// OPENAI_PRICING_PER_1M.
+const OPENAI_IMAGE_COST_PER_IMAGE_USD: Record<'low' | 'medium' | 'high', number> = {
+  low: 0.02,
+  medium: 0.07,
+  high: 0.19,
+}
+
+export function estimateImageCost(quality: 'low' | 'medium' | 'high'): number {
+  return OPENAI_IMAGE_COST_PER_IMAGE_USD[quality]
+}
+
+/** Atalho para openai.ts (generateImage): custo estimado por imagem gerada. */
+export async function logOpenAIImageUsage(params: {
+  quality: 'low' | 'medium' | 'high'
+  unitId?: string | null
+  orgId?: string | null
+}): Promise<void> {
+  await logApiUsage({
+    provider: 'openai',
+    endpoint: 'images.generations',
+    model: 'gpt-image-1',
+    estimatedCostUsd: estimateImageCost(params.quality),
+    unitId: params.unitId,
+    orgId: params.orgId,
+    metadata: { quality: params.quality },
+  })
+}
+
 // USD por 1K caracteres de texto sintetizado em áudio (gpt-4o-mini-tts,
 // tabela pública jul/2026) — cobrança por caractere de entrada, não por
 // token/minuto, por isso fica fora das tabelas acima.
