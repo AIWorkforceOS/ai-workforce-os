@@ -20,6 +20,7 @@ export type SystemEventSource =
   | 'scheduling'
   | 'invoices'
   | 'content'
+  | 'seo'
 
 export type SystemEventInput = {
   level: SystemEventLevel

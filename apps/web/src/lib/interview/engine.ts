@@ -22,7 +22,13 @@ import type { AgentConfig, AgentTone, InterviewTranscriptEntry, Organization, Un
 // Tráfego). A entrevista do Recrutador cobre a EMPRESA; o levantamento
 // de cada vaga continua com o intake-engine assíncrono existente.
 
-export type InterviewAgentType = 'sdr' | 'recruiter' | 'traffic_specialist' | 'receptionist' | 'content_specialist'
+export type InterviewAgentType =
+  | 'sdr'
+  | 'recruiter'
+  | 'traffic_specialist'
+  | 'receptionist'
+  | 'content_specialist'
+  | 'seo_specialist'
 
 export function isInterviewAgentType(agentType: string): agentType is InterviewAgentType {
   return (
@@ -30,7 +36,8 @@ export function isInterviewAgentType(agentType: string): agentType is InterviewA
     agentType === 'recruiter' ||
     agentType === 'traffic_specialist' ||
     agentType === 'receptionist' ||
-    agentType === 'content_specialist'
+    agentType === 'content_specialist' ||
+    agentType === 'seo_specialist'
   )
 }
 
@@ -110,6 +117,22 @@ export const INTERVIEW_PLAYBOOKS: Record<InterviewAgentType, InterviewPlaybook> 
     ],
     profileSchema:
       '{"pilares_conteudo": string[], "plataformas": ("instagram"|"facebook")[], "frequencia_semanal": number, "tom_visual": string, "publico_alvo": string, "proibicoes": string[], "call_to_action_padrao": string, "observacoes": string[]}',
+  },
+  seo_specialist: {
+    roleLabel: 'especialista em SEO',
+    mission:
+      'cuidar da otimização do site da empresa para os buscadores (SEO técnico e de conteúdo), gerar conteúdo de blog/landing page mirando as palavras-chave certas, preparar o perfil do Google Business Profile e acompanhar a posição das palavras-chave mais importantes',
+    requiredTopics: [
+      'qual é a URL completa do site oficial da empresa (com https://) — é a partir dela que as auditorias técnicas de verdade serão feitas',
+      'quais são as 3 a 5 palavras-chave/termos de busca mais importantes que a empresa quer aparecer bem posicionada no Google',
+      'quais concorrentes a empresa conhece que aparecem bem no Google para esses termos, se souber (nomes ou sites)',
+      'qual a região de atuação, para priorizar SEO local (cidade/estado, ou "nacional"/"todo o Brasil" se não for um negócio local)',
+      'a empresa já tem um perfil no Google Business Profile (Google Meu Negócio)? Se sim, ele está completo ou precisa de ajuda para melhorar?',
+    ],
+    profileSchema:
+      '{"site_url": string, "palavras_chave_alvo": string[], "concorrentes": string[], "regiao_atuacao": string, "tem_google_business_profile": boolean, "observacoes": string[]}',
+    extraGuidance: () =>
+      'IMPORTANTE sobre expectativa: deixe claro para o chefe, se ele perguntar, que nenhuma ferramenta de IA garante o topo do Google de verdade — isso depende de tempo, conteúdo consistente e backlinks; o que você faz é auditoria técnica real, conteúdo otimizado, preparação do Google Business Profile e acompanhamento de posição.',
   },
   receptionist: {
     roleLabel: 'recepcionista/gerente de operações',

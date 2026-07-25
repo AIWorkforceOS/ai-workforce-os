@@ -17,6 +17,7 @@ import {
   Megaphone,
   Paperclip,
   Pause,
+  Search,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Card, brandGradient } from '@/components/ui/dashboard-ui'
@@ -54,6 +55,7 @@ export function EmployeeCatalog({
   adAccounts,
   customers,
   socialAccounts,
+  seoAudits,
   verticalKey,
 }: {
   units: Unit[]
@@ -62,6 +64,7 @@ export function EmployeeCatalog({
   adAccounts: number
   customers: number
   socialAccounts: number
+  seoAudits: number
   verticalKey?: VerticalKey | null
 }) {
   // A primeira unidade é a "principal" (mesma que /dashboard/onboarding
@@ -87,6 +90,7 @@ export function EmployeeCatalog({
   const traffic = configs.find((c) => c.agent_type === 'traffic_specialist' && c.unit_id === selectedUnitId)
   const receptionist = configs.find((c) => c.agent_type === 'receptionist' && c.unit_id === selectedUnitId)
   const content = configs.find((c) => c.agent_type === 'content_specialist' && c.unit_id === selectedUnitId)
+  const seo = configs.find((c) => c.agent_type === 'seo_specialist' && c.unit_id === selectedUnitId)
 
   // Mesmo padrão dos outros 3: "Contratar" é resolvido aqui mesmo (igual
   // recruiter/traffic/receptionist), não mais um passo que manda pra outra
@@ -119,6 +123,11 @@ export function EmployeeCatalog({
     { label: 'Contratar o Gestor de Conteúdo', desc: 'Ele te entrevista sobre os temas, o tom e a frequência de postagem — e fica de prontidão.', done: !!content?.is_active, inline: true },
     { label: 'Conectar Instagram e Facebook', desc: 'Você mesmo conecta pelo painel a Página do Facebook (e o Instagram vinculado a ela) — testamos e confirmamos na hora.', done: socialAccounts > 0, href: '/dashboard/content/connect' },
     { label: 'Acompanhar a fila de conteúdo', desc: 'Ele gera posts com legenda e imagem todo dia — você escolhe se ele posta sozinho ou se cada um passa por aprovação sua.', done: socialAccounts > 0, href: '/dashboard/content' },
+  ]
+
+  const seoSteps: Step[] = [
+    { label: 'Contratar o especialista em SEO', desc: 'Ele te entrevista sobre o site, palavras-chave e concorrentes — e fica de prontidão.', done: !!seo?.is_active, inline: true },
+    { label: 'Aguardar a primeira auditoria', desc: 'Ele audita o site de verdade (título, meta description, mobile, etc.) — pode rodar na hora pelo painel dele.', done: seoAudits > 0, href: '/dashboard/seo' },
   ]
 
   return (
@@ -257,6 +266,24 @@ export function EmployeeCatalog({
           trainConfigId={content?.id ?? null}
           lastTrainedAt={content?.last_trained_at ?? null}
         />
+        <EmployeeCatalogCard
+          icon={Search}
+          name="Especialista em SEO"
+          tagline="Cuida do tráfego orgânico do seu site"
+          bullets={[
+            'Audita o site de verdade: título, meta description, mobile, HTTPS e mais',
+            'Gera posts de blog/landing page e prepara seu Google Business Profile',
+            'Não promete o topo do Google — isso depende de tempo, conteúdo e backlinks',
+          ]}
+          steps={seoSteps}
+          state={seo?.is_active ? (seoAudits > 0 ? 'working' : 'configuring') : 'available'}
+          panelHref="/dashboard/seo"
+          personaName={null}
+          activation={{ agentType: 'seo_specialist', config: seo ?? null, unitId: selectedUnitId, askName: false, defaultName: 'Especialista em SEO' }}
+          trainingScore={seo ? computeTrainingCompleteness(seo, verticalKey) : null}
+          trainConfigId={seo?.id ?? null}
+          lastTrainedAt={seo?.last_trained_at ?? null}
+        />
       </div>
 
       <p className="text-xs text-slate-500">
@@ -269,7 +296,7 @@ export function EmployeeCatalog({
 }
 
 type ActivationProps = {
-  agentType: 'sdr' | 'recruiter' | 'traffic_specialist' | 'receptionist' | 'content_specialist'
+  agentType: 'sdr' | 'recruiter' | 'traffic_specialist' | 'receptionist' | 'content_specialist' | 'seo_specialist'
   /** config já filtrado pra unitId — nunca de outra unidade */
   config: AgentConfig | null
   /** unidade selecionada no catálogo (seletor no topo da tela) */
