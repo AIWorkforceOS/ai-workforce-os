@@ -437,9 +437,11 @@ export type MetaAdCreativeCreateSpec = {
   linkUrl: string
   headline?: string
   callToActionType?: string
+  /** URL pública da imagem aprovada (ver lib/traffic/creative-image.ts) — omitida, o anúncio nasce sem imagem (comportamento anterior). */
+  imageUrl?: string
 }
 
-/** POST /act_{account_id}/adcreatives — só texto/link nesta rodada (sem imagem/vídeo). */
+/** POST /act_{account_id}/adcreatives — link_data aceita imagem por URL (`picture`), sem exigir upload prévio para o image_hash. */
 export async function createMetaAdCreative(
   config: MetaConfig,
   spec: MetaAdCreativeCreateSpec,
@@ -451,6 +453,7 @@ export async function createMetaAdCreative(
       link: spec.linkUrl,
       name: spec.headline,
       call_to_action: { type: spec.callToActionType ?? 'LEARN_MORE' },
+      ...(spec.imageUrl ? { picture: spec.imageUrl } : {}),
     },
   }
   return metaPost<{ id: string }>(`${config.adAccountId}/adcreatives`, config, {

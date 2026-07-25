@@ -173,6 +173,7 @@ async function launchMetaCampaign(account: AdAccount, spec: NewCampaignSpec): Pr
       linkUrl: spec.creative.linkUrl,
       headline: spec.creative.headline,
       callToActionType: spec.creative.callToAction,
+      imageUrl: spec.creative.imageUrl,
     })
     steps.push({ step: 'creative', externalId: creative.id })
 
@@ -258,7 +259,10 @@ async function launchGoogleCampaign(account: AdAccount, spec: NewCampaignSpec): 
         steps,
         error:
           `Canal "${spec.objective}" tem campanha+orçamento criados, mas não grupo de anúncios/anúncio: ` +
-          'só SEARCH tem o fluxo completo nesta rodada (Display/PMax/Video exigem asset groups com imagem/vídeo — não implementado).',
+          'só SEARCH tem o fluxo completo nesta rodada (Display/PMax/Video exigem asset groups com imagem/vídeo — não implementado).' +
+          (spec.creative.imageUrl
+            ? ` A imagem gerada e aprovada (${spec.creative.imageUrl}) ficou salva, mas não é anexada automaticamente — a criação de asset group com imagem não está implementada nesta rodada.`
+            : ''),
       }
     }
 

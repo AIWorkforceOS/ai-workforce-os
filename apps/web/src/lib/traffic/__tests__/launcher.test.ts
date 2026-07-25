@@ -189,6 +189,33 @@ describe('launchCampaign — Meta com credenciais reais (fetch mockado)', () => 
     expect(calledUrls[2]).toContain('/adcreatives')
     expect(calledUrls[3]).toContain('/ads')
   })
+
+  it('repassa creative.imageUrl para o adcreative (picture no link_data)', async () => {
+    let creativeBody: URLSearchParams | null = null
+    const fetchMock = vi.fn(async (url: string, init?: { body?: URLSearchParams }) => {
+      if (url.includes('/adcreatives')) creativeBody = init?.body as URLSearchParams
+      if (url.includes('/campaigns')) return { ok: true, json: async () => ({ id: 'camp_1' }) }
+      if (url.includes('/adsets')) return { ok: true, json: async () => ({ id: 'adset_1' }) }
+      if (url.includes('/adcreatives')) return { ok: true, json: async () => ({ id: 'creative_1' }) }
+      if (url.includes('/ads')) return { ok: true, json: async () => ({ id: 'ad_1' }) }
+      throw new Error(`chamada inesperada: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const { client } = makeFakeSupabase()
+
+    await launchCampaign(client, {
+      account: baseAccount({ platform: 'meta', access_token: 'token123' }),
+      spec: {
+        ...baseSpec,
+        metaPageId: 'page_1',
+        creative: { ...baseSpec.creative, imageUrl: 'https://storage.example.com/unit-1/traffic/img.png' },
+      },
+      executedBy: 'human_approved:test@example.com',
+    })
+
+    const objectStorySpec = JSON.parse(creativeBody!.get('object_story_spec')!)
+    expect(objectStorySpec.link_data.picture).toBe('https://storage.example.com/unit-1/traffic/img.png')
+  })
 })
 
 describe('launchCampaign — Google com credenciais reais (fetch mockado)', () => {
@@ -265,5 +292,34 @@ describe('launchCampaign — Google com credenciais reais (fetch mockado)', () =
     expect(outcome.adSetExternalId).toBeNull()
     expect(outcome.error).toMatch(/asset groups/)
     expect(calledUrls.some((u) => u.includes('adGroups:mutate'))).toBe(false)
+  })
+
+  it('objective=DISPLAY com imageUrl aprovada: mensagem documenta que a imagem não é anexada automaticamente', async () => {
+    stubGoogleOAuthAndMutations({
+      'campaignBudgets:mutate': { results: [{ resourceName: 'customers/1/campaignBudgets/1' }] },
+      'campaigns:mutate': { results: [{ resourceName: 'customers/1/campaigns/2' }] },
+    })
+    const { client } = makeFakeSupabase()
+
+    const outcome = await launchCampaign(client, {
+      account: baseAccount({
+        platform: 'google',
+        refresh_token: 'rt',
+        google_developer_token: 'dt',
+        google_client_id: 'ci',
+        google_client_secret: 'cs',
+        external_account_id: '1',
+      }),
+      spec: {
+        ...baseSpec,
+        objective: 'DISPLAY',
+        creative: { ...baseSpec.creative, imageUrl: 'https://storage.example.com/unit-1/traffic/img.png' },
+      },
+      executedBy: 'human_approved:test@example.com',
+    })
+
+    expect(outcome.result).toBe('partial')
+    expect(outcome.error).toContain('https://storage.example.com/unit-1/traffic/img.png')
+    expect(outcome.error).toMatch(/não é anexada automaticamente/)
   })
 })

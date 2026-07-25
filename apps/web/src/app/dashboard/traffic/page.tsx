@@ -5,6 +5,7 @@ import type {
   AdAccount,
   AdActionLog,
   AdEntity,
+  CampaignCreativeDraft,
   MetricsSnapshot,
   TrafficDecision,
   TrafficDecisionSeverity,
@@ -24,7 +25,8 @@ import {
   Tr,
 } from '@/components/ui/dashboard-ui'
 import { TrafficDecisionActions } from '@/components/dashboard/traffic-decision-actions'
-import { BarChart3, ClipboardList, Plus, Sparkles } from 'lucide-react'
+import { TrafficCreativeDraftActions } from '@/components/dashboard/traffic-creative-draft-actions'
+import { BarChart3, ClipboardList, ImageIcon, Plus, Sparkles } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -91,7 +93,7 @@ export default async function TrafficPage() {
 
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
-  const [accountsRes, entitiesRes, snapshotsRes, decisionsRes, actionsRes, reportsRes] =
+  const [accountsRes, entitiesRes, snapshotsRes, decisionsRes, actionsRes, reportsRes, creativeDraftsRes] =
     await Promise.all([
       supabase.from('ad_accounts').select('*').order('created_at', { ascending: false }),
       supabase
@@ -113,6 +115,12 @@ export default async function TrafficPage() {
         .limit(30),
       supabase.from('ad_actions_log').select('*').order('created_at', { ascending: false }).limit(20),
       supabase.from('traffic_reports').select('*').order('created_at', { ascending: false }).limit(3),
+      supabase
+        .from('campaign_creative_drafts')
+        .select('*')
+        .eq('status', 'pending_approval')
+        .order('created_at', { ascending: false })
+        .limit(20),
     ])
 
   const accounts = (accountsRes.data ?? []) as AdAccount[]
@@ -121,6 +129,7 @@ export default async function TrafficPage() {
   const decisions = (decisionsRes.data ?? []) as TrafficDecision[]
   const actions = (actionsRes.data ?? []) as AdActionLog[]
   const reports = (reportsRes.data ?? []) as TrafficReport[]
+  const creativeDrafts = (creativeDraftsRes.data ?? []) as CampaignCreativeDraft[]
 
   // KPIs dos últimos 7 dias (todas as contas visíveis ao usuário)
   const totals = snapshots.reduce(
@@ -252,6 +261,77 @@ export default async function TrafficPage() {
               ))}
             </tbody>
           </table>
+          </div>
+        )}
+      </Card>
+
+      {/* Criativos de campanha aguardando aprovação */}
+      <Card className="overflow-hidden">
+        <div className="px-6 pt-5">
+          <CardHeader
+            eyebrow="nova campanha"
+            title="Criativos aguardando aprovação"
+          />
+        </div>
+        {creativeDrafts.length === 0 ? (
+          <EmptyState
+            icon={<ImageIcon size={22} className="text-white" />}
+            title="Nenhum criativo pendente"
+            subtitle="Quando uma campanha nova é preparada com imagem gerada por IA, ela aparece aqui para você aprovar antes de ir para a plataforma (sempre pausada)."
+          />
+        ) : (
+          <div className="flex flex-col">
+            {creativeDrafts.map((draft) => {
+              const account = accountById.get(draft.ad_account_id)
+              return (
+                <div
+                  key={draft.id}
+                  className="flex flex-col gap-4 px-6 py-4 sm:flex-row sm:items-start sm:justify-between"
+                  style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}
+                >
+                  <div className="flex min-w-0 flex-1 gap-4">
+                    {draft.image_url ? (
+                      <img
+                        src={draft.image_url}
+                        alt="Criativo gerado por IA"
+                        className="h-24 w-24 flex-shrink-0 rounded-lg object-cover"
+                        style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+                      />
+                    ) : (
+                      <div
+                        className="flex h-24 w-24 flex-shrink-0 items-center justify-center rounded-lg text-[10px] text-slate-500"
+                        style={{ border: '1px dashed rgba(255,255,255,0.12)' }}
+                      >
+                        sem imagem
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs text-slate-500">
+                          {account ? `${account.name} · ${platformLabel(account.platform)}` : platformLabel(draft.platform)}
+                          {' · '}
+                          {new Date(draft.created_at).toLocaleString('pt-BR')}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-sm font-semibold text-white">{draft.spec.creative.headline}</p>
+                      <p className="mt-0.5 text-sm text-slate-400">{draft.spec.creative.body}</p>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Orçamento/dia: {formatCentsBRL(draft.spec.dailyBudgetCents)} · Objetivo: {draft.spec.objective}
+                      </p>
+                      {!draft.image_applicable && (
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          Este canal não usa imagem — a campanha é aprovada só com o texto.
+                        </p>
+                      )}
+                      {draft.error_message && (
+                        <p className="mt-1 text-[11px] text-amber-400">{draft.error_message}</p>
+                      )}
+                    </div>
+                  </div>
+                  <TrafficCreativeDraftActions draftId={draft.id} />
+                </div>
+              )
+            })}
           </div>
         )}
       </Card>

@@ -2,23 +2,12 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { launchCampaign } from '@/lib/traffic/launcher'
+import { validateNewCampaignSpec } from '@/lib/traffic/spec-validation'
 import type { AdAccount, NewCampaignSpec } from '@/lib/traffic/types'
 
 export const maxDuration = 60
 
 type Body = { spec?: Partial<NewCampaignSpec> }
-
-function validateSpec(spec: Partial<NewCampaignSpec> | undefined): string | null {
-  if (!spec) return 'spec é obrigatório.'
-  if (!spec.name?.trim()) return 'spec.name é obrigatório.'
-  if (!spec.objective?.trim()) return 'spec.objective é obrigatório.'
-  if (!spec.dailyBudgetCents || spec.dailyBudgetCents <= 0) return 'spec.dailyBudgetCents deve ser > 0.'
-  if (!spec.targeting?.countries?.length) return 'spec.targeting.countries é obrigatório (ao menos 1 país).'
-  if (!spec.creative?.headline?.trim()) return 'spec.creative.headline é obrigatório.'
-  if (!spec.creative?.body?.trim()) return 'spec.creative.body é obrigatório.'
-  if (!spec.creative?.linkUrl?.trim()) return 'spec.creative.linkUrl é obrigatório.'
-  return null
-}
 
 /**
  * Cria uma campanha nova do zero (campanha + conjunto/grupo + anúncio,
@@ -27,6 +16,12 @@ function validateSpec(spec: Partial<NewCampaignSpec> | undefined): string | null
  * Tráfego Pago (ou o usuário através dele) chama este endpoint quando
  * decide lançar uma campanha; não é mais só leitura/ajuste de campanha
  * existente.
+ *
+ * Lançamento DIRETO, sem passar pela aprovação de imagem — use quando o
+ * criativo não precisa de imagem (ex.: Google Search) ou quando a
+ * imagem já foi decidida por outro caminho. Para campanhas com imagem
+ * gerada por IA aguardando aprovação humana, ver
+ * accounts/[id]/creative-drafts (POST) + creative-drafts/[id] (PATCH).
  *
  * Permissão: mesma receita do sync manual — o select abaixo só encontra
  * a conta se a sessão puder vê-la (RLS); a execução em si usa o service
@@ -53,7 +48,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'JSON inválido.' }, { status: 400 })
   }
 
-  const validationError = validateSpec(body.spec)
+  const validationError = validateNewCampaignSpec(body.spec)
   if (validationError) {
     return NextResponse.json({ error: validationError }, { status: 400 })
   }

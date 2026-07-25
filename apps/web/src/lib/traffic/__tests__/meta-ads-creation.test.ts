@@ -178,6 +178,31 @@ describe('createMetaAdCreative', () => {
     const spec = JSON.parse(lastRequestBody(fetchMock).get('object_story_spec')!)
     expect(spec.link_data.call_to_action).toEqual({ type: 'SHOP_NOW' })
   })
+
+  it('inclui picture no link_data quando imageUrl é informada', async () => {
+    const fetchMock = mockFetchOnce({ id: 'creative_3' })
+    await createMetaAdCreative(config, {
+      name: 'Criativo 3',
+      pageId: 'page_1',
+      message: 'X',
+      linkUrl: 'https://example.com',
+      imageUrl: 'https://storage.example.com/unit-1/traffic/img.png',
+    })
+    const spec = JSON.parse(lastRequestBody(fetchMock).get('object_story_spec')!)
+    expect(spec.link_data.picture).toBe('https://storage.example.com/unit-1/traffic/img.png')
+  })
+
+  it('omite picture quando imageUrl não é informada (comportamento anterior)', async () => {
+    const fetchMock = mockFetchOnce({ id: 'creative_4' })
+    await createMetaAdCreative(config, {
+      name: 'Criativo 4',
+      pageId: 'page_1',
+      message: 'X',
+      linkUrl: 'https://example.com',
+    })
+    const spec = JSON.parse(lastRequestBody(fetchMock).get('object_story_spec')!)
+    expect(spec.link_data.picture).toBeUndefined()
+  })
 })
 
 describe('createMetaAd', () => {

@@ -300,13 +300,20 @@ export type PlatformMetricsRow = {
 // Criação de campanhas do zero (lib/traffic/launcher.ts)
 // ---------------------------------------------------------------------------
 
-/** Texto do anúncio — sem imagem/vídeo nesta rodada (ver launcher.ts). */
+/** Texto (+ imagem opcional, ver lib/traffic/creative-image.ts) do anúncio. */
 export type CampaignCreative = {
   headline: string
   body: string
   linkUrl: string
   /** Meta: nome do call-to-action (ex: 'LEARN_MORE', 'SHOP_NOW'). Ignorado no Google (RSA não tem CTA próprio). */
   callToAction?: string
+  /**
+   * URL pública da imagem gerada/aprovada (Supabase Storage). Meta: vira
+   * `picture` no adcreative (qualquer objective aceita imagem). Google:
+   * só usada quando o canal permitir asset com imagem (Display/PMax) —
+   * Search nunca usa (ver isImageApplicable em creative-image.ts).
+   */
+  imageUrl?: string
 }
 
 export type CampaignTargeting = {
@@ -353,4 +360,38 @@ export type CampaignLaunchOutcome = {
   adExternalId: string | null
   steps: CampaignLaunchStepResult[]
   error?: string
+}
+
+// ---------------------------------------------------------------------------
+// Rascunho de criativo (imagem) pendente de aprovação (migration 041)
+// ---------------------------------------------------------------------------
+
+export type CampaignCreativeDraftStatus =
+  | 'pending_approval'
+  | 'approved'
+  | 'rejected'
+  | 'launched'
+  | 'launch_failed'
+
+/**
+ * Uma tentativa de criação de campanha aguardando aprovação humana da
+ * imagem gerada (ou do texto, quando a plataforma/canal não usa imagem —
+ * ver image_applicable) antes de launchCampaign() ser chamado de verdade.
+ */
+export type CampaignCreativeDraft = {
+  id: string
+  org_id: string
+  unit_id: string
+  ad_account_id: string
+  platform: AdPlatform
+  spec: NewCampaignSpec
+  image_applicable: boolean
+  image_prompt: string | null
+  image_url: string | null
+  status: CampaignCreativeDraftStatus
+  decided_by: string | null
+  launch_result: CampaignLaunchOutcome | null
+  error_message: string | null
+  created_at: string
+  updated_at: string
 }
