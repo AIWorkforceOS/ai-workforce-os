@@ -50,6 +50,12 @@ export async function POST(
   if (invoice.status === 'cancelled') {
     return NextResponse.json({ error: 'Fatura cancelada não pode ser enviada.' }, { status: 400 })
   }
+  if (invoice.status === 'consolidated') {
+    return NextResponse.json(
+      { error: 'Esta fatura foi incluída numa fatura consolidada — envie a fatura consolidada em vez desta.' },
+      { status: 400 },
+    )
+  }
 
   const { data: customerRow } = await supabase
     .from('customers')
@@ -83,6 +89,7 @@ export async function POST(
       dueDate: invoice.due_date,
       paymentNotes: invoice.notes,
       locale,
+      consolidatedItems: invoice.consolidated_items,
       // Resposta do cliente cai na caixa real da empresa (não no agente): fatura é assunto humano.
       replyTo: unit.email_reply_to,
     })
@@ -103,6 +110,7 @@ export async function POST(
           dueDate: invoice.due_date,
           paymentNotes: invoice.notes,
           locale,
+          consolidatedItems: invoice.consolidated_items,
         })
         await channel.sendMessage(customer.phone, text)
         attempts.push({ channel: 'phone', ok: true })

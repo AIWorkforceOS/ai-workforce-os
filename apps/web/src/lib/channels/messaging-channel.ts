@@ -314,18 +314,30 @@ export function buildInvoiceMessageText(params: {
   dueDate: string | null
   paymentNotes: string | null
   locale: 'pt' | 'en'
+  /** faturas originais somadas nesta (migration 045) — detalhamento exibido por transparência */
+  consolidatedItems?: { description: string; amount: number; due_date: string | null }[] | null
 }): string {
   const isEn = params.locale === 'en'
   const intlLocale = isEn ? 'en-US' : 'pt-BR'
-  const amountLabel = params.amount.toLocaleString(intlLocale, { style: 'currency', currency: params.currency })
+  const fmt = (value: number) => value.toLocaleString(intlLocale, { style: 'currency', currency: params.currency })
+  const amountLabel = fmt(params.amount)
   const dueLabel = params.dueDate
     ? new Date(`${params.dueDate}T00:00:00`).toLocaleDateString(intlLocale, { day: '2-digit', month: '2-digit', year: 'numeric' })
     : null
+
+  const itemLines =
+    params.consolidatedItems && params.consolidatedItems.length > 0
+      ? [
+          isEn ? 'Includes:' : 'Inclui:',
+          ...params.consolidatedItems.map((item) => `- ${item.description}: ${fmt(Number(item.amount))}`),
+        ]
+      : []
 
   const lines = isEn
     ? [
         `Hi ${params.customerName}! Here is your invoice ${params.invoiceNumber} from ${params.unitName}.`,
         `Service: ${params.description}`,
+        ...(itemLines.length > 0 ? ['', ...itemLines, ''] : []),
         `Amount: ${amountLabel}`,
         ...(dueLabel ? [`Due date: ${dueLabel}`] : []),
         ...(params.paymentNotes ? ['', 'Payment instructions:', params.paymentNotes] : []),
@@ -333,6 +345,7 @@ export function buildInvoiceMessageText(params: {
     : [
         `Olá, ${params.customerName}! Segue sua fatura ${params.invoiceNumber} de ${params.unitName}.`,
         `Serviço: ${params.description}`,
+        ...(itemLines.length > 0 ? ['', ...itemLines, ''] : []),
         `Valor: ${amountLabel}`,
         ...(dueLabel ? [`Vencimento: ${dueLabel}`] : []),
         ...(params.paymentNotes ? ['', 'Como pagar:', params.paymentNotes] : []),

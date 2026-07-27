@@ -426,6 +426,8 @@ export async function sendInvoiceEmail(params: {
   paymentNotes: string | null
   locale: 'pt' | 'en'
   replyTo?: string | null
+  /** faturas originais somadas nesta (migration 045) — detalhamento exibido por transparência */
+  consolidatedItems?: { description: string; amount: number; due_date: string | null }[] | null
 }): Promise<SendResult> {
   const domain = process.env.EMAIL_FROM_DOMAIN
   if (!domain) return { ok: false, error: 'EMAIL_FROM_DOMAIN não está configurada.' }
@@ -448,6 +450,7 @@ export async function sendInvoiceEmail(params: {
         amount: 'Amount',
         dueDate: 'Due date',
         payment: 'Payment instructions',
+        includes: 'Includes',
         footer: `Invoice sent by ${params.unitName}. Reply to this email if you have any questions.`,
       }
     : {
@@ -459,6 +462,7 @@ export async function sendInvoiceEmail(params: {
         amount: 'Valor',
         dueDate: 'Vencimento',
         payment: 'Como pagar',
+        includes: 'Inclui',
         footer: `Fatura enviada por ${params.unitName}. Responda este e-mail em caso de dúvidas.`,
       }
 
@@ -479,6 +483,26 @@ export async function sendInvoiceEmail(params: {
        </div>`
     : ''
 
+  const itemsBlock =
+    params.consolidatedItems && params.consolidatedItems.length > 0
+      ? `<div style="margin-top:16px;">
+           <p style="margin:0 0 8px;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;color:#64748b;">${t.includes}</p>
+           <table style="width:100%;border-collapse:collapse;">
+             ${params.consolidatedItems
+               .map(
+                 (item) => `
+               <tr>
+                 <td style="padding:6px 0;font-size:13px;color:#475569;">${escapeHtml(item.description)}</td>
+                 <td style="padding:6px 0;font-size:13px;font-weight:600;color:#334155;text-align:right;">${escapeHtml(
+                   item.amount.toLocaleString(intlLocale, { style: 'currency', currency: params.currency }),
+                 )}</td>
+               </tr>`,
+               )
+               .join('')}
+           </table>
+         </div>`
+      : ''
+
   const html = `
     <div style="background:#f1f5f9;padding:32px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
       <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;">
@@ -494,6 +518,7 @@ export async function sendInvoiceEmail(params: {
             ${dueLabel ? row(t.dueDate, dueLabel) : ''}
             ${row(t.amount, escapeHtml(amountLabel), true)}
           </table>
+          ${itemsBlock}
           ${paymentBlock}
         </div>
         <div style="padding:16px 32px;background:#f8fafc;border-top:1px solid #e2e8f0;">

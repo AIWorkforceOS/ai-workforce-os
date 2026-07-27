@@ -258,6 +258,20 @@ describe('buildInvoiceMessageText — resumo de cobrança para WhatsApp/SMS', ()
     expect(text).not.toContain('Vencimento')
     expect(text).not.toContain('Como pagar')
   })
+
+  it('detalha os itens de origem quando a fatura é consolidada (migration 045)', () => {
+    const text = buildInvoiceMessageText({
+      ...base,
+      consolidatedItems: [
+        { description: 'Deep clean — 01/07/2026', amount: 150, due_date: null },
+        { description: 'Limpeza recorrente — 15/07/2026', amount: 100, due_date: null },
+      ],
+      locale: 'pt',
+    })
+    expect(text).toContain('Inclui')
+    expect(text).toContain('Deep clean — 01/07/2026')
+    expect(text).toContain('Limpeza recorrente — 15/07/2026')
+  })
 })
 
 describe('channelLabel', () => {

@@ -5,6 +5,8 @@ import { createClient } from '@/lib/supabase/client'
 import { computeSuggestedPay } from '@/lib/service-pay'
 import { normalizeServiceRecurrence, projectedMonthlyRevenue } from '@/lib/scheduling/service-recurrence'
 import {
+  brandGradient,
+  cardShadow,
   FormSection,
   Input,
   Label,
@@ -42,7 +44,7 @@ export type InvoiceWithRelations = Invoice & {
   customer: Pick<Customer, 'id' | 'name' | 'email' | 'phone'> | null
 }
 
-type CustomerOption = Pick<Customer, 'id' | 'name' | 'email' | 'address' | 'custom_fields'>
+type CustomerOption = Pick<Customer, 'id' | 'name' | 'email' | 'phone' | 'address' | 'custom_fields'>
 
 type RecordFormState = {
   service_date: string
@@ -62,18 +64,31 @@ type InvoiceFormState = {
   notes: string
 }
 
+type InvoiceEditFormState = {
+  description: string
+  amount: string
+  due_date: string
+}
+
 const INVOICE_STATUS_LABEL: Record<Invoice['status'], string> = {
   draft: 'Rascunho',
   sent: 'Enviada',
   paid: 'Paga',
   cancelled: 'Cancelada',
+  consolidated: 'Consolidada',
 }
 
-const INVOICE_STATUS_VARIANT: Record<Invoice['status'], 'slate' | 'cyan' | 'green' | 'red'> = {
+const INVOICE_STATUS_VARIANT: Record<Invoice['status'], 'slate' | 'cyan' | 'green' | 'red' | 'purple'> = {
   draft: 'slate',
   sent: 'cyan',
   paid: 'green',
   cancelled: 'red',
+  consolidated: 'purple',
+}
+
+/** Uma vez paga ou substituída por uma consolidada, a fatura não pode mais ser editada (histórico financeiro travado). */
+function isInvoiceEditable(status: Invoice['status']): boolean {
+  return status !== 'paid' && status !== 'consolidated'
 }
 
 /** Hoje no fuso da unidade, como 'YYYY-MM-DD' (en-CA formata exatamente assim). */
@@ -294,6 +309,133 @@ export function ServiceOperationsPanel({
   const [invoiceError, setInvoiceError] = useState<string | null>(null)
   const [invoiceRowBusyId, setInvoiceRowBusyId] = useState<string | null>(null)
   const [invoiceRowError, setInvoiceRowError] = useState<string | null>(null)
+
+  // Edição de fatura (valor/descrição/vencimento) enquanto não estiver paga.
+  const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState<InvoiceEditFormState>({ description: '', amount: '', due_date: '' })
+  const [editBusy, setEditBusy] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
+
+  function handleStartEdit(invoice: InvoiceWithRelations) {
+    setEditError(null)
+    setEditingInvoiceId(invoice.id)
+    setEditForm({
+      description: invoice.description,
+      amount: String(invoice.amount),
+      due_date: invoice.due_date ?? '',
+    })
+  }
+
+  function handleCancelEdit() {
+    setEditingInvoiceId(null)
+    setEditError(null)
+  }
+
+  async function handleSaveEdit(invoice: InvoiceWithRelations) {
+    setEditError(null)
+    if (editForm.description.trim() === '') {
+      setEditError('Informe a descrição da fatura.')
+      return
+    }
+    if (editForm.amount.trim() === '' || Number(editForm.amount) <= 0) {
+      setEditError('Informe o valor da fatura.')
+      return
+    }
+    setEditBusy(true)
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from('invoices')
+      .update({
+        description: editForm.description.trim(),
+        amount: Number(editForm.amount),
+        due_date: editForm.due_date || null,
+      })
+      .eq('id', invoice.id)
+      .select('*, customer:customers(id,name,email,phone)')
+      .single()
+    setEditBusy(false)
+    if (error || !data) {
+      setEditError('Não foi possível salvar as alterações.')
+      return
+    }
+    setInvoices((prev) => prev.map((i) => (i.id === invoice.id ? (data as unknown as InvoiceWithRelations) : i)))
+    setEditingInvoiceId(null)
+  }
+
+  // -------------------------------------------------------------------
+  // Consolidação: soma faturas em aberto (rascunho/enviada) do mesmo
+  // cliente numa fatura única. Por padrão todas as faturas em aberto do
+  // cliente entram — o usuário pode desmarcar as que não quer incluir.
+  // -------------------------------------------------------------------
+  const [consolidateExcluded, setConsolidateExcluded] = useState<Record<string, Set<string>>>({})
+  const [consolidateBusyCustomerId, setConsolidateBusyCustomerId] = useState<string | null>(null)
+  const [consolidateError, setConsolidateError] = useState<string | null>(null)
+
+  const openInvoicesByCustomer = useMemo(() => {
+    const byCustomer = new Map<string, InvoiceWithRelations[]>()
+    for (const invoice of invoices) {
+      if (invoice.status !== 'draft' && invoice.status !== 'sent') continue
+      const list = byCustomer.get(invoice.customer_id) ?? []
+      list.push(invoice)
+      byCustomer.set(invoice.customer_id, list)
+    }
+    return [...byCustomer.entries()]
+      .filter(([, list]) => list.length >= 2)
+      .map(([customerId, list]) => ({
+        customerId,
+        customerName: list[0]?.customer?.name ?? customers.find((c) => c.id === customerId)?.name ?? '—',
+        invoices: list,
+        total: list.reduce((sum, i) => sum + Number(i.amount), 0),
+      }))
+  }, [invoices, customers])
+
+  function toggleConsolidateItem(customerId: string, invoiceId: string) {
+    setConsolidateExcluded((prev) => {
+      const next = new Set(prev[customerId] ?? [])
+      if (next.has(invoiceId)) next.delete(invoiceId)
+      else next.add(invoiceId)
+      return { ...prev, [customerId]: next }
+    })
+  }
+
+  const invoiceNumberById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const invoice of invoices) map.set(invoice.id, invoice.invoice_number)
+    return map
+  }, [invoices])
+
+  async function handleConsolidate(customerId: string, invoiceIds: string[]) {
+    setConsolidateError(null)
+    setConsolidateBusyCustomerId(customerId)
+    const supabase = createClient()
+    const { data, error } = await supabase.rpc('consolidate_invoices', {
+      p_unit_id: unitId,
+      p_customer_id: customerId,
+      p_invoice_ids: invoiceIds,
+    })
+    setConsolidateBusyCustomerId(null)
+    const newRow = (Array.isArray(data) ? data[0] : data) as Invoice | undefined
+    if (error || !newRow) {
+      setConsolidateError(error?.message ?? 'Não foi possível consolidar as faturas.')
+      return
+    }
+    const customer = customers.find((c) => c.id === customerId)
+    const newInvoice: InvoiceWithRelations = {
+      ...newRow,
+      customer: customer ? { id: customer.id, name: customer.name, email: customer.email, phone: customer.phone } : null,
+    }
+    setInvoices((prev) => [
+      newInvoice,
+      ...prev.map((i) =>
+        invoiceIds.includes(i.id) ? { ...i, status: 'consolidated' as const, consolidated_into_id: newInvoice.id } : i,
+      ),
+    ])
+    setConsolidateExcluded((prev) => {
+      const next = { ...prev }
+      delete next[customerId]
+      return next
+    })
+  }
 
   /**
    * Número sequencial por unidade (INV-0001, INV-0002…). Lê os últimos
@@ -714,6 +856,62 @@ export function ServiceOperationsPanel({
         )}
       </div>
 
+      {/* Consolidação de faturas em aberto por cliente */}
+      {openInvoicesByCustomer.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <SectionLabel>Consolidar faturas em aberto</SectionLabel>
+          {consolidateError && <p className="text-sm text-red-400">{consolidateError}</p>}
+          <div className="flex flex-col gap-3">
+            {openInvoicesByCustomer.map((group) => {
+              const excluded = consolidateExcluded[group.customerId] ?? new Set<string>()
+              const selected = group.invoices.filter((i) => !excluded.has(i.id))
+              const selectedTotal = selected.reduce((sum, i) => sum + Number(i.amount), 0)
+              return (
+                <div key={group.customerId} className="rounded-2xl bg-[#141a2b] p-4" style={{ boxShadow: cardShadow }}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-semibold text-white">{group.customerName}</p>
+                    <p className="text-xs text-slate-400">
+                      {group.invoices.length} faturas em aberto · total {fmtMoney(group.total)}
+                    </p>
+                  </div>
+                  <ul className="mt-3 flex flex-col gap-1.5">
+                    {group.invoices.map((invoice) => (
+                      <li key={invoice.id} className="flex items-center gap-2 text-sm text-slate-300">
+                        <input
+                          type="checkbox"
+                          checked={!excluded.has(invoice.id)}
+                          onChange={() => toggleConsolidateItem(group.customerId, invoice.id)}
+                          className="h-4 w-4 rounded border-white/20 bg-transparent"
+                        />
+                        <span className="font-semibold text-white">{invoice.invoice_number}</span>
+                        <span className="text-slate-400">{invoice.description}</span>
+                        <span className="ml-auto font-semibold text-slate-200">{fmtMoney(Number(invoice.amount))}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <p className="text-xs text-slate-500">
+                      {selected.length} selecionadas · {fmtMoney(selectedTotal)}
+                    </p>
+                    <button
+                      type="button"
+                      disabled={selected.length < 2 || consolidateBusyCustomerId === group.customerId}
+                      onClick={() => handleConsolidate(group.customerId, selected.map((i) => i.id))}
+                      className="rounded-xl px-4 py-2 text-xs font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40"
+                      style={{ background: brandGradient, boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
+                    >
+                      {consolidateBusyCustomerId === group.customerId
+                        ? 'Consolidando…'
+                        : `Consolidar ${selected.length} em uma fatura`}
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Faturas */}
       <div className="flex flex-col gap-3">
         <SectionLabel>Faturas para clientes</SectionLabel>
@@ -826,61 +1024,140 @@ export function ServiceOperationsPanel({
                             .join(' · ') || 'sem e-mail nem telefone'}
                         </p>
                       </Td>
-                      <Td className="text-slate-400">{invoice.description}</Td>
-                      <Td className="font-black text-white">{fmtMoney(Number(invoice.amount))}</Td>
-                      <Td className="text-slate-400">{invoice.due_date ? formatDate(invoice.due_date) : '—'}</Td>
+                      {editingInvoiceId === invoice.id ? (
+                        <>
+                          <Td>
+                            <Input
+                              value={editForm.description}
+                              onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
+                            />
+                          </Td>
+                          <Td>
+                            <Input
+                              type="number"
+                              min={0.01}
+                              step="0.01"
+                              value={editForm.amount}
+                              onChange={(e) => setEditForm((f) => ({ ...f, amount: e.target.value }))}
+                            />
+                          </Td>
+                          <Td>
+                            <Input
+                              type="date"
+                              value={editForm.due_date}
+                              onChange={(e) => setEditForm((f) => ({ ...f, due_date: e.target.value }))}
+                            />
+                          </Td>
+                        </>
+                      ) : (
+                        <>
+                          <Td className="text-slate-400">
+                            {invoice.description}
+                            {invoice.consolidated_items && invoice.consolidated_items.length > 0 && (
+                              <ul className="mt-1 flex flex-col gap-0.5 text-[11px] text-slate-500">
+                                {invoice.consolidated_items.map((item) => (
+                                  <li key={item.invoice_id}>
+                                    {item.invoice_number} · {item.description} — {fmtMoney(Number(item.amount))}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                            {invoice.status === 'consolidated' && invoice.consolidated_into_id && (
+                              <p className="mt-1 text-[11px] text-purple-300">
+                                Incluída em {invoiceNumberById.get(invoice.consolidated_into_id) ?? 'fatura consolidada'}
+                              </p>
+                            )}
+                          </Td>
+                          <Td className="font-black text-white">{fmtMoney(Number(invoice.amount))}</Td>
+                          <Td className="text-slate-400">{invoice.due_date ? formatDate(invoice.due_date) : '—'}</Td>
+                        </>
+                      )}
                       <Td>
                         <StatusPill variant={INVOICE_STATUS_VARIANT[invoice.status]}>
                           {INVOICE_STATUS_LABEL[invoice.status]}
                         </StatusPill>
                       </Td>
                       <Td>
-                        <div className="flex flex-wrap gap-3 text-xs font-semibold">
-                          {invoice.status !== 'cancelled' && invoice.status !== 'paid' && (
-                            <button
-                              type="button"
-                              disabled={invoiceRowBusyId === invoice.id}
-                              className="text-cyan-400 hover:text-cyan-300 disabled:opacity-40"
-                              onClick={() => handleSendInvoice(invoice)}
-                            >
-                              {invoiceRowBusyId === invoice.id
-                                ? 'Enviando…'
-                                : invoice.status === 'sent'
-                                  ? 'Reenviar fatura'
-                                  : 'Enviar fatura'}
-                            </button>
-                          )}
-                          {invoice.status !== 'paid' && invoice.status !== 'cancelled' && (
-                            <button
-                              type="button"
-                              disabled={invoiceRowBusyId === invoice.id}
-                              className="text-green-400 hover:text-green-300 disabled:opacity-40"
-                              onClick={() => handleInvoiceStatus(invoice, 'paid')}
-                            >
-                              Marcar paga
-                            </button>
-                          )}
-                          {invoice.status === 'paid' && (
-                            <button
-                              type="button"
-                              disabled={invoiceRowBusyId === invoice.id}
-                              className="text-amber-400 hover:text-amber-300 disabled:opacity-40"
-                              onClick={() => handleInvoiceStatus(invoice, invoice.sent_at ? 'sent' : 'draft')}
-                            >
-                              Reabrir
-                            </button>
-                          )}
-                          {invoice.status !== 'cancelled' && invoice.status !== 'paid' && (
-                            <button
-                              type="button"
-                              disabled={invoiceRowBusyId === invoice.id}
-                              className="text-red-400 hover:text-red-300 disabled:opacity-40"
-                              onClick={() => handleInvoiceStatus(invoice, 'cancelled')}
-                            >
-                              Cancelar
-                            </button>
-                          )}
-                        </div>
+                        {editingInvoiceId === invoice.id ? (
+                          <div className="flex flex-col gap-1.5">
+                            {editError && <p className="text-xs text-red-400">{editError}</p>}
+                            <div className="flex flex-wrap gap-3 text-xs font-semibold">
+                              <button
+                                type="button"
+                                disabled={editBusy}
+                                className="text-green-400 hover:text-green-300 disabled:opacity-40"
+                                onClick={() => handleSaveEdit(invoice)}
+                              >
+                                {editBusy ? 'Salvando…' : 'Salvar'}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={editBusy}
+                                className="text-slate-400 hover:text-slate-300 disabled:opacity-40"
+                                onClick={handleCancelEdit}
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap gap-3 text-xs font-semibold">
+                            {isInvoiceEditable(invoice.status) && (
+                              <button
+                                type="button"
+                                disabled={invoiceRowBusyId === invoice.id}
+                                className="text-slate-300 hover:text-white disabled:opacity-40"
+                                onClick={() => handleStartEdit(invoice)}
+                              >
+                                Editar
+                              </button>
+                            )}
+                            {invoice.status !== 'cancelled' && invoice.status !== 'paid' && invoice.status !== 'consolidated' && (
+                              <button
+                                type="button"
+                                disabled={invoiceRowBusyId === invoice.id}
+                                className="text-cyan-400 hover:text-cyan-300 disabled:opacity-40"
+                                onClick={() => handleSendInvoice(invoice)}
+                              >
+                                {invoiceRowBusyId === invoice.id
+                                  ? 'Enviando…'
+                                  : invoice.status === 'sent'
+                                    ? 'Reenviar fatura'
+                                    : 'Enviar fatura'}
+                              </button>
+                            )}
+                            {invoice.status !== 'paid' && invoice.status !== 'cancelled' && invoice.status !== 'consolidated' && (
+                              <button
+                                type="button"
+                                disabled={invoiceRowBusyId === invoice.id}
+                                className="text-green-400 hover:text-green-300 disabled:opacity-40"
+                                onClick={() => handleInvoiceStatus(invoice, 'paid')}
+                              >
+                                Marcar paga
+                              </button>
+                            )}
+                            {invoice.status === 'paid' && (
+                              <button
+                                type="button"
+                                disabled={invoiceRowBusyId === invoice.id}
+                                className="text-amber-400 hover:text-amber-300 disabled:opacity-40"
+                                onClick={() => handleInvoiceStatus(invoice, invoice.sent_at ? 'sent' : 'draft')}
+                              >
+                                Reabrir
+                              </button>
+                            )}
+                            {invoice.status !== 'cancelled' && invoice.status !== 'paid' && invoice.status !== 'consolidated' && (
+                              <button
+                                type="button"
+                                disabled={invoiceRowBusyId === invoice.id}
+                                className="text-red-400 hover:text-red-300 disabled:opacity-40"
+                                onClick={() => handleInvoiceStatus(invoice, 'cancelled')}
+                              >
+                                Cancelar
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </Td>
                     </Tr>
                   ))}

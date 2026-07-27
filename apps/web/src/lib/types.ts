@@ -359,7 +359,16 @@ export type ServiceRecord = {
   updated_at: string
 }
 
-export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'cancelled'
+export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'cancelled' | 'consolidated'
+
+/** Item de origem de uma fatura consolidada (migration 045) — detalhamento exibido ao cliente. */
+export type ConsolidatedInvoiceItem = {
+  invoice_id: string
+  invoice_number: string
+  description: string
+  amount: number
+  due_date: string | null
+}
 
 /** Fatura/recibo enviado por e-mail ao cliente final (tabela invoices, migration 030). Sem gateway de pagamento nesta fase. */
 export type Invoice = {
@@ -382,6 +391,10 @@ export type Invoice = {
   paid_at: string | null
   /** texto livre incluído no e-mail (ex.: instruções de pagamento) */
   notes: string | null
+  /** preenchido quando esta fatura foi somada a outras (status='consolidated') — aponta para a fatura nova */
+  consolidated_into_id: string | null
+  /** preenchido só na fatura consolidada (a nova) — detalhamento das faturas originais */
+  consolidated_items: ConsolidatedInvoiceItem[] | null
   created_at: string
   updated_at: string
 }
