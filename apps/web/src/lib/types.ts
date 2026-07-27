@@ -355,6 +355,8 @@ export type ServiceRecord = {
   amount_due: number | null
   payment_status: ServiceRecordPaymentStatus
   paid_at: string | null
+  /** fatura (individual ou consolidada) que já cobriu este lançamento — null = avulso pendente de fatura */
+  invoice_id: string | null
   created_at: string
   updated_at: string
 }

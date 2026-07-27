@@ -529,12 +529,83 @@ export function ServiceOperationsPanel({
       due_date: null,
       notes: null,
     })
-    setRecordRowBusyId(null)
     if (!result.invoice) {
+      setRecordRowBusyId(null)
       setRecordRowError(result.error ?? 'Não foi possível gerar a fatura.')
       return
     }
+    const supabase = createClient()
+    await supabase.from('service_records').update({ invoice_id: result.invoice.id }).eq('id', record.id)
+    setRecordRowBusyId(null)
     setInvoices((prev) => [result.invoice!, ...prev])
+    setRecords((prev) => prev.map((r) => (r.id === record.id ? { ...r, invoice_id: result.invoice!.id } : r)))
+  }
+
+  // -------------------------------------------------------------------
+  // Faturar serviços pendentes (avulso): service_records ainda sem
+  // fatura, agrupados por cliente — mostra o total a cobrar/a pagar à
+  // equipe/margem ANTES de gerar, e cria uma única fatura pro lote
+  // selecionado (ex.: 10 serviços de $80 viram 1 fatura de $800), sem
+  // precisar gerar N faturas individuais e consolidar depois.
+  // -------------------------------------------------------------------
+  const [pendingExcluded, setPendingExcluded] = useState<Record<string, Set<string>>>({})
+  const [pendingBusyCustomerId, setPendingBusyCustomerId] = useState<string | null>(null)
+  const [pendingError, setPendingError] = useState<string | null>(null)
+
+  const pendingRecordsByCustomer = useMemo(() => {
+    const byCustomer = new Map<string, ServiceRecordWithRelations[]>()
+    for (const record of records) {
+      if (record.invoice_id !== null) continue
+      if (!record.customer?.id || record.amount_charged === null) continue
+      const list = byCustomer.get(record.customer.id) ?? []
+      list.push(record)
+      byCustomer.set(record.customer.id, list)
+    }
+    return [...byCustomer.entries()].map(([customerId, list]) => ({
+      customerId,
+      customerName: list[0]?.customer?.name ?? '—',
+      records: list,
+    }))
+  }, [records])
+
+  function togglePendingItem(customerId: string, recordId: string) {
+    setPendingExcluded((prev) => {
+      const next = new Set(prev[customerId] ?? [])
+      if (next.has(recordId)) next.delete(recordId)
+      else next.add(recordId)
+      return { ...prev, [customerId]: next }
+    })
+  }
+
+  async function handleGenerateConsolidatedServiceInvoice(customerId: string, selected: ServiceRecordWithRelations[]) {
+    setPendingError(null)
+    setPendingBusyCustomerId(customerId)
+    const supabase = createClient()
+    const { data, error } = await supabase.rpc('generate_service_records_invoice', {
+      p_unit_id: unitId,
+      p_customer_id: customerId,
+      p_service_record_ids: selected.map((r) => r.id),
+      p_currency: currency,
+    })
+    setPendingBusyCustomerId(null)
+    const newRow = (Array.isArray(data) ? data[0] : data) as Invoice | undefined
+    if (error || !newRow) {
+      setPendingError(error?.message ?? 'Não foi possível gerar a fatura consolidada.')
+      return
+    }
+    const customer = customers.find((c) => c.id === customerId)
+    const newInvoice: InvoiceWithRelations = {
+      ...newRow,
+      customer: customer ? { id: customer.id, name: customer.name, email: customer.email, phone: customer.phone } : null,
+    }
+    const selectedIds = new Set(selected.map((r) => r.id))
+    setInvoices((prev) => [newInvoice, ...prev])
+    setRecords((prev) => prev.map((r) => (selectedIds.has(r.id) ? { ...r, invoice_id: newInvoice.id } : r)))
+    setPendingExcluded((prev) => {
+      const next = { ...prev }
+      delete next[customerId]
+      return next
+    })
   }
 
   async function handleSendInvoice(invoice: InvoiceWithRelations) {
@@ -829,14 +900,18 @@ export function ServiceOperationsPanel({
                               Reabrir
                             </button>
                           )}
-                          <button
-                            type="button"
-                            disabled={recordRowBusyId === record.id}
-                            className="text-cyan-400 hover:text-cyan-300 disabled:opacity-40"
-                            onClick={() => handleGenerateInvoiceFromRecord(record)}
-                          >
-                            Gerar fatura
-                          </button>
+                          {record.invoice_id === null ? (
+                            <button
+                              type="button"
+                              disabled={recordRowBusyId === record.id}
+                              className="text-cyan-400 hover:text-cyan-300 disabled:opacity-40"
+                              onClick={() => handleGenerateInvoiceFromRecord(record)}
+                            >
+                              Gerar fatura
+                            </button>
+                          ) : (
+                            <span className="text-slate-500">Faturado</span>
+                          )}
                           <button
                             type="button"
                             disabled={recordRowBusyId === record.id}
@@ -855,6 +930,80 @@ export function ServiceOperationsPanel({
           </div>
         )}
       </div>
+
+      {/* Faturar serviços pendentes: service_records avulsos ainda sem
+          fatura, agrupados por cliente, com o total a cobrar/a pagar à
+          equipe/margem calculados antes de gerar a fatura consolidada. */}
+      {pendingRecordsByCustomer.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <SectionLabel>Faturar serviços pendentes</SectionLabel>
+          {pendingError && <p className="text-sm text-red-400">{pendingError}</p>}
+          <div className="flex flex-col gap-3">
+            {pendingRecordsByCustomer.map((group) => {
+              const excluded = pendingExcluded[group.customerId] ?? new Set<string>()
+              const selected = group.records.filter((r) => !excluded.has(r.id))
+              const totalCharged = selected.reduce((sum, r) => sum + Number(r.amount_charged), 0)
+              const totalDue = selected.reduce((sum, r) => sum + (r.amount_due === null ? 0 : Number(r.amount_due)), 0)
+              const margin = totalCharged - totalDue
+              return (
+                <div key={group.customerId} className="rounded-2xl bg-[#141a2b] p-4" style={{ boxShadow: cardShadow }}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-semibold text-white">{group.customerName}</p>
+                    <p className="text-xs text-slate-400">{group.records.length} serviços pendentes de fatura</p>
+                  </div>
+                  <ul className="mt-3 flex flex-col gap-1.5">
+                    {group.records.map((record) => (
+                      <li key={record.id} className="flex items-center gap-2 text-sm text-slate-300">
+                        <input
+                          type="checkbox"
+                          checked={!excluded.has(record.id)}
+                          onChange={() => togglePendingItem(group.customerId, record.id)}
+                          className="h-4 w-4 rounded border-white/20 bg-transparent"
+                        />
+                        <span className="font-semibold text-white">{formatDate(record.service_date)}</span>
+                        <span className="text-slate-400">{record.service?.name ?? record.description ?? 'Serviço avulso'}</span>
+                        <span className="ml-auto font-semibold text-slate-200">{fmtMoney(Number(record.amount_charged))}</span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <div className="rounded-xl bg-white/5 p-3">
+                      <p className="text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">Total a cobrar do cliente</p>
+                      <p className="mt-1 text-base font-black text-white">{fmtMoney(totalCharged)}</p>
+                    </div>
+                    <div className="rounded-xl bg-white/5 p-3">
+                      <p className="text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">A pagar à equipe</p>
+                      <p className="mt-1 text-base font-black text-amber-300">{fmtMoney(totalDue)}</p>
+                    </div>
+                    <div className="rounded-xl bg-white/5 p-3">
+                      <p className="text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">Sobra no caixa</p>
+                      <p className="mt-1 text-base font-black text-green-400">{fmtMoney(margin)}</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <p className="text-xs text-slate-500">
+                      {selected.length} selecionados · {fmtMoney(totalCharged)}
+                    </p>
+                    <button
+                      type="button"
+                      disabled={selected.length === 0 || pendingBusyCustomerId === group.customerId}
+                      onClick={() => handleGenerateConsolidatedServiceInvoice(group.customerId, selected)}
+                      className="rounded-xl px-4 py-2 text-xs font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40"
+                      style={{ background: brandGradient, boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
+                    >
+                      {pendingBusyCustomerId === group.customerId
+                        ? 'Gerando…'
+                        : `Gerar fatura consolidada (${selected.length})`}
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Consolidação de faturas em aberto por cliente */}
       {openInvoicesByCustomer.length > 0 && (
