@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, type FormEvent } from 'react'
+import { useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { computeSuggestedPay } from '@/lib/service-pay'
 import { normalizeServiceRecurrence, projectedMonthlyRevenue } from '@/lib/scheduling/service-recurrence'
@@ -108,9 +108,16 @@ function formatDate(dateStr: string): string {
   return `${day}/${month}/${year}`
 }
 
+const LOGO_MAX_BYTES = 2 * 1024 * 1024
+
 export type BillingIdentity = Pick<
   Unit,
-  'billing_company_name' | 'billing_address' | 'billing_email' | 'billing_phone' | 'billing_payment_instructions'
+  | 'billing_company_name'
+  | 'billing_address'
+  | 'billing_email'
+  | 'billing_phone'
+  | 'billing_payment_instructions'
+  | 'logo_url'
 >
 
 export function ServiceOperationsPanel({
@@ -414,6 +421,45 @@ export function ServiceOperationsPanel({
   const [billingError, setBillingError] = useState<string | null>(null)
   const [billingSaved, setBillingSaved] = useState(false)
 
+  const [billingLogoUrl, setBillingLogoUrl] = useState(initialBilling.logo_url ?? '')
+  const [logoUploading, setLogoUploading] = useState(false)
+  const [logoError, setLogoError] = useState<string | null>(null)
+  const logoInputRef = useRef<HTMLInputElement>(null)
+
+  async function handleLogoChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setLogoError(null)
+
+    if (!file.type.startsWith('image/')) {
+      setLogoError('Envie um arquivo de imagem (PNG ou JPG — SVG não aparece na fatura em PDF).')
+      return
+    }
+    if (file.size > LOGO_MAX_BYTES) {
+      setLogoError('A imagem deve ter no máximo 2MB.')
+      return
+    }
+
+    setLogoUploading(true)
+    const supabase = createClient()
+    const ext = file.name.split('.').pop()?.toLowerCase() || 'png'
+    const path = `${unitId}/logo-${Date.now()}.${ext}`
+
+    const { error: uploadError } = await supabase.storage
+      .from('unit-logos')
+      .upload(path, file, { upsert: true, contentType: file.type })
+
+    setLogoUploading(false)
+
+    if (uploadError) {
+      setLogoError('Não foi possível enviar a imagem.')
+      return
+    }
+
+    const { data } = supabase.storage.from('unit-logos').getPublicUrl(path)
+    setBillingLogoUrl(data.publicUrl)
+  }
+
   async function handleSaveBilling() {
     setBillingError(null)
     setBillingSaved(false)
@@ -427,6 +473,7 @@ export function ServiceOperationsPanel({
         billing_email: billingForm.billing_email.trim() || null,
         billing_phone: billingForm.billing_phone.trim() || null,
         billing_payment_instructions: billingForm.billing_payment_instructions.trim() || null,
+        logo_url: billingLogoUrl || null,
       })
       .eq('id', unitId)
     setBillingBusy(false)
@@ -1315,6 +1362,7 @@ export function ServiceOperationsPanel({
 
       {/* Dados de cobrança — quem cobra, para a fatura em PDF */}
       <details
+        open
         className="group rounded-2xl bg-[#141a2b] p-4"
         style={{ boxShadow: cardShadow }}
       >
@@ -1362,6 +1410,47 @@ export function ServiceOperationsPanel({
                 placeholder="Rua, número, cidade"
               />
             </div>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="billingLogo">Logo (aparece no topo da fatura em PDF)</Label>
+            <div className="flex items-center gap-3">
+              {billingLogoUrl ? (
+                <img
+                  src={billingLogoUrl}
+                  alt="Logo"
+                  className="h-12 w-12 flex-shrink-0 rounded-lg object-contain"
+                  style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
+                />
+              ) : (
+                <div
+                  className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg text-[10px] text-slate-500"
+                  style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
+                >
+                  sem logo
+                </div>
+              )}
+              <div className="flex flex-col gap-1">
+                <button
+                  type="button"
+                  onClick={() => logoInputRef.current?.click()}
+                  disabled={logoUploading}
+                  className="self-start rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-colors disabled:opacity-50"
+                  style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                >
+                  {logoUploading ? 'Enviando...' : billingLogoUrl ? 'Trocar imagem' : 'Enviar imagem'}
+                </button>
+                <input
+                  ref={logoInputRef}
+                  id="billingLogo"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleLogoChange}
+                />
+                {logoError && <p className="text-xs text-red-400">{logoError}</p>}
+              </div>
+            </div>
+            <p className="text-xs text-slate-500">PNG ou JPG, até 2MB. SVG é aceito mas não aparece na fatura em PDF.</p>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="billingPayment">Instruções de pagamento (aparecem no rodapé da fatura)</Label>

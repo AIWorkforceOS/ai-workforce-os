@@ -1,4 +1,4 @@
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
+import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib'
 import type { Customer, Invoice, Unit } from '@/lib/types'
 
 /**
@@ -60,6 +60,33 @@ const DARK = rgb(0.06, 0.09, 0.16)
 const MUTED = rgb(0.4, 0.46, 0.55)
 const LINE = rgb(0.85, 0.87, 0.9)
 
+const LOGO_MAX_WIDTH = 100
+const LOGO_MAX_HEIGHT = 50
+
+/** Best-effort: baixa e embute a logo da unidade. Qualquer falha (URL não-PNG/JPG, fetch, embed) apenas pula a logo — não pode derrubar a geração do resto da fatura. */
+async function tryEmbedLogo(
+  doc: PDFDocument,
+  logoUrl: string | null,
+): Promise<{ image: PDFImage; width: number; height: number } | null> {
+  if (!logoUrl) return null
+  try {
+    const res = await fetch(logoUrl)
+    if (!res.ok) return null
+    const bytes = await res.arrayBuffer()
+    const lower = logoUrl.toLowerCase()
+    const image = lower.endsWith('.png')
+      ? await doc.embedPng(bytes)
+      : lower.endsWith('.jpg') || lower.endsWith('.jpeg')
+        ? await doc.embedJpg(bytes)
+        : null
+    if (!image) return null
+    const scale = Math.min(LOGO_MAX_WIDTH / image.width, LOGO_MAX_HEIGHT / image.height, 1)
+    return { image, width: image.width * scale, height: image.height * scale }
+  } catch {
+    return null
+  }
+}
+
 /** Quebra uma linha de texto em várias que cabem em maxWidth, medindo com a fonte real (pdf-lib não quebra sozinho). */
 function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
   const words = text.split(/\s+/).filter(Boolean)
@@ -85,7 +112,16 @@ export async function generateInvoicePdf(params: {
     'invoice_number' | 'description' | 'amount' | 'currency' | 'due_date' | 'created_at' | 'consolidated_items'
   >
   customer: Pick<Customer, 'name' | 'email' | 'phone' | 'address'>
-  unit: Pick<Unit, 'name' | 'billing_company_name' | 'billing_address' | 'billing_email' | 'billing_phone' | 'billing_payment_instructions'>
+  unit: Pick<
+    Unit,
+    | 'name'
+    | 'billing_company_name'
+    | 'billing_address'
+    | 'billing_email'
+    | 'billing_phone'
+    | 'billing_payment_instructions'
+    | 'logo_url'
+  >
   locale?: PdfLocale
 }): Promise<Buffer> {
   const locale = params.locale ?? 'pt'
@@ -96,6 +132,16 @@ export async function generateInvoicePdf(params: {
   const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
   const font = await doc.embedFont(StandardFonts.Helvetica)
   const bold = await doc.embedFont(StandardFonts.HelveticaBold)
+
+  const logo = await tryEmbedLogo(doc, params.unit.logo_url)
+  if (logo) {
+    page.drawImage(logo.image, {
+      x: PAGE_WIDTH - MARGIN - logo.width,
+      y: PAGE_HEIGHT - 56 - logo.height,
+      width: logo.width,
+      height: logo.height,
+    })
+  }
 
   let y = PAGE_HEIGHT - 64
 

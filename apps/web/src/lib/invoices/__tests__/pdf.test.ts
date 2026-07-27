@@ -51,6 +51,7 @@ const baseUnit = {
   billing_email: 'billing@alizocleaning.com',
   billing_phone: '+1 480 555 0199',
   billing_payment_instructions: 'Zelle to pay@alizocleaning.com',
+  logo_url: null,
 }
 
 describe('generateInvoicePdf', () => {
@@ -98,5 +99,16 @@ describe('generateInvoicePdf', () => {
     const raw = extractStreamText(buffer)
     expect(raw).toContain('Visita 1')
     expect(raw).toContain('Visita 2')
+  })
+
+  it('não quebra a geração do PDF quando a logo não pode ser baixada/embutida (best-effort)', async () => {
+    const buffer = await generateInvoicePdf({
+      invoice: baseInvoice,
+      customer: baseCustomer,
+      unit: { ...baseUnit, logo_url: 'https://example.invalid/does-not-exist/logo.svg' },
+      locale: 'en',
+    })
+    expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+    expect(extractStreamText(buffer)).toContain('INV-0042')
   })
 })

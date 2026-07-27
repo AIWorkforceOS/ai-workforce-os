@@ -89,6 +89,7 @@ export default async function UnitOperationsPage({ params }: { params: Promise<{
             billing_email: unitRow.billing_email,
             billing_phone: unitRow.billing_phone,
             billing_payment_instructions: unitRow.billing_payment_instructions,
+            logo_url: unitRow.logo_url,
           }}
         />
       ) : (
