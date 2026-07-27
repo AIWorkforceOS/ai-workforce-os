@@ -83,6 +83,13 @@ export default async function UnitOperationsPage({ params }: { params: Promise<{
           customers={(customers ?? []) as Pick<Customer, 'id' | 'name' | 'email' | 'phone' | 'address' | 'custom_fields'>[]}
           initialRecords={(records ?? []) as unknown as ServiceRecordWithRelations[]}
           initialInvoices={(invoices ?? []) as unknown as InvoiceWithRelations[]}
+          initialBilling={{
+            billing_company_name: unitRow.billing_company_name,
+            billing_address: unitRow.billing_address,
+            billing_email: unitRow.billing_email,
+            billing_phone: unitRow.billing_phone,
+            billing_payment_instructions: unitRow.billing_payment_instructions,
+          }}
         />
       ) : (
         <p className="text-sm text-amber-400">

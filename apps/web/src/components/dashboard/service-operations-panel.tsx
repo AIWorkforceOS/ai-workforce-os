@@ -19,7 +19,7 @@ import {
   Tr,
   Textarea,
 } from '@/components/ui/dashboard-ui'
-import type { Customer, Employee, Invoice, Service, ServiceRecord } from '@/lib/types'
+import type { Customer, Employee, Invoice, Service, ServiceRecord, Unit } from '@/lib/types'
 
 const SERVICE_RECURRENCE_LABEL: Record<string, string> = {
   once: 'Único',
@@ -56,6 +56,8 @@ type RecordFormState = {
   amount_due: string
 }
 
+type RecordEditFormState = RecordFormState
+
 type InvoiceFormState = {
   customer_id: string
   description: string
@@ -86,9 +88,14 @@ const INVOICE_STATUS_VARIANT: Record<Invoice['status'], 'slate' | 'cyan' | 'gree
   consolidated: 'purple',
 }
 
-/** Uma vez paga ou substituída por uma consolidada, a fatura não pode mais ser editada (histórico financeiro travado). */
+/**
+ * Uma vez paga ou substituída por uma consolidada, a fatura não pode mais
+ * ser editada (histórico financeiro travado). Cancelada também não edita
+ * direto — primeiro precisa "Reativar" (volta pra draft), pra não deixar
+ * uma fatura cancelada com valor alterado sem nenhum caminho de reenvio.
+ */
 function isInvoiceEditable(status: Invoice['status']): boolean {
-  return status !== 'paid' && status !== 'consolidated'
+  return status !== 'paid' && status !== 'consolidated' && status !== 'cancelled'
 }
 
 /** Hoje no fuso da unidade, como 'YYYY-MM-DD' (en-CA formata exatamente assim). */
@@ -101,6 +108,11 @@ function formatDate(dateStr: string): string {
   return `${day}/${month}/${year}`
 }
 
+export type BillingIdentity = Pick<
+  Unit,
+  'billing_company_name' | 'billing_address' | 'billing_email' | 'billing_phone' | 'billing_payment_instructions'
+>
+
 export function ServiceOperationsPanel({
   unitId,
   orgId,
@@ -111,6 +123,7 @@ export function ServiceOperationsPanel({
   customers,
   initialRecords,
   initialInvoices,
+  initialBilling,
 }: {
   unitId: string
   orgId: string
@@ -122,6 +135,7 @@ export function ServiceOperationsPanel({
   customers: CustomerOption[]
   initialRecords: ServiceRecordWithRelations[]
   initialInvoices: InvoiceWithRelations[]
+  initialBilling: BillingIdentity
 }) {
   const intlLocale = currency === 'USD' ? 'en-US' : 'pt-BR'
   const fmtMoney = (value: number | null) =>
@@ -243,6 +257,83 @@ export function ServiceOperationsPanel({
     setRecords((prev) => prev.filter((r) => r.id !== record.id))
   }
 
+  /** Desvincula a fatura do lançamento (invoice_id volta a null) sem alterar a fatura já gerada — o registro reaparece em "Faturar serviços pendentes" e pode ser faturado de novo. */
+  async function handleUnlinkInvoice(record: ServiceRecordWithRelations) {
+    setRecordRowError(null)
+    setRecordRowBusyId(record.id)
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from('service_records')
+      .update({ invoice_id: null })
+      .eq('id', record.id)
+      .select('*, employee:employees(id,name), customer:customers(id,name,email), service:services(id,name)')
+      .single()
+    setRecordRowBusyId(null)
+    if (error || !data) {
+      setRecordRowError('Não foi possível desvincular a fatura.')
+      return
+    }
+    setRecords((prev) => prev.map((r) => (r.id === record.id ? (data as unknown as ServiceRecordWithRelations) : r)))
+  }
+
+  // Edição de um lançamento de serviço (data/profissional/cliente/serviço/
+  // descrição/valores) — sempre disponível, independente de pago ou
+  // faturado, mesmo padrão de edição inline usado nas faturas.
+  const [editingRecordId, setEditingRecordId] = useState<string | null>(null)
+  const [recordEditForm, setRecordEditForm] = useState<RecordEditFormState>(emptyRecordForm)
+  const [recordEditBusy, setRecordEditBusy] = useState(false)
+  const [recordEditError, setRecordEditError] = useState<string | null>(null)
+
+  function handleStartEditRecord(record: ServiceRecordWithRelations) {
+    setRecordEditError(null)
+    setEditingRecordId(record.id)
+    setRecordEditForm({
+      service_date: record.service_date,
+      employee_id: record.employee_id ?? '',
+      customer_id: record.customer_id ?? '',
+      service_id: record.service_id ?? '',
+      description: record.description ?? '',
+      amount_charged: record.amount_charged === null ? '' : String(record.amount_charged),
+      amount_due: record.amount_due === null ? '' : String(record.amount_due),
+    })
+  }
+
+  function handleCancelEditRecord() {
+    setEditingRecordId(null)
+    setRecordEditError(null)
+  }
+
+  async function handleSaveEditRecord(record: ServiceRecordWithRelations) {
+    setRecordEditError(null)
+    if (!recordEditForm.employee_id) {
+      setRecordEditError('Escolha o profissional que executou o serviço.')
+      return
+    }
+    setRecordEditBusy(true)
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from('service_records')
+      .update({
+        service_date: recordEditForm.service_date,
+        employee_id: recordEditForm.employee_id,
+        customer_id: recordEditForm.customer_id || null,
+        service_id: recordEditForm.service_id || null,
+        description: recordEditForm.description.trim() || null,
+        amount_charged: recordEditForm.amount_charged.trim() === '' ? null : Number(recordEditForm.amount_charged),
+        amount_due: recordEditForm.amount_due.trim() === '' ? null : Number(recordEditForm.amount_due),
+      })
+      .eq('id', record.id)
+      .select('*, employee:employees(id,name), customer:customers(id,name,email), service:services(id,name)')
+      .single()
+    setRecordEditBusy(false)
+    if (error || !data) {
+      setRecordEditError('Não foi possível salvar as alterações.')
+      return
+    }
+    setRecords((prev) => prev.map((r) => (r.id === record.id ? (data as unknown as ServiceRecordWithRelations) : r)))
+    setEditingRecordId(null)
+  }
+
   const totals = useMemo(() => {
     const pendingDue = records
       .filter((r) => r.payment_status === 'pending' && r.amount_due !== null)
@@ -299,6 +390,52 @@ export function ServiceOperationsPanel({
       .filter((i) => i.status === 'paid' && i.paid_at && i.paid_at.slice(0, 7) === monthKey)
       .reduce((sum, i) => sum + Number(i.amount), 0)
   }, [invoices])
+
+  // -------------------------------------------------------------------
+  // Dados de cobrança — quem está cobrando, para aparecer na fatura em
+  // PDF (migration 048). Os dados do cliente cobrado já vêm do cadastro
+  // dele; aqui é só o lado da empresa.
+  // -------------------------------------------------------------------
+  type BillingFormState = {
+    billing_company_name: string
+    billing_address: string
+    billing_email: string
+    billing_phone: string
+    billing_payment_instructions: string
+  }
+  const [billingForm, setBillingForm] = useState<BillingFormState>({
+    billing_company_name: initialBilling.billing_company_name ?? '',
+    billing_address: initialBilling.billing_address ?? '',
+    billing_email: initialBilling.billing_email ?? '',
+    billing_phone: initialBilling.billing_phone ?? '',
+    billing_payment_instructions: initialBilling.billing_payment_instructions ?? '',
+  })
+  const [billingBusy, setBillingBusy] = useState(false)
+  const [billingError, setBillingError] = useState<string | null>(null)
+  const [billingSaved, setBillingSaved] = useState(false)
+
+  async function handleSaveBilling() {
+    setBillingError(null)
+    setBillingSaved(false)
+    setBillingBusy(true)
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('units')
+      .update({
+        billing_company_name: billingForm.billing_company_name.trim() || null,
+        billing_address: billingForm.billing_address.trim() || null,
+        billing_email: billingForm.billing_email.trim() || null,
+        billing_phone: billingForm.billing_phone.trim() || null,
+        billing_payment_instructions: billingForm.billing_payment_instructions.trim() || null,
+      })
+      .eq('id', unitId)
+    setBillingBusy(false)
+    if (error) {
+      setBillingError('Não foi possível salvar os dados de cobrança.')
+      return
+    }
+    setBillingSaved(true)
+  }
 
   // -------------------------------------------------------------------
   // Faturas
@@ -864,63 +1001,178 @@ export function ServiceOperationsPanel({
                 <tbody>
                   {records.map((record) => (
                     <Tr key={record.id}>
-                      <Td className="text-slate-400">{formatDate(record.service_date)}</Td>
-                      <Td className="font-semibold text-white">{record.employee?.name ?? '—'}</Td>
-                      <Td>
-                        <p className="font-medium text-slate-300">{record.customer?.name ?? '—'}</p>
-                        <p className="text-[11px] text-slate-500">
-                          {record.service?.name ?? record.description ?? ''}
-                        </p>
-                      </Td>
-                      <Td className="text-slate-300">{fmtMoney(record.amount_charged === null ? null : Number(record.amount_charged))}</Td>
-                      <Td className="text-slate-300">{fmtMoney(record.amount_due === null ? null : Number(record.amount_due))}</Td>
+                      {editingRecordId === record.id ? (
+                        <>
+                          <Td>
+                            <Input
+                              type="date"
+                              value={recordEditForm.service_date}
+                              onChange={(e) => setRecordEditForm((f) => ({ ...f, service_date: e.target.value }))}
+                            />
+                          </Td>
+                          <Td>
+                            <Select
+                              value={recordEditForm.employee_id}
+                              onChange={(e) => setRecordEditForm((f) => ({ ...f, employee_id: e.target.value }))}
+                            >
+                              <option value="">Selecionar…</option>
+                              {employees.map((emp) => (
+                                <option key={emp.id} value={emp.id}>
+                                  {emp.name}
+                                </option>
+                              ))}
+                            </Select>
+                          </Td>
+                          <Td>
+                            <div className="flex flex-col gap-1.5">
+                              <Select
+                                value={recordEditForm.customer_id}
+                                onChange={(e) => setRecordEditForm((f) => ({ ...f, customer_id: e.target.value }))}
+                              >
+                                <option value="">Sem cliente</option>
+                                {customers.map((c) => (
+                                  <option key={c.id} value={c.id}>
+                                    {c.name}
+                                  </option>
+                                ))}
+                              </Select>
+                              <Select
+                                value={recordEditForm.service_id}
+                                onChange={(e) => setRecordEditForm((f) => ({ ...f, service_id: e.target.value }))}
+                              >
+                                <option value="">Outro / avulso</option>
+                                {services.map((s) => (
+                                  <option key={s.id} value={s.id}>
+                                    {s.name}
+                                  </option>
+                                ))}
+                              </Select>
+                              <Input
+                                value={recordEditForm.description}
+                                onChange={(e) => setRecordEditForm((f) => ({ ...f, description: e.target.value }))}
+                                placeholder="Descrição"
+                              />
+                            </div>
+                          </Td>
+                          <Td>
+                            <Input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              value={recordEditForm.amount_charged}
+                              onChange={(e) => setRecordEditForm((f) => ({ ...f, amount_charged: e.target.value }))}
+                            />
+                          </Td>
+                          <Td>
+                            <Input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              value={recordEditForm.amount_due}
+                              onChange={(e) => setRecordEditForm((f) => ({ ...f, amount_due: e.target.value }))}
+                            />
+                          </Td>
+                        </>
+                      ) : (
+                        <>
+                          <Td className="text-slate-400">{formatDate(record.service_date)}</Td>
+                          <Td className="font-semibold text-white">{record.employee?.name ?? '—'}</Td>
+                          <Td>
+                            <p className="font-medium text-slate-300">{record.customer?.name ?? '—'}</p>
+                            <p className="text-[11px] text-slate-500">
+                              {record.service?.name ?? record.description ?? ''}
+                            </p>
+                          </Td>
+                          <Td className="text-slate-300">{fmtMoney(record.amount_charged === null ? null : Number(record.amount_charged))}</Td>
+                          <Td className="text-slate-300">{fmtMoney(record.amount_due === null ? null : Number(record.amount_due))}</Td>
+                        </>
+                      )}
                       <Td>
                         <StatusPill variant={record.payment_status === 'paid' ? 'green' : 'amber'}>
                           {record.payment_status === 'paid' ? 'Pago' : 'Pendente'}
                         </StatusPill>
                       </Td>
                       <Td>
-                        <div className="flex flex-wrap gap-3 text-xs font-semibold">
-                          {record.payment_status === 'pending' ? (
+                        {editingRecordId === record.id ? (
+                          <div className="flex flex-col gap-1.5">
+                            {recordEditError && <p className="text-xs text-red-400">{recordEditError}</p>}
+                            <div className="flex flex-wrap gap-3 text-xs font-semibold">
+                              <button
+                                type="button"
+                                disabled={recordEditBusy}
+                                className="text-green-400 hover:text-green-300 disabled:opacity-40"
+                                onClick={() => handleSaveEditRecord(record)}
+                              >
+                                {recordEditBusy ? 'Salvando…' : 'Salvar'}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={recordEditBusy}
+                                className="text-slate-400 hover:text-slate-300 disabled:opacity-40"
+                                onClick={handleCancelEditRecord}
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap gap-3 text-xs font-semibold">
+                            {record.payment_status === 'pending' ? (
+                              <button
+                                type="button"
+                                disabled={recordRowBusyId === record.id}
+                                className="text-green-400 hover:text-green-300 disabled:opacity-40"
+                                onClick={() => handleRecordPayment(record, true)}
+                              >
+                                Marcar pago
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={recordRowBusyId === record.id}
+                                className="text-amber-400 hover:text-amber-300 disabled:opacity-40"
+                                onClick={() => handleRecordPayment(record, false)}
+                              >
+                                Reabrir
+                              </button>
+                            )}
+                            {record.invoice_id === null ? (
+                              <button
+                                type="button"
+                                disabled={recordRowBusyId === record.id}
+                                className="text-cyan-400 hover:text-cyan-300 disabled:opacity-40"
+                                onClick={() => handleGenerateInvoiceFromRecord(record)}
+                              >
+                                Gerar fatura
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={recordRowBusyId === record.id}
+                                className="text-purple-400 hover:text-purple-300 disabled:opacity-40"
+                                onClick={() => handleUnlinkInvoice(record)}
+                              >
+                                Faturar novamente
+                              </button>
+                            )}
                             <button
                               type="button"
                               disabled={recordRowBusyId === record.id}
-                              className="text-green-400 hover:text-green-300 disabled:opacity-40"
-                              onClick={() => handleRecordPayment(record, true)}
+                              className="text-slate-300 hover:text-white disabled:opacity-40"
+                              onClick={() => handleStartEditRecord(record)}
                             >
-                              Marcar pago
+                              Editar
                             </button>
-                          ) : (
                             <button
                               type="button"
                               disabled={recordRowBusyId === record.id}
-                              className="text-amber-400 hover:text-amber-300 disabled:opacity-40"
-                              onClick={() => handleRecordPayment(record, false)}
+                              className="text-red-400 hover:text-red-300 disabled:opacity-40"
+                              onClick={() => handleRecordDelete(record)}
                             >
-                              Reabrir
+                              Excluir
                             </button>
-                          )}
-                          {record.invoice_id === null ? (
-                            <button
-                              type="button"
-                              disabled={recordRowBusyId === record.id}
-                              className="text-cyan-400 hover:text-cyan-300 disabled:opacity-40"
-                              onClick={() => handleGenerateInvoiceFromRecord(record)}
-                            >
-                              Gerar fatura
-                            </button>
-                          ) : (
-                            <span className="text-slate-500">Faturado</span>
-                          )}
-                          <button
-                            type="button"
-                            disabled={recordRowBusyId === record.id}
-                            className="text-red-400 hover:text-red-300 disabled:opacity-40"
-                            onClick={() => handleRecordDelete(record)}
-                          >
-                            Excluir
-                          </button>
-                        </div>
+                          </div>
+                        )}
                       </Td>
                     </Tr>
                   ))}
@@ -1060,6 +1312,80 @@ export function ServiceOperationsPanel({
           </div>
         </div>
       )}
+
+      {/* Dados de cobrança — quem cobra, para a fatura em PDF */}
+      <details
+        className="group rounded-2xl bg-[#141a2b] p-4"
+        style={{ boxShadow: cardShadow }}
+      >
+        <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-bold text-white">
+          <span>Dados de cobrança (aparecem nas faturas)</span>
+          <span className="text-xs font-semibold text-slate-500 group-open:hidden">Mostrar</span>
+          <span className="hidden text-xs font-semibold text-slate-500 group-open:inline">Ocultar</span>
+        </summary>
+        <div className="mt-4 flex flex-col gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="billingCompanyName">Nome da empresa que está cobrando</Label>
+              <Input
+                id="billingCompanyName"
+                value={billingForm.billing_company_name}
+                onChange={(e) => setBillingForm((f) => ({ ...f, billing_company_name: e.target.value }))}
+                placeholder="Ex.: Sua Empresa LLC"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="billingEmail">E-mail</Label>
+              <Input
+                id="billingEmail"
+                type="email"
+                value={billingForm.billing_email}
+                onChange={(e) => setBillingForm((f) => ({ ...f, billing_email: e.target.value }))}
+                placeholder="billing@suaempresa.com"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="billingPhone">Telefone</Label>
+              <Input
+                id="billingPhone"
+                value={billingForm.billing_phone}
+                onChange={(e) => setBillingForm((f) => ({ ...f, billing_phone: e.target.value }))}
+                placeholder="(11) 90000-0000"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="billingAddress">Endereço</Label>
+              <Input
+                id="billingAddress"
+                value={billingForm.billing_address}
+                onChange={(e) => setBillingForm((f) => ({ ...f, billing_address: e.target.value }))}
+                placeholder="Rua, número, cidade"
+              />
+            </div>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="billingPayment">Instruções de pagamento (aparecem no rodapé da fatura)</Label>
+            <Textarea
+              id="billingPayment"
+              rows={2}
+              value={billingForm.billing_payment_instructions}
+              onChange={(e) => setBillingForm((f) => ({ ...f, billing_payment_instructions: e.target.value }))}
+              placeholder="Ex.: Zelle para pay@suaempresa.com · PIX chave 000.000.000-00"
+            />
+          </div>
+          {billingError && <p className="text-sm text-red-400">{billingError}</p>}
+          {billingSaved && !billingError && <p className="text-sm text-green-400">Dados de cobrança salvos.</p>}
+          <button
+            type="button"
+            disabled={billingBusy}
+            onClick={handleSaveBilling}
+            className="self-start rounded-xl px-4 py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+            style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
+          >
+            {billingBusy ? 'Salvando…' : 'Salvar dados de cobrança'}
+          </button>
+        </div>
+      </details>
 
       {/* Faturas */}
       <div className="flex flex-col gap-3">
@@ -1293,6 +1619,16 @@ export function ServiceOperationsPanel({
                                 onClick={() => handleInvoiceStatus(invoice, invoice.sent_at ? 'sent' : 'draft')}
                               >
                                 Reabrir
+                              </button>
+                            )}
+                            {invoice.status === 'cancelled' && (
+                              <button
+                                type="button"
+                                disabled={invoiceRowBusyId === invoice.id}
+                                className="text-amber-400 hover:text-amber-300 disabled:opacity-40"
+                                onClick={() => handleInvoiceStatus(invoice, 'draft')}
+                              >
+                                Reativar
                               </button>
                             )}
                             {invoice.status !== 'cancelled' && invoice.status !== 'paid' && invoice.status !== 'consolidated' && (

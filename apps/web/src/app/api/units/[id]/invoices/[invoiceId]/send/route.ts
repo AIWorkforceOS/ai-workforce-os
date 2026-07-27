@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { sendInvoiceEmail } from '@/lib/email'
+import { generateInvoicePdf } from '@/lib/invoices/pdf'
 import { buildInvoiceMessageText, getMessagingChannel } from '@/lib/channels/messaging-channel'
 import { logSystemEvent } from '@/lib/system-events'
 import { unitDefaultLocale } from '@/lib/i18n/config'
@@ -77,6 +78,24 @@ export async function POST(
   const attempts: { channel: 'email' | 'phone'; ok: boolean; error?: string }[] = []
 
   if (customer.email) {
+    // PDF é best-effort: se a geração falhar, o e-mail ainda sai com os
+    // dados da fatura no corpo — não faz sentido bloquear o envio inteiro
+    // por causa do anexo.
+    let attachment: { filename: string; content: string } | null = null
+    try {
+      const pdfBuffer = await generateInvoicePdf({ invoice, customer, unit, locale })
+      attachment = { filename: `fatura-${invoice.invoice_number}.pdf`, content: pdfBuffer.toString('base64') }
+    } catch (error) {
+      await logSystemEvent(supabase, {
+        level: 'warning',
+        source: 'invoices',
+        eventType: 'invoice_pdf_generation_failed',
+        message: `Não foi possível gerar o PDF da fatura ${invoice.invoice_number}: ${error instanceof Error ? error.message : 'erro desconhecido'}.`,
+        orgId: unit.org_id,
+        unitId: unit.id,
+      })
+    }
+
     const result = await sendInvoiceEmail({
       to: customer.email,
       unitName: unit.name,
@@ -92,6 +111,7 @@ export async function POST(
       consolidatedItems: invoice.consolidated_items,
       // Resposta do cliente cai na caixa real da empresa (não no agente): fatura é assunto humano.
       replyTo: unit.email_reply_to,
+      attachment,
     })
     attempts.push({ channel: 'email', ok: result.ok, error: result.error })
   }

@@ -428,6 +428,8 @@ export async function sendInvoiceEmail(params: {
   replyTo?: string | null
   /** faturas originais somadas nesta (migration 045) — detalhamento exibido por transparência */
   consolidatedItems?: { description: string; amount: number; due_date: string | null }[] | null
+  /** PDF da fatura (migration 048) já gerado em memória — base64, pronto pro payload do Resend. */
+  attachment?: { filename: string; content: string } | null
 }): Promise<SendResult> {
   const domain = process.env.EMAIL_FROM_DOMAIN
   if (!domain) return { ok: false, error: 'EMAIL_FROM_DOMAIN não está configurada.' }
@@ -528,7 +530,14 @@ export async function sendInvoiceEmail(params: {
     </div>
   `
 
-  return sendEmail({ to: params.to, from, subject: t.subject, html, replyTo: params.replyTo })
+  return sendEmail({
+    to: params.to,
+    from,
+    subject: t.subject,
+    html,
+    replyTo: params.replyTo,
+    attachments: params.attachment ? [params.attachment] : undefined,
+  })
 }
 
 /**

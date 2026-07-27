@@ -79,6 +79,16 @@ export type Unit = {
   business_hours: WeeklySchedule
   /** Configuração de agenda (migration 026), possivelmente vazia/parcial no banco. Use getSchedulingSettings(). */
   scheduling_settings: Partial<SchedulingSettings>
+  /** Nome da empresa que cobra, para aparecer na fatura em PDF (migration 048). Null = usa units.name. */
+  billing_company_name: string | null
+  /** Endereço de quem cobra, para a fatura em PDF (migration 048). */
+  billing_address: string | null
+  /** E-mail de quem cobra, para a fatura em PDF (migration 048). */
+  billing_email: string | null
+  /** Telefone de quem cobra, para a fatura em PDF (migration 048). */
+  billing_phone: string | null
+  /** Instruções de pagamento em texto livre (Zelle/PIX/etc.), para a fatura em PDF e o e-mail (migration 048). */
+  billing_payment_instructions: string | null
   is_active: boolean
   created_at: string
   updated_at: string
