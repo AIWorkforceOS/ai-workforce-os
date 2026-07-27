@@ -335,15 +335,16 @@ export function CalendarView({
                         <div className="flex flex-wrap gap-3 text-xs font-semibold">
                           {isToday &&
                             (appointment.on_my_way_sent_at ? (
-                              <span className="text-emerald-400">A caminho avisado ✓</span>
+                              <span className="text-emerald-400">Mensagem "a caminho" enviada ✓</span>
                             ) : (
                               <button
                                 type="button"
                                 disabled={busyId === appointment.id}
                                 className="text-emerald-400 hover:text-emerald-300 disabled:opacity-40"
                                 onClick={() => handleOnMyWay(appointment)}
+                                title="Envia uma mensagem avisando o cliente — não é rastreamento por GPS, é um disparo manual único."
                               >
-                                Avisar a caminho
+                                Avisar cliente que estou a caminho
                               </button>
                             ))}
                           <button

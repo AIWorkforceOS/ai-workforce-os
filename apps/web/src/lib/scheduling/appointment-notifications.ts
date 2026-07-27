@@ -81,11 +81,11 @@ function onMyWayMessage(params: {
   if (locale === 'en') {
     const who = employeeName ? `${employeeName} from ${unitName}` : `The ${unitName} team`
     const addressPart = address ? ` Service address: ${address}.` : ''
-    return `Hi ${customerName}! ${who} is on the way to your appointment today at ${time}${serviceSuffix(serviceName)}.${addressPart}`
+    return `Hi ${customerName}! Quick heads up: ${who} is now heading to your appointment today at ${time}${serviceSuffix(serviceName)}.${addressPart}`
   }
   const who = employeeName ? `${employeeName}, da ${unitName},` : `A equipe da ${unitName}`
   const addressPart = address ? ` Endereço do atendimento: ${address}.` : ''
-  return `Olá, ${customerName}! ${who} está a caminho do seu atendimento de hoje às ${time}${serviceSuffix(serviceName)}.${addressPart}`
+  return `Olá, ${customerName}! Só um aviso: ${who} acabou de sair para o seu atendimento de hoje às ${time}${serviceSuffix(serviceName)}.${addressPart}`
 }
 
 type AppointmentContext = {
@@ -302,8 +302,12 @@ export async function handleAppointmentReminder(
 
 /**
  * Aviso "estamos a caminho" (migration 030) — disparado por ação humana
- * no calendário no dia do serviço (botão "Avisar a caminho"), não por
- * cron: quem sabe que o técnico saiu é a operação, não o relógio.
+ * no calendário no dia do serviço (botão "Avisar cliente que estou a
+ * caminho"), não por cron: quem sabe que o técnico saiu é a operação,
+ * não o relógio. É só uma mensagem manual e pontual (WhatsApp/SMS/
+ * e-mail via lib/channels/messaging-channel.ts) — não existe
+ * geolocalização/GPS real por trás disso, nem antes nem depois do
+ * disparo, e o texto da mensagem foi escrito para não sugerir isso.
  * Idempotente via on_my_way_sent_at. Inclui o nome do profissional e o
  * endereço do atendimento quando existirem.
  */

@@ -82,6 +82,44 @@ export async function sendEscalationEmail(params: {
   })
 }
 
+/**
+ * Aviso ao dono/admin da unidade quando o Sales Rep fecha um negócio que
+ * NÃO é recrutamento (essa automação cria vaga sozinha — ver
+ * lib/sales/deal-handoff.ts). Sem isso, o único registro do fechamento
+ * era um system_event que ninguém olha proativamente: o dono só sabia se
+ * entrasse no painel. Mesmo padrão de sendEscalationEmail — best-effort,
+ * nunca lança.
+ */
+export async function sendDealWonEmail(params: {
+  to: string
+  unitName: string
+  leadName: string
+  leadPhone: string | null
+  dealAction: string | null
+  dealProfile: Record<string, unknown>
+}): Promise<SendResult> {
+  const from = defaultFrom()
+  if (!from) return { ok: false, error: 'EMAIL_FROM_DOMAIN não está configurada.' }
+
+  const profileRows = Object.entries(params.dealProfile)
+    .filter(([, value]) => value !== null && value !== undefined && value !== '')
+    .map(([key, value]) => `<li><strong>${escapeHtml(key)}:</strong> ${escapeHtml(String(value))}</li>`)
+    .join('')
+
+  return sendEmail({
+    to: params.to,
+    from,
+    subject: `[${params.unitName}] Negócio fechado: ${params.leadName}`,
+    html: `
+      <p>O AI Sales Representative da unidade <strong>${params.unitName}</strong> fechou um negócio.</p>
+      <p><strong>Cliente/lead:</strong> ${params.leadName}${params.leadPhone ? ` (${params.leadPhone})` : ''}</p>
+      ${params.dealAction ? `<p><strong>Próximo passo ensinado para este momento:</strong> ${params.dealAction}</p>` : ''}
+      ${profileRows ? `<p><strong>Dados coletados na conversa:</strong></p><ul>${profileRows}</ul>` : ''}
+      <p>Nenhuma automação foi executada além deste aviso — encaminhe manualmente com os dados acima.</p>
+    `,
+  })
+}
+
 export async function sendTechnicalAlertEmail(params: {
   to: string
   unitName: string

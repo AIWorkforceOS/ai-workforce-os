@@ -107,6 +107,7 @@ describe('launchCampaign — fallback mock sem credenciais', () => {
     const rows = upsertCall!.payload as Record<string, unknown>[]
     expect(rows.map((r) => r.entity_level)).toEqual(['campaign', 'ad_set', 'ad'])
     expect(rows.every((r) => r.is_managed === true)).toBe(true)
+    expect(rows.every((r) => r.is_simulated === true)).toBe(true)
 
     const logCall = calls.find((c) => c.table === 'ad_actions_log' && c.op === 'insert')
     expect(logCall).toBeTruthy()
@@ -159,6 +160,7 @@ describe('launchCampaign — Meta com credenciais reais (fetch mockado)', () => 
     const upsertCall = calls.find((c) => c.table === 'ad_entities' && c.op === 'upsert')
     const rows = upsertCall!.payload as Record<string, unknown>[]
     expect(rows.map((r) => r.entity_level)).toEqual(['campaign', 'ad_set'])
+    expect(rows.every((r) => r.is_simulated === false)).toBe(true)
   })
 
   it('com metaPageId: cria os 4 recursos em sequência (campaign → ad_set → creative → ad)', async () => {

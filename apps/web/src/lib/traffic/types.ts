@@ -115,6 +115,8 @@ export type AdEntity = {
   daily_budget_cents: number | null
   bid_strategy: string | null
   is_managed: boolean
+  /** true = criada em modo mock/dry_run (migration 044) — nunca foi ao ar em nenhuma plataforma real, id externo é fake. */
+  is_simulated: boolean
   raw: Record<string, unknown>
   /** id da Campanha correspondente no Sistema Smarter (migration 023) — só populado para entity_level='campaign' quando a unidade tem smarter_marketing_partner_token. Null = não sincronizada ainda. */
   smarter_campaign_id: string | null

@@ -4,6 +4,7 @@ import { getRecruiterConfig } from '@/lib/recruiter/guardrails'
 import { runSourcing } from '@/lib/recruiter/sourcing-engine'
 import { logRecruiterEvent } from '@/lib/recruiter/log'
 import { logSystemEvent } from '@/lib/system-events'
+import { sendDealWonEmail } from '@/lib/email'
 import { createCustomerFromDealLead } from '@/lib/receptionist/customers'
 import type { AgentConfig, Lead, Unit } from '@/lib/types'
 import type { JobOpening, JobProfile } from '@/lib/recruiter/types'
@@ -22,7 +23,10 @@ import type { JobOpening, JobProfile } from '@/lib/recruiter/types'
 // uma categoria fixa no código. Qualquer outro negócio (venda de
 // produto/serviço, contrato de franquia, etc.) não cria vaga nenhuma:
 // o fechamento fica registrado de forma estruturada (dados coletados +
-// ação ensinada) para o time humano dar sequência manualmente.
+// ação ensinada) para o time humano dar sequência manualmente — e o
+// dono/admin da unidade recebe um e-mail de verdade (sendDealWonEmail,
+// mesma infra do Resend usada em sendEscalationEmail), porque um
+// system_event sozinho só é visto por quem entra no painel proativamente.
 //
 // Handoff Sales → Receptionist: independente de criar vaga ou não,
 // todo fechamento ganho vira um Cliente (lib/receptionist/customers.ts)
@@ -119,6 +123,37 @@ export async function handleSalesDealHandoff(
       leadId: lead.id,
       metadata: { deal_profile: dealProfile, fechamento_acao: dealAction },
     })
+
+    if (unit.org_id) {
+      const { data: org } = await supabase
+        .from('organizations')
+        .select('owner_email')
+        .eq('id', unit.org_id)
+        .maybeSingle()
+      const ownerEmail = (org as { owner_email: string | null } | null)?.owner_email
+      if (ownerEmail) {
+        const result = await sendDealWonEmail({
+          to: ownerEmail,
+          unitName: unit.name,
+          leadName: lead.company_name,
+          leadPhone: lead.phone,
+          dealAction,
+          dealProfile,
+        })
+        if (!result.ok) {
+          await logSystemEvent(supabase, {
+            level: 'error',
+            source: 'resend',
+            eventType: 'deal_won_email_failed',
+            message: `Fechamento com "${lead.company_name}" registrado, mas o e-mail de aviso ao dono falhou: ${result.error ?? 'erro desconhecido'}`,
+            orgId: unit.org_id,
+            unitId: unit.id,
+            leadId: lead.id,
+          })
+        }
+      }
+    }
+
     return
   }
 

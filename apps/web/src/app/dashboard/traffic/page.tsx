@@ -1,6 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { formatCentsBRL } from '@/lib/traffic/metrics'
 import { isExecutable } from '@/lib/traffic/executor'
+import { isDryRun } from '@/lib/traffic/launcher'
+import { getMetaConfig } from '@/lib/traffic/meta-ads'
+import { getGoogleAdsConfig } from '@/lib/traffic/google-ads'
 import type {
   AdAccount,
   AdActionLog,
@@ -66,6 +69,22 @@ const STATUS_LABEL: Record<string, string> = {
   disconnected: 'Desconectada',
 }
 
+const ACTION_RESULT_VARIANT: Record<string, BadgeVariant> = {
+  success: 'green',
+  partial: 'amber',
+  dry_run: 'blue',
+  mock: 'amber',
+  failed: 'red',
+}
+
+const ACTION_RESULT_LABEL: Record<string, string> = {
+  success: 'success',
+  partial: 'partial',
+  dry_run: 'ensaio (dry run)',
+  mock: 'simulado — sem conta conectada',
+  failed: 'failed',
+}
+
 const ENTITY_STATUS_VARIANT: Record<string, BadgeVariant> = {
   ACTIVE: 'green',
   PAUSED: 'amber',
@@ -76,6 +95,16 @@ const ENTITY_STATUS_VARIANT: Record<string, BadgeVariant> = {
 
 function platformLabel(platform: string): string {
   return platform === 'meta' ? 'Meta Ads' : 'Google Ads'
+}
+
+const SIMULATED_EXPLANATION =
+  'SIMULADO — sem conta conectada, esta campanha nunca foi ao ar de verdade (nenhum lead pode vir dela).'
+
+/** Mesma checagem que lib/traffic/launcher.ts faz na hora de lançar: sem credenciais (ou TRAFFIC_DRY_RUN=1) a campanha nunca chega na plataforma de verdade. */
+function wouldBeSimulated(account: AdAccount): boolean {
+  if (isDryRun()) return true
+  const config = account.platform === 'meta' ? getMetaConfig(account) : getGoogleAdsConfig(account)
+  return !config
 }
 
 function KpiCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
@@ -283,6 +312,7 @@ export default async function TrafficPage() {
           <div className="flex flex-col">
             {creativeDrafts.map((draft) => {
               const account = accountById.get(draft.ad_account_id)
+              const simulated = account ? wouldBeSimulated(account) : false
               return (
                 <div
                   key={draft.id}
@@ -312,7 +342,11 @@ export default async function TrafficPage() {
                           {' · '}
                           {new Date(draft.created_at).toLocaleString('pt-BR')}
                         </span>
+                        {simulated && <Badge variant="amber">SIMULADO</Badge>}
                       </div>
+                      {simulated && (
+                        <p className="mt-1 max-w-md text-[11px] font-semibold text-amber-400">{SIMULATED_EXPLANATION}</p>
+                      )}
                       <p className="mt-1 text-sm font-semibold text-white">{draft.spec.creative.headline}</p>
                       <p className="mt-0.5 text-sm text-slate-400">{draft.spec.creative.body}</p>
                       <p className="mt-1 text-[11px] text-slate-500">
@@ -439,11 +473,17 @@ export default async function TrafficPage() {
                 return (
                   <Tr key={campaign.id}>
                     <Td>
-                      <span className="font-semibold text-white">{campaign.name}</span>
-                      {campaign.funnel_stage && (
-                        <span className="ml-2 text-[10px] uppercase tracking-wide text-slate-500">
-                          {campaign.funnel_stage}
-                        </span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-white">{campaign.name}</span>
+                        {campaign.funnel_stage && (
+                          <span className="text-[10px] uppercase tracking-wide text-slate-500">
+                            {campaign.funnel_stage}
+                          </span>
+                        )}
+                        {campaign.is_simulated && <Badge variant="amber">SIMULADO</Badge>}
+                      </div>
+                      {campaign.is_simulated && (
+                        <p className="mt-1 max-w-xs text-[11px] font-semibold text-amber-400">{SIMULATED_EXPLANATION}</p>
                       )}
                     </Td>
                     <Td className="text-slate-400">{platformLabel(campaign.platform)}</Td>
@@ -503,16 +543,8 @@ export default async function TrafficPage() {
                     <Td className="font-semibold text-white">{action.action_type}</Td>
                     <Td className="text-slate-400">{entity?.name ?? '—'}</Td>
                     <Td>
-                      <Badge
-                        variant={
-                          action.result === 'success'
-                            ? 'green'
-                            : action.result === 'dry_run'
-                              ? 'blue'
-                              : 'red'
-                        }
-                      >
-                        {action.result}
+                      <Badge variant={ACTION_RESULT_VARIANT[action.result] ?? 'red'}>
+                        {ACTION_RESULT_LABEL[action.result] ?? action.result}
                       </Badge>
                       {action.error_message && (
                         <p className="mt-1 max-w-md text-[11px] text-red-400">{action.error_message}</p>

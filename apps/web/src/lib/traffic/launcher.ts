@@ -14,6 +14,9 @@
 //   - Sucesso (mesmo parcial) upserta as entidades criadas em ad_entities
 //     com is_managed=true, para o dashboard e o motor de estratégia
 //     enxergarem a campanha nova imediatamente
+//   - mock/dry_run gravam is_simulated=true (migration 044) — a UI usa
+//     essa flag para nunca deixar uma campanha que nunca foi ao ar
+//     parecer uma campanha real
 //
 // 'partial' existe porque a Meta e o Google exigem várias chamadas em
 // sequência (campanha → conjunto → criativo → anúncio na Meta; orçamento →
@@ -50,7 +53,7 @@ import type {
   NewCampaignSpec,
 } from './types'
 
-function isDryRun(): boolean {
+export function isDryRun(): boolean {
   return process.env.TRAFFIC_DRY_RUN === '1'
 }
 
@@ -331,6 +334,12 @@ export async function launchCampaign(
   const outcome =
     account.platform === 'meta' ? await launchMetaCampaign(account, spec) : await launchGoogleCampaign(account, spec)
 
+  // mock (sem credenciais) e dry_run (TRAFFIC_DRY_RUN=1) nunca chamam a
+  // API de verdade — os ids externos são fake, a campanha nunca foi ao
+  // ar. Marcamos isso em ad_entities.is_simulated para a UI nunca
+  // confundir com uma campanha real (migration 044).
+  const isSimulated = outcome.result === 'mock' || outcome.result === 'dry_run'
+
   const entityRows: Record<string, unknown>[] = []
   if (outcome.campaignExternalId) {
     entityRows.push({
@@ -347,6 +356,7 @@ export async function launchCampaign(
       daily_budget_cents: spec.dailyBudgetCents,
       bid_strategy: null,
       is_managed: true,
+      is_simulated: isSimulated,
       raw: {},
     })
   }
@@ -365,6 +375,7 @@ export async function launchCampaign(
       daily_budget_cents: account.platform === 'meta' ? spec.dailyBudgetCents : null,
       bid_strategy: null,
       is_managed: true,
+      is_simulated: isSimulated,
       raw: {},
     })
   }
@@ -383,6 +394,7 @@ export async function launchCampaign(
       daily_budget_cents: null,
       bid_strategy: null,
       is_managed: true,
+      is_simulated: isSimulated,
       raw: {},
     })
   }

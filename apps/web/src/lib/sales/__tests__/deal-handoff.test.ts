@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createFakeSupabase } from '@/lib/__tests__/fake-supabase'
 import { buildSystemPrompt, closingFields, isAutoRecruitmentDeal } from '@/lib/conversation-engine'
 import { handleSalesDealHandoff } from '@/lib/sales/deal-handoff'
@@ -180,6 +180,17 @@ describe('buildSystemPrompt — o agente só pede o que foi ensinado para ESTA c
 })
 
 describe('handleSalesDealHandoff — a ação executada é a que foi ensinada, não uma categoria fixa', () => {
+  beforeEach(() => {
+    vi.stubEnv('RESEND_API_KEY', 're_test')
+    vi.stubEnv('EMAIL_FROM_DOMAIN', 'alizo.example.com')
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
+  })
+
+
   it('recrutamento: cria a job_opening automaticamente', async () => {
     const lead = makeLead({
       deal_profile: { course: 'Marketing', city: 'São Paulo', modality: 'híbrido', positions_needed: 2 },
@@ -218,6 +229,49 @@ describe('handleSalesDealHandoff — a ação executada é a que foi ensinada, n
     expect(dealEvent).toBeTruthy()
     expect(String(dealEvent!.message)).toContain('contrato de franquia')
     expect((dealEvent!.metadata as Record<string, unknown>).deal_profile).toEqual(lead.deal_profile)
+  })
+
+  it('franquia: avisa o dono da unidade por e-mail (não fica só no system_events)', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: { body?: string }) => ({
+      ok: true,
+      json: async () => ({ id: 'email_1' }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const lead = makeLead({
+      deal_profile: { cpf_cnpj: '123.456.789-00', endereco: 'Rua das Franquias, 100' },
+    })
+    const { supabase } = createFakeSupabase({
+      agent_configs: [makeConfig(franchiseProfile) as unknown as Record<string, unknown>],
+      leads: [lead as unknown as Record<string, unknown>],
+      organizations: [{ id: unit.org_id, owner_email: 'dono@empresa.com' }],
+    })
+
+    await handleSalesDealHandoff(supabase, { leadId: lead.id, unit })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0]!
+    expect(url).toBe('https://api.resend.com/emails')
+    const body = JSON.parse((init as { body: string }).body)
+    expect(body.to).toBe('dono@empresa.com')
+    expect(body.subject).toContain('Empresa Teste')
+    expect(body.html).toContain('contrato de franquia')
+  })
+
+  it('sem owner_email cadastrado na organização: não tenta enviar e-mail (fail-safe)', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const lead = makeLead({ deal_profile: {} })
+    const { supabase } = createFakeSupabase({
+      agent_configs: [makeConfig(cleaningServicesProfile) as unknown as Record<string, unknown>],
+      leads: [lead as unknown as Record<string, unknown>],
+      organizations: [{ id: unit.org_id, owner_email: null }],
+    })
+
+    await handleSalesDealHandoff(supabase, { leadId: lead.id, unit })
+
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('Mawi Services (limpeza comercial): NÃO cria vaga — registra o encaminhamento ao time humano', async () => {
