@@ -105,6 +105,8 @@ export type JobOpening = {
   handed_off_to: string | null
   /** id da vaga correspondente no sistema de vagas da Smarter (migration 019). Null fora do modo smarter ou antes da criação. */
   smarter_recruiting_vacancy_id: string | null
+  /** token público (sem login) da página /vaga/[token] — candidatura direta nesta vaga (migration 046). */
+  public_application_token: string
   created_at: string
   updated_at: string
 }

@@ -2,7 +2,11 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { JOB_STATUS_LABEL, CANDIDATE_STAGE_LABEL, PROFILE_FIELD_LABEL } from '@/lib/recruiter/ui'
+import { jobApplicationUrl } from '@/lib/recruiter/reporting'
+import { CLOSED_FOR_APPLICATION_STATUSES } from '@/lib/recruiter/candidate-intake'
 import { JobActions, SelectCandidateButton } from '@/components/dashboard/job-actions'
+import { JobApplicationLink } from '@/components/dashboard/job-application-link'
+import { ManualCandidateForm } from '@/components/dashboard/manual-candidate-form'
 import { Card } from '@/components/ui/dashboard-ui'
 import type { Candidate, JobCandidate, JobOpening } from '@/lib/recruiter/types'
 
@@ -124,6 +128,21 @@ export default async function RecruiterJobPage({ params }: { params: Promise<{ i
             </div>
           ))}
         </div>
+      </Card>
+
+      {/* Fontes de candidato alternativas à Smarter (auditoria, gap fase 3/3) */}
+      <Card className="flex flex-col gap-4 p-5">
+        <h2 className="text-sm font-black uppercase tracking-wide text-slate-300">Trazer candidatos</h2>
+        {CLOSED_FOR_APPLICATION_STATUSES.includes(job.status) ? (
+          <p className="text-sm text-slate-500">
+            Esta vaga não está mais aberta — o link público e o cadastro manual ficam desativados.
+          </p>
+        ) : (
+          <>
+            <JobApplicationLink url={jobApplicationUrl(job.public_application_token)} />
+            <ManualCandidateForm jobId={job.id} />
+          </>
+        )}
       </Card>
 
       {/* Pipeline de candidatos */}

@@ -20,6 +20,11 @@ export function shortlistUrl(jobId: string): string {
   return `${appBaseUrl()}/dashboard/recruiter/jobs/${jobId}/shortlist`
 }
 
+/** Link público de candidatura (sem login) para uma vaga — migration 046. */
+export function jobApplicationUrl(token: string): string {
+  return `${appBaseUrl()}/vaga/${token}`
+}
+
 export type ShortlistedEntry = { jc: JobCandidate; candidate: Candidate }
 
 /**

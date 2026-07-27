@@ -267,7 +267,7 @@ export async function ensureCandidateEmbeddings(
 }
 
 /** Memória relacional da empresa (§10): injetada no prompt de ranking. */
-async function getCompanyMemory(supabase: SupabaseClient, job: JobOpening): Promise<string | null> {
+export async function getCompanyMemory(supabase: SupabaseClient, job: JobOpening): Promise<string | null> {
   if (!job.lead_id) return null
   const { data } = await supabase
     .from('company_recruiting_profiles')
