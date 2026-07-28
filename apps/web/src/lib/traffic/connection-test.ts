@@ -19,7 +19,11 @@ export async function testMetaConnection(input: {
     access_token: input.accessToken ?? null,
   })
   if (!config) {
-    return { ok: false, error: 'Cole o token de acesso da conta (system user ou de página) para testar.' }
+    return {
+      ok: false,
+      error:
+        'Integração Meta Ads ainda não está configurada do lado da Alizo (falta META_SYSTEM_USER_TOKEN). Se você tiver seu próprio token, abra "Avançado" e cole-o.',
+    }
   }
 
   try {
@@ -27,7 +31,14 @@ export async function testMetaConnection(input: {
     const statusNote = info.account_status === META_ACTIVE_STATUS ? '' : ` — atenção: status da conta não é ativo (código ${info.account_status})`
     return { ok: true, label: `${info.name} (${info.currency})${statusNote}` }
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : 'Falha ao validar a conta Meta.' }
+    const message = error instanceof Error ? error.message : 'Falha ao validar a conta Meta.'
+    // Sem token informado pelo cliente, a chamada usou o system user global —
+    // qualquer falha aqui tende a ser falta de compartilhamento da conta como
+    // Parceiro, não um "token inválido" (não há token nesse fluxo).
+    const hint = input.accessToken
+      ? ''
+      : ' — provavelmente falta completar o compartilhamento da conta de anúncio como Parceiro do Business Manager da Alizo (veja o ID acima), ou a permissão concedida não inclui "Gerenciar campanhas".'
+    return { ok: false, error: `${message}${hint}` }
   }
 }
 

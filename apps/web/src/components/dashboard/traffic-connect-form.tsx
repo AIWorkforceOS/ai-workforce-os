@@ -4,8 +4,16 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronDown, ChevronUp, Eye, EyeOff, Loader2, CheckCircle2 } from 'lucide-react'
 import { Badge, Card, CardHeader, Input, Label, Select, brandGradient } from '@/components/ui/dashboard-ui'
+import { MetaPartnerGuide } from '@/components/dashboard/meta-partner-guide'
 import type { AdAccount } from '@/lib/traffic/types'
 import type { Unit } from '@/lib/types'
+
+const META_PARTNER_STEPS = [
+  'No Meta Business Suite da sua empresa, abra Configurações do negócio → Parceiros.',
+  'Clique em "Adicionar" → "Dar a um parceiro acesso às suas contas" e cole o ID acima.',
+  'Escolha a conta de anúncio que você quer conectar e marque a permissão "Gerenciar campanhas".',
+  'Volte aqui, cole o ID da conta de anúncio abaixo e clique em "Testar e conectar".',
+]
 
 type Platform = 'meta' | 'google'
 
@@ -45,12 +53,21 @@ const STATUS_LABEL: Record<string, string> = {
   disconnected: 'Desconectada',
 }
 
-export function TrafficConnectForm({ units, accounts }: { units: Unit[]; accounts: AdAccount[] }) {
+export function TrafficConnectForm({
+  units,
+  accounts,
+  businessManagerId,
+}: {
+  units: Unit[]
+  accounts: AdAccount[]
+  businessManagerId: string | null
+}) {
   const router = useRouter()
   const [unitId, setUnitId] = useState(units[0]?.id ?? '')
   const [platform, setPlatform] = useState<Platform>('meta')
   const [externalAccountId, setExternalAccountId] = useState('')
   const [accessToken, setAccessToken] = useState('')
+  const [metaAdvancedOpen, setMetaAdvancedOpen] = useState(false)
   const [refreshToken, setRefreshToken] = useState('')
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [developerToken, setDeveloperToken] = useState('')
@@ -63,6 +80,7 @@ export function TrafficConnectForm({ units, accounts }: { units: Unit[]; account
   function resetPlatformFields() {
     setExternalAccountId('')
     setAccessToken('')
+    setMetaAdvancedOpen(false)
     setRefreshToken('')
     setDeveloperToken('')
     setClientId('')
@@ -81,10 +99,6 @@ export function TrafficConnectForm({ units, accounts }: { units: Unit[]; account
       setError(platform === 'meta' ? 'Informe o ID da conta de anúncio.' : 'Informe o Customer ID.')
       return
     }
-    if (platform === 'meta' && !accessToken.trim()) {
-      setError('Cole o token de acesso da conta.')
-      return
-    }
 
     setBusy(true)
     setError(null)
@@ -99,7 +113,7 @@ export function TrafficConnectForm({ units, accounts }: { units: Unit[]; account
           platform,
           external_account_id: externalAccountId.trim(),
           ...(platform === 'meta'
-            ? { access_token: accessToken.trim() }
+            ? { access_token: accessToken.trim() || undefined }
             : {
                 refresh_token: refreshToken.trim() || undefined,
                 google_developer_token: developerToken.trim() || undefined,
@@ -158,16 +172,38 @@ export function TrafficConnectForm({ units, accounts }: { units: Unit[]; account
 
           {platform === 'meta' ? (
             <>
+              <MetaPartnerGuide businessManagerId={businessManagerId} assetLabel="a conta de anúncio" steps={META_PARTNER_STEPS} />
               <div>
                 <Label htmlFor="meta-account">ID da conta de anúncio</Label>
                 <Input id="meta-account" className="mt-1" value={externalAccountId} onChange={(e) => setExternalAccountId(e.target.value)} placeholder="act_1234567890 ou 1234567890" />
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Antes de testar, confirme que já compartilhou a conta como Parceiro (passo acima).
+                </p>
               </div>
-              <div>
-                <Label htmlFor="meta-token">Token de acesso (usuário do sistema)</Label>
-                <div className="mt-1">
-                  <SecretInput value={accessToken} onChange={setAccessToken} placeholder="EAAG..." />
+
+              <button
+                type="button"
+                onClick={() => setMetaAdvancedOpen((v) => !v)}
+                className="flex items-center gap-1.5 self-start text-xs font-semibold text-slate-400 hover:text-slate-200"
+              >
+                {metaAdvancedOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                Avançado: tenho meu próprio token de acesso
+              </button>
+
+              {metaAdvancedOpen && (
+                <div className="flex flex-col gap-3 rounded-xl p-3.5" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
+                  <p className="text-[11px] text-slate-500">
+                    Só preencha se você já tiver seu próprio token de usuário do sistema ou de página —
+                    do contrário deixe em branco que usamos a conta técnica da Alizo (passo do compartilhamento acima).
+                  </p>
+                  <div>
+                    <Label htmlFor="meta-token">Token de acesso</Label>
+                    <div className="mt-1">
+                      <SecretInput value={accessToken} onChange={setAccessToken} placeholder="EAAG..." />
+                    </div>
+                  </div>
                 </div>
-              </div>
+              )}
             </>
           ) : (
             <>

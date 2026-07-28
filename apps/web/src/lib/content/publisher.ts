@@ -4,7 +4,7 @@
 // "preso" sem status final).
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getSocialConfig, publishFacebookPhoto, publishInstagramPost, type SocialConfig } from './meta-content'
+import { resolveSocialConfig, publishFacebookPhoto, publishInstagramPost, type SocialConfig } from './meta-content'
 import type { ContentPost, SocialAccount } from './types'
 
 export type PublishOutcome = { ok: true; externalPostId: string } | { ok: false; error: string }
@@ -20,11 +20,12 @@ export async function publishContentPost(
     return { ok: false, error }
   }
 
-  const config = getSocialConfig(account)
-  if (!config) return fail('Conta sem token de Página configurado.')
   if (!post.image_url) return fail('Post sem imagem gerada.')
 
   try {
+    const config = await resolveSocialConfig(account)
+    if (!config) return fail('Conta sem token de Página configurado e sem system user global disponível.')
+
     const result =
       post.platform === 'instagram'
         ? await publishInstagramContent(config, account, post)

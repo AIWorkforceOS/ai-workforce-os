@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/ui/dashboard-ui'
 import { TrafficConnectForm } from '@/components/dashboard/traffic-connect-form'
 import { TrafficConnectGuide, TrafficConnectKaiPanel } from '@/components/dashboard/traffic-connect-guide'
+import { getMetaBusinessManagerId } from '@/lib/integrations'
 import type { AdAccount } from '@/lib/traffic/types'
 import type { Unit } from '@/lib/types'
 
@@ -14,20 +15,25 @@ export default async function TrafficConnectPage() {
     supabase.from('units').select('*').order('created_at', { ascending: true }),
     supabase.from('ad_accounts').select('*').order('created_at', { ascending: false }),
   ])
+  const businessManagerId = getMetaBusinessManagerId()
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         eyebrow="tráfego pago"
         title="Conectar contas de anúncio"
-        subtitle="Cole as credenciais da sua conta Meta Ads ou Google Ads — testamos na hora e confirmamos se funcionou."
+        subtitle="Compartilhe a conta Meta Ads como Parceiro (sem token) ou aceite o vínculo da MCC do Google Ads — testamos na hora e confirmamos se funcionou."
       />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.4fr_1fr]">
-        <TrafficConnectForm units={(units ?? []) as Unit[]} accounts={(accounts ?? []) as AdAccount[]} />
+        <TrafficConnectForm
+          units={(units ?? []) as Unit[]}
+          accounts={(accounts ?? []) as AdAccount[]}
+          businessManagerId={businessManagerId}
+        />
         <div className="flex flex-col gap-6">
           <TrafficConnectKaiPanel />
-          <TrafficConnectGuide />
+          <TrafficConnectGuide businessManagerId={businessManagerId} />
         </div>
       </div>
     </div>

@@ -10,6 +10,7 @@ export type IntegrationKey =
   | 'intake'
   | 'cron'
   | 'meta_ads'
+  | 'meta_business_manager'
   | 'google_ads'
   | 'smarter_candidates'
 
@@ -20,6 +21,17 @@ export type IntegrationConfigStatus = {
   detail: string
   /** true quando a integração suporta teste de conexão ao vivo */
   testable: boolean
+}
+
+/**
+ * ID do Business Manager da Alizo, usado nos fluxos self-service de Meta
+ * Ads e Facebook/Instagram para o cliente compartilhar a conta de anúncio
+ * ou a Página como Parceiro (sem precisar gerar nenhum token). Ainda não
+ * configurado até o Business Manager da Alizo existir — degrada
+ * graciosamente (null) em vez de quebrar as telas de conexão.
+ */
+export function getMetaBusinessManagerId(): string | null {
+  return process.env.META_BUSINESS_MANAGER_ID?.trim() || null
 }
 
 export function getIntegrationsConfigStatus(): IntegrationConfigStatus[] {
@@ -80,6 +92,13 @@ export function getIntegrationsConfigStatus(): IntegrationConfigStatus[] {
       label: 'Meta Ads (Traffic Specialist)',
       configured: has('META_SYSTEM_USER_TOKEN'),
       detail: 'Token global de system user do Meta Business (tokens por conta funcionam mesmo sem ele). Env: META_SYSTEM_USER_TOKEN — ver docs/setup/traffic-apis-setup.md',
+      testable: false,
+    },
+    {
+      key: 'meta_business_manager',
+      label: 'Business Manager da Alizo (parceria sem token do cliente)',
+      configured: has('META_BUSINESS_MANAGER_ID'),
+      detail: 'ID do Business Manager da Alizo, mostrado ao cliente para compartilhar conta de anúncio/Página como Parceiro (sem gerar token). Env: META_BUSINESS_MANAGER_ID — ver docs/setup/traffic-apis-setup.md',
       testable: false,
     },
     {

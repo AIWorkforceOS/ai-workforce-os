@@ -2,10 +2,18 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Eye, EyeOff, Loader2, CheckCircle2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Eye, EyeOff, Loader2, CheckCircle2 } from 'lucide-react'
 import { Badge, Card, CardHeader, Input, Label, Select, brandGradient } from '@/components/ui/dashboard-ui'
+import { MetaPartnerGuide } from '@/components/dashboard/meta-partner-guide'
 import type { SocialAccount } from '@/lib/content/types'
 import type { Unit } from '@/lib/types'
+
+const META_PAGE_PARTNER_STEPS = [
+  'Na sua Página do Facebook, abra Configurações → Acesso à Página (Nova experiência de Páginas).',
+  'Em "Acesso de parceiros", clique em "Atribuir um novo parceiro" e cole o ID acima.',
+  'Conceda acesso de conteúdo (publicar e gerenciar posts/anúncios) para essa Página.',
+  'Volte aqui, cole o ID da Página abaixo e clique em "Testar e conectar".',
+]
 
 function SecretInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
   const [reveal, setReveal] = useState(false)
@@ -39,11 +47,20 @@ const STATUS_LABEL: Record<string, string> = {
   disconnected: 'Desconectada',
 }
 
-export function ContentConnectForm({ units, accounts }: { units: Unit[]; accounts: SocialAccount[] }) {
+export function ContentConnectForm({
+  units,
+  accounts,
+  businessManagerId,
+}: {
+  units: Unit[]
+  accounts: SocialAccount[]
+  businessManagerId: string | null
+}) {
   const router = useRouter()
   const [unitId, setUnitId] = useState(units[0]?.id ?? '')
   const [pageId, setPageId] = useState('')
   const [pageAccessToken, setPageAccessToken] = useState('')
+  const [advancedOpen, setAdvancedOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
@@ -55,10 +72,6 @@ export function ContentConnectForm({ units, accounts }: { units: Unit[]; account
     }
     if (!pageId.trim()) {
       setError('Informe o ID da Página do Facebook.')
-      return
-    }
-    if (!pageAccessToken.trim()) {
-      setError('Cole o token de acesso da Página.')
       return
     }
 
@@ -73,7 +86,7 @@ export function ContentConnectForm({ units, accounts }: { units: Unit[]; account
         body: JSON.stringify({
           unit_id: unitId,
           page_id: pageId.trim(),
-          page_access_token: pageAccessToken.trim(),
+          page_access_token: pageAccessToken.trim() || undefined,
         }),
       })
       const data = (await response.json()) as { error?: string; label?: string }
@@ -109,24 +122,44 @@ export function ContentConnectForm({ units, accounts }: { units: Unit[]; account
             </div>
           )}
 
+          <MetaPartnerGuide businessManagerId={businessManagerId} assetLabel="a Página" steps={META_PAGE_PARTNER_STEPS} />
+
           <div>
             <Label htmlFor="page-id">ID da Página do Facebook</Label>
             <Input id="page-id" className="mt-1" value={pageId} onChange={(e) => setPageId(e.target.value)} placeholder="1234567890" />
             <p className="mt-1 text-[11px] text-slate-500">
-              Se a sua Página tem uma conta do Instagram Business vinculada, ela é detectada automaticamente
-              no teste de conexão — não precisa informar o Instagram separado.
+              Antes de testar, confirme que já compartilhou a Página como Parceira (passo acima). Se ela tem
+              uma conta do Instagram Business vinculada, ela é detectada automaticamente no teste de conexão.
             </p>
           </div>
-          <div>
-            <Label htmlFor="page-token">Token de acesso da Página (longa duração)</Label>
-            <div className="mt-1">
-              <SecretInput value={pageAccessToken} onChange={setPageAccessToken} placeholder="EAAG..." />
+
+          <button
+            type="button"
+            onClick={() => setAdvancedOpen((v) => !v)}
+            className="flex items-center gap-1.5 self-start text-xs font-semibold text-slate-400 hover:text-slate-200"
+          >
+            {advancedOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+            Avançado: tenho meu próprio token de acesso da Página
+          </button>
+
+          {advancedOpen && (
+            <div className="flex flex-col gap-3 rounded-xl p-3.5" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
+              <p className="text-[11px] text-slate-500">
+                Só preencha se você já tiver seu próprio token de Página de longa duração —
+                do contrário deixe em branco que usamos a conta técnica da Alizo (passo do compartilhamento acima).
+              </p>
+              <div>
+                <Label htmlFor="page-token">Token de acesso da Página (longa duração)</Label>
+                <div className="mt-1">
+                  <SecretInput value={pageAccessToken} onChange={setPageAccessToken} placeholder="EAAG..." />
+                </div>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Gerado no Meta Business Suite / Graph API Explorer, com os escopos pages_manage_posts,
+                  pages_read_engagement, instagram_basic e instagram_content_publish.
+                </p>
+              </div>
             </div>
-            <p className="mt-1 text-[11px] text-slate-500">
-              Gerado no Meta Business Suite / Graph API Explorer, com os escopos pages_manage_posts,
-              pages_read_engagement, instagram_basic e instagram_content_publish.
-            </p>
-          </div>
+          )}
 
           {error && <p className="text-xs text-red-400">{error}</p>}
           {success && (

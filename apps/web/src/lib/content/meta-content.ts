@@ -13,8 +13,18 @@
 //   POST /{ig-business-id}/media           — cria o container de mídia (Instagram)
 //   POST /{ig-business-id}/media_publish   — publica o container criado
 //
-// Degradação graciosa: sem token configurado, getSocialConfig retorna
-// null e quem chama registra system_event em vez de quebrar (padrão do OS).
+// Degradação graciosa: sem token configurado e sem META_SYSTEM_USER_TOKEN
+// global, resolveSocialConfig retorna null e quem chama registra
+// system_event em vez de quebrar (padrão do OS).
+//
+// Caminho padrão (sem token do cliente): a Página é compartilhada como
+// Parceiro do Business Manager da Alizo (ver META_BUSINESS_MANAGER_ID em
+// lib/integrations.ts e docs/setup/traffic-apis-setup.md). Com isso, o
+// system user global (META_SYSTEM_USER_TOKEN) consegue trocar por um token
+// de Página em tempo real via GET /{page-id}?fields=access_token — não
+// precisamos mais que o cliente gere e cole um token de Página. O campo
+// page_access_token da conta continua existindo só para o caso avançado
+// (raro) de alguém que já tem seu próprio token de longa duração.
 
 import { META_API_VERSION } from '@/lib/traffic/meta-ads'
 
@@ -25,12 +35,44 @@ export type SocialConfig = {
   pageId: string
 }
 
-export function getSocialConfig(account: {
+/**
+ * Resolve a credencial de Página: token salvo na conta (avançado/manual)
+ * com fallback para um token derivado em tempo real do system user global
+ * da Alizo, via troca de token de Página (exige que a Página tenha sido
+ * compartilhada como Parceiro do Business Manager da Alizo). Retorna null
+ * quando não há token manual nem META_SYSTEM_USER_TOKEN configurado.
+ */
+export async function resolveSocialConfig(account: {
   page_id: string
   page_access_token: string | null
-}): SocialConfig | null {
-  if (!account.page_access_token) return null
-  return { pageAccessToken: account.page_access_token, pageId: account.page_id }
+}): Promise<SocialConfig | null> {
+  if (account.page_access_token) {
+    return { pageAccessToken: account.page_access_token, pageId: account.page_id }
+  }
+
+  const systemUserToken = process.env.META_SYSTEM_USER_TOKEN
+  if (!systemUserToken) return null
+
+  const pageAccessToken = await fetchPageAccessTokenViaSystemUser(account.page_id, systemUserToken)
+  return { pageAccessToken, pageId: account.page_id }
+}
+
+/** GET /{page-id}?fields=access_token — troca o token do system user por um token de Página. */
+async function fetchPageAccessTokenViaSystemUser(pageId: string, systemUserToken: string): Promise<string> {
+  const url = new URL(`${META_BASE_URL}/${pageId}`)
+  url.searchParams.set('fields', 'access_token')
+  url.searchParams.set('access_token', systemUserToken)
+
+  const response = await fetch(url.toString())
+  const data = (await response.json()) as { access_token?: string } & MetaErrorBody
+
+  if (!response.ok || !data.access_token) {
+    const err = data.error
+    throw new Error(
+      `Não foi possível obter o token da Página a partir do usuário do sistema da Alizo: ${err?.message ?? `status ${response.status}`}${err?.code ? ` (code ${err.code})` : ''}`,
+    )
+  }
+  return data.access_token
 }
 
 type MetaErrorBody = { error?: { message?: string; type?: string; code?: number } }

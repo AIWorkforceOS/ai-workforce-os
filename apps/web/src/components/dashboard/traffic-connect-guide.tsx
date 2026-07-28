@@ -6,20 +6,24 @@ import { Card, brandGradient } from '@/components/ui/dashboard-ui'
 
 type Step = { title: string; body: string }
 
-const META_STEPS: Step[] = [
-  {
-    title: '1. Encontre o ID da conta de anúncio',
-    body: 'No Meta Business Suite (business.facebook.com), clique no ícone de configurações e abra "Contas de anúncio". O número que aparece na lista é o ID — com ou sem o prefixo "act_", tanto faz.',
-  },
-  {
-    title: '2. Gere o token de acesso',
-    body: 'Configurações do negócio → Usuários → "Usuários do sistema". Crie um usuário do sistema Admin (se ainda não tiver), atribua a conta de anúncio a ele com permissão "Gerenciar campanhas" e clique em "Gerar novo token" marcando os escopos ads_read e ads_management. Copie o token assim que ele aparecer — ele só é mostrado uma vez.',
-  },
-  {
-    title: '3. Cole aqui e teste',
-    body: 'Cole o ID da conta e o token no formulário ao lado e clique em "Testar e conectar". Se a Alizo já for parceira no seu Business Manager, você só precisa do ID da conta.',
-  },
-]
+function metaSteps(businessManagerId: string | null): Step[] {
+  return [
+    {
+      title: '1. Encontre o ID da conta de anúncio',
+      body: 'No Meta Business Suite (business.facebook.com), clique no ícone de configurações e abra "Contas de anúncio". O número que aparece na lista é o ID — com ou sem o prefixo "act_", tanto faz.',
+    },
+    {
+      title: '2. Compartilhe a conta como Parceiro (sem gerar token)',
+      body: businessManagerId
+        ? `Configurações do negócio → Parceiros → Adicionar → cole o ID do Business Manager da Alizo (${businessManagerId}) → selecione a conta de anúncio → marque a permissão "Gerenciar campanhas". Não precisa gerar nenhum token.`
+        : 'Configurações do negócio → Parceiros → Adicionar → cole o ID do Business Manager da Alizo (mostrado no formulário ao lado assim que a integração estiver disponível) → selecione a conta de anúncio → marque a permissão "Gerenciar campanhas".',
+    },
+    {
+      title: '3. Cole aqui e teste',
+      body: 'Cole o ID da conta no formulário ao lado e clique em "Testar e conectar". Se você preferir usar seu próprio token em vez do compartilhamento, abra "Avançado" no formulário.',
+    },
+  ]
+}
 
 const GOOGLE_STEPS: Step[] = [
   {
@@ -49,7 +53,7 @@ function StepList({ steps }: { steps: Step[] }) {
   )
 }
 
-export function TrafficConnectGuide() {
+export function TrafficConnectGuide({ businessManagerId }: { businessManagerId: string | null }) {
   const [platform, setPlatform] = useState<'meta' | 'google'>('meta')
 
   return (
@@ -72,7 +76,7 @@ export function TrafficConnectGuide() {
         </button>
       </div>
       <div className="mt-4">
-        <StepList steps={platform === 'meta' ? META_STEPS : GOOGLE_STEPS} />
+        <StepList steps={platform === 'meta' ? metaSteps(businessManagerId) : GOOGLE_STEPS} />
       </div>
     </Card>
   )
