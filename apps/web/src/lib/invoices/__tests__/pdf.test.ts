@@ -83,7 +83,7 @@ describe('generateInvoicePdf', () => {
     expect(extractStreamText(buffer)).toContain('Alizo Cleaning')
   })
 
-  it('lista o detalhamento de uma fatura consolidada', async () => {
+  it('lista o detalhamento de uma fatura consolidada na grade compacta de itens', async () => {
     const buffer = await generateInvoicePdf({
       invoice: {
         ...baseInvoice,
@@ -97,8 +97,54 @@ describe('generateInvoicePdf', () => {
       locale: 'en',
     })
     const raw = extractStreamText(buffer)
-    expect(raw).toContain('Visita 1')
-    expect(raw).toContain('Visita 2')
+    // A grade compacta desenha "{invoice_number} — {valor}" por célula, não a
+    // descrição do lançamento — o detalhamento aparece pelo número da fatura.
+    expect(raw).toContain('INV-0040')
+    expect(raw).toContain('INV-0041')
+    expect(raw).toContain('$120.00')
+    expect(raw).toContain('$230.00')
+  })
+
+  it('desenha até ~50 itens numa grade de 3 colunas sem estourar para uma segunda página', async () => {
+    const items = Array.from({ length: 50 }, (_, i) => ({
+      invoice_id: `id-${i}`,
+      invoice_number: `INV-${1000 + i}`,
+      description: `Visita ${i}`,
+      amount: 80 + i,
+      due_date: null,
+    }))
+    const buffer = await generateInvoicePdf({
+      invoice: { ...baseInvoice, consolidated_items: items },
+      customer: baseCustomer,
+      unit: baseUnit,
+      locale: 'en',
+    })
+    const reloaded = await PDFDocument.load(buffer)
+    expect(reloaded.getPageCount()).toBe(1)
+    const raw = extractStreamText(buffer)
+    expect(raw).toContain('INV-1000')
+    expect(raw).toContain('INV-1049')
+  })
+
+  it('quebra para uma nova página quando a quantidade de itens excede o que cabe numa página', async () => {
+    const items = Array.from({ length: 400 }, (_, i) => ({
+      invoice_id: `id-${i}`,
+      invoice_number: `INV-${2000 + i}`,
+      description: `Visita ${i}`,
+      amount: 50 + i,
+      due_date: null,
+    }))
+    const buffer = await generateInvoicePdf({
+      invoice: { ...baseInvoice, consolidated_items: items },
+      customer: baseCustomer,
+      unit: baseUnit,
+      locale: 'en',
+    })
+    const reloaded = await PDFDocument.load(buffer)
+    expect(reloaded.getPageCount()).toBeGreaterThan(1)
+    const raw = extractStreamText(buffer)
+    expect(raw).toContain('INV-2000')
+    expect(raw).toContain('INV-2399')
   })
 
   it('não quebra a geração do PDF quando a logo não pode ser baixada/embutida (best-effort)', async () => {

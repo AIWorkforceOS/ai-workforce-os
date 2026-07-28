@@ -831,6 +831,20 @@ export function ServiceOperationsPanel({
     setInvoices((prev) => prev.map((i) => (i.id === invoice.id ? (data as unknown as InvoiceWithRelations) : i)))
   }
 
+  async function handleInvoiceDelete(invoice: InvoiceWithRelations) {
+    if (!window.confirm(`Excluir definitivamente a fatura ${invoice.invoice_number}? Essa ação não pode ser desfeita.`)) return
+    setInvoiceRowError(null)
+    setInvoiceRowBusyId(invoice.id)
+    const supabase = createClient()
+    const { error } = await supabase.from('invoices').delete().eq('id', invoice.id)
+    setInvoiceRowBusyId(null)
+    if (error) {
+      setInvoiceRowError('Não foi possível excluir a fatura.')
+      return
+    }
+    setInvoices((prev) => prev.filter((i) => i.id !== invoice.id))
+  }
+
   // -------------------------------------------------------------------
 
   return (
@@ -1718,6 +1732,16 @@ export function ServiceOperationsPanel({
                                 onClick={() => handleInvoiceStatus(invoice, 'draft')}
                               >
                                 Reativar
+                              </button>
+                            )}
+                            {invoice.status === 'cancelled' && (
+                              <button
+                                type="button"
+                                disabled={invoiceRowBusyId === invoice.id}
+                                className="text-red-400 hover:text-red-300 disabled:opacity-40"
+                                onClick={() => handleInvoiceDelete(invoice)}
+                              >
+                                Excluir
                               </button>
                             )}
                             {invoice.status !== 'cancelled' && invoice.status !== 'paid' && invoice.status !== 'consolidated' && (
