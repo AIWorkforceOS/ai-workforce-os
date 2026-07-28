@@ -277,6 +277,15 @@ export function buildSystemPrompt(
     .join(' ')
 }
 
+/**
+ * Conta os DISPAROS PROATIVOS de hoje — primeiro contato, follow-up
+ * automático e mensagens proativas do Recruiter, todos gravados com
+ * template_key. Respostas dentro de uma conversa em andamento são
+ * gravadas com template_key null e NÃO contam: o daily_limit vale só
+ * para abordagem fria (prospecção), nunca para responder um lead
+ * engajado — resposta é sempre livre, 24h/dia, quantas forem
+ * necessárias para fechar negócio.
+ */
 export async function countSentToday(supabase: SupabaseClient, unitId: string): Promise<number> {
   const startOfDay = new Date()
   startOfDay.setHours(0, 0, 0, 0)
@@ -286,6 +295,7 @@ export async function countSentToday(supabase: SupabaseClient, unitId: string): 
     .select('id', { count: 'exact', head: true })
     .eq('unit_id', unitId)
     .eq('direction', 'outbound')
+    .not('template_key', 'is', null)
     .gte('sent_at', startOfDay.toISOString())
 
   return count ?? 0
@@ -485,12 +495,13 @@ export async function processInboundMessage(params: {
     return noHandoff
   }
 
-  // Fora do horário ativo ou acima do limite diário são comportamentos
-  // esperados (configurados pelo cliente) — não geram evento de erro.
-  if (!isWithinActiveHours(config.active_hours)) return noHandoff
-
-  const sentToday = await countSentToday(supabase, unit.id)
-  if (sentToday >= config.daily_limit) return noHandoff
+  // Responder mensagem RECEBIDA de um lead já em conversa é sempre
+  // livre: sem checar active_hours nem daily_limit — esses guard-rails
+  // valem só para disparos proativos (primeiro contato, follow-up). O
+  // lead engajado que responde de madrugada recebe resposta na hora,
+  // quantas mensagens forem necessárias para fechar o negócio. A
+  // proteção contra conversa interminável continua sendo a escalação
+  // por after_messages/keywords logo abaixo.
 
   const { data: history } = await supabase
     .from('conversations')

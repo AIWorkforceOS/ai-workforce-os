@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type KeyboardEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { SECTOR_OPTIONS, type AgentConfig, type AgentTone } from '@/lib/types'
+import type { AgentConfig, AgentTone, ProspectingProfile } from '@/lib/types'
 import { Input, Label, Select } from '@/components/ui/dashboard-ui'
 
 const TONE_OPTIONS: { value: AgentTone; label: string }[] = [
@@ -12,7 +12,9 @@ const TONE_OPTIONS: { value: AgentTone; label: string }[] = [
   { value: 'formal', label: 'Formal' },
 ]
 
-const SECTOR_LABELS: Record<string, string> = {
+// Rótulos dos setores fixos antigos (pré-migration 049) — usados só para
+// converter uma config legada em chips de texto livre na primeira edição.
+const LEGACY_SECTOR_LABELS: Record<string, string> = {
   tecnologia: 'Tecnologia',
   industria: 'Indústria',
   comercio: 'Comércio',
@@ -21,6 +23,8 @@ const SECTOR_LABELS: Record<string, string> = {
   educacao: 'Educação',
 }
 
+const HEADCOUNT_OPTIONS = ['1-10', '11-50', '51-200', '200+']
+
 export function AgentConfigForm({
   unitId,
   initialConfig,
@@ -28,28 +32,54 @@ export function AgentConfigForm({
 }: {
   unitId: string
   initialConfig: AgentConfig | null
-  /** 'sdr' (padrão) ou 'recruiter' — setores só se aplicam ao SDR */
+  /** 'sdr' (padrão) ou 'recruiter' — segmentação de prospecção só se aplica ao SDR */
   agentType?: 'sdr' | 'recruiter'
 }) {
   const router = useRouter()
+  const initialProfile = (initialConfig?.prospecting_profile ?? {}) as ProspectingProfile
+
   const [personaName, setPersonaName] = useState(initialConfig?.persona_name ?? 'Assistente')
   const [tone, setTone] = useState<AgentTone>(initialConfig?.persona_tone ?? 'professional')
   const [dailyLimit, setDailyLimit] = useState(initialConfig?.daily_limit ?? 15)
   const [start, setStart] = useState(initialConfig?.active_hours?.start ?? '08:00')
   const [end, setEnd] = useState(initialConfig?.active_hours?.end ?? '18:00')
-  const [sectors, setSectors] = useState<string[]>(
-    initialConfig?.sectors ?? ['tecnologia', 'industria', 'comercio', 'servicos'],
-  )
   const [isActive, setIsActive] = useState(initialConfig?.is_active ?? false)
   const [configId, setConfigId] = useState<string | null>(initialConfig?.id ?? null)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [loading, setLoading] = useState(false)
 
-  function toggleSector(sector: string) {
-    setSectors((current) =>
-      current.includes(sector) ? current.filter((s) => s !== sector) : [...current, sector],
-    )
+  // ── Perfil de segmentação da prospecção (texto livre, migration 049) ──
+  const [mode, setMode] = useState<'business_types' | 'general'>(initialProfile.mode ?? 'business_types')
+  const [businessTypes, setBusinessTypes] = useState<string[]>(() => {
+    const fromProfile = (initialProfile.business_types ?? []).filter((t) => t.trim().length > 0)
+    if (fromProfile.length > 0) return fromProfile
+    // Semeia com os setores fixos antigos, se a config é anterior à migração
+    return (initialConfig?.sectors ?? []).map((s) => LEGACY_SECTOR_LABELS[s] ?? s)
+  })
+  const [typeDraft, setTypeDraft] = useState('')
+  const [region, setRegion] = useState(initialProfile.region ?? '')
+  const [generalSector, setGeneralSector] = useState(initialProfile.general_sector ?? '')
+  const [headcount, setHeadcount] = useState(initialProfile.headcount_range ?? '')
+
+  function addBusinessTypes(raw: string) {
+    const items = raw
+      .split(/[,;\n]/)
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0)
+    if (items.length === 0) return
+    setBusinessTypes((current) => {
+      const lower = new Set(current.map((c) => c.toLowerCase()))
+      return [...current, ...items.filter((item) => !lower.has(item.toLowerCase()))]
+    })
+    setTypeDraft('')
+  }
+
+  function handleTypeKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'Enter' || event.key === ',') {
+      event.preventDefault()
+      addBusinessTypes(typeDraft)
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -57,6 +87,24 @@ export function AgentConfigForm({
     setError(null)
     setSaved(false)
     setLoading(true)
+
+    // Inclui o que ficou digitado no campo sem apertar Enter
+    const pendingTypes = typeDraft
+      .split(/[,;\n]/)
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0)
+    const allTypes = [...businessTypes]
+    for (const item of pendingTypes) {
+      if (!allTypes.some((t) => t.toLowerCase() === item.toLowerCase())) allTypes.push(item)
+    }
+
+    const prospectingProfile: ProspectingProfile = {
+      mode,
+      business_types: allTypes,
+      region: region.trim() || null,
+      general_sector: generalSector.trim() || null,
+      headcount_range: headcount.trim() || null,
+    }
 
     const supabase = createClient()
     const payload = {
@@ -66,7 +114,9 @@ export function AgentConfigForm({
       persona_tone: tone,
       daily_limit: dailyLimit,
       active_hours: { start, end, days: initialConfig?.active_hours?.days ?? [1, 2, 3, 4, 5] },
-      sectors,
+      // sectors (legado) acompanha o perfil novo para as telas antigas que ainda o exibem
+      sectors: mode === 'general' ? (generalSector.trim() ? [generalSector.trim()] : []) : allTypes,
+      ...(agentType === 'sdr' ? { prospecting_profile: prospectingProfile } : {}),
       is_active: isActive,
     }
 
@@ -85,6 +135,8 @@ export function AgentConfigForm({
       return
     }
 
+    if (mode === 'business_types') setBusinessTypes(allTypes)
+    setTypeDraft('')
     setConfigId(data.id)
     setSaved(true)
     router.refresh()
@@ -111,7 +163,7 @@ export function AgentConfigForm({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="dailyLimit">Limite diário: {dailyLimit}</Label>
+        <Label htmlFor="dailyLimit">Limite diário de abordagens novas: {dailyLimit}</Label>
         <input
           id="dailyLimit"
           type="range"
@@ -121,6 +173,10 @@ export function AgentConfigForm({
           onChange={(e) => setDailyLimit(Number(e.target.value))}
           className="accent-cyan-500"
         />
+        <p className="text-xs text-slate-500">
+          Vale só para o primeiro contato com leads novos. Respostas a leads que já estão conversando
+          são sempre livres, 24h por dia.
+        </p>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -135,22 +191,120 @@ export function AgentConfigForm({
       </div>
 
       {agentType === 'sdr' && (
-      <div className="flex flex-col gap-2">
-        <span className="text-xs font-bold uppercase tracking-wide text-slate-400">Setores</span>
-        <div className="grid grid-cols-2 gap-2">
-          {SECTOR_OPTIONS.map((sector) => (
-            <label key={sector} className="flex items-center gap-2 text-sm text-slate-300">
+        <div className="flex flex-col gap-3">
+          <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
+            Segmentação da prospecção automática
+          </span>
+          <p className="text-xs text-slate-500">
+            O Sales Rep busca empresas sozinho ao longo do dia usando este perfil. A alteração vale já
+            na próxima rodada de busca.
+          </p>
+
+          <div className="flex flex-col gap-2">
+            <label className="flex items-center gap-2 text-sm text-slate-300">
               <input
-                type="checkbox"
-                checked={sectors.includes(sector)}
-                onChange={() => toggleSector(sector)}
+                type="radio"
+                name="prospectingMode"
+                checked={mode === 'business_types'}
+                onChange={() => setMode('business_types')}
                 className="accent-cyan-500"
               />
-              {SECTOR_LABELS[sector]}
+              Tipos de negócio específicos
             </label>
-          ))}
+            <label className="flex items-center gap-2 text-sm text-slate-300">
+              <input
+                type="radio"
+                name="prospectingMode"
+                checked={mode === 'general'}
+                onChange={() => setMode('general')}
+                className="accent-cyan-500"
+              />
+              Empresas em geral
+            </label>
+          </div>
+
+          {mode === 'business_types' ? (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="businessType">Tipos de negócio</Label>
+              {businessTypes.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {businessTypes.map((type) => (
+                    <span
+                      key={type}
+                      className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs text-slate-200"
+                      style={{ border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.04)' }}
+                    >
+                      {type}
+                      <button
+                        type="button"
+                        aria-label={`Remover ${type}`}
+                        onClick={() => setBusinessTypes((current) => current.filter((t) => t !== type))}
+                        className="text-slate-400 hover:text-red-400"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-2">
+                <Input
+                  id="businessType"
+                  value={typeDraft}
+                  onChange={(e) => setTypeDraft(e.target.value)}
+                  onKeyDown={handleTypeKeyDown}
+                  placeholder="Ex.: academias, padarias, curso profissionalizante"
+                />
+                <button
+                  type="button"
+                  onClick={() => addBusinessTypes(typeDraft)}
+                  className="rounded-xl px-3 py-2 text-sm font-semibold text-slate-300 transition-colors hover:bg-white/5"
+                  style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+                >
+                  Adicionar
+                </button>
+              </div>
+              <p className="text-xs text-slate-500">
+                Texto livre — escreva do seu jeito e aperte Enter (ou vírgula) para adicionar cada tipo.
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="generalSector">Setor (texto livre)</Label>
+                <Input
+                  id="generalSector"
+                  value={generalSector}
+                  onChange={(e) => setGeneralSector(e.target.value)}
+                  placeholder="Ex.: serviços, alimentação — vazio busca empresas de todos os setores"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="headcount">Faixa de funcionários (opcional)</Label>
+                <Select id="headcount" value={headcount} onChange={(e) => setHeadcount(e.target.value)}>
+                  <option value="">Indiferente</option>
+                  {HEADCOUNT_OPTIONS.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </Select>
+                <p className="text-xs text-slate-500">
+                  Aproximado, usado só como referência interna — o Google Maps não informa o número de
+                  funcionários, então a busca não filtra por porte.
+                </p>
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="prospectRegion">Região/bairro específico (opcional)</Label>
+            <Input
+              id="prospectRegion"
+              value={region}
+              onChange={(e) => setRegion(e.target.value)}
+              placeholder="Ex.: Moema, Zona Sul — vazio usa a cidade da unidade"
+            />
+          </div>
         </div>
-      </div>
       )}
 
       <label className="flex items-center gap-2 text-sm font-medium text-slate-300">

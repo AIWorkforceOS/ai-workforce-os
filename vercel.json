@@ -28,6 +28,18 @@
     {
       "path": "/api/cron/seo",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/prospecting",
+      "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/prospecting-midday",
+      "schedule": "0 16 * * *"
+    },
+    {
+      "path": "/api/cron/prospecting-afternoon",
+      "schedule": "0 20 * * *"
     }
   ]
 }

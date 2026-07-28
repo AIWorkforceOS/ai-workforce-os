@@ -161,6 +161,24 @@ export type TrainingCorrectionEntry = {
   correction: string
 }
 
+/**
+ * Perfil de segmentação da prospecção autônoma do Sales Rep (migration 049).
+ * Tudo texto livre — não há lista fixa de setores. Lido AO VIVO a cada
+ * execução do cron de prospecção: mudou a config hoje, o cron já busca
+ * com a config nova na próxima rodada.
+ */
+export type ProspectingProfile = {
+  mode?: 'business_types' | 'general'
+  /** tipos de negócio em texto livre (ex.: "academias", "padarias", "curso profissionalizante") */
+  business_types?: string[]
+  /** bairro/região específica em texto livre — complementa a cidade/estado da unidade */
+  region?: string | null
+  /** setor em texto livre quando mode = 'general' ("empresas em geral") */
+  general_sector?: string | null
+  /** faixa de nº de funcionários — METADADO aproximado, o Google Places não filtra por porte */
+  headcount_range?: string | null
+}
+
 export type AgentConfig = {
   id: string
   unit_id: string
@@ -172,6 +190,8 @@ export type AgentConfig = {
   escalation_rules: { after_messages: number; keywords: string[] }
   sectors: string[]
   is_active: boolean
+  /** perfil de segmentação da prospecção autônoma (migration 049) — só usado pelo SDR */
+  prospecting_profile?: ProspectingProfile | null
   /** o que o funcionário aprendeu na entrevista de contratação (migration 012) */
   business_profile?: Record<string, unknown> | null
   interview_status?: InterviewStatus | null
@@ -185,15 +205,6 @@ export type AgentConfig = {
   created_at: string
   updated_at: string
 }
-
-export const SECTOR_OPTIONS = [
-  'tecnologia',
-  'industria',
-  'comercio',
-  'servicos',
-  'saude',
-  'educacao',
-] as const
 
 export type LeadStatus =
   | 'new'

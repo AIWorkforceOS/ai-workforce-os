@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { Users } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
-import { SECTOR_OPTIONS, type Lead, type Unit } from '@/lib/types'
+import type { Lead, Unit } from '@/lib/types'
 import { Badge, type BadgeVariant, Card, EmptyState, Label, PageHeader, Select, TableShell, Td, Th, Tr } from '@/components/ui/dashboard-ui'
 
 const PAGE_SIZE = 20
@@ -26,6 +26,8 @@ const STATUS_VARIANT: Record<string, BadgeVariant> = {
   paused: 'slate',
 }
 
+// Setores agora são texto livre (perfil de segmentação, migration 049) —
+// os rótulos fixos ficam só para exibir bonito os valores legados.
 const SECTOR_LABELS: Record<string, string> = {
   tecnologia: 'Tecnologia',
   industria: 'Indústria',
@@ -62,6 +64,13 @@ export default async function LeadsPage({
 
   const { data: units } = await supabase.from('units').select('id, name').order('name')
   const unitRows = (units ?? []) as Pick<Unit, 'id' | 'name'>[]
+
+  // Opções do filtro de setor a partir dos setores que existem de fato nos
+  // leads (texto livre desde a migration 049 — não há mais lista fixa).
+  const { data: sectorRows } = await supabase.from('leads').select('sector').not('sector', 'is', null).limit(1000)
+  const sectorOptions = Array.from(
+    new Set(((sectorRows as Pick<Lead, 'sector'>[] | null) ?? []).map((row) => row.sector as string)),
+  ).sort((a, b) => a.localeCompare(b, 'pt'))
 
   let query = supabase
     .from('leads')
@@ -122,8 +131,8 @@ export default async function LeadsPage({
             <Label htmlFor="sector">Setor</Label>
             <Select id="sector" name="sector" defaultValue={params.sector ?? ''}>
               <option value="">Todos</option>
-              {SECTOR_OPTIONS.map((sector) => (
-                <option key={sector} value={sector}>{SECTOR_LABELS[sector]}</option>
+              {sectorOptions.map((sector) => (
+                <option key={sector} value={sector}>{SECTOR_LABELS[sector] ?? sector}</option>
               ))}
             </Select>
           </div>

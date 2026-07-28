@@ -5,9 +5,10 @@ import { getAppUser } from '@/lib/app-user'
 import { UnitSettingsForm } from '@/components/dashboard/unit-settings-form'
 import { WhatsAppConnection } from '@/components/dashboard/whatsapp-connection'
 import { CopyWhatsAppLink } from '@/components/dashboard/copy-whatsapp-link'
-import { ProspectingPanel } from '@/components/dashboard/prospecting-panel'
+import { ProspectingSummary } from '@/components/dashboard/prospecting-summary'
 import { UnitOwnerPanel } from '@/components/dashboard/unit-owner-panel'
-import type { AgentConfig, DashboardSummaryRow, Unit } from '@/lib/types'
+import { countCapturedToday, DAILY_CAPTURE_LIMIT } from '@/lib/prospecting/engine'
+import type { AgentConfig, DashboardSummaryRow, ProspectingJob, Unit } from '@/lib/types'
 import { Badge, Card, KpiCard, PageHeader } from '@/components/ui/dashboard-ui'
 
 const CLOSED_JOB_STATUSES = ['closed', 'cancelled', 'expired', 'handed_off']
@@ -46,6 +47,16 @@ export default async function UnitDetailPage({
         ? supabase.from('users').select('email, name').eq('unit_id', id).eq('is_active', true).maybeSingle()
         : Promise.resolve({ data: null }),
     ])
+
+  const [{ data: prospectingJobs }, capturedToday] = await Promise.all([
+    supabase
+      .from('prospecting_jobs')
+      .select('*')
+      .eq('unit_id', id)
+      .order('created_at', { ascending: false })
+      .limit(5),
+    countCapturedToday(supabase, id),
+  ])
 
   if (!unit) {
     notFound()
@@ -166,11 +177,13 @@ export default async function UnitDetailPage({
 
       <UnitSettingsForm unit={unitRow} showAdvanced={isSuperAdmin} />
 
-      <ProspectingPanel
+      <ProspectingSummary
         unitId={unitRow.id}
-        defaultCity={unitRow.region_city ?? ''}
-        defaultState={unitRow.region_state ?? ''}
-        availableSectors={agentConfigRow?.sectors ?? []}
+        profile={agentConfigRow?.prospecting_profile ?? null}
+        agentConfigured={Boolean(agentConfigRow)}
+        capturedToday={capturedToday}
+        captureLimit={DAILY_CAPTURE_LIMIT}
+        jobs={(prospectingJobs as ProspectingJob[] | null) ?? []}
       />
 
       {isSuperAdmin && (
