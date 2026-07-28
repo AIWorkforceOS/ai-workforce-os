@@ -29,6 +29,14 @@ const SERVICE_RECURRENCE_LABEL: Record<string, string> = {
   custom: 'Personalizado',
 }
 
+function normalizeSearchText(value: string | null | undefined): string {
+  return (value ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+}
+
 // Painel da tela Operação (migration 030): duas seções irmãs no mesmo
 // client component porque uma ação cruza as duas — "Gerar fatura" a
 // partir de um serviço executado precisa aparecer na lista de faturas
@@ -170,6 +178,7 @@ export function ServiceOperationsPanel({
   const [recordError, setRecordError] = useState<string | null>(null)
   const [recordRowBusyId, setRecordRowBusyId] = useState<string | null>(null)
   const [recordRowError, setRecordRowError] = useState<string | null>(null)
+  const [recordSearchQuery, setRecordSearchQuery] = useState('')
 
   function applyRecordChange(next: Partial<RecordFormState>, touchedDue = amountDueTouched) {
     setRecordForm((prev) => {
@@ -358,6 +367,15 @@ export function ServiceOperationsPanel({
     }
     return { pendingDue, paidDue, charged, byEmployee: [...byEmployee.entries()].sort((a, b) => b[1] - a[1]) }
   }, [records])
+
+  const filteredRecords = useMemo(() => {
+    const query = normalizeSearchText(recordSearchQuery)
+    if (!query) return records
+    return records.filter((record) => {
+      const haystacks = [record.employee?.name, record.customer?.name, record.description, record.id]
+      return haystacks.some((field) => normalizeSearchText(field).includes(query))
+    })
+  }, [records, recordSearchQuery])
 
   // -------------------------------------------------------------------
   // A receber (projetado) — direto do cadastro do cliente, não depende de
@@ -1044,6 +1062,18 @@ export function ServiceOperationsPanel({
         {recordRowError && <p className="text-sm text-red-400">{recordRowError}</p>}
 
         {records.length > 0 && (
+          <Input
+            value={recordSearchQuery}
+            onChange={(e) => setRecordSearchQuery(e.target.value)}
+            placeholder="Buscar por profissional, cliente, nº da ordem ou descrição…"
+          />
+        )}
+
+        {records.length > 0 && filteredRecords.length === 0 && (
+          <p className="text-sm text-slate-400">Nenhum lançamento encontrado para “{recordSearchQuery}”.</p>
+        )}
+
+        {filteredRecords.length > 0 && (
           <div
             className="overflow-hidden rounded-2xl bg-[#141a2b]"
             style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}
@@ -1060,7 +1090,7 @@ export function ServiceOperationsPanel({
                   <Th>Ações</Th>
                 </TableShell>
                 <tbody>
-                  {records.map((record) => (
+                  {filteredRecords.map((record) => (
                     <Tr key={record.id}>
                       {editingRecordId === record.id ? (
                         <>
