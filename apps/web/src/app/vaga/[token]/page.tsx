@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/service'
 import { CLOSED_FOR_APPLICATION_STATUSES } from '@/lib/recruiter/candidate-intake'
 import { JobApplicationForm } from '@/components/public/job-application-form'
+import { JobProfileDetails } from '@/components/public/job-profile-details'
 import type { JobOpening } from '@/lib/recruiter/types'
 import type { Unit } from '@/lib/types'
 
@@ -53,13 +54,15 @@ export default async function JobApplicationPage({ params }: { params: Promise<{
   return (
     <div className="flex min-h-screen items-center justify-center px-4 py-12">
       <div
-        className="w-full max-w-lg rounded-2xl p-6 sm:p-8"
+        className="w-full max-w-2xl rounded-2xl p-6 sm:p-8"
         style={{ background: '#141a2b', boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}
       >
         <p className="text-xs font-bold uppercase tracking-wide text-cyan-400">{unit.name}</p>
-        <h1 className="mt-1 text-xl font-black tracking-tight text-white">{job.title}</h1>
+        <h1 className="mt-1 text-xl font-black tracking-tight text-white sm:text-2xl">{job.title}</h1>
 
-        <div className="mt-6">
+        <JobProfileDetails profile={job.profile} hiringDeadline={job.hiring_deadline} locale={locale} />
+
+        <div className="mt-8 pt-6" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
           {closed ? (
             <p className="text-sm text-slate-400">{t.closed}</p>
           ) : (
