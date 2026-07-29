@@ -2,16 +2,18 @@
 
 import { Suspense, useState, useRef, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Send, Bot, Sparkles } from 'lucide-react'
+import { Send, Bot, Sparkles, CheckCircle2, XCircle } from 'lucide-react'
+import type { ChatClientAction } from '@/lib/chat/actions'
 
 type Message = {
   id: string
   role: 'user' | 'assistant'
   content: string
   ts: number
+  actions?: ChatClientAction[]
 }
 
-type ChatMode = 'sales' | 'support' | 'traffic' | 'sms'
+type ChatMode = 'sales' | 'support' | 'traffic' | 'sms' | 'content'
 
 const INITIAL_MESSAGES: Record<ChatMode, string> = {
   sales:
@@ -20,8 +22,44 @@ const INITIAL_MESSAGES: Record<ChatMode, string> = {
     'Olá! Sou o **Kai**, do suporte do AI Workforce OS 👋\n\nConte o que você está tentando fazer que eu te guio passo a passo.',
   traffic:
     'Olá! Sou o **Kai** e vou te ajudar a conectar suas contas de anúncio 👋\n\nVocê está travado no **Meta Ads** (Facebook/Instagram) ou no **Google Ads**?',
+  content:
+    'Olá! Sou o **Kai** e vou te ajudar a conectar sua Página do Facebook (e o Instagram vinculado) 👋\n\nEm qual passo você está: achar o ID da Página, compartilhar como Parceira, ou testar a conexão?',
   sms:
     'Olá! Sou o **Kai** e vou te ajudar a conectar o canal de SMS (Twilio) 👋\n\nEm qual passo você está: criando a conta Twilio, comprando o número, o registro A2P 10DLC, ou testando a conexão?',
+}
+
+function ChatActionCard({ action }: { action: ChatClientAction }) {
+  if (action.type === 'whatsapp_qr') {
+    return (
+      <div style={{
+        padding: 14,
+        borderRadius: 14,
+        background: 'rgba(255,255,255,0.04)',
+        border: '1px solid rgba(255,255,255,0.08)',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+      }}>
+        <img
+          src={action.qrCode.startsWith('data:') ? action.qrCode : `data:image/png;base64,${action.qrCode}`}
+          alt={`QR code do WhatsApp — ${action.unitName}`}
+          style={{ width: 176, height: 176, borderRadius: 8, background: '#fff', padding: 8 }}
+        />
+        <span style={{ fontSize: 11, color: '#a1a1aa', textAlign: 'center' }}>Escaneie com o WhatsApp da unidade {action.unitName}</span>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 8,
+      padding: '10px 14px',
+      borderRadius: 12,
+      background: action.ok ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+      border: `1px solid ${action.ok ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+    }}>
+      {action.ok ? <CheckCircle2 size={14} color="#4ade80" /> : <XCircle size={14} color="#f87171" />}
+      <span style={{ fontSize: 12, color: action.ok ? '#86efac' : '#fca5a5' }}>{action.label}</span>
+    </div>
+  )
 }
 
 function renderMarkdown(text: string) {
@@ -43,7 +81,9 @@ function ChatPageInner() {
   const searchParams = useSearchParams()
   const modeParam = searchParams.get('mode')
   const mode: ChatMode =
-    modeParam === 'support' || modeParam === 'traffic' || modeParam === 'sms' ? modeParam : 'sales'
+    modeParam === 'support' || modeParam === 'traffic' || modeParam === 'sms' || modeParam === 'content'
+      ? modeParam
+      : 'sales'
 
   const initialMessage: Message = { id: 'init', role: 'assistant', content: INITIAL_MESSAGES[mode], ts: Date.now() }
   const [messages, setMessages] = useState<Message[]>([initialMessage])
@@ -83,7 +123,7 @@ function ChatPageInner() {
         body: JSON.stringify({ messages: payload, mode }),
       })
 
-      const data = await res.json() as { reply?: string; error?: string }
+      const data = await res.json() as { reply?: string; error?: string; actions?: ChatClientAction[] }
       const reply = data.reply ?? 'Desculpe, tive um problema técnico. Tente novamente!'
 
       setMessages(prev => [...prev, {
@@ -91,6 +131,7 @@ function ChatPageInner() {
         role: 'assistant',
         content: reply,
         ts: Date.now(),
+        actions: data.actions,
       }])
     } catch {
       setMessages(prev => [...prev, {
@@ -115,11 +156,13 @@ function ChatPageInner() {
   const quickReplies =
     mode === 'traffic'
       ? ['Estou travado no Meta Ads', 'Estou travado no Google Ads', 'Deu erro ao testar a conexão']
-      : mode === 'sms'
-        ? ['Como crio a conta Twilio?', 'O que é o registro A2P 10DLC?', 'Deu erro ao testar a conexão']
-        : mode === 'support'
-          ? ['Como conecto o WhatsApp?', 'Como troco minha senha?', 'Como adiciono uma unidade?']
-          : ['Como funciona?', 'Quanto custa?', 'Tem garantia?', 'Aceita PIX?']
+      : mode === 'content'
+        ? ['Não acho o ID da Página', 'Como compartilho como Parceira?', 'Deu erro ao testar a conexão']
+        : mode === 'sms'
+          ? ['Como crio a conta Twilio?', 'O que é o registro A2P 10DLC?', 'Deu erro ao testar a conexão']
+          : mode === 'support'
+            ? ['Como conecto o WhatsApp?', 'Como troco minha senha?', 'Como adiciono uma unidade?']
+            : ['Como funciona?', 'Quanto custa?', 'Tem garantia?', 'Aceita PIX?']
 
   return (
     <div
@@ -180,20 +223,22 @@ function ChatPageInner() {
                 <Bot size={12} color="white" />
               </div>
             )}
-            <div style={{
-              maxWidth: '80%',
-              padding: '10px 14px',
-              borderRadius: msg.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-              background: msg.role === 'user'
-                ? 'linear-gradient(135deg, #22c55e, #16a34a)'
-                : 'rgba(255,255,255,0.06)',
-              border: msg.role === 'assistant' ? '1px solid rgba(255,255,255,0.08)' : 'none',
-              fontSize: 13,
-              lineHeight: 1.6,
-              color: msg.role === 'user' ? '#fff' : '#d4d4d8',
-            }}
-              dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
-            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: '80%' }}>
+              <div style={{
+                padding: '10px 14px',
+                borderRadius: msg.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+                background: msg.role === 'user'
+                  ? 'linear-gradient(135deg, #22c55e, #16a34a)'
+                  : 'rgba(255,255,255,0.06)',
+                border: msg.role === 'assistant' ? '1px solid rgba(255,255,255,0.08)' : 'none',
+                fontSize: 13,
+                lineHeight: 1.6,
+                color: msg.role === 'user' ? '#fff' : '#d4d4d8',
+              }}
+                dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
+              />
+              {msg.actions?.map((action, i) => <ChatActionCard key={i} action={action} />)}
+            </div>
           </div>
         ))}
 

@@ -1,7 +1,11 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { generateChatReply, getOpenAIApiKey, type ChatMessage } from '@/lib/openai'
+import { generateChatReply, generateChatReplyWithTools, getOpenAIApiKey, type ChatMessage } from '@/lib/openai'
 import { createClient } from '@/lib/supabase/server'
 import { buildAccountContext } from '@/lib/chat/account-context'
+import { CHAT_TOOLS, executeChatTool, type ChatClientAction } from '@/lib/chat/actions'
+
+/** Modos autenticados em que a Kai pode executar ações reais (gerar QR do WhatsApp, retestar conexão) em vez de só orientar. */
+const TOOL_ENABLED_MODES = new Set(['support', 'traffic', 'content'])
 
 // ─── AI Sales Agent (Kai) — powered by OpenAI ───────────────────────────────
 // Set OPENAI_API_KEY in your Vercel environment variables
@@ -193,8 +197,10 @@ export async function POST(req: NextRequest) {
               ? SYSTEM_PROMPT_CONTENT
               : SYSTEM_PROMPT_SALES
 
-    // Contexto real da conta só faz sentido dentro do dashboard (autenticado).
-    // O modo 'sales' roda na landing pública, sem login — nunca busca contexto.
+    // Contexto real da conta e ações reais só fazem sentido dentro do
+    // dashboard (autenticado). O modo 'sales' roda na landing pública, sem
+    // login — nunca busca contexto nem ganha ferramentas.
+    let authenticatedSupabase: Awaited<ReturnType<typeof createClient>> | null = null
     if (mode !== 'sales') {
       try {
         const supabase = await createClient()
@@ -203,6 +209,7 @@ export async function POST(req: NextRequest) {
         } = await supabase.auth.getUser()
 
         if (user) {
+          authenticatedSupabase = supabase
           const accountContext = await buildAccountContext(supabase)
           if (accountContext) {
             systemPrompt = `${accountContext}\n\n${systemPrompt}`
@@ -214,18 +221,35 @@ export async function POST(req: NextRequest) {
     }
 
     let reply: string
+    let actions: ChatClientAction[] = []
     try {
-      reply = await generateChatReply({
-        apiKey,
-        systemPrompt,
-        history: messages.slice(-10), // keep last 10 messages for context
-      })
+      if (authenticatedSupabase && TOOL_ENABLED_MODES.has(mode)) {
+        const supabase = authenticatedSupabase
+        const result = await generateChatReplyWithTools<ChatClientAction | undefined>({
+          apiKey,
+          systemPrompt,
+          history: messages.slice(-10),
+          tools: CHAT_TOOLS,
+          executeTool: async (call) => {
+            const toolResult = await executeChatTool(supabase, null, call.function.name, call.function.arguments)
+            return { forModel: toolResult.forModel, extra: toolResult.clientAction }
+          },
+        })
+        reply = result.reply
+        actions = result.extras.filter((a): a is ChatClientAction => a !== undefined)
+      } else {
+        reply = await generateChatReply({
+          apiKey,
+          systemPrompt,
+          history: messages.slice(-10), // keep last 10 messages for context
+        })
+      }
     } catch (err) {
       console.error('OpenAI API error:', err instanceof Error ? err.message : err)
       return NextResponse.json({ error: 'AI unavailable' }, { status: 502 })
     }
 
-    return NextResponse.json({ reply })
+    return NextResponse.json({ reply, actions })
   } catch (err) {
     console.error('Chat API error:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })

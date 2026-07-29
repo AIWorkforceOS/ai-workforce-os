@@ -7,6 +7,7 @@ import { getLocale } from '@/lib/i18n/server'
 import { Sidebar } from '@/components/dashboard/sidebar'
 import { MobileSidebar } from '@/components/dashboard/mobile-sidebar'
 import { SignOutButton } from '@/components/dashboard/sign-out-button'
+import { KaiLauncher } from '@/components/dashboard/kai-launcher'
 
 const ROLE_LABEL_EN: Record<AppRole, string> = {
   super_admin: 'Super Admin',
@@ -150,6 +151,9 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">{children}</div>
         </main>
       </div>
+
+      {/* Kai acessível de qualquer tela do dashboard — painéis dedicados (onboarding, connect) continuam além deste */}
+      {!appUser.isSuperAdmin && <KaiLauncher />}
     </div>
   )
 }

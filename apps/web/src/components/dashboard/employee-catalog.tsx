@@ -472,12 +472,31 @@ function StepRow({
 
   // Passo resolvido aqui mesmo (ativação): mostra o mini-formulário quando for a vez dele
   if (step.inline && !step.done && activation) {
+    // Já entrevistado antes (ex.: reativar depois de pausar): reativação
+    // rápida em 1 clique, sem repetir o wizard guiado.
+    const canReactivateInline = activation.config?.interview_status === 'completed'
     return (
       <div className="flex items-start gap-2.5">
         {number}
         <div className="min-w-0 flex-1">
           {body}
-          {isNext && <ActivateForm key={activation.unitId} {...activation} />}
+          {isNext && canReactivateInline && <ActivateForm key={activation.unitId} {...activation} />}
+          {isNext && !canReactivateInline && (
+            activation.unitId ? (
+              <Link
+                href={`/dashboard/equipe-digital/contratar/${activation.agentType}?unit=${activation.unitId}`}
+                className="mt-2 flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-xs font-black text-white"
+                style={{ background: brandGradient, boxShadow: '0 4px 10px rgba(6,182,212,0.25)' }}
+              >
+                Contratar, passo a passo
+                <ChevronRight size={11} />
+              </Link>
+            ) : (
+              <Link href="/dashboard/units/new" className="mt-2 block text-[11px] font-semibold text-cyan-400 hover:underline">
+                Crie uma unidade primeiro pra poder contratar
+              </Link>
+            )
+          )}
         </div>
       </div>
     )

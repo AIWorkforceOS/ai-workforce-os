@@ -6,6 +6,72 @@ export function getOpenAIApiKey(): string | null {
 
 export type ChatMessage = { role: 'user' | 'assistant'; content: string }
 
+export type OpenAiToolCall = { id: string; function: { name: string; arguments: string } }
+
+/**
+ * Igual a generateChatReply, mas com suporte a tool calling: se o modelo
+ * pedir pra chamar uma ferramenta, `executeTool` decide o que fazer (rodar
+ * uma ação real, como gerar QR do WhatsApp) e devolve o texto que volta pro
+ * modelo terminar a resposta. Só dá 1 volta de tool calls (suficiente pro
+ * caso de uso: 1 ação por turno) — se o modelo pedir de novo na 2ª resposta,
+ * ignoramos e devolvemos o texto que ele mandar mesmo assim.
+ */
+export async function generateChatReplyWithTools<TExtra = unknown>(params: {
+  apiKey: string
+  systemPrompt: string
+  history: ChatMessage[]
+  tools: unknown[]
+  executeTool: (toolCall: OpenAiToolCall) => Promise<{ forModel: string; extra?: TExtra }>
+  model?: string
+}): Promise<{ reply: string; extras: TExtra[] }> {
+  const model = params.model ?? 'gpt-4o-mini'
+  const baseMessages = [{ role: 'system', content: params.systemPrompt }, ...params.history]
+
+  const firstResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${params.apiKey}` },
+    body: JSON.stringify({ model, messages: baseMessages, tools: params.tools, temperature: 0.7, max_tokens: 400 }),
+  })
+  const firstData = await firstResponse.json()
+  if (!firstResponse.ok) {
+    throw new Error(firstData?.error?.message ?? `OpenAI retornou status ${firstResponse.status}`)
+  }
+  await logOpenAIUsage({ endpoint: 'chat.completions', model, usage: firstData.usage })
+
+  const choice = firstData.choices?.[0]
+  const toolCalls: OpenAiToolCall[] = choice?.message?.tool_calls ?? []
+
+  if (toolCalls.length === 0) {
+    return { reply: (choice?.message?.content ?? '').trim(), extras: [] }
+  }
+
+  const extras: TExtra[] = []
+  const toolMessages: { role: 'tool'; tool_call_id: string; content: string }[] = []
+  for (const call of toolCalls) {
+    const result = await params.executeTool(call)
+    if (result.extra !== undefined) extras.push(result.extra)
+    toolMessages.push({ role: 'tool', tool_call_id: call.id, content: result.forModel })
+  }
+
+  const secondResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${params.apiKey}` },
+    body: JSON.stringify({
+      model,
+      messages: [...baseMessages, choice.message, ...toolMessages],
+      temperature: 0.7,
+      max_tokens: 400,
+    }),
+  })
+  const secondData = await secondResponse.json()
+  if (!secondResponse.ok) {
+    throw new Error(secondData?.error?.message ?? `OpenAI retornou status ${secondResponse.status}`)
+  }
+  await logOpenAIUsage({ endpoint: 'chat.completions', model, usage: secondData.usage })
+
+  return { reply: (secondData.choices?.[0]?.message?.content ?? '').trim(), extras }
+}
+
 export async function generateChatReply(params: {
   apiKey: string
   systemPrompt: string
