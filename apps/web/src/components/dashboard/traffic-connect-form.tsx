@@ -9,10 +9,9 @@ import type { AdAccount } from '@/lib/traffic/types'
 import type { Unit } from '@/lib/types'
 
 const META_PARTNER_STEPS = [
-  'No Meta Business Suite da sua empresa, abra Configurações do negócio → Parceiros.',
+  'Clique no botão abaixo pra abrir "Parceiros" nas configurações do seu negócio no Facebook.',
   'Clique em "Adicionar" → "Dar a um parceiro acesso às suas contas" e cole o ID acima.',
   'Escolha a conta de anúncio que você quer conectar e marque a permissão "Gerenciar campanhas".',
-  'Volte aqui, cole o ID da conta de anúncio abaixo e clique em "Testar e conectar".',
 ]
 
 type Platform = 'meta' | 'google'
@@ -190,12 +189,22 @@ export function TrafficConnectForm({
 
           {platform === 'meta' ? (
             <>
-              <MetaPartnerGuide businessManagerId={businessManagerId} assetLabel="a conta de anúncio" steps={META_PARTNER_STEPS} />
-              <div>
-                <Label htmlFor="meta-account">ID da conta de anúncio</Label>
+              <MetaPartnerGuide
+                businessManagerId={businessManagerId}
+                assetLabel="a conta de anúncio"
+                steps={META_PARTNER_STEPS}
+                openUrl="https://business.facebook.com/settings/partners"
+                openLabel="Abrir Parceiros no Facebook"
+              />
+              <div className="rounded-xl p-3.5" style={{ border: '1px solid rgba(6,182,212,0.25)', background: 'rgba(6,182,212,0.05)' }}>
+                <Label htmlFor="meta-account">Passo 2 de 2 — cole aqui o ID da SUA conta de anúncio</Label>
                 <Input id="meta-account" className="mt-1" value={externalAccountId} onChange={(e) => setExternalAccountId(e.target.value)} placeholder="act_1234567890 ou 1234567890" />
                 <p className="mt-1 text-[11px] text-slate-500">
-                  Antes de testar, confirme que já compartilhou a conta como Parceiro (passo acima).
+                  Não é o mesmo número do passo 1 (aquele é da Alizo). Pra achar o seu: abra o{' '}
+                  <a href="https://adsmanager.facebook.com/adsmanager/manage/accounts" target="_blank" rel="noopener noreferrer" className="font-semibold text-cyan-400 hover:underline">
+                    Gerenciador de Anúncios
+                  </a>{' '}
+                  — o ID aparece embaixo do nome da conta, no topo da página.
                 </p>
               </div>
 

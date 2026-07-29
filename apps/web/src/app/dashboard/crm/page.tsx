@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, X } from 'lucide-react'
+import { CheckSquare, Plus, Square, Trash2, Upload, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { Lead, LeadStatus } from '@/lib/types'
 import {
@@ -258,6 +258,212 @@ function AddLeadModal({
   )
 }
 
+// ── Import CSV ─────────────────────────────────────────────────────────────────
+// Cabeçalhos aceitos em português e inglês — dono de conta não-técnico
+// exporta de qualquer planilha (Excel, Google Sheets, sistema da Smarter)
+// sem precisar adivinhar o nome exato da coluna.
+const CSV_HEADER_ALIASES: Record<string, string> = {
+  empresa: 'company_name',
+  nome_empresa: 'company_name',
+  company: 'company_name',
+  company_name: 'company_name',
+  contato: 'contact_name',
+  nome_contato: 'contact_name',
+  nome: 'contact_name',
+  contact_name: 'contact_name',
+  telefone: 'phone',
+  whatsapp: 'phone',
+  celular: 'phone',
+  phone: 'phone',
+  email: 'email',
+  'e-mail': 'email',
+  origem: 'source',
+  source: 'source',
+  observacoes: 'notes',
+  observações: 'notes',
+  notas: 'notes',
+  notes: 'notes',
+}
+
+function parseCsvLine(line: string): string[] {
+  const cells: string[] = []
+  let cur = ''
+  let inQuotes = false
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]!
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++ } else { inQuotes = false }
+      } else cur += ch
+    } else if (ch === '"') {
+      inQuotes = true
+    } else if (ch === ',' || ch === ';') {
+      cells.push(cur.trim())
+      cur = ''
+    } else {
+      cur += ch
+    }
+  }
+  cells.push(cur.trim())
+  return cells
+}
+
+/** Retorna null (em vez de lançar) quando o CSV não tem cabeçalho reconhecível — texto de erro fica com quem chama. */
+function parseLeadsCsv(text: string): Record<string, string>[] | null {
+  const lines = text.split(/\r\n|\n|\r/).filter((l) => l.trim().length > 0)
+  if (lines.length < 2) return null
+  const header = parseCsvLine(lines[0]!).map((h) => CSV_HEADER_ALIASES[h.toLowerCase().trim()] ?? '')
+  if (!header.includes('company_name')) return null
+  return lines.slice(1).map((line) => {
+    const cells = parseCsvLine(line)
+    const row: Record<string, string> = {}
+    header.forEach((key, i) => {
+      if (key && cells[i]) row[key] = cells[i]!
+    })
+    return row
+  })
+}
+
+function ImportLeadsModal({
+  units,
+  onClose,
+  onImported,
+}: {
+  units: { id: string; name: string }[]
+  onClose: () => void
+  onImported: () => void
+}) {
+  const [unitId, setUnitId] = useState(units[0]?.id ?? '')
+  const [csvText, setCsvText] = useState('')
+  const [triggerContact, setTriggerContact] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [result, setResult] = useState<{ imported: number; skipped_duplicates: number; skipped_invalid: number; contacted: number } | null>(null)
+
+  const parsed = csvText.trim() ? parseLeadsCsv(csvText) : []
+
+  async function handleImport() {
+    if (!unitId) { setError('Selecione uma unidade.'); return }
+    const rows = parseLeadsCsv(csvText)
+    if (!rows || rows.length === 0) {
+      setError('Não reconheci o CSV — confira se a primeira linha tem os nomes das colunas (ex.: empresa, telefone) e se há pelo menos uma linha de dados.')
+      return
+    }
+    setBusy(true)
+    setError('')
+    const response = await fetch('/api/leads/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ unit_id: unitId, leads: rows, trigger_first_contact: triggerContact }),
+    })
+    const data = await response.json().catch(() => null)
+    setBusy(false)
+    if (!response.ok) { setError(data?.error ?? 'Erro ao importar leads.'); return }
+    setResult(data)
+    onImported()
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.6)' }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="w-full max-w-lg rounded-2xl bg-[#141a2b]" style={{ boxShadow: `0 20px 60px rgba(0,0,0,0.5), ${cardShadow}` }}>
+        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          <div>
+            <p className="text-sm font-bold text-white">Importar leads (CSV)</p>
+            <p className="text-xs text-slate-500">Cole os dados de uma planilha — o Sales Rep já começa a trabalhar neles.</p>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-slate-500 hover:bg-white/5 hover:text-slate-300">
+            <X size={16} strokeWidth={2.5} />
+          </button>
+        </div>
+
+        <div className="space-y-3 px-5 py-4">
+          {error && (
+            <p className="rounded-lg px-3 py-2 text-xs text-red-400" style={{ background: 'rgba(239,68,68,0.1)' }}>{error}</p>
+          )}
+
+          {result ? (
+            <div className="space-y-2">
+              <p className="rounded-lg px-3 py-2.5 text-sm text-emerald-300" style={{ background: 'rgba(34,197,94,0.1)' }}>
+                {result.imported} lead(s) importado(s)
+                {result.contacted > 0 && ` — ${result.contacted} já receberam a primeira mensagem`}.
+                {result.skipped_duplicates > 0 && ` ${result.skipped_duplicates} ignorado(s) por já existir (mesmo telefone).`}
+                {result.skipped_invalid > 0 && ` ${result.skipped_invalid} linha(s) sem empresa/telefone válido foram ignoradas.`}
+              </p>
+              <button
+                onClick={onClose}
+                className="w-full rounded-xl py-2.5 text-sm font-semibold text-white"
+                style={{ background: brandGradient }}
+              >
+                Fechar
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="import-unit">Unidade *</Label>
+                <Select id="import-unit" className="w-full" value={unitId} onChange={(e) => setUnitId(e.target.value)}>
+                  {units.map((u) => (
+                    <option key={u.id} value={u.id}>{u.name}</option>
+                  ))}
+                </Select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="import-csv">Cole aqui o conteúdo do CSV</Label>
+                <Textarea
+                  id="import-csv"
+                  rows={7}
+                  className="w-full resize-none font-mono text-[11px]"
+                  placeholder={'empresa,telefone,email,origem\nImobiliária Silva,11999998888,contato@silva.com,indicacao'}
+                  value={csvText}
+                  onChange={(e) => setCsvText(e.target.value)}
+                />
+                <p className="text-[11px] text-slate-500">
+                  Primeira linha com os nomes das colunas. Aceita: empresa, contato, telefone, email, origem, observações.
+                  {parsed && parsed.length > 0 && ` ${parsed.length} linha(s) reconhecida(s).`}
+                </p>
+              </div>
+              <label className="flex items-start gap-2 text-xs text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={triggerContact}
+                  onChange={(e) => setTriggerContact(e.target.checked)}
+                  className="mt-0.5"
+                />
+                Disparar o primeiro contato automático do Sales Rep pra cada lead novo (respeita o limite diário dele)
+              </label>
+            </>
+          )}
+        </div>
+
+        {!result && (
+          <div className="flex justify-end gap-2 px-5 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            <button
+              onClick={onClose}
+              className="rounded-xl px-4 py-2 text-sm text-slate-300 hover:bg-white/5"
+              style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleImport}
+              disabled={busy || !csvText.trim()}
+              className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              style={{ background: brandGradient, boxShadow: '0 2px 8px rgba(6,182,212,0.3)' }}
+            >
+              <Upload size={14} />
+              {busy ? 'Importando...' : 'Importar leads'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Detail Panel ───────────────────────────────────────────────────────────────
 function LeadDetail({
   lead,
@@ -359,11 +565,17 @@ function LeadCard({
   col,
   onMove,
   onClick,
+  selectMode,
+  selected,
+  onToggleSelect,
 }: {
   lead: Lead
   col: (typeof COLUMNS)[number]
   onMove: (id: string, status: LeadStatus) => void
   onClick: () => void
+  selectMode?: boolean
+  selected?: boolean
+  onToggleSelect?: (id: string) => void
 }) {
   const days = daysSince(lead.last_contacted_at ?? lead.created_at)
   const colIdx = PIPELINE_ORDER.indexOf(lead.status)
@@ -375,14 +587,25 @@ function LeadCard({
 
   return (
     <div
-      className="rounded-2xl bg-[#1a2137] cursor-pointer group"
-      style={{ boxShadow: cardShadow }}
+      className="rounded-2xl bg-[#1a2137] cursor-pointer group relative"
+      style={{ boxShadow: cardShadow, outline: selected ? '2px solid #06b6d4' : undefined }}
     >
       {/* Top accent */}
       <div className="h-[2px] rounded-t-2xl" style={{ background: col.accent }} />
 
-      <div className="px-3 pt-3 pb-2" onClick={onClick}>
-        <p className="text-[13px] font-black text-white leading-tight truncate">{lead.company_name}</p>
+      {selectMode && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onToggleSelect?.(lead.id) }}
+          className="absolute right-2 top-2 z-10 rounded-md p-0.5"
+          style={{ background: 'rgba(10,14,26,0.8)' }}
+        >
+          {selected ? <CheckSquare size={16} className="text-cyan-400" /> : <Square size={16} className="text-slate-500" />}
+        </button>
+      )}
+
+      <div className="px-3 pt-3 pb-2" onClick={() => (selectMode ? onToggleSelect?.(lead.id) : onClick())}>
+        <p className="text-[13px] font-black text-white leading-tight truncate pr-5">{lead.company_name}</p>
         {lead.contact_name && (
           <p className="mt-0.5 text-[11px] text-slate-400 truncate">{lead.contact_name}</p>
         )}
@@ -462,7 +685,11 @@ export default function CrmPage() {
   const [units, setUnits] = useState<{ id: string; name: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
+  const [showImport, setShowImport] = useState(false)
   const [selected, setSelected] = useState<Lead | null>(null)
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [deleting, setDeleting] = useState(false)
 
   const load = useCallback(async () => {
     const supabase = createClient()
@@ -496,6 +723,60 @@ export default function CrmPage() {
     setSelected(updated)
   }
 
+  function toggleSelectId(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function exitSelectMode() {
+    setSelectMode(false)
+    setSelectedIds(new Set())
+  }
+
+  async function deleteSelected() {
+    if (selectedIds.size === 0) return
+    const ok = window.confirm(`Excluir ${selectedIds.size} lead(s) selecionado(s)? Essa ação não pode ser desfeita.`)
+    if (!ok) return
+    setDeleting(true)
+    const response = await fetch('/api/leads/bulk', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lead_ids: Array.from(selectedIds) }),
+    })
+    setDeleting(false)
+    if (!response.ok) {
+      const data = await response.json().catch(() => null)
+      window.alert(data?.error ?? 'Não foi possível excluir os leads selecionados.')
+      return
+    }
+    setLeads((prev) => prev.filter((l) => !selectedIds.has(l.id)))
+    exitSelectMode()
+  }
+
+  async function deleteAllLeads() {
+    if (leads.length === 0) return
+    const ok = window.confirm(
+      `Excluir TODOS os ${leads.length} leads do pipeline? Essa ação não pode ser desfeita — use isso pra recomeçar do zero antes de importar uma lista nova.`,
+    )
+    if (!ok) return
+    const unitIds = Array.from(new Set(leads.map((l) => l.unit_id)))
+    setDeleting(true)
+    for (const unitId of unitIds) {
+      await fetch('/api/leads/bulk', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unit_id: unitId, delete_all: true }),
+      })
+    }
+    setDeleting(false)
+    setLeads([])
+    exitSelectMode()
+  }
+
   // KPIs
   const total = leads.length
   const qualified = leads.filter((l) => ['negotiating', 'won'].includes(l.status)).length
@@ -518,16 +799,71 @@ export default function CrmPage() {
         title="Pipeline CRM"
         subtitle="Gerencie seus leads no funil de vendas — mova com as setas em cada card."
         action={
-          <button
-            onClick={() => setShowAdd(true)}
-            className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
-            style={{ background: brandGradient, boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
-          >
-            <Plus size={14} />
-            Novo Lead
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {leads.length > 0 && (
+              <button
+                onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+                className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-bold text-slate-300 transition-all hover:bg-white/5"
+                style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+              >
+                <Trash2 size={14} />
+                {selectMode ? 'Cancelar seleção' : 'Excluir leads'}
+              </button>
+            )}
+            <button
+              onClick={() => setShowImport(true)}
+              className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold text-slate-300 transition-all hover:bg-white/5"
+              style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              <Upload size={14} />
+              Importar CSV
+            </button>
+            <button
+              onClick={() => setShowAdd(true)}
+              className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
+              style={{ background: brandGradient, boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
+            >
+              <Plus size={14} />
+              Novo Lead
+            </button>
+          </div>
         }
       />
+
+      {/* Barra de seleção — só aparece em modo "Excluir leads" */}
+      {selectMode && (
+        <div
+          className="flex flex-wrap items-center justify-between gap-2 rounded-2xl px-4 py-3"
+          style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)' }}
+        >
+          <p className="text-xs font-semibold text-slate-300">
+            {selectedIds.size > 0 ? `${selectedIds.size} lead(s) selecionado(s)` : 'Toque nos cards pra selecionar'}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setSelectedIds(new Set(leads.map((l) => l.id)))}
+              className="text-xs font-semibold text-cyan-400 hover:underline"
+            >
+              Selecionar todos ({leads.length})
+            </button>
+            <button
+              onClick={deleteSelected}
+              disabled={selectedIds.size === 0 || deleting}
+              className="rounded-lg px-3 py-1.5 text-xs font-bold text-white disabled:opacity-40"
+              style={{ background: 'linear-gradient(135deg, #dc2626, #f87171)' }}
+            >
+              {deleting ? 'Excluindo...' : `Excluir selecionados${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
+            </button>
+            <button
+              onClick={deleteAllLeads}
+              disabled={deleting}
+              className="text-xs font-semibold text-red-400 hover:underline disabled:opacity-40"
+            >
+              Excluir TODOS os leads
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* KPI bar */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
@@ -585,6 +921,9 @@ export default function CrmPage() {
                       col={col}
                       onMove={moveLead}
                       onClick={() => setSelected(lead)}
+                      selectMode={selectMode}
+                      selected={selectedIds.has(lead.id)}
+                      onToggleSelect={toggleSelectId}
                     />
                   ))}
                 </div>
@@ -597,6 +936,13 @@ export default function CrmPage() {
       {/* Modals */}
       {showAdd && (
         <AddLeadModal units={units} onClose={() => setShowAdd(false)} onSave={handleAdd} />
+      )}
+      {showImport && (
+        <ImportLeadsModal
+          units={units}
+          onClose={() => setShowImport(false)}
+          onImported={() => void load()}
+        />
       )}
       {selected && (
         <LeadDetail lead={selected} onClose={() => setSelected(null)} onUpdate={handleUpdate} />

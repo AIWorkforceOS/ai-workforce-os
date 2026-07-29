@@ -22,8 +22,12 @@ import {
 import { createClient } from '@/lib/supabase/client'
 import { Card, brandGradient } from '@/components/ui/dashboard-ui'
 import { computeTrainingCompleteness } from '@/lib/interview/completeness'
+import { buildClonedAgentConfig } from '@/lib/interview/clone'
 import type { VerticalKey } from '@/lib/verticals/catalog'
 import type { AgentConfig, Unit } from '@/lib/types'
+
+/** Unidade + config de origem elegíveis pra clonar treinamento (interview_status='completed'). */
+type CloneSource = { unitId: string; unitName: string; config: AgentConfig }
 
 // Catálogo dos funcionários digitais: a empresa vê os 3 disponíveis, ativa
 // os que quiser e segue um passo a passo leigo por funcionário. "Ativar" =
@@ -91,6 +95,18 @@ export function EmployeeCatalog({
   const receptionist = configs.find((c) => c.agent_type === 'receptionist' && c.unit_id === selectedUnitId)
   const content = configs.find((c) => c.agent_type === 'content_specialist' && c.unit_id === selectedUnitId)
   const seo = configs.find((c) => c.agent_type === 'seo_specialist' && c.unit_id === selectedUnitId)
+
+  // Unidades da MESMA org que já têm este funcionário treinado (ex.:
+  // franquias que vendem o mesmo produto, só mudando a região) — permite
+  // clonar o treinamento em vez de repetir a entrevista adaptativa do zero.
+  function cloneSourcesFor(agentType: string): CloneSource[] {
+    return units
+      .filter((u) => u.id !== selectedUnitId)
+      .flatMap((u) => {
+        const config = configs.find((c) => c.agent_type === agentType && c.unit_id === u.id && c.interview_status === 'completed')
+        return config ? [{ unitId: u.id, unitName: u.name, config }] : []
+      })
+  }
 
   // Mesmo padrão dos outros 3: "Contratar" é resolvido aqui mesmo (igual
   // recruiter/traffic/receptionist), não mais um passo que manda pra outra
@@ -183,7 +199,7 @@ export function EmployeeCatalog({
           state={sdr?.is_active && whatsappConnected ? 'working' : sdr || whatsappConnected ? 'configuring' : 'available'}
           panelHref="/dashboard/agents"
           personaName={sdr?.persona_name ?? null}
-          activation={{ agentType: 'sdr', config: sdr ?? null, unitId: selectedUnitId, askName: true, defaultName: 'Kai' }}
+          activation={{ agentType: 'sdr', config: sdr ?? null, unitId: selectedUnitId, askName: true, defaultName: 'Kai', cloneSources: cloneSourcesFor('sdr'), regionHint: selectedUnit?.region_city ?? null }}
           trainingScore={sdr ? computeTrainingCompleteness(sdr, verticalKey) : null}
           testConfigId={sdr?.id ?? null}
           trainConfigId={sdr?.id ?? null}
@@ -203,7 +219,7 @@ export function EmployeeCatalog({
           state={recruiter?.is_active ? (openJobs > 0 ? 'working' : 'configuring') : 'available'}
           panelHref="/dashboard/recruiter"
           personaName={recruiter?.persona_name ?? null}
-          activation={{ agentType: 'recruiter', config: recruiter ?? null, unitId: selectedUnitId, askName: true, defaultName: 'Rafa' }}
+          activation={{ agentType: 'recruiter', config: recruiter ?? null, unitId: selectedUnitId, askName: true, defaultName: 'Rafa', cloneSources: cloneSourcesFor('recruiter'), regionHint: selectedUnit?.region_city ?? null }}
           trainingScore={recruiter ? computeTrainingCompleteness(recruiter, verticalKey) : null}
           testConfigId={recruiter?.id ?? null}
           trainConfigId={recruiter?.id ?? null}
@@ -223,7 +239,7 @@ export function EmployeeCatalog({
           state={traffic?.is_active ? (adAccounts > 0 ? 'working' : 'configuring') : 'available'}
           panelHref="/dashboard/traffic"
           personaName={null}
-          activation={{ agentType: 'traffic_specialist', config: traffic ?? null, unitId: selectedUnitId, askName: false, defaultName: 'Gestor de Tráfego' }}
+          activation={{ agentType: 'traffic_specialist', config: traffic ?? null, unitId: selectedUnitId, askName: false, defaultName: 'Gestor de Tráfego', cloneSources: cloneSourcesFor('traffic_specialist'), regionHint: selectedUnit?.region_city ?? null }}
           trainingScore={traffic ? computeTrainingCompleteness(traffic, verticalKey) : null}
           trainConfigId={traffic?.id ?? null}
           lastTrainedAt={traffic?.last_trained_at ?? null}
@@ -241,7 +257,7 @@ export function EmployeeCatalog({
           state={receptionist?.is_active ? (customers > 0 ? 'working' : 'configuring') : 'available'}
           panelHref="/dashboard/receptionist"
           personaName={receptionist?.persona_name ?? null}
-          activation={{ agentType: 'receptionist', config: receptionist ?? null, unitId: selectedUnitId, askName: true, defaultName: 'Ana' }}
+          activation={{ agentType: 'receptionist', config: receptionist ?? null, unitId: selectedUnitId, askName: true, defaultName: 'Ana', cloneSources: cloneSourcesFor('receptionist'), regionHint: selectedUnit?.region_city ?? null }}
           trainingScore={receptionist ? computeTrainingCompleteness(receptionist, verticalKey) : null}
           testConfigId={receptionist?.id ?? null}
           trainConfigId={receptionist?.id ?? null}
@@ -261,7 +277,7 @@ export function EmployeeCatalog({
           state={content?.is_active ? (socialAccounts > 0 ? 'working' : 'configuring') : 'available'}
           panelHref="/dashboard/content"
           personaName={null}
-          activation={{ agentType: 'content_specialist', config: content ?? null, unitId: selectedUnitId, askName: false, defaultName: 'Gestor de Conteúdo' }}
+          activation={{ agentType: 'content_specialist', config: content ?? null, unitId: selectedUnitId, askName: false, defaultName: 'Gestor de Conteúdo', cloneSources: cloneSourcesFor('content_specialist'), regionHint: selectedUnit?.region_city ?? null }}
           trainingScore={content ? computeTrainingCompleteness(content, verticalKey) : null}
           trainConfigId={content?.id ?? null}
           lastTrainedAt={content?.last_trained_at ?? null}
@@ -279,7 +295,7 @@ export function EmployeeCatalog({
           state={seo?.is_active ? (seoAudits > 0 ? 'working' : 'configuring') : 'available'}
           panelHref="/dashboard/seo"
           personaName={null}
-          activation={{ agentType: 'seo_specialist', config: seo ?? null, unitId: selectedUnitId, askName: false, defaultName: 'Especialista em SEO' }}
+          activation={{ agentType: 'seo_specialist', config: seo ?? null, unitId: selectedUnitId, askName: false, defaultName: 'Especialista em SEO', cloneSources: cloneSourcesFor('seo_specialist'), regionHint: selectedUnit?.region_city ?? null }}
           trainingScore={seo ? computeTrainingCompleteness(seo, verticalKey) : null}
           trainConfigId={seo?.id ?? null}
           lastTrainedAt={seo?.last_trained_at ?? null}
@@ -304,6 +320,10 @@ type ActivationProps = {
   /** true = pede nome (funcionário que conversa com pessoas) */
   askName: boolean
   defaultName: string
+  /** outras unidades da org que já têm este funcionário treinado — clonar em vez de entrevistar do zero */
+  cloneSources?: CloneSource[]
+  /** sugestão pra preencher o campo de região do clone (cidade da unidade de destino) */
+  regionHint?: string | null
 }
 
 function formatTrainedDate(iso: string): string {
@@ -497,6 +517,9 @@ function StepRow({
               </Link>
             )
           )}
+          {isNext && !canReactivateInline && activation.unitId && !!activation.cloneSources?.length && (
+            <CloneTrainingForm {...activation} unitId={activation.unitId} cloneSources={activation.cloneSources} />
+          )}
         </div>
       </div>
     )
@@ -593,6 +616,129 @@ function ActivateForm({ agentType, config, unitId, askName, defaultName }: Activ
           Antes de trabalhar, ele faz uma entrevista rápida com você pra aprender tudo da sua empresa.
         </p>
       )}
+    </div>
+  )
+}
+
+/**
+ * Alternativa a "Contratar, passo a passo": clona o treinamento já
+ * concluído de outra unidade da mesma org (ex.: franquia que vende o
+ * mesmo produto/serviço) trocando só a região de atuação — em vez de
+ * repetir a entrevista adaptativa inteira do zero.
+ */
+function CloneTrainingForm({
+  agentType,
+  config,
+  unitId,
+  askName,
+  defaultName,
+  cloneSources,
+  regionHint,
+}: ActivationProps & { unitId: string; cloneSources: CloneSource[] }) {
+  const router = useRouter()
+  const [expanded, setExpanded] = useState(false)
+  const [sourceUnitId, setSourceUnitId] = useState(cloneSources[0]?.unitId ?? '')
+  const [region, setRegion] = useState(regionHint ?? '')
+  const [name, setName] = useState(defaultName)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  if (!expanded) {
+    return (
+      <button
+        type="button"
+        onClick={() => setExpanded(true)}
+        className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-[11px] font-bold text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-200"
+        style={{ border: '1px dashed rgba(255,255,255,0.15)' }}
+      >
+        ou clonar o treinamento de outra unidade
+      </button>
+    )
+  }
+
+  async function handleClone() {
+    const source = cloneSources.find((s) => s.unitId === sourceUnitId)?.config
+    if (!source) return
+    if (!region.trim()) {
+      setError('Informe a região de atuação desta unidade.')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const cloned = buildClonedAgentConfig({ source, region })
+    const payload = {
+      unit_id: unitId,
+      agent_type: agentType,
+      persona_name: (askName ? name.trim() : defaultName) || defaultName,
+      is_active: true,
+      ...cloned,
+    }
+    const { error: saveError } = config
+      ? await supabase.from('agent_configs').update(payload).eq('id', config.id)
+      : await supabase.from('agent_configs').insert(payload)
+    setBusy(false)
+    if (saveError) {
+      setError('Não deu pra clonar agora. Tente de novo — se persistir, fale com suporte@alizo.com.br.')
+      return
+    }
+    router.refresh()
+  }
+
+  return (
+    <div className="mt-2 space-y-2 rounded-lg p-2.5" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <p className="text-[10px] font-semibold text-slate-400">
+        Copia o que {cloneSources.length === 1 ? 'a unidade abaixo' : 'a unidade escolhida'} já ensinou a este funcionário — só muda a região.
+      </p>
+      {cloneSources.length > 1 && (
+        <select
+          value={sourceUnitId}
+          onChange={(e) => setSourceUnitId(e.target.value)}
+          className="w-full rounded-lg px-3 py-2 text-xs text-white outline-none"
+          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+        >
+          {cloneSources.map((s) => (
+            <option key={s.unitId} value={s.unitId} className="bg-slate-900">
+              {s.unitName}
+            </option>
+          ))}
+        </select>
+      )}
+      {askName && (
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Nome dele (ex: Rafa, Bia...)"
+          className="w-full rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600 outline-none focus:border-cyan-500/50"
+          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+        />
+      )}
+      <input
+        value={region}
+        onChange={(e) => setRegion(e.target.value)}
+        placeholder="Região de atuação desta unidade (ex: Belo Horizonte)"
+        className="w-full rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600 outline-none focus:border-cyan-500/50"
+        style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+      />
+      {error && <p className="text-[11px] text-red-400">{error}</p>}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleClone}
+          disabled={busy}
+          className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-black text-white disabled:opacity-60"
+          style={{ background: brandGradient, boxShadow: '0 4px 10px rgba(6,182,212,0.25)' }}
+        >
+          {busy ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+          {busy ? 'Clonando...' : 'Clonar treinamento'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setExpanded(false)}
+          className="text-[11px] font-semibold text-slate-500 hover:text-slate-300"
+        >
+          Cancelar
+        </button>
+      </div>
     </div>
   )
 }

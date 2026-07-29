@@ -8,16 +8,21 @@
 // ainda não está configurado (ver lib/integrations.ts).
 
 import { useState } from 'react'
-import { Copy, Check, AlertTriangle } from 'lucide-react'
+import { Copy, Check, AlertTriangle, ExternalLink } from 'lucide-react'
 
 export function MetaPartnerGuide({
   businessManagerId,
   assetLabel,
   steps,
+  openUrl,
+  openLabel,
 }: {
   businessManagerId: string | null
   assetLabel: string
   steps: string[]
+  /** link direto pra tela certa da Meta (evita o cliente se perder no menu do Facebook) */
+  openUrl?: string
+  openLabel?: string
 }) {
   const [copied, setCopied] = useState(false)
 
@@ -45,7 +50,7 @@ export function MetaPartnerGuide({
   return (
     <div className="flex flex-col gap-2.5 rounded-xl p-3.5" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
       <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500">
-        Compartilhe {assetLabel} com a Alizo — sem gerar token
+        Passo 1 de 2 — compartilhe {assetLabel} com a Alizo (sem gerar token)
       </p>
       <div className="flex items-center gap-2">
         <code className="flex-1 truncate rounded-lg px-2.5 py-1.5 text-xs text-slate-200" style={{ background: 'rgba(0,0,0,0.25)' }}>
@@ -61,11 +66,24 @@ export function MetaPartnerGuide({
           {copied ? 'Copiado' : 'Copiar'}
         </button>
       </div>
+      <p className="text-[11px] text-slate-500">Esse número é da Alizo — cole ele lá no Facebook (não é o ID da sua conta).</p>
       <ol className="list-decimal space-y-1 pl-4 text-[11px] leading-relaxed text-slate-400">
         {steps.map((step, index) => (
           <li key={index}>{step}</li>
         ))}
       </ol>
+      {openUrl && (
+        <a
+          href={openUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-center gap-1.5 self-start rounded-lg px-3 py-2 text-[11px] font-bold text-slate-200 transition-colors hover:text-white"
+          style={{ background: 'rgba(255,255,255,0.06)' }}
+        >
+          <ExternalLink size={12} />
+          {openLabel ?? 'Abrir essa tela no Facebook'}
+        </a>
+      )}
     </div>
   )
 }

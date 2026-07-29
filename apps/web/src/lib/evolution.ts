@@ -1,5 +1,6 @@
 import type { Unit } from '@/lib/types'
 import { logEvolutionUsage } from '@/lib/api-usage'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 export type EvolutionUnitConfig = {
   apiUrl: string
@@ -61,6 +62,45 @@ export async function getInstanceStatus(config: EvolutionUnitConfig): Promise<Wh
   if (state === 'open') return 'open'
   if (state === 'connecting') return 'connecting'
   return 'close'
+}
+
+/**
+ * Persiste units.whatsapp_phone quando a instância está de fato conectada
+ * ('open') mas o número ainda não foi salvo — única fonte de verdade sobre
+ * "WhatsApp conectado" pro resto do sistema (computeSetupStatus etc.).
+ *
+ * Existiam DUAS rotas de status (autenticada em /api/units/[id]/whatsapp/status
+ * e pública em /api/public/units/[id]/whatsapp/status) e só a pública fazia
+ * esse save — a rota que o wizard de conexão realmente usa (autenticada)
+ * nunca persistia o telefone, então a conexão "funcionava" na Evolution mas
+ * o app continuava mostrando "WhatsApp não conectado" pra sempre. Chamada
+ * também no webhook de mensagens (self-heal): qualquer evento real da
+ * instância já é prova de que ela está conectada, então não depende de o
+ * cliente ter deixado a aba do QR code aberta até o fim.
+ */
+export async function syncWhatsappPhoneIfConnected(
+  supabase: SupabaseClient,
+  unit: Pick<Unit, 'id' | 'whatsapp_phone'>,
+  config: EvolutionUnitConfig,
+): Promise<string | null> {
+  if (unit.whatsapp_phone) return unit.whatsapp_phone
+  try {
+    const res = await fetch(`${config.apiUrl}/instance/fetchInstances`, {
+      headers: { apikey: config.apiKey },
+      cache: 'no-store',
+    })
+    const instances = await res.json()
+    const instance = Array.isArray(instances)
+      ? instances.find((i: { instance?: { instanceName?: string } }) => i.instance?.instanceName === config.instanceName)
+      : null
+    const phone = instance?.instance?.owner?.split('@')[0] ?? null
+    if (phone) {
+      await supabase.from('units').update({ whatsapp_phone: phone }).eq('id', unit.id)
+    }
+    return phone
+  } catch {
+    return null
+  }
 }
 
 export async function connectInstance(config: EvolutionUnitConfig) {

@@ -9,10 +9,10 @@ import type { SocialAccount } from '@/lib/content/types'
 import type { Unit } from '@/lib/types'
 
 const META_PAGE_PARTNER_STEPS = [
-  'Na sua Página do Facebook, abra Configurações → Acesso à Página (Nova experiência de Páginas).',
+  'Clique no botão abaixo pra abrir as Páginas do seu negócio no Facebook, e escolha a Página certa.',
+  'Abra Configurações → Acesso à Página (Nova experiência de Páginas).',
   'Em "Acesso de parceiros", clique em "Atribuir um novo parceiro" e cole o ID acima.',
   'Conceda acesso de conteúdo (publicar e gerenciar posts/anúncios) para essa Página.',
-  'Volte aqui, cole o ID da Página abaixo e clique em "Testar e conectar".',
 ]
 
 function SecretInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
@@ -122,13 +122,20 @@ export function ContentConnectForm({
             </div>
           )}
 
-          <MetaPartnerGuide businessManagerId={businessManagerId} assetLabel="a Página" steps={META_PAGE_PARTNER_STEPS} />
+          <MetaPartnerGuide
+            businessManagerId={businessManagerId}
+            assetLabel="a Página"
+            steps={META_PAGE_PARTNER_STEPS}
+            openUrl="https://business.facebook.com/settings/pages"
+            openLabel="Abrir Páginas no Facebook"
+          />
 
-          <div>
-            <Label htmlFor="page-id">ID da Página do Facebook</Label>
+          <div className="rounded-xl p-3.5" style={{ border: '1px solid rgba(6,182,212,0.25)', background: 'rgba(6,182,212,0.05)' }}>
+            <Label htmlFor="page-id">Passo 2 de 2 — cole aqui o ID da SUA Página</Label>
             <Input id="page-id" className="mt-1" value={pageId} onChange={(e) => setPageId(e.target.value)} placeholder="1234567890" />
             <p className="mt-1 text-[11px] text-slate-500">
-              Antes de testar, confirme que já compartilhou a Página como Parceira (passo acima). Se ela tem
+              Não é o mesmo número do passo 1 (aquele é da Alizo). Pra achar o ID da sua Página: na tela que abriu
+              acima, clique nela → o ID aparece em Configurações → Sobre, ou na própria URL da Página. Se ela tem
               uma conta do Instagram Business vinculada, ela é detectada automaticamente no teste de conexão.
             </p>
           </div>

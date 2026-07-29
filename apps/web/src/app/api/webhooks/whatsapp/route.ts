@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { normalizePhone, routeInboundMessage } from '@/lib/inbound-router'
-import { getEvolutionConfig, getBase64FromMediaMessage } from '@/lib/evolution'
+import { getEvolutionConfig, getBase64FromMediaMessage, syncWhatsappPhoneIfConnected } from '@/lib/evolution'
 import { getMessagingChannel } from '@/lib/channels/messaging-channel'
 import { getOpenAIApiKey, transcribeAudio } from '@/lib/openai'
 import { logOpenAIAudioUsage } from '@/lib/api-usage'
@@ -165,6 +165,17 @@ export async function POST(request: Request) {
   }
 
   const unitRow = unit as Unit
+
+  // Self-heal: uma mensagem real chegando por esta instância já prova que
+  // ela está conectada — não depende de o cliente ter deixado a tela do QR
+  // code aberta até o polling captar o status 'open' (ver syncWhatsappPhoneIfConnected).
+  if (!unitRow.whatsapp_phone) {
+    const evolutionConfig = getEvolutionConfig(unitRow)
+    if (evolutionConfig) {
+      await syncWhatsappPhoneIfConnected(supabase, unitRow, evolutionConfig)
+    }
+  }
+
   const remoteJid: string = key.remoteJid ?? ''
   const incomingPhone = normalizePhone(remoteJid.split('@')[0])
 

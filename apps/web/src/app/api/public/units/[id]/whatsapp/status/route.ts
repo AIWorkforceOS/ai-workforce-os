@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { getEvolutionConfig, getInstanceStatus } from '@/lib/evolution'
+import { getEvolutionConfig, getInstanceStatus, syncWhatsappPhoneIfConnected } from '@/lib/evolution'
 import type { Unit } from '@/lib/types'
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -22,27 +22,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   try {
     const status = await getInstanceStatus(config)
-
-    // When connected, save the phone number if not already saved
-    if (status === 'open' && !unit.whatsapp_phone) {
-      try {
-        const res = await fetch(`${config.apiUrl}/instance/fetchInstances`, {
-          headers: { apikey: config.apiKey },
-          cache: 'no-store',
-        })
-        const instances = await res.json()
-        const instance = Array.isArray(instances)
-          ? instances.find((i: { instance?: { instanceName?: string } }) => i.instance?.instanceName === config.instanceName)
-          : null
-        const phone = instance?.instance?.owner?.split('@')[0] ?? null
-        if (phone) {
-          await supabase.from('units').update({ whatsapp_phone: phone }).eq('id', id)
-        }
-      } catch {
-        // Non-critical — don't fail the status check
-      }
+    if (status === 'open') {
+      await syncWhatsappPhoneIfConnected(supabase, unit as Unit, config)
     }
-
     return NextResponse.json({ status })
   } catch (error) {
     return NextResponse.json(
