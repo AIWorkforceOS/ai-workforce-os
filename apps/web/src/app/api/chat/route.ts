@@ -1,5 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { generateChatReply, getOpenAIApiKey, type ChatMessage } from '@/lib/openai'
+import { createClient } from '@/lib/supabase/server'
+import { buildAccountContext } from '@/lib/chat/account-context'
 
 // ─── AI Sales Agent (Kai) — powered by OpenAI ───────────────────────────────
 // Set OPENAI_API_KEY in your Vercel environment variables
@@ -41,7 +43,7 @@ CONHECIMENTO TÉCNICO:
 - Configuração do agente: painel > Agentes IA > Nova configuração
 - Para trocar senha: painel > Configurações > Segurança
 - Para adicionar unidade: painel > Unidades > Nova unidade
-- Suporte prioritário: suporte@aiworkforce.com.br
+- Suporte prioritário: suporte@alizo.com.br
 
 SEU ESTILO:
 - Seja paciente, claro e passo a passo
@@ -61,15 +63,18 @@ A MAIORIA DOS CLIENTES NUNCA MEXEU NISSO — seja extremamente didático, passo 
 sem explicar antes. Pergunte em qual das duas plataformas (Meta ou Google) a pessoa está travada
 antes de despejar o passo a passo inteiro.
 
-META ADS (Facebook/Instagram) — o que o cliente precisa colar no formulário:
-1. ID da conta de anúncio: Meta Business Suite (business.facebook.com) > ícone de configurações >
-   "Contas de anúncio" — o número aparece na lista (com ou sem o prefixo "act_", tanto faz).
-2. Token de acesso: Configurações do negócio > Usuários > "Usuários do sistema" > criar um usuário
-   do sistema (tipo Admin, se ainda não tiver um) > atribuir a conta de anúncio a ele com permissão
-   "Gerenciar campanhas" > botão "Gerar novo token" > marcar os escopos ads_read e ads_management >
-   copiar o token gerado (ele só aparece uma vez, então copiar assim que gerar).
-   Alternativa mais simples se o negócio já tem parceria com a Alizo no Business Manager: usar o
-   token de sistema que a equipe Alizo já tem, e nesse caso o cliente só precisa colar o ID da conta.
+META ADS (Facebook/Instagram) — o fluxo padrão é o mais simples e não pede nenhum token:
+1. Compartilhar a conta de anúncio como Parceiro do Business Manager da Alizo: no Meta Business
+   Suite da empresa (business.facebook.com), ir em Configurações do negócio > Parceiros > "Adicionar"
+   > "Dar a um parceiro acesso às suas contas" > colar o ID do Business Manager da Alizo (aparece
+   copiável na própria tela de conexão, acima do formulário).
+2. Escolher a conta de anúncio a compartilhar e marcar a permissão "Gerenciar campanhas".
+3. Voltar na tela de conexão, colar o ID da conta de anúncio (Configurações do negócio > "Contas de
+   anúncio" — o número aparece na lista, com ou sem o prefixo "act_", tanto faz) e clicar em
+   "Testar e conectar".
+   Só existe uma exceção avançada: clientes que já têm seu próprio token de usuário do sistema (com
+   permissão de Admin na conta) podem colar esse token no campo "Avançado" em vez de compartilhar
+   como Parceiro — mas isso é raro e só faz sentido pra quem já tem essa infraestrutura própria.
 
 GOOGLE ADS — o fluxo padrão é o mais simples e não pede nenhum token OAuth:
 1. Aceitar o convite de vínculo com a MCC (conta gerenciadora) da Alizo: dentro do Google Ads, ir em
@@ -144,7 +149,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const systemPrompt =
+    let systemPrompt =
       mode === 'support'
         ? SYSTEM_PROMPT_SUPPORT
         : mode === 'traffic'
@@ -152,6 +157,26 @@ export async function POST(req: NextRequest) {
           : mode === 'sms'
             ? SYSTEM_PROMPT_SMS
             : SYSTEM_PROMPT_SALES
+
+    // Contexto real da conta só faz sentido dentro do dashboard (autenticado).
+    // O modo 'sales' roda na landing pública, sem login — nunca busca contexto.
+    if (mode !== 'sales') {
+      try {
+        const supabase = await createClient()
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+
+        if (user) {
+          const accountContext = await buildAccountContext(supabase)
+          if (accountContext) {
+            systemPrompt = `${accountContext}\n\n${systemPrompt}`
+          }
+        }
+      } catch (err) {
+        console.error('Chat account context error:', err instanceof Error ? err.message : err)
+      }
+    }
 
     let reply: string
     try {
