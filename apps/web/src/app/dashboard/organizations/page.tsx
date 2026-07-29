@@ -106,12 +106,12 @@ export default async function OrganizationsPage() {
                       <div className="h-1.5 w-16 overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.08)' }}>
                         <div
                           className="h-full rounded-full"
-                          style={{ width: `${setup.progress}%`, background: setup.complete ? '#4ade80' : 'linear-gradient(90deg,#06b6d4,#4361ee)' }}
+                          style={{ width: `${setup.progress}%`, background: setup.onboarded ? '#4ade80' : 'linear-gradient(90deg,#06b6d4,#4361ee)' }}
                         />
                       </div>
                       <span className="text-[11px] font-bold text-slate-400">{setup.progress}%</span>
                     </div>
-                    {!setup.complete && setup.nextAction && (
+                    {!setup.onboarded && setup.nextAction && (
                       <p className="mt-1 text-[11px] text-amber-400">Parado em: {setup.nextAction.label.toLowerCase()}</p>
                     )}
                   </Td>

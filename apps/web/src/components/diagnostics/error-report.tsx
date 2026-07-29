@@ -1,16 +1,22 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { AlertTriangle, RotateCcw } from 'lucide-react'
 
+/** Código curto pra cliente citar pro suporte — correlaciona com o log completo no servidor sem expor stack trace. */
+function generateReferenceCode(): string {
+  return Math.random().toString(36).slice(2, 8).toUpperCase()
+}
+
 /**
  * UI de diagnóstico compartilhada pelos error boundaries (app/error.tsx e
- * dashboard/error.tsx). Pré-lançamento, só o time interno usa — mostra a
- * mensagem/stack reais em vez do genérico "client-side exception" do
- * Next, e manda o erro pro log do servidor via
- * /api/internal/client-error-log (fire-and-forget) pra dar pra puxar dos
- * runtime logs da Vercel sem precisar de print de tela.
+ * dashboard/error.tsx). Em produção, com clientes pagantes: mostra só uma
+ * mensagem amigável + código de referência pro usuário final — a
+ * mensagem/stack completos vão só pro log do servidor via
+ * /api/internal/client-error-log (fire-and-forget), pra dar pra puxar dos
+ * runtime logs da Vercel sem precisar de print de tela nem expor detalhe
+ * técnico pro cliente.
  */
 export function ErrorReport({
   error,
@@ -23,6 +29,7 @@ export function ErrorReport({
   compact?: boolean
 }) {
   const pathname = usePathname()
+  const [referenceCode] = useState(() => error.digest || generateReferenceCode())
 
   useEffect(() => {
     fetch('/api/internal/client-error-log', {
@@ -32,12 +39,13 @@ export function ErrorReport({
         message: error.message,
         stack: error.stack,
         digest: error.digest,
+        referenceCode,
         route: pathname,
         userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
       }),
       keepalive: true,
     }).catch(() => {})
-  }, [error, pathname])
+  }, [error, pathname, referenceCode])
 
   return (
     <div className={`flex flex-col items-center justify-center gap-4 px-6 text-center ${compact ? 'min-h-[60vh]' : 'min-h-screen'}`}>
@@ -47,15 +55,13 @@ export function ErrorReport({
       <div>
         <h1 className="text-lg font-black text-white">Deu erro nessa tela</h1>
         <p className="mt-1 text-sm text-slate-400">
-          Já foi registrado no log do servidor{error.digest ? ` (digest ${error.digest})` : ''}.
+          Nossa equipe já foi avisada automaticamente. Se precisar falar com o suporte, informe o código abaixo.
         </p>
       </div>
 
-      <div className="mt-2 max-w-2xl overflow-auto rounded-xl p-4 text-left" style={{ background: '#141a2b', border: '1px solid rgba(239,68,68,0.25)' }}>
-        <p className="font-mono text-xs text-red-300">{error.message || 'Erro sem mensagem'}</p>
-        {error.stack && (
-          <pre className="mt-2 whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-slate-500">{error.stack}</pre>
-        )}
+      <div className="mt-2 max-w-2xl rounded-xl p-4 text-center" style={{ background: '#141a2b', border: '1px solid rgba(239,68,68,0.25)' }}>
+        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Código de referência</p>
+        <p className="mt-1 font-mono text-sm text-red-300">{referenceCode}</p>
       </div>
 
       <div className="mt-3 flex items-center gap-3">

@@ -205,7 +205,7 @@ export async function ManagementHome({ firstName, unitId }: { firstName: string;
         </div>
       </div>
 
-      {/* Próxima ação de setup — some quando terminar */}
+      {/* Próxima ação de setup — some só quando não sobrar nenhum funcionário digital pra contratar */}
       {!setup.complete && setup.nextAction && (
         <AlertBanner
           icon={<Rocket size={20} className="text-white" />}

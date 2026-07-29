@@ -37,7 +37,7 @@ export async function POST(request: Request) {
       level: 'warning',
       source: 'content',
       eventType: 'content_self_serve_connect_failed',
-      message: `Conexão self-service falhou (Página ${pageId}): ${test.error}`,
+      message: `Conexão self-service falhou (Página ${pageId}): ${test.rawError}`,
       orgId: unit.org_id,
       unitId: body.unit_id,
     })

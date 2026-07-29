@@ -29,8 +29,8 @@ export function MetaPartnerGuide({
       >
         <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
         <span>
-          Integração ainda não disponível: falta o time Alizo configurar o Business Manager
-          (env META_BUSINESS_MANAGER_ID). Enquanto isso, use o campo avançado abaixo com um token próprio, se tiver um.
+          Essa integração ainda está sendo liberada pra sua conta — já avisamos o time. Enquanto isso,
+          use o campo avançado abaixo com um token próprio, se tiver um.
         </span>
       </div>
     )

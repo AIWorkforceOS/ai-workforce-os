@@ -35,8 +35,20 @@ export function InterviewChat({
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [expectedQuestions, setExpectedQuestions] = useState<number | null>(null)
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const startedRef = useRef(false)
+
+  // Estimativa aproximada: nº de respostas já dadas / nº de tópicos esperados
+  // pro cargo (vindo do roteiro-base da entrevista, ver /api/agent/interview).
+  // É só um indicador visual de "quanto falta" — não trava nem impede enviar.
+  const answeredCount = messages.filter((m) => m.role === 'user').length
+  const progressPercent =
+    status === 'completed'
+      ? 100
+      : expectedQuestions
+        ? Math.min(95, Math.round((answeredCount / expectedQuestions) * 100))
+        : null
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -59,6 +71,7 @@ export function InterviewChat({
         }
         const transcript: ChatEntry[] = Array.isArray(data.transcript) ? data.transcript : []
         setMessages(transcript)
+        setExpectedQuestions(typeof data.expectedQuestions === 'number' ? data.expectedQuestions : null)
         if (data.status === 'completed') {
           setStatus('completed')
           return
@@ -132,27 +145,40 @@ export function InterviewChat({
         className={`flex flex-col rounded-2xl ${height}`}
         style={{ border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}
       >
-        <div className="flex items-center gap-2 px-4 py-2.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          <div className="flex h-7 w-7 items-center justify-center rounded-full" style={{ background: brandGradient }}>
-            <GraduationCap size={12} className="text-white" />
+        <div className="flex flex-col gap-2 px-4 py-2.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          <div className="flex items-center gap-2">
+            <div className="flex h-7 w-7 items-center justify-center rounded-full" style={{ background: brandGradient }}>
+              <GraduationCap size={12} className="text-white" />
+            </div>
+            <span className="text-sm font-bold text-slate-200">{personaName}</span>
+            <span
+              className="rounded-full px-2 py-0.5 text-[10px] font-bold"
+              style={
+                status === 'completed'
+                  ? { background: 'rgba(34,197,94,0.15)', color: '#4ade80' }
+                  : { background: 'rgba(6,182,212,0.15)', color: '#22d3ee' }
+              }
+            >
+              {status === 'completed'
+                ? retrain
+                  ? 'Retreinamento concluído'
+                  : 'Treinado e pronto'
+                : retrain
+                  ? 'Retreinamento'
+                  : 'Entrevista de contratação'}
+            </span>
+            {progressPercent !== null && status === 'in_progress' && (
+              <span className="ml-auto text-[10px] font-bold text-slate-500">{progressPercent}%</span>
+            )}
           </div>
-          <span className="text-sm font-bold text-slate-200">{personaName}</span>
-          <span
-            className="rounded-full px-2 py-0.5 text-[10px] font-bold"
-            style={
-              status === 'completed'
-                ? { background: 'rgba(34,197,94,0.15)', color: '#4ade80' }
-                : { background: 'rgba(6,182,212,0.15)', color: '#22d3ee' }
-            }
-          >
-            {status === 'completed'
-              ? retrain
-                ? 'Retreinamento concluído'
-                : 'Treinado e pronto'
-              : retrain
-                ? 'Retreinamento'
-                : 'Entrevista de contratação'}
-          </span>
+          {progressPercent !== null && status === 'in_progress' && (
+            <div className="h-1 w-full overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.08)' }}>
+              <div
+                className="h-full rounded-full transition-all"
+                style={{ width: `${progressPercent}%`, background: brandGradient }}
+              />
+            </div>
+          )}
         </div>
 
         <div className="flex-1 space-y-3 overflow-y-auto p-4">

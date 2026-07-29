@@ -3,10 +3,14 @@
 // chamada real e barata na API da plataforma — não escreve nada lá — só
 // para confirmar que a credencial funciona antes de salvar em ad_accounts.
 
+import { translateIntegrationError } from '@/lib/integration-errors'
 import { getGoogleAccessToken, getGoogleAdsConfig, getGoogleCustomerInfo } from './google-ads'
 import { getMetaAccountInfo, getMetaConfig } from './meta-ads'
 
-export type ConnectionTestResult = { ok: true; label: string } | { ok: false; error: string }
+export type ConnectionTestResult =
+  | { ok: true; label: string }
+  /** `error` é o texto seguro pra mostrar ao cliente; `rawError` (técnico, pode citar endpoint/código) é só pro log do servidor. */
+  | { ok: false; error: string; rawError: string }
 
 const META_ACTIVE_STATUS = 1
 
@@ -19,10 +23,12 @@ export async function testMetaConnection(input: {
     access_token: input.accessToken ?? null,
   })
   if (!config) {
+    const rawError = 'Integração Meta Ads ainda não está configurada do lado da Alizo (falta META_SYSTEM_USER_TOKEN).'
     return {
       ok: false,
       error:
-        'Integração Meta Ads ainda não está configurada do lado da Alizo (falta META_SYSTEM_USER_TOKEN). Se você tiver seu próprio token, abra "Avançado" e cole-o.',
+        'Essa integração ainda está sendo liberada pra sua conta. Se você tiver seu próprio token, abra "Avançado" e cole-o — ou fale com o suporte.',
+      rawError,
     }
   }
 
@@ -38,7 +44,8 @@ export async function testMetaConnection(input: {
     const hint = input.accessToken
       ? ''
       : ' — provavelmente falta completar o compartilhamento da conta de anúncio como Parceiro do Business Manager da Alizo (veja o ID acima), ou a permissão concedida não inclui "Gerenciar campanhas".'
-    return { ok: false, error: `${message}${hint}` }
+    const rawError = `${message}${hint}`
+    return { ok: false, error: translateIntegrationError('meta', rawError), rawError }
   }
 }
 
@@ -57,10 +64,12 @@ export async function testGoogleAdsConnection(input: {
     google_client_secret: input.clientSecret ?? null,
   })
   if (!config) {
+    const rawError = 'Google Ads: não foi possível montar as credenciais (faltam credenciais globais e o cliente não preencheu as avançadas).'
     return {
       ok: false,
       error:
-        'Não foi possível montar as credenciais. Confirme se sua conta já aceitou o vínculo com a Alizo no Google Ads, ou preencha as credenciais avançadas (developer token, client ID/secret, refresh token).',
+        'Não foi possível confirmar a conexão. Confirme se sua conta já aceitou o vínculo com a Alizo no Google Ads, ou preencha as credenciais avançadas.',
+      rawError,
     }
   }
 
@@ -69,6 +78,7 @@ export async function testGoogleAdsConnection(input: {
     const info = await getGoogleCustomerInfo(config, accessToken)
     return { ok: true, label: info.descriptiveName ? `${info.descriptiveName} (${info.id})` : `Conta ${info.id}` }
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : 'Falha ao validar a conta Google Ads.' }
+    const rawError = error instanceof Error ? error.message : 'Falha ao validar a conta Google Ads.'
+    return { ok: false, error: translateIntegrationError('google', rawError), rawError }
   }
 }

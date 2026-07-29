@@ -10,9 +10,9 @@ import { ErrorReport } from '@/components/diagnostics/error-report'
  * client-side exception has occurred" — sem botão de recuperação, deixando
  * o usuário travado fora do dashboard até fechar e reabrir a aba manualmente.
  *
- * Pré-lançamento: mostra a mensagem/stack reais (ErrorReport) em vez de um
- * texto genérico, e manda o erro pro log do servidor — ver
- * src/components/diagnostics/error-report.tsx.
+ * Mostra uma mensagem amigável + código de referência (ErrorReport) em vez
+ * do texto genérico do Next, e manda o erro completo pro log do servidor —
+ * ver src/components/diagnostics/error-report.tsx.
  */
 export default function RootError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   const isChunkLoadError =

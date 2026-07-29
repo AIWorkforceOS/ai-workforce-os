@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/ui/dashboard-ui'
 import { ContentConnectForm } from '@/components/dashboard/content-connect-form'
+import { ContentConnectGuide, ContentConnectKaiPanel } from '@/components/dashboard/content-connect-guide'
 import { getMetaBusinessManagerId } from '@/lib/integrations'
 import type { SocialAccount } from '@/lib/content/types'
 import type { Unit } from '@/lib/types'
@@ -24,12 +25,16 @@ export default async function ContentConnectPage() {
         subtitle="Compartilhe a Página com a Alizo como Parceira — sem gerar token — e detectamos o Instagram vinculado automaticamente."
       />
 
-      <div className="max-w-xl">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.4fr_1fr]">
         <ContentConnectForm
           units={(units ?? []) as Unit[]}
           accounts={(accounts ?? []) as SocialAccount[]}
           businessManagerId={businessManagerId}
         />
+        <div className="flex flex-col gap-6">
+          <ContentConnectKaiPanel />
+          <ContentConnectGuide businessManagerId={businessManagerId} />
+        </div>
       </div>
     </div>
   )

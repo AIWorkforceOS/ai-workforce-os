@@ -69,7 +69,7 @@ export async function POST(request: Request) {
       level: 'warning',
       source: platform === 'meta' ? 'meta_ads' : 'google_ads',
       eventType: 'traffic_self_serve_connect_failed',
-      message: `Conexão self-service falhou (${platform}, conta ${externalAccountId}): ${test.error}`,
+      message: `Conexão self-service falhou (${platform}, conta ${externalAccountId}): ${test.rawError}`,
       orgId: unit.org_id,
       unitId: body.unit_id,
     })

@@ -29,10 +29,12 @@ import {
   Building2,
   Check,
   CheckCircle2,
+  FileText,
   Headset,
   Megaphone,
   MessageSquare,
   Rocket,
+  Search,
   Users,
   WifiOff,
 } from 'lucide-react'
@@ -142,6 +144,10 @@ export async function ClientHome({ firstName, unitId }: { firstName: string; uni
 
   const sdrConfig = configRows.find((c) => c.agent_type === 'sdr')
   const receptionistConfig = configRows.find((c) => c.agent_type === 'receptionist')
+  const contentConfig = configRows.find((c) => c.agent_type === 'content_specialist')
+  const contentActive = !!contentConfig?.is_active
+  const seoConfig = configRows.find((c) => c.agent_type === 'seo_specialist')
+  const seoActive = !!seoConfig?.is_active
   const whatsappConnected = unitRows.some((u) => u.whatsapp_phone)
   const sdrActive = !!sdrConfig?.is_active && whatsappConnected
   const sdrStateLabel = sdrActive
@@ -178,18 +184,18 @@ export async function ClientHome({ firstName, unitId }: { firstName: string; uni
           </p>
           <h1 className="mt-0.5 text-2xl font-black tracking-tight text-white">{greeting(now)}, {firstName}! 👋</h1>
           <p className="mt-0.5 text-sm" style={{ color: 'rgba(148,163,184,0.7)' }}>
-            {setup.complete
+            {!setup.onboarded
               ? unitId
-                ? 'O funcionário digital da sua unidade está trabalhando por você.'
-                : 'Seu funcionário digital está trabalhando por você.'
-              : unitId
                 ? 'Falta pouco pra colocar o funcionário digital da sua unidade pra trabalhar.'
-                : 'Falta pouco pra colocar seu funcionário digital pra trabalhar.'}
+                : 'Falta pouco pra colocar seu funcionário digital pra trabalhar.'
+              : setup.complete
+                ? 'Todos os seus funcionários digitais estão trabalhando por você.'
+                : `${setup.employeesActive} de ${setup.employeesTotal} funcionários digitais estão trabalhando por você — dá pra contratar mais.`}
           </p>
         </div>
       </div>
 
-      {/* Próxima ação — só aparece enquanto o setup não terminou */}
+      {/* Próxima ação — só aparece enquanto sobrar algo pra configurar ou contratar */}
       {!setup.complete && setup.nextAction && (
         <AlertBanner
           icon={<Rocket size={20} className="text-white" />}
@@ -247,9 +253,11 @@ export async function ClientHome({ firstName, unitId }: { firstName: string; uni
             </Link>
           }
         >
-          {unitId ? 'Funcionários digitais da sua unidade' : 'Seus funcionários digitais'}
+          {unitId
+            ? `Funcionários digitais da sua unidade (${setup.employeesActive} de ${setup.employeesTotal} ativos)`
+            : `Seus funcionários digitais (${setup.employeesActive} de ${setup.employeesTotal} ativos)`}
         </SectionLabel>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <EmployeeCard
             icon={Bot}
             name={sdrConfig?.persona_name ? `${sdrConfig.persona_name} · AI Sales Representative` : 'AI Sales Representative'}
@@ -285,6 +293,24 @@ export async function ClientHome({ firstName, unitId }: { firstName: string; uni
             stateLabel={(adAccounts ?? 0) > 0 ? `${adAccounts} conta(s) de anúncio` : 'Contas não conectadas'}
             href={(adAccounts ?? 0) > 0 ? '/dashboard/traffic' : '/dashboard/equipe-digital'}
             cta={(adAccounts ?? 0) > 0 ? 'Ver desempenho' : 'Ativar e configurar'}
+          />
+          <EmployeeCard
+            icon={FileText}
+            name={contentConfig?.persona_name ? `${contentConfig.persona_name} · Conteúdo/Social` : 'Conteúdo/Social'}
+            desc="Cria posts e mantém suas redes sociais ativas, no ritmo que você definir."
+            state={contentActive ? 'active' : contentConfig ? 'partial' : 'off'}
+            stateLabel={contentActive ? 'Trabalhando' : contentConfig ? 'Configurado — falta ligar' : 'Não contratado'}
+            href={contentActive ? '/dashboard/content' : '/dashboard/equipe-digital'}
+            cta={contentActive ? 'Ver conteúdo' : 'Ativar e configurar'}
+          />
+          <EmployeeCard
+            icon={Search}
+            name={seoConfig?.persona_name ? `${seoConfig.persona_name} · SEO` : 'SEO'}
+            desc="Acompanha seu posicionamento no Google e sugere melhorias pra aparecer mais."
+            state={seoActive ? 'active' : seoConfig ? 'partial' : 'off'}
+            stateLabel={seoActive ? 'Trabalhando' : seoConfig ? 'Configurado — falta ligar' : 'Não contratado'}
+            href={seoActive ? '/dashboard/seo' : '/dashboard/equipe-digital'}
+            cta={seoActive ? 'Ver desempenho' : 'Ativar e configurar'}
           />
         </div>
       </div>
@@ -571,7 +597,7 @@ export async function AdminHome({ firstName }: { firstName: string }) {
   })
 
   const activeOrgs = orgHealth.filter((o) => o.org.is_active)
-  const stuckOrgs = activeOrgs.filter((o) => !o.setup.complete)
+  const stuckOrgs = activeOrgs.filter((o) => !o.setup.onboarded)
   const noWhatsApp = activeOrgs.filter((o) => o.whatsappCount === 0)
   const quietOrgs =
     activeUnitIds === null
@@ -708,7 +734,7 @@ export async function AdminHome({ firstName }: { firstName: string }) {
               <Td>
                 <div className="flex items-center gap-2">
                   <div className="h-1.5 w-16 overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.08)' }}>
-                    <div className="h-full rounded-full" style={{ width: `${setup.progress}%`, background: setup.complete ? '#4ade80' : 'linear-gradient(90deg,#06b6d4,#4361ee)' }} />
+                    <div className="h-full rounded-full" style={{ width: `${setup.progress}%`, background: setup.onboarded ? '#4ade80' : 'linear-gradient(90deg,#06b6d4,#4361ee)' }} />
                   </div>
                   <span className="text-[11px] font-bold text-slate-400">{setup.progress}%</span>
                 </div>

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getAppUser } from '@/lib/app-user'
 import { getOpenAIApiKey } from '@/lib/openai'
-import { extractOrganizationIntake, isInterviewAgentType, runInterviewTurn } from '@/lib/interview/engine'
+import { extractOrganizationIntake, INTERVIEW_PLAYBOOKS, isInterviewAgentType, runInterviewTurn } from '@/lib/interview/engine'
 import type { AgentConfig, InterviewTranscriptEntry, Organization, Unit } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -66,6 +66,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Funcionário não encontrado ou sem acesso.' }, { status: 404 })
   }
 
+  // Estimativa pra barra de progresso do chat: nº de tópicos do roteiro-base
+  // do cargo (+1 pela pergunta final obrigatória, ver engine.ts) — heurística
+  // simples, não conta tópicos extra que o modelo decida aprofundar.
+  const expectedQuestions = isInterviewAgentType(config.agent_type)
+    ? INTERVIEW_PLAYBOOKS[config.agent_type].requiredTopics.length + 1
+    : null
+
   if (retrain) {
     if (config.interview_status !== 'completed') {
       return NextResponse.json(
@@ -81,6 +88,7 @@ export async function GET(request: Request) {
       isActive: config.is_active,
       lastTrainedAt: config.last_trained_at ?? null,
       transcript: retrainTranscript.map(({ role, content }) => ({ role, content })),
+      expectedQuestions,
     })
   }
 
@@ -92,6 +100,7 @@ export async function GET(request: Request) {
     isActive: config.is_active,
     lastTrainedAt: config.last_trained_at ?? null,
     transcript: transcript.map(({ role, content }) => ({ role, content })),
+    expectedQuestions,
   })
 }
 

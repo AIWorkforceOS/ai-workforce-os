@@ -118,7 +118,7 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ id: 
               </div>
             ))}
           </div>
-          {!setup.complete && setup.nextAction && (
+          {!setup.onboarded && setup.nextAction && (
             <p className="mt-3 rounded-xl px-3 py-2 text-xs font-semibold text-amber-400" style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}>
               Travado em: {setup.nextAction.label}
             </p>

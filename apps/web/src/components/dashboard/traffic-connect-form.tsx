@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronDown, ChevronUp, Eye, EyeOff, Loader2, CheckCircle2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Eye, EyeOff, Loader2, CheckCircle2, MailQuestion } from 'lucide-react'
 import { Badge, Card, CardHeader, Input, Label, Select, brandGradient } from '@/components/ui/dashboard-ui'
 import { MetaPartnerGuide } from '@/components/dashboard/meta-partner-guide'
 import type { AdAccount } from '@/lib/traffic/types'
@@ -76,6 +76,8 @@ export function TrafficConnectForm({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [inviteRequestBusy, setInviteRequestBusy] = useState(false)
+  const [inviteRequested, setInviteRequested] = useState(false)
 
   function resetPlatformFields() {
     setExternalAccountId('')
@@ -133,6 +135,22 @@ export function TrafficConnectForm({
       setError('Erro de rede ao testar a conexão. Tente novamente.')
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function handleRequestInvite() {
+    setInviteRequestBusy(true)
+    try {
+      await fetch('/api/traffic/google-ads/request-invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unit_id: unitId, customer_id: externalAccountId.trim() }),
+      })
+      setInviteRequested(true)
+    } catch {
+      // best-effort — se falhar, o cliente pode tentar de novo ou chamar o suporte diretamente
+    } finally {
+      setInviteRequestBusy(false)
     }
   }
 
@@ -214,6 +232,21 @@ export function TrafficConnectForm({
                   Antes de testar, confirme que já aceitou o convite de vínculo com a Alizo em
                   Ferramentas e configurações → Acesso e segurança → Contas de gerenciador.
                 </p>
+                {inviteRequested ? (
+                  <p className="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-emerald-400">
+                    <CheckCircle2 size={12} /> Pedido registrado — o time Alizo vai te enviar o convite em breve.
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleRequestInvite}
+                    disabled={inviteRequestBusy}
+                    className="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 hover:text-slate-200 disabled:opacity-60"
+                  >
+                    {inviteRequestBusy ? <Loader2 size={12} className="animate-spin" /> : <MailQuestion size={12} />}
+                    Ainda não recebi o convite da Alizo
+                  </button>
+                )}
               </div>
 
               <button
