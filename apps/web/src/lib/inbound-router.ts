@@ -394,8 +394,60 @@ export type InboundRouteParams = {
   wasAudioMessage?: boolean
 }
 
+/**
+ * Checa se uma mensagem inbound com este external_message_id já foi
+ * registrada para esta unidade (em qualquer uma das 3 tabelas onde o
+ * roteamento grava mensagens de entrada). Provedores de webhook (Evolution
+ * API, Twilio) reentregam a mesma mensagem quando o handler não responde
+ * 200 a tempo (timeout, erro interno) — sem essa checagem, a reentrega
+ * reprocessa a mensagem e envia uma resposta duplicada pro mesmo número,
+ * o que pode disparar detecção antiabuso da Meta.
+ */
+async function isDuplicateInboundMessage(
+  supabase: SupabaseClient,
+  unitId: string,
+  externalMessageId: string,
+): Promise<boolean> {
+  const [conversations, candidateMessages, customerMessages] = await Promise.all([
+    supabase
+      .from('conversations')
+      .select('id', { count: 'exact', head: true })
+      .eq('unit_id', unitId)
+      .eq('external_message_id', externalMessageId)
+      .eq('direction', 'inbound'),
+    supabase
+      .from('candidate_messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('unit_id', unitId)
+      .eq('external_message_id', externalMessageId)
+      .eq('direction', 'inbound'),
+    supabase
+      .from('customer_messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('unit_id', unitId)
+      .eq('external_message_id', externalMessageId)
+      .eq('direction', 'inbound'),
+  ])
+  return (conversations.count ?? 0) > 0 || (candidateMessages.count ?? 0) > 0 || (customerMessages.count ?? 0) > 0
+}
+
 export async function routeInboundMessage(params: InboundRouteParams): Promise<Record<string, unknown>> {
   const { supabase, unit: unitRow, channel, incomingPhone, incomingEmail, text, externalMessageId, sentAt, wasAudioMessage } = params
+
+  if (externalMessageId) {
+    const duplicate = await isDuplicateInboundMessage(supabase, unitRow.id, externalMessageId)
+    if (duplicate) {
+      await logSystemEvent(supabase, {
+        level: 'info',
+        source: 'system',
+        eventType: 'inbound_message_duplicate_skipped',
+        message: `Mensagem inbound duplicada ignorada (external_message_id="${externalMessageId}") — provável reentrega de webhook.`,
+        orgId: unitRow.org_id,
+        unitId: unitRow.id,
+      })
+      return { ok: true, duplicate: true }
+    }
+  }
 
   // Contextos possíveis
   const candidateContext = await findCandidateContext(supabase, unitRow, incomingPhone, incomingEmail)

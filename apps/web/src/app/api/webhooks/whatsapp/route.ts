@@ -166,51 +166,71 @@ export async function POST(request: Request) {
 
   const unitRow = unit as Unit
 
-  // Self-heal: uma mensagem real chegando por esta instância já prova que
-  // ela está conectada — não depende de o cliente ter deixado a tela do QR
-  // code aberta até o polling captar o status 'open' (ver syncWhatsappPhoneIfConnected).
-  if (!unitRow.whatsapp_phone) {
-    const evolutionConfig = getEvolutionConfig(unitRow)
-    if (evolutionConfig) {
-      await syncWhatsappPhoneIfConnected(supabase, unitRow, evolutionConfig)
+  // Tudo a partir daqui (self-heal, transcrição de áudio, roteamento) pode
+  // falhar por motivos externos (timeout da OpenAI, erro da Evolution API,
+  // erro de banco). Isso NÃO pode propagar como 500 pro webhook da Evolution
+  // API: um erro nosso faz a Evolution reentregar a mesma mensagem (retry
+  // com backoff, até ~10 tentativas), e a reentrega reprocessa a mensagem —
+  // possível origem do bloqueio por rajada de resposta duplicada.
+  try {
+    // Self-heal: uma mensagem real chegando por esta instância já prova que
+    // ela está conectada — não depende de o cliente ter deixado a tela do QR
+    // code aberta até o polling captar o status 'open' (ver syncWhatsappPhoneIfConnected).
+    if (!unitRow.whatsapp_phone) {
+      const evolutionConfig = getEvolutionConfig(unitRow)
+      if (evolutionConfig) {
+        await syncWhatsappPhoneIfConnected(supabase, unitRow, evolutionConfig)
+      }
     }
-  }
 
-  const remoteJid: string = key.remoteJid ?? ''
-  const incomingPhone = normalizePhone(remoteJid.split('@')[0])
+    const remoteJid: string = key.remoteJid ?? ''
+    const incomingPhone = normalizePhone(remoteJid.split('@')[0])
 
-  let text: string
-  if (extracted.kind === 'audio') {
-    const transcribed = await transcribeInboundAudio({
+    let text: string
+    if (extracted.kind === 'audio') {
+      const transcribed = await transcribeInboundAudio({
+        supabase,
+        unit: unitRow,
+        messageId: extracted.messageId,
+        mimeType: extracted.mimeType,
+        incomingPhone,
+      })
+      if (!transcribed) {
+        return NextResponse.json({ ok: true, audioTranscriptionFailed: true })
+      }
+      text = transcribed
+    } else {
+      text = extracted.text
+    }
+
+    const sentAt = data.messageTimestamp
+      ? new Date(Number(data.messageTimestamp) * 1000).toISOString()
+      : new Date().toISOString()
+
+    const result = await routeInboundMessage({
       supabase,
       unit: unitRow,
-      messageId: extracted.messageId,
-      mimeType: extracted.mimeType,
+      channel: 'whatsapp',
       incomingPhone,
+      incomingEmail: null,
+      text,
+      externalMessageId: key.id ?? null,
+      sentAt,
+      wasAudioMessage: extracted.kind === 'audio',
     })
-    if (!transcribed) {
-      return NextResponse.json({ ok: true, audioTranscriptionFailed: true })
-    }
-    text = transcribed
-  } else {
-    text = extracted.text
+
+    return NextResponse.json(result)
+  } catch (error) {
+    await logSystemEvent(supabase, {
+      level: 'error',
+      source: 'evolution',
+      eventType: 'whatsapp_webhook_processing_failed',
+      message: `Falha ao processar mensagem inbound na unidade "${unitRow.name}": ${error instanceof Error ? error.message : String(error)}`,
+      orgId: unitRow.org_id,
+      unitId: unitRow.id,
+    })
+    // Sempre 200: um 500 aqui faz a Evolution API reentregar o webhook e
+    // reprocessar a mesma mensagem (ver comentário acima do try).
+    return NextResponse.json({ ok: true, error: 'internal_error' })
   }
-
-  const sentAt = data.messageTimestamp
-    ? new Date(Number(data.messageTimestamp) * 1000).toISOString()
-    : new Date().toISOString()
-
-  const result = await routeInboundMessage({
-    supabase,
-    unit: unitRow,
-    channel: 'whatsapp',
-    incomingPhone,
-    incomingEmail: null,
-    text,
-    externalMessageId: key.id ?? null,
-    sentAt,
-    wasAudioMessage: extracted.kind === 'audio',
-  })
-
-  return NextResponse.json(result)
 }
