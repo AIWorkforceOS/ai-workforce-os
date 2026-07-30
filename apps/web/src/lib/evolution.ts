@@ -28,6 +28,14 @@ export function getEvolutionConfig(unit: Unit): EvolutionUnitConfig | null {
   }
 }
 
+/** Preserva o status HTTP da resposta — usado por connectInstance para diferenciar "instância não existe" (404, motivo legítimo de recriar) de qualquer outra falha (nunca deve recriar). */
+export class EvolutionApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message)
+    this.name = 'EvolutionApiError'
+  }
+}
+
 async function evolutionFetch(
   config: EvolutionUnitConfig,
   path: string,
@@ -49,7 +57,7 @@ async function evolutionFetch(
   if (!response.ok) {
     const message =
       (data && (data.message || data.error)) || `Evolution API retornou status ${response.status}`
-    throw new Error(Array.isArray(message) ? message.join(', ') : message)
+    throw new EvolutionApiError(Array.isArray(message) ? message.join(', ') : message, response.status)
   }
 
   return data
@@ -150,12 +158,25 @@ export async function syncWhatsappPhoneIfConnected(
   }
 }
 
+/**
+ * Só recria a instância (`/instance/create`) quando o `/instance/connect`
+ * falha com 404 — sinal de que a instância nunca existiu na Evolution API
+ * (primeira conexão de uma unidade nova). Antes, QUALQUER erro (timeout,
+ * 500 passageiro, rate limit) caía no mesmo fallback e recriava a
+ * instância às cegas — o que pode destruir uma sessão do WhatsApp já
+ * pareada e forçar um novo QR code. Repetir esse ciclo de
+ * criar/parear/recriar em pouco tempo é exatamente o tipo de padrão que
+ * o antiabuso do WhatsApp associa a automação suspeita, então evitar
+ * recriações desnecessárias reduz esse risco.
+ */
 export async function connectInstance(config: EvolutionUnitConfig) {
   try {
     const result = await evolutionFetch(config, `/instance/connect/${config.instanceName}`)
     await ensureWebhookConfigured(config)
     return result
-  } catch {
+  } catch (error) {
+    if (!(error instanceof EvolutionApiError) || error.status !== 404) throw error
+
     await evolutionFetch(config, '/instance/create', {
       method: 'POST',
       body: JSON.stringify({
