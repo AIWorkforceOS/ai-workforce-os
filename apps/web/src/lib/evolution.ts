@@ -105,7 +105,9 @@ export async function syncWhatsappPhoneIfConnected(
 
 export async function connectInstance(config: EvolutionUnitConfig) {
   try {
-    return await evolutionFetch(config, `/instance/connect/${config.instanceName}`)
+    const result = await evolutionFetch(config, `/instance/connect/${config.instanceName}`)
+    await ensureWebhookConfigured(config)
+    return result
   } catch {
     await evolutionFetch(config, '/instance/create', {
       method: 'POST',
@@ -115,7 +117,50 @@ export async function connectInstance(config: EvolutionUnitConfig) {
         integration: 'WHATSAPP-BAILEYS',
       }),
     })
+    await ensureWebhookConfigured(config)
     return evolutionFetch(config, `/instance/connect/${config.instanceName}`)
+  }
+}
+
+/**
+ * Registra na Evolution API a URL do nosso webhook de mensagens
+ * (/api/webhooks/whatsapp) para esta instância — sem isso, a Evolution API
+ * nunca sabe pra onde mandar as mensagens recebidas e o funcionário digital
+ * nunca fica sabendo que alguém escreveu (causa raiz real, confirmada contra
+ * produção em 2026-07-29: `leads`/`conversations`/`customer_messages` estavam
+ * zerados no banco inteiro — nenhuma unidade jamais recebeu uma mensagem
+ * inbound processada — porque `/instance/create` nunca configurava webhook
+ * nenhum). Best-effort e idempotente: chamado tanto ao conectar quanto,
+ * como self-heal, sempre que o status da instância é consultado e está
+ * 'open' (ver rotas de whatsapp/status) — cobre instâncias que já existiam
+ * antes deste fix sem exigir que o cliente reconecte o QR code. Contrato do
+ * endpoint (`POST /webhook/set/{instance}` com `{ webhook: { url, enabled,
+ * events } }`) segue a documentação pública da Evolution API v2 mas não foi
+ * confirmado contra o servidor real de produção (mesma ressalva de
+ * sendWhatsAppDocument).
+ */
+export async function ensureWebhookConfigured(config: EvolutionUnitConfig): Promise<void> {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL
+  if (!appUrl) return
+
+  const webhookUrl = `${appUrl.replace(/\/+$/, '')}/api/webhooks/whatsapp`
+
+  try {
+    await evolutionFetch(config, `/webhook/set/${config.instanceName}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        webhook: {
+          enabled: true,
+          url: webhookUrl,
+          webhookByEvents: false,
+          events: ['MESSAGES_UPSERT'],
+        },
+      }),
+    })
+  } catch (error) {
+    console.error(
+      `[evolution] falha ao configurar webhook da instância "${config.instanceName}": ${error instanceof Error ? error.message : String(error)}`,
+    )
   }
 }
 

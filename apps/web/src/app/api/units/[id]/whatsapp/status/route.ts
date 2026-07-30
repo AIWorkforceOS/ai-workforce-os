@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getEvolutionConfig, getInstanceStatus, syncWhatsappPhoneIfConnected } from '@/lib/evolution'
+import { ensureWebhookConfigured, getEvolutionConfig, getInstanceStatus, syncWhatsappPhoneIfConnected } from '@/lib/evolution'
 import type { Unit } from '@/lib/types'
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -28,6 +28,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     const status = await getInstanceStatus(config)
     if (status === 'open') {
       await syncWhatsappPhoneIfConnected(supabase, unit as Unit, config)
+      await ensureWebhookConfigured(config)
     }
     return NextResponse.json({ status })
   } catch (error) {
