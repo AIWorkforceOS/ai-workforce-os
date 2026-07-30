@@ -1,5 +1,6 @@
 import type { Unit } from '@/lib/types'
 import { logEvolutionUsage } from '@/lib/api-usage'
+import { logSystemEvent } from '@/lib/system-events'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export type EvolutionUnitConfig = {
@@ -77,10 +78,19 @@ export async function getInstanceStatus(config: EvolutionUnitConfig): Promise<Wh
  * também no webhook de mensagens (self-heal): qualquer evento real da
  * instância já é prova de que ela está conectada, então não depende de o
  * cliente ter deixado a aba do QR code aberta até o fim.
+ *
+ * `/instance/fetchInstances` tem dois formatos possíveis conforme a versão
+ * da Evolution API (mesma ressalva já tratada em getInstanceStatus para
+ * /instance/connectionState): v1 aninha tudo em `.instance.{instanceName,owner}`;
+ * v2 devolve um shape plano (`.name`, `.ownerJid`). Faltava esse fallback aqui
+ * — confirmado contra produção em 2026-07-30: as unidades "Smarter Estágios 01"
+ * e "Smarter Matriz" nunca tiveram whatsapp_phone preenchido mesmo recebendo
+ * mensagens reais pelo webhook (prova de que a instância está conectada), porque
+ * o find só batia no shape v1 e o servidor de produção devolve o shape v2.
  */
 export async function syncWhatsappPhoneIfConnected(
   supabase: SupabaseClient,
-  unit: Pick<Unit, 'id' | 'whatsapp_phone'>,
+  unit: Pick<Unit, 'id' | 'whatsapp_phone' | 'org_id'>,
   config: EvolutionUnitConfig,
 ): Promise<string | null> {
   if (unit.whatsapp_phone) return unit.whatsapp_phone
@@ -89,16 +99,53 @@ export async function syncWhatsappPhoneIfConnected(
       headers: { apikey: config.apiKey },
       cache: 'no-store',
     })
+    if (!res.ok) {
+      await logSystemEvent(supabase, {
+        level: 'warning',
+        source: 'evolution',
+        eventType: 'whatsapp_phone_sync_failed',
+        message: `fetchInstances retornou status ${res.status} para a instância "${config.instanceName}" — não foi possível confirmar o número conectado.`,
+        orgId: unit.org_id,
+        unitId: unit.id,
+      })
+      return null
+    }
+
     const instances = await res.json()
+    type InstanceEntry = { instance?: { instanceName?: string; owner?: string }; name?: string; ownerJid?: string }
     const instance = Array.isArray(instances)
-      ? instances.find((i: { instance?: { instanceName?: string } }) => i.instance?.instanceName === config.instanceName)
+      ? (instances as InstanceEntry[]).find(
+          (i) => (i.instance?.instanceName ?? i.name) === config.instanceName,
+        )
       : null
-    const phone = instance?.instance?.owner?.split('@')[0] ?? null
+
+    if (!instance) {
+      await logSystemEvent(supabase, {
+        level: 'warning',
+        source: 'evolution',
+        eventType: 'whatsapp_phone_sync_no_match',
+        message: `fetchInstances não retornou nenhuma instância chamada "${config.instanceName}" — não foi possível confirmar o número conectado.`,
+        orgId: unit.org_id,
+        unitId: unit.id,
+      })
+      return null
+    }
+
+    const owner = instance.instance?.owner ?? instance.ownerJid
+    const phone = owner?.split('@')[0] ?? null
     if (phone) {
       await supabase.from('units').update({ whatsapp_phone: phone }).eq('id', unit.id)
     }
     return phone
-  } catch {
+  } catch (error) {
+    await logSystemEvent(supabase, {
+      level: 'warning',
+      source: 'evolution',
+      eventType: 'whatsapp_phone_sync_failed',
+      message: `Falha ao sincronizar whatsapp_phone da instância "${config.instanceName}": ${error instanceof Error ? error.message : String(error)}`,
+      orgId: unit.org_id,
+      unitId: unit.id,
+    })
     return null
   }
 }
