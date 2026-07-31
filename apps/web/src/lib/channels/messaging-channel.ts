@@ -36,6 +36,15 @@ export type SendContext = {
   /** Espelha a modalidade: cliente mandou áudio → responde em áudio (só WhatsApp — ver item 7 do pedido). */
   voiceReply?: boolean
   attachment?: AttachmentToSend
+  /**
+   * Botão "Falar agora no WhatsApp" no e-mail de prospecção fria (Google
+   * Maps): link wa.me pro número da própria unidade com mensagem
+   * pré-pronta que o LEAD manda por conta própria — é o que garante que o
+   * primeiro toque real no WhatsApp sempre parte do lead, nunca da
+   * unidade (ver triggerFirstContact em lib/leads/lead-intake.ts). Só o
+   * canal de e-mail usa isto; WhatsApp/SMS ignoram.
+   */
+  whatsappCta?: { phone: string; text: string } | null
 }
 
 export interface MessagingChannel {
@@ -199,6 +208,7 @@ class ResendEmailChannel implements MessagingChannel {
       bodyText: text,
       replyTo: getEmailReplyTo(this.unit),
       attachment: context?.attachment ?? null,
+      whatsappCta: context?.whatsappCta ?? null,
     })
     if (!result.ok) throw new Error(result.error || 'Falha ao enviar e-mail.')
   }

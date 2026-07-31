@@ -230,6 +230,18 @@ describe('sendToLeadChannels — e-mail é sempre adicional ao telefone, nunca s
     })
     expect(attempts).toEqual([])
   })
+
+  it('repassa o whatsappCta (botão da prospecção fria) pro sendLeadEmail', async () => {
+    await sendToLeadChannels({
+      unit: makeUnit(),
+      lead: { phone: null, email: 'lead@empresa.com' },
+      text: 'Olá!',
+      context: { whatsappCta: { phone: '5511999999999', text: 'Olá! Recebi o e-mail.' } },
+    })
+    expect(sendLeadEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ whatsappCta: { phone: '5511999999999', text: 'Olá! Recebi o e-mail.' } }),
+    )
+  })
 })
 
 describe('buildInvoiceMessageText — resumo de cobrança para WhatsApp/SMS', () => {

@@ -326,12 +326,14 @@ export async function sendAcrossChannels(params: {
   subject?: string
   personaName?: string
   templateKey?: string | null
+  /** Botão "Falar agora no WhatsApp" no e-mail — só na prospecção fria (ver triggerFirstContact em lib/leads/lead-intake.ts). */
+  whatsappCta?: { phone: string; text: string } | null
 }): Promise<SendAcrossChannelsResult> {
   const attempts = await sendToLeadChannels({
     unit: params.unit,
     lead: params.lead,
     text: params.text,
-    context: { subject: params.subject, personaName: params.personaName },
+    context: { subject: params.subject, personaName: params.personaName, whatsappCta: params.whatsappCta },
   })
 
   const sentAt = new Date().toISOString()
@@ -351,6 +353,28 @@ export async function sendAcrossChannels(params: {
   return { anySent: attempts.some((a) => a.ok), attempts }
 }
 
+const AD_SOURCE_LABELS: Record<string, string> = {
+  meta_lead_ad: 'um anúncio no Facebook/Instagram (Meta Ads)',
+  google_lead_ad: 'um anúncio no Google Ads',
+}
+
+/**
+ * Descreve de onde veio o lead para o Sales Rep citar isso já na primeira
+ * mensagem (item 3 do pedido de não-bloqueio do WhatsApp): contato direto
+ * por WhatsApp só é seguro quando a mensagem reconhece o interesse que o
+ * próprio lead já demonstrou — nunca pode parecer uma abordagem fria não
+ * solicitada, que é o que gera denúncia de spam. Prospecção fria (Google
+ * Maps, nunca chega a esta função com telefone — ver triggerFirstContact
+ * em lib/leads/lead-intake.ts) e cadastro manual pelo time não têm um
+ * interesse específico do lead para citar, então devolvem null.
+ */
+function describeLeadOrigin(lead: Pick<Lead, 'source' | 'notes'>): string | null {
+  if (lead.source === 'google_maps' || lead.source === 'manual') return null
+  const label = AD_SOURCE_LABELS[lead.source] ?? `um formulário/canal específico (origem: "${lead.source}")`
+  const notes = lead.notes?.trim() ? `, com esta informação adicional: "${lead.notes.trim()}"` : ''
+  return `${label}${notes}`
+}
+
 export async function generateFirstContactMessage(
   agentConfig: AgentConfig,
   unit: Unit,
@@ -359,13 +383,20 @@ export async function generateFirstContactMessage(
   const apiKey = getOpenAIApiKey()
   if (!apiKey) throw new Error('OPENAI_API_KEY não está configurada.')
 
+  const leadOrigin = describeLeadOrigin(lead)
+
   const systemPrompt = [
     buildSystemPrompt(agentConfig, unit, undefined, undefined, undefined, lead.enrichment_data),
     `Escreva a mensagem de primeiro contato para a empresa "${lead.company_name}"${lead.sector ? `, do setor de ${lead.sector}` : ''}.`,
     lead.enrichment_data?.summary || lead.enrichment_data?.website
       ? 'Personalize a mensagem com base na pesquisa sobre esta empresa: mostre que você entende o que ela faz e conecte com o que oferecemos, em vez de uma abertura genérica.'
       : 'Apresente-se, explique brevemente o motivo do contato e pergunte se pode compartilhar mais informações.',
-  ].join(' ')
+    leadOrigin
+      ? `Este lead veio de ${leadOrigin} — deixe isso claro logo no início da mensagem, mostrando que você está respondendo ao interesse que ele mesmo demonstrou. Nunca escreva como se fosse uma abordagem fria/não solicitada: isso é essencial para não ser denunciado como spam no WhatsApp.`
+      : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
 
   return generateChatReply({
     apiKey,
