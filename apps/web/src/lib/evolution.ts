@@ -36,6 +36,17 @@ export class EvolutionApiError extends Error {
   }
 }
 
+/**
+ * Sem timeout, um `fetch` para a Evolution API que trava (não erra, só não
+ * responde) prende o webhook de mensagens até o maxDuration da rota (60s) —
+ * a Evolution API então nunca recebe 200 a tempo e reentrega a mesma
+ * mensagem, o exato padrão de reprocessamento/resposta duplicada que causou
+ * o bloqueio anterior do número (ver comentário em app/api/webhooks/whatsapp/route.ts).
+ * AbortSignal.timeout garante que toda chamada estoura como erro normal
+ * (tratado pelos try/catch já existentes) bem antes desse limite.
+ */
+const EVOLUTION_FETCH_TIMEOUT_MS = 15000
+
 async function evolutionFetch(
   config: EvolutionUnitConfig,
   path: string,
@@ -49,6 +60,7 @@ async function evolutionFetch(
       ...init?.headers,
     },
     cache: 'no-store',
+    signal: init?.signal ?? AbortSignal.timeout(EVOLUTION_FETCH_TIMEOUT_MS),
   })
 
   const text = await response.text()
@@ -106,6 +118,7 @@ export async function syncWhatsappPhoneIfConnected(
     const res = await fetch(`${config.apiUrl}/instance/fetchInstances`, {
       headers: { apikey: config.apiKey },
       cache: 'no-store',
+      signal: AbortSignal.timeout(EVOLUTION_FETCH_TIMEOUT_MS),
     })
     if (!res.ok) {
       await logSystemEvent(supabase, {
