@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { PLAN_PRICING, isLocale, type Locale, type PaidPlanSlug } from '@/lib/i18n/config'
-import { sendWelcomeEmail } from '@/lib/email'
+import { sendWelcomeEmail, sendPaymentGateBlockedEmail } from '@/lib/email'
+import { isPaymentPlatformConfigured, type PaymentRegion } from '@/lib/payments/gateway-status'
+import { logSystemEvent } from '@/lib/system-events'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,6 +26,8 @@ const ERRORS: Record<Locale, Record<string, string>> = {
     accessFailed: 'Não foi possível liberar seu acesso. Tente novamente.',
     authFailed: 'Não foi possível criar sua conta de acesso. Tente novamente.',
     enterprise: 'O plano Enterprise é sob consulta — fale com a gente: suporte@alizo.com.br',
+    paymentUnavailable:
+      'Nossa plataforma de pagamentos para o Brasil ainda está em configuração. Para garantir seu acesso agora, fale com a gente: suporte@alizo.com.br — ativamos sua conta manualmente enquanto isso.',
   },
   en: {
     unavailable: 'Automatic signup is unavailable right now. Contact us: suporte@alizo.com.br',
@@ -35,6 +39,8 @@ const ERRORS: Record<Locale, Record<string, string>> = {
     accessFailed: 'We could not grant your access. Please try again.',
     authFailed: 'We could not create your login account. Please try again.',
     enterprise: 'The Enterprise plan is priced on request — contact us: suporte@alizo.com.br',
+    paymentUnavailable:
+      'Our payment platform for the US is still being set up. To lock in your access now, contact us: suporte@alizo.com.br — we will activate your account manually in the meantime.',
   },
 }
 
@@ -93,6 +99,33 @@ export async function POST(request: Request) {
   const { data: existingUser } = await service.from('users').select('id').ilike('email', email).maybeSingle()
   if (existingUser) {
     return NextResponse.json({ error: err.emailTaken }, { status: 409 })
+  }
+
+  // Trava de compra: sem processadora ativa pra essa região, não cria conta —
+  // orienta a falar com o suporte e notifica a Alizo na hora (ver
+  // lib/payments/gateway-status.ts). Some sozinha assim que o super admin
+  // marcar uma processadora como ativa em Dashboard → Vendas → Pagamentos.
+  const region: PaymentRegion = locale === 'en' ? 'US' : 'BR'
+  if (!(await isPaymentPlatformConfigured(service, region))) {
+    const { data: admins } = await service
+      .from('users')
+      .select('email')
+      .eq('role', 'super_admin')
+      .eq('is_active', true)
+    const adminEmails = (admins ?? []).map((a) => a.email).filter((e): e is string => !!e)
+
+    await Promise.all([
+      logSystemEvent(service, {
+        level: 'warning',
+        source: 'checkout',
+        eventType: 'payment_gate_blocked',
+        message: `Tentativa de compra bloqueada: nenhuma processadora ativa para a região ${region}.`,
+        metadata: { name, email, phone, plan, region },
+      }),
+      ...adminEmails.map((to) => sendPaymentGateBlockedEmail({ to, region, plan, name, email, phone })),
+    ])
+
+    return NextResponse.json({ error: err.paymentUnavailable }, { status: 503 })
   }
 
   // Slug único para a org

@@ -29,6 +29,15 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null; count?: num
     this.filters.push([key, value])
     return this
   }
+  // Fake simplificado: só cobre o uso real do produto (busca de e-mail
+  // exato, case-insensitive) — não interpreta padrões % de LIKE de verdade.
+  ilike(key: string, value: unknown) {
+    this.filters.push([
+      key,
+      { __ilike: typeof value === 'string' ? value.toLowerCase() : value } as unknown,
+    ])
+    return this
+  }
   not() {
     return this
   }
@@ -70,6 +79,11 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null; count?: num
     return this.filters.every(([key, value]) => {
       if (value && typeof value === 'object' && '__in' in (value as Record<string, unknown>)) {
         return (value as { __in: Set<unknown> }).__in.has(row[key])
+      }
+      if (value && typeof value === 'object' && '__ilike' in (value as Record<string, unknown>)) {
+        const target = (value as { __ilike: unknown }).__ilike
+        const cell = row[key]
+        return typeof cell === 'string' && typeof target === 'string' && cell.toLowerCase() === target
       }
       return row[key] === value
     })

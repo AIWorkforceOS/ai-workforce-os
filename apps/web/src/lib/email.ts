@@ -143,6 +143,38 @@ export async function sendTechnicalAlertEmail(params: {
 }
 
 /**
+ * Aviso ao dono da Alizo (super admin) quando o checkout self-service bloqueia
+ * uma tentativa de compra por falta de processadora ativa naquela região —
+ * ver lib/payments/gateway-status.ts. Dispara junto com o logSystemEvent do
+ * bloqueio, então "IMEDIATA" aqui só depende do Resend estar configurado.
+ * Mesmo padrão best-effort de sendTechnicalAlertEmail — nunca lança.
+ */
+export async function sendPaymentGateBlockedEmail(params: {
+  to: string
+  region: 'BR' | 'US'
+  plan: string
+  name: string
+  email: string
+  phone: string | null
+}): Promise<SendResult> {
+  const from = defaultFrom()
+  if (!from) return { ok: false, error: 'EMAIL_FROM_DOMAIN não está configurada.' }
+
+  return sendEmail({
+    to: params.to,
+    from,
+    subject: `⚠️ Tentativa de compra bloqueada — sem processadora ativa (${params.region})`,
+    html: `
+      <p>Alguém tentou assinar o plano <strong>${escapeHtml(params.plan)}</strong> (região <strong>${params.region}</strong>) pelo checkout, mas o cadastro foi bloqueado porque não há processadora de pagamento ativa para essa região ainda.</p>
+      <p><strong>Nome:</strong> ${escapeHtml(params.name)}</p>
+      <p><strong>E-mail:</strong> ${escapeHtml(params.email)}</p>
+      ${params.phone ? `<p><strong>Telefone/WhatsApp:</strong> ${escapeHtml(params.phone)}</p>` : ''}
+      <p>A pessoa recebeu a orientação de falar com suporte@alizo.com.br para finalizar manualmente. Assim que uma processadora for marcada como ativa em Dashboard → Vendas → Pagamentos, o cadastro automático volta a funcionar sozinho para essa região.</p>
+    `,
+  })
+}
+
+/**
  * E-mail genérico do Recruiter Employee (handoff, briefing de busca
  * externa, escalações de processo). Mesmo Resend/from dos demais.
  */
@@ -256,12 +288,30 @@ function salesFrom(displayName: string): string | null {
  * conversa usado no WhatsApp/SMS (lib/conversation-engine.ts); aqui só
  * viramos cada linha em um parágrafo.
  */
+/**
+ * Botão "Falar agora no WhatsApp" (wa.me) para o e-mail de prospecção fria:
+ * abre o WhatsApp do PRÓPRIO LEAD com uma mensagem pronta PARA a unidade,
+ * que o lead então manda por conta própria — o primeiro toque real no
+ * WhatsApp sempre parte do lead, nunca da unidade (ver triggerFirstContact
+ * em lib/leads/lead-intake.ts, que é quem decide quando incluir isto).
+ */
+export function buildWhatsappCtaHtml(cta: { phone: string; text: string }): string {
+  const href = `https://wa.me/${cta.phone.replace(/\D/g, '')}?text=${encodeURIComponent(cta.text)}`
+  return `
+    <div style="margin-top:24px;text-align:center;">
+      <a href="${escapeHtml(href)}" style="display:inline-block;padding:14px 28px;border-radius:999px;background:#25d366;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;">Falar agora no WhatsApp</a>
+    </div>
+  `
+}
+
 function buildBrandedEmailHtml(params: {
   unitName: string
   logoUrl: string | null
   bodyText: string
   /** Título do material da biblioteca de anexos (migration 036) anexado a este e-mail, se houver. */
   attachmentTitle?: string | null
+  /** Presente só na prospecção fria (Google Maps) — ver SendContext.whatsappCta. */
+  whatsappCta?: { phone: string; text: string } | null
 }): string {
   const paragraphs = params.bodyText
     .split(/\n+/)
@@ -280,6 +330,16 @@ function buildBrandedEmailHtml(params: {
        </div>`
     : ''
 
+  const whatsappCtaBlock = params.whatsappCta ? buildWhatsappCtaHtml(params.whatsappCta) : ''
+
+  // Convidando explicitamente a responder por e-mail é o comportamento
+  // padrão; quando há o botão de WhatsApp (prospecção fria), o rodapé
+  // aponta pro botão em vez disso — não faz sentido pedir pra responder
+  // um e-mail de abordagem fria (risco maior de cair em spam do lead).
+  const footerText = params.whatsappCta
+    ? 'Este e-mail não recebe respostas — para continuar a conversa, clique no botão acima e fale com a gente pelo WhatsApp.'
+    : `Mensagem enviada por ${escapeHtml(params.unitName)}. Basta responder este e-mail para continuar a conversa.`
+
   return `
     <div style="background:#f1f5f9;padding:32px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
       <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;">
@@ -289,9 +349,10 @@ function buildBrandedEmailHtml(params: {
         <div style="padding:32px;">
           ${paragraphs}
           ${attachmentBlock}
+          ${whatsappCtaBlock}
         </div>
         <div style="padding:16px 32px;background:#f8fafc;border-top:1px solid #e2e8f0;">
-          <p style="margin:0;font-size:12px;color:#94a3b8;">Mensagem enviada por ${escapeHtml(params.unitName)}. Basta responder este e-mail para continuar a conversa.</p>
+          <p style="margin:0;font-size:12px;color:#94a3b8;">${footerText}</p>
         </div>
       </div>
     </div>
@@ -557,6 +618,8 @@ export async function sendLeadEmail(params: {
   replyTo?: string | null
   /** PDF da biblioteca de anexos (migration 036) a anexar de verdade neste e-mail via Resend. */
   attachment?: { title: string; url: string; fileName?: string | null } | null
+  /** Botão "Falar agora no WhatsApp" — só na prospecção fria (Google Maps), ver SendContext.whatsappCta. */
+  whatsappCta?: { phone: string; text: string } | null
 }): Promise<SendResult> {
   const from = salesFrom(`${params.personaName} · ${params.unitName}`)
   if (!from) return { ok: false, error: 'EMAIL_FROM_DOMAIN não está configurada.' }
@@ -576,6 +639,7 @@ export async function sendLeadEmail(params: {
       logoUrl: params.logoUrl,
       bodyText: params.bodyText,
       attachmentTitle: params.attachment?.title ?? null,
+      whatsappCta: params.whatsappCta ?? null,
     }),
     replyTo: params.replyTo,
     attachments,

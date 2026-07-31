@@ -21,6 +21,7 @@ export type SystemEventSource =
   | 'invoices'
   | 'content'
   | 'seo'
+  | 'checkout'
 
 export type SystemEventInput = {
   level: SystemEventLevel
