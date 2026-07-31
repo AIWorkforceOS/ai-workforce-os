@@ -83,16 +83,43 @@ export async function triggerFirstContact(supabase: SupabaseClient, unit: Unit, 
   const sentToday = await countSentToday(supabase, unit.id)
   if (sentToday >= config.daily_limit) return false
 
+  // Claim atômico: reivindica o lead (status 'new' -> 'contacting') ANTES
+  // de gerar/enviar a mensagem, condicionado ao status ainda ser 'new'.
+  // Sem isso, duas execuções concorrentes sobre o mesmo lead (ex.: dois
+  // crons de prospecção sobrepostos — prospecting/engine.ts relê leads
+  // 'new' de rodadas anteriores — ou um cron rodando junto de uma criação
+  // manual/webhook) passariam pelas checagens acima ao mesmo tempo e
+  // mandariam a mesma mensagem duas vezes: a rajada de duplicidade que já
+  // colocou o WhatsApp da empresa em risco de bloqueio pela Meta antes (ver
+  // commit 95d0d03). Se nenhuma linha for afetada, outra execução já
+  // reivindicou este lead — desiste sem enviar nada.
+  const { data: claimedLead } = await supabase
+    .from('leads')
+    .update({ status: 'contacting' })
+    .eq('id', lead.id)
+    .eq('status', 'new')
+    .select('id')
+    .maybeSingle()
+  if (!claimedLead) return false
+
+  const releaseClaim = () => supabase.from('leads').update({ status: 'new' }).eq('id', lead.id)
+
   try {
     const enrichedLead = await ensureLeadEnrichment(supabase, lead)
 
     // Pesquisa não achou e-mail de contato: prospecção fria não tem para
     // onde mandar (nunca cai para WhatsApp/SMS), então não há primeiro
     // contato possível agora — o lead fica pendente para contato manual.
-    if (coldLead && !enrichedLead.email) return false
+    if (coldLead && !enrichedLead.email) {
+      await releaseClaim()
+      return false
+    }
 
     const message = await generateFirstContactMessage(config, unit, enrichedLead)
-    if (!message) return false
+    if (!message) {
+      await releaseClaim()
+      return false
+    }
 
     const { anySent } = await sendAcrossChannels({
       supabase,
@@ -107,7 +134,10 @@ export async function triggerFirstContact(supabase: SupabaseClient, unit: Unit, 
       templateKey: 'primeiro_contato',
       whatsappCta: coldLead ? buildWhatsappCta(unit) : null,
     })
-    if (!anySent) return false
+    if (!anySent) {
+      await releaseClaim()
+      return false
+    }
 
     const sentAt = new Date().toISOString()
     await supabase.from('leads').update({ status: 'contacted', last_contacted_at: sentAt }).eq('id', lead.id)
@@ -119,6 +149,7 @@ export async function triggerFirstContact(supabase: SupabaseClient, unit: Unit, 
     )
     return true
   } catch (error) {
+    await releaseClaim()
     await logSystemEvent(supabase, {
       level: 'error',
       source: channelType === 'sms' ? 'twilio' : 'evolution',

@@ -98,7 +98,7 @@ export async function POST(request: Request) {
       // da entrevista de contratação) em vez de uma mensagem fixa.
       await createAdLead(supabase, {
         unit: unitData as Unit,
-        lead: { name, phone, email, source: 'meta_lead_ad' },
+        lead: { name, phone, email, source: 'meta_lead_ad', externalLeadId: leadgenId },
       })
     }
   }

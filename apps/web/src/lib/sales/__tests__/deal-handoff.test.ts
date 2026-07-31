@@ -89,6 +89,7 @@ function makeLead(overrides: Partial<Lead>): Lead {
     source: 'google_maps',
     status: 'replied',
     google_place_id: null,
+    external_lead_id: null,
     enrichment_data: null,
     enriched_at: null,
     notes: null,

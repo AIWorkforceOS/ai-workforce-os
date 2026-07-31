@@ -20,6 +20,16 @@ export type AdLeadInput = {
   /** 'meta_lead_ad' | 'google_lead_ad' | 'smarter_landing_franquia' | 'smarter_site_publico' | ... */
   source: string
   notes?: string | null
+  /**
+   * id externo do lead no provedor de anúncio (leadgen_id do Meta, lead_id
+   * do Google Ads). Meta e Google reentregam o webhook quando o handler não
+   * responde 200 a tempo — sem checar este id antes de inserir, a reentrega
+   * criaria um segundo lead e disparava um segundo primeiro contato pro
+   * mesmo lead (mesmo padrão de risco de bloqueio já corrigido no webhook
+   * do WhatsApp, ver commit 95d0d03). Reforçado por índice único no banco
+   * (migration 050).
+   */
+  externalLeadId?: string | null
 }
 
 export async function createAdLead(
@@ -32,6 +42,17 @@ export async function createAdLead(
   const normalizedPhone = input.phone.replace(/\D/g, '')
   if (!normalizedPhone) return null
 
+  if (input.externalLeadId) {
+    const { data: existingLead } = await supabase
+      .from('leads')
+      .select('id')
+      .eq('unit_id', unit.id)
+      .eq('source', input.source)
+      .eq('external_lead_id', input.externalLeadId)
+      .maybeSingle()
+    if (existingLead) return null
+  }
+
   const { data: insertedLead, error } = await supabase
     .from('leads')
     .insert({
@@ -42,6 +63,7 @@ export async function createAdLead(
       email: input.email,
       source: input.source,
       notes: input.notes ?? null,
+      external_lead_id: input.externalLeadId ?? null,
       status: 'new',
     })
     .select()

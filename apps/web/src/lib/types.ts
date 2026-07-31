@@ -208,6 +208,8 @@ export type AgentConfig = {
 
 export type LeadStatus =
   | 'new'
+  /** claim atômico transitório durante o envio do primeiro contato (lib/leads/lead-intake.ts) — nunca fica assim por muito tempo: vira 'contacted' no sucesso ou volta pra 'new' se falhar. */
+  | 'contacting'
   | 'contacted'
   | 'replied'
   | 'negotiating'
@@ -236,6 +238,8 @@ export type Lead = {
   source: string
   status: LeadStatus
   google_place_id: string | null
+  /** id externo do lead no provedor de anúncio (leadgen_id do Meta, lead_id do Google Ads) — usado para não reprocessar reentrega do webhook (migration 050). */
+  external_lead_id: string | null
   /** Pesquisa automática (Maps + site) antes do primeiro contato (migration 037). Null = ainda não pesquisado ou pesquisa não achou nada. */
   enrichment_data: LeadEnrichmentData | null
   enriched_at: string | null

@@ -108,7 +108,8 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null; count?: num
     if (this.mode === 'update') {
       const matched = table.filter((row) => this.matches(row))
       for (const row of matched) Object.assign(row, this.payload)
-      return { data: matched, error: null }
+      const data = this.singleMode !== 'none' ? (matched[0] ?? null) : matched
+      return { data, error: null, count: matched.length }
     }
 
     let rows = table.filter((row) => this.matches(row))

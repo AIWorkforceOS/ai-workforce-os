@@ -56,6 +56,11 @@ export async function POST(request: Request) {
     return typeof value === 'string' && value.trim() ? value : null
   }
 
+  // lead_id identifica o lead de forma única no Google Ads — usado para
+  // não reprocessar reentrega do webhook (ver AdLeadInput.externalLeadId).
+  const externalLeadId =
+    typeof body.lead_id === 'string' || typeof body.lead_id === 'number' ? String(body.lead_id) : null
+
   await createAdLead(supabase, {
     unit: unitData as Unit,
     lead: {
@@ -63,6 +68,7 @@ export async function POST(request: Request) {
       phone: findColumn('PHONE_NUMBER'),
       email: findColumn('EMAIL'),
       source: 'google_lead_ad',
+      externalLeadId,
     },
   })
 

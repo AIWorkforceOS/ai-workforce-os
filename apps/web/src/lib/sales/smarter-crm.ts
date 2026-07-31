@@ -101,6 +101,10 @@ export async function updateSmarterCrmLead(
 /** Tradução do status fixo do Alizo (leads.status) para o par etapa/situação fixo do CRM da Smarter. */
 const LEAD_STATUS_TO_SMARTER: Record<LeadStatus, { etapa: SmarterCrmEtapa | null; situacao: SmarterCrmSituacao }> = {
   new: { etapa: 'novo_lead', situacao: 'ativo' },
+  // Claim atômico transitório (lib/leads/lead-intake.ts) — nunca deveria
+  // chegar aqui de fato (o sync final sempre usa status já resolvido para
+  // 'contacted' ou 'new'), mas precisa de um mapeamento por exaustividade.
+  contacting: { etapa: 'novo_lead', situacao: 'ativo' },
   contacted: { etapa: 'primeiro_contato', situacao: 'ativo' },
   replied: { etapa: 'apresentacao', situacao: 'ativo' },
   negotiating: { etapa: 'negociacao', situacao: 'ativo' },
