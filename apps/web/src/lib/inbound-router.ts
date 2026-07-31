@@ -9,7 +9,7 @@ import { buildRecruiterBasePrompt } from '@/lib/recruiter/prompts'
 import { sendToCompany } from '@/lib/recruiter/messaging'
 import { logDecision } from '@/lib/recruiter/log'
 import { handleSalesDealHandoff } from '@/lib/sales/deal-handoff'
-import { processReceptionistInbound } from '@/lib/receptionist/engine'
+import { processReceptionistInbound, processReceptionistProspectInbound } from '@/lib/receptionist/engine'
 import { logSystemEvent } from '@/lib/system-events'
 import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
 import { getMessagingChannel } from '@/lib/channels/messaging-channel'
@@ -670,4 +670,134 @@ export async function routeInboundMessage(params: InboundRouteParams): Promise<R
   }
 
   return { ok: true, dealHandoffReady: result.dealHandoffReady }
+}
+
+/** Acha um lead existente pelo mesmo telefone/e-mail nesta unidade, ou cria um novo com source='receptionist_inbound' — identidade de quem escreve na linha da Recepcionista sem ser cliente cadastrado (franqueado, lead de franquia, estudante, etc.). */
+async function findOrCreateReceptionistLead(
+  supabase: SupabaseClient,
+  unit: Unit,
+  incomingPhone: string | null,
+  incomingEmail: string | null,
+): Promise<Lead | null> {
+  if (!incomingPhone && !incomingEmail) return null
+
+  const { data: leadsData } = await supabase.from('leads').select('*').eq('unit_id', unit.id)
+  const existing = ((leadsData as Lead[] | null) ?? []).find((row) => identifierMatches(row, incomingPhone, incomingEmail))
+  if (existing) return existing
+
+  const label = incomingPhone ? `Contato (${incomingPhone.slice(-4)})` : (incomingEmail ?? 'Contato')
+  const { data: inserted } = await supabase
+    .from('leads')
+    .insert({
+      unit_id: unit.id,
+      phone: incomingPhone,
+      email: incomingEmail,
+      company_name: label,
+      contact_name: null,
+      source: 'receptionist_inbound',
+      status: 'new',
+    })
+    .select()
+    .single()
+
+  return (inserted as Lead | null) ?? null
+}
+
+export type ReceptionistChannelRouteParams = {
+  supabase: SupabaseClient
+  unit: Unit
+  channel: ChannelType
+  incomingPhone: string | null
+  incomingEmail: string | null
+  text: string
+  externalMessageId: string | null
+  sentAt: string
+  wasAudioMessage?: boolean
+}
+
+/**
+ * Roteamento direto pra Recepcionista, usado quando a mensagem chega numa
+ * instância WhatsApp dedicada a ela (migration 051, unit_whatsapp_channels
+ * agent_type='receptionist') — ver app/api/webhooks/whatsapp/route.ts.
+ * Diferente da cascata genérica de routeInboundMessage (Rotas 1-4,
+ * pensada para um número compartilhado entre vários funcionários), aqui
+ * TODA mensagem é dela: cliente cadastrado segue o mesmo fluxo de sempre
+ * (Rota 2.5), e quem não é cliente cadastrado vira um Lead
+ * (findOrCreateReceptionistLead) tratado pela própria Recepcionista
+ * (processReceptionistProspectInbound) — nunca cai na triagem genérica
+ * "é candidato/empresa/cliente?" da Rota 3, que existia justamente porque
+ * o número era compartilhado e ambíguo.
+ */
+export async function routeReceptionistChannelMessage(
+  params: ReceptionistChannelRouteParams,
+): Promise<Record<string, unknown>> {
+  const { supabase, unit: unitRow, channel, incomingPhone, incomingEmail, text, externalMessageId, sentAt, wasAudioMessage } = params
+
+  if (externalMessageId) {
+    const duplicate = await isDuplicateInboundMessage(supabase, unitRow.id, externalMessageId)
+    if (duplicate) {
+      await logSystemEvent(supabase, {
+        level: 'info',
+        source: 'system',
+        eventType: 'inbound_message_duplicate_skipped',
+        message: `Mensagem inbound duplicada ignorada (external_message_id="${externalMessageId}") — provável reentrega de webhook.`,
+        orgId: unitRow.org_id,
+        unitId: unitRow.id,
+      })
+      return { ok: true, duplicate: true }
+    }
+  }
+
+  const recipient = incomingPhone ?? incomingEmail
+  if (!recipient) return { ok: true, routed: 'receptionist', skipped: 'no_recipient' }
+
+  const customer = await findCustomerContext(supabase, unitRow, incomingPhone, incomingEmail)
+  if (customer) {
+    await supabase.from('customer_messages').insert({
+      customer_id: customer.id,
+      unit_id: unitRow.id,
+      channel,
+      direction: 'inbound',
+      content: text,
+      external_message_id: externalMessageId,
+      status: 'delivered',
+      sent_at: sentAt,
+    })
+
+    const result = await processReceptionistInbound({
+      supabase,
+      unit: unitRow,
+      customer,
+      incomingText: text,
+      channel,
+      recipient,
+      wasAudioMessage,
+    })
+    return { ok: true, routed: 'receptionist', handled: result.handled }
+  }
+
+  const lead = await findOrCreateReceptionistLead(supabase, unitRow, incomingPhone, incomingEmail)
+  if (!lead) return { ok: true, routed: 'receptionist', skipped: 'lead_create_failed' }
+
+  await supabase.from('conversations').insert({
+    lead_id: lead.id,
+    unit_id: unitRow.id,
+    channel,
+    direction: 'inbound',
+    content: text,
+    external_message_id: externalMessageId,
+    status: 'delivered',
+    sent_at: sentAt,
+  })
+
+  const result = await processReceptionistProspectInbound({
+    supabase,
+    unit: unitRow,
+    lead,
+    incomingText: text,
+    channel,
+    recipient,
+    wasAudioMessage,
+  })
+  return { ok: true, routed: 'receptionist_prospect', handled: result.handled }
 }

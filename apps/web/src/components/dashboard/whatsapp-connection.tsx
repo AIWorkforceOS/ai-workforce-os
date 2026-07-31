@@ -23,16 +23,28 @@ const STATUS_STYLE: Record<Status, { bg: string; color: string }> = {
   loading: { bg: 'rgba(255,255,255,0.06)', color: '#64748b' },
 }
 
-export function WhatsAppConnection({ unitId }: { unitId: string }) {
+export function WhatsAppConnection({
+  unitId,
+  agentType,
+  label,
+}: {
+  unitId: string
+  /** Qual funcionário está conectando este número (migration 051) — omitido, usa o número único compartilhado histórico da unidade. */
+  agentType?: string
+  /** Rótulo do funcionário exibido no card (ex.: "Ana · Recepcionista") — evita ambiguidade quando a unidade tem mais de um número. */
+  label?: string
+}) {
   const [status, setStatus] = useState<Status>('loading')
   const [qrCode, setQrCode] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  const statusUrl = `/api/units/${unitId}/whatsapp/status${agentType ? `?agentType=${encodeURIComponent(agentType)}` : ''}`
+
   async function fetchStatus() {
     try {
-      const res = await fetch(`/api/units/${unitId}/whatsapp/status`)
+      const res = await fetch(statusUrl)
       const data = await res.json()
       if (!res.ok) {
         setStatus('error')
@@ -54,7 +66,7 @@ export function WhatsAppConnection({ unitId }: { unitId: string }) {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current)
     }
-  }, [unitId])
+  }, [unitId, agentType])
 
   function startPolling() {
     if (pollRef.current) clearInterval(pollRef.current)
@@ -71,7 +83,11 @@ export function WhatsAppConnection({ unitId }: { unitId: string }) {
     setBusy(true)
     setError(null)
     try {
-      const res = await fetch(`/api/units/${unitId}/whatsapp/connect`, { method: 'POST' })
+      const res = await fetch(`/api/units/${unitId}/whatsapp/connect`, {
+        method: 'POST',
+        headers: agentType ? { 'Content-Type': 'application/json' } : undefined,
+        body: agentType ? JSON.stringify({ agentType }) : undefined,
+      })
       const data = await res.json()
       if (!res.ok) {
         setError(data.error ?? 'Erro ao conectar.')
@@ -91,7 +107,11 @@ export function WhatsAppConnection({ unitId }: { unitId: string }) {
     setBusy(true)
     setError(null)
     try {
-      const res = await fetch(`/api/units/${unitId}/whatsapp/disconnect`, { method: 'POST' })
+      const res = await fetch(`/api/units/${unitId}/whatsapp/disconnect`, {
+        method: 'POST',
+        headers: agentType ? { 'Content-Type': 'application/json' } : undefined,
+        body: agentType ? JSON.stringify({ agentType }) : undefined,
+      })
       const data = await res.json()
       if (!res.ok) {
         setError(data.error ?? 'Erro ao desconectar.')
@@ -110,9 +130,11 @@ export function WhatsAppConnection({ unitId }: { unitId: string }) {
     <Card className="flex w-full flex-col gap-4 p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-sm font-bold text-white">WhatsApp</h2>
+          <h2 className="text-sm font-bold text-white">{label ? `WhatsApp · ${label}` : 'WhatsApp'}</h2>
           <p className="mt-1 text-sm text-slate-400">
-            Conecte o número desta unidade escaneando um QR code — igual ao WhatsApp Web.
+            {label
+              ? `Conecte o número deste funcionário escaneando um QR code — igual ao WhatsApp Web. Use um número diferente do dos outros funcionários desta unidade.`
+              : 'Conecte o número desta unidade escaneando um QR code — igual ao WhatsApp Web.'}
           </p>
         </div>
         <span className="rounded-full px-2.5 py-1 text-xs font-bold" style={STATUS_STYLE[status]}>

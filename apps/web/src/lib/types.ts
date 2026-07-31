@@ -94,6 +94,25 @@ export type Unit = {
   updated_at: string
 }
 
+/**
+ * Instância WhatsApp dedicada a um funcionário (agent_type) dentro de uma
+ * unidade (migration 051) — permite que a mesma unidade tenha vários
+ * números reais, cada um respondido por um funcionário digital diferente
+ * (ex.: Sales Rep e Recepcionista). Unidades sem linha aqui para um
+ * agent_type caem no fallback histórico (units.evolution_instance_name/
+ * whatsapp_phone — ver resolveWhatsappChannel em lib/evolution.ts).
+ */
+export type UnitWhatsappChannel = {
+  id: string
+  org_id: string
+  unit_id: string
+  agent_type: string
+  evolution_instance_name: string
+  whatsapp_phone: string | null
+  created_at: string
+  updated_at: string
+}
+
 /** Como o valor padrão a pagar ao colaborador é interpretado (migration 030). */
 export type EmployeePayType = 'per_service' | 'per_hour' | 'per_day' | 'percent'
 

@@ -12,9 +12,14 @@ import type { AgentConfig, AgentTone, Unit } from '@/lib/types'
 // playbook 'receptionist') ensinou que exige decisão humana.
 //
 // Conectado a WhatsApp/SMS/e-mail de verdade via lib/receptionist/
-// engine.ts (processReceptionistInbound), roteado por
-// lib/inbound-router.ts sempre que o remetente bate com um cliente já
-// cadastrado (tabela customers). Este arquivo só fixa a
+// engine.ts, roteado por lib/inbound-router.ts sempre que o remetente
+// bate com um cliente já cadastrado (tabela customers — Rota 2.5). Quando
+// a unidade tem uma instância WhatsApp dedicada a ela (migration 051,
+// unit_whatsapp_channels), TODA mensagem que chega nesse número é dela
+// (ver routeReceptionistChannelMessage) — não só clientes cadastrados,
+// mas também franqueado com dúvida operacional, lead interessado em
+// comprar franquia, estudante perguntando sobre estágio, etc.
+// (processReceptionistProspectInbound). Este arquivo só fixa a
 // identidade/persona — a lógica de conversa (histórico, agenda,
 // handoff) vive no motor.
 
@@ -45,6 +50,7 @@ export function buildReceptionistSystemPrompt(
   return [
     `Você é ${agentConfig.persona_name}, o(a) AI Receptionist (recepcionista/gerente de operações) digital da unidade ${unit.name}${unit.region_city ? ` (${unit.region_city})` : ''}.`,
     'Sua função NÃO é vender nem recrutar — é organizar o atendimento e a operação do dia a dia: manter o cadastro de clientes em dia, resolver sozinho(a) o que for rotina e avisar um humano no que exigir decisão.',
+    'Você atende quem quer que escreva neste número, não só clientes já cadastrados: cliente cadastrado (o normal), franqueado com dúvida operacional ou problema no sistema (ajude como um humano ajudaria; se não souber resolver, diga com clareza que vai encaminhar para outro setor — nunca deixe a pessoa num loop sem resposta), lead interessado em comprar uma franquia (responda dúvidas gerais e sinalize para o time comercial quando o interesse ficar claro) ou estudante perguntando sobre estágio/vaga (idem, sinalizando para o time de recrutamento). Identifique pelo contexto da conversa quem está falando com você e ajuste o tom.',
     `Seu tom de comunicação deve ser ${TONE_LABEL[agentConfig.persona_tone]}.`,
     channelType === 'sms'
       ? 'Responda sempre de forma breve (no máximo 1-2 frases curtas, idealmente até 160 caracteres), sem usar markdown ou listas — cada mensagem é um SMS, e mensagens longas viram vários SMS e custam mais.'

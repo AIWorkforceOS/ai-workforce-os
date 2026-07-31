@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { ensureWebhookConfigured, getEvolutionConfig, getInstanceStatus, syncWhatsappPhoneIfConnected } from '@/lib/evolution'
+import { ensureWebhookConfigured, getInstanceStatus, legacyWhatsappChannel, resolveWhatsappChannel, syncWhatsappPhoneIfConnected } from '@/lib/evolution'
 import type { Unit } from '@/lib/types'
 
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+/** `?agentType=` (opcional): ver connect/route.ts — mesma disambiguação por funcionário. */
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
 
@@ -18,17 +19,20 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (!unit) {
     return NextResponse.json({ error: 'Unidade não encontrada.' }, { status: 404 })
   }
+  const unitRow = unit as Unit
 
-  const config = getEvolutionConfig(unit as Unit)
-  if (!config) {
+  const agentType = new URL(request.url).searchParams.get('agentType')
+  const channel = agentType ? await resolveWhatsappChannel(supabase, unitRow, agentType) : legacyWhatsappChannel(supabase, unitRow)
+
+  if (!channel) {
     return NextResponse.json({ status: 'not_configured' })
   }
 
   try {
-    const status = await getInstanceStatus(config)
+    const status = await getInstanceStatus(channel.config)
     if (status === 'open') {
-      await syncWhatsappPhoneIfConnected(supabase, unit as Unit, config)
-      await ensureWebhookConfigured(config)
+      await syncWhatsappPhoneIfConnected(supabase, unitRow, channel)
+      await ensureWebhookConfigured(channel.config)
     }
     return NextResponse.json({ status })
   } catch (error) {

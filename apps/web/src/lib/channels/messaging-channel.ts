@@ -229,15 +229,23 @@ export function getUnitChannelType(unit: Unit): MessagingChannelType {
  * configurado. `supabase` é opcional — só é usado pelo canal WhatsApp
  * para registrar em system_events o resultado de uma resposta em áudio
  * (ver SendContext.voiceReply); chamadas que nunca pedem voiceReply
- * podem omiti-lo.
+ * podem omiti-lo. `evolutionConfigOverride` força uma instância Evolution
+ * específica (canal dedicado a um agent_type — ver resolveWhatsappChannel
+ * em lib/evolution.ts) em vez do número compartilhado histórico da
+ * unidade; omitido, o comportamento é idêntico ao de antes desta opção
+ * existir.
  */
-export function getMessagingChannel(unit: Unit, supabase: SupabaseClient | null = null): MessagingChannel | null {
+export function getMessagingChannel(
+  unit: Unit,
+  supabase: SupabaseClient | null = null,
+  evolutionConfigOverride?: EvolutionUnitConfig | null,
+): MessagingChannel | null {
   if (getUnitChannelType(unit) === 'sms') {
     const config = getTwilioConfig(unit)
     return config ? new TwilioSmsChannel(config) : null
   }
 
-  const config = getEvolutionConfig(unit)
+  const config = evolutionConfigOverride ?? getEvolutionConfig(unit)
   return config ? new EvolutionWhatsAppChannel(config, unit, supabase) : null
 }
 

@@ -12,12 +12,16 @@ export type EvolutionUnitConfig = {
 /**
  * Returns Evolution API config for a unit.
  * Per-unit fields take precedence; falls back to global env vars.
- * Instance name auto-generated as `unit-{slug}` if not explicitly set.
+ * Instance name: usa `instanceNameOverride` quando informado (canal
+ * dedicado a um agent_type — ver resolveWhatsappChannel); senão cai no
+ * comportamento histórico (units.evolution_instance_name ou `unit-{slug}`
+ * auto-gerado) — mantém 100% dos chamadores existentes funcionando sem
+ * mudança nenhuma.
  */
-export function getEvolutionConfig(unit: Unit): EvolutionUnitConfig | null {
+export function getEvolutionConfig(unit: Unit, instanceNameOverride?: string): EvolutionUnitConfig | null {
   const apiUrl = unit.evolution_api_url || process.env.EVOLUTION_API_URL
   const apiKey = unit.evolution_api_key || process.env.EVOLUTION_API_KEY
-  const instanceName = unit.evolution_instance_name || `unit-${unit.slug}`
+  const instanceName = instanceNameOverride || unit.evolution_instance_name || `unit-${unit.slug}`
 
   if (!apiUrl || !apiKey) return null
 
@@ -25,6 +29,182 @@ export function getEvolutionConfig(unit: Unit): EvolutionUnitConfig | null {
     apiUrl: apiUrl.replace(/\/+$/, ''),
     apiKey,
     instanceName,
+  }
+}
+
+/**
+ * Canal WhatsApp resolvido para um (unit, agent_type) — ou o fallback
+ * histórico compartilhado quando o agent_type não tem instância dedicada
+ * (migration 051). `persistPhone` já vem amarrado a onde este canal
+ * específico deve gravar o número confirmado (unit_whatsapp_channels
+ * quando dedicado, units.whatsapp_phone quando fallback) — quem chama
+ * nunca precisa saber qual das duas tabelas é a certa.
+ */
+export type ResolvedWhatsappChannel = {
+  /** null = sem canal dedicado, usando o número compartilhado histórico da unidade. */
+  agentType: string | null
+  config: EvolutionUnitConfig
+  whatsappPhone: string | null
+  persistPhone: (phone: string) => Promise<void>
+}
+
+/**
+ * Resolve o canal WhatsApp de um funcionário específico dentro de uma
+ * unidade. Prioriza uma instância dedicada (unit_whatsapp_channels); sem
+ * ela, cai no número compartilhado histórico da unidade — assim,
+ * funcionários que nunca tiveram um canal dedicado configurado (ex.:
+ * Recruiter, na maioria das unidades hoje) continuam funcionando
+ * exatamente como antes desta migration existir.
+ */
+export async function resolveWhatsappChannel(
+  supabase: SupabaseClient,
+  unit: Unit,
+  agentType: string,
+): Promise<ResolvedWhatsappChannel | null> {
+  const { data } = await supabase
+    .from('unit_whatsapp_channels')
+    .select('evolution_instance_name, whatsapp_phone')
+    .eq('unit_id', unit.id)
+    .eq('agent_type', agentType)
+    .maybeSingle()
+
+  const dedicated = data as { evolution_instance_name: string; whatsapp_phone: string | null } | null
+
+  if (dedicated) {
+    const config = getEvolutionConfig(unit, dedicated.evolution_instance_name)
+    if (!config) return null
+    return {
+      agentType,
+      config,
+      whatsappPhone: dedicated.whatsapp_phone,
+      persistPhone: async (phone: string) => {
+        await supabase
+          .from('unit_whatsapp_channels')
+          .update({ whatsapp_phone: phone })
+          .eq('unit_id', unit.id)
+          .eq('agent_type', agentType)
+      },
+    }
+  }
+
+  return legacyWhatsappChannel(supabase, unit)
+}
+
+/** Canal WhatsApp compartilhado histórico da unidade (sem instância dedicada) — número em units.evolution_instance_name/whatsapp_phone. */
+export function legacyWhatsappChannel(supabase: SupabaseClient, unit: Unit): ResolvedWhatsappChannel | null {
+  const config = getEvolutionConfig(unit)
+  if (!config) return null
+  return {
+    agentType: null,
+    config,
+    whatsappPhone: unit.whatsapp_phone,
+    persistPhone: async (phone: string) => {
+      await supabase.from('units').update({ whatsapp_phone: phone }).eq('id', unit.id)
+    },
+  }
+}
+
+/**
+ * Resolve unidade + agent_type + canal a partir do nome da instância que
+ * recebeu a mensagem (webhook da Evolution API só manda `instance`, nunca
+ * qual unidade/funcionário). Prioriza uma instância dedicada
+ * (unit_whatsapp_channels — migration 051); sem ela, cai no número
+ * compartilhado histórico da unidade (units.evolution_instance_name),
+ * exatamente o comportamento de antes desta migration existir.
+ */
+export type WebhookWhatsappResolution = { unit: Unit; agentType: string | null; channel: ResolvedWhatsappChannel }
+
+export async function resolveWhatsappChannelByInstanceName(
+  supabase: SupabaseClient,
+  instanceName: string,
+): Promise<WebhookWhatsappResolution | null> {
+  const { data } = await supabase
+    .from('unit_whatsapp_channels')
+    .select('agent_type, whatsapp_phone, units(*)')
+    .eq('evolution_instance_name', instanceName)
+    .maybeSingle()
+
+  const dedicated = data as { agent_type: string; whatsapp_phone: string | null; units: Unit | null } | null
+
+  if (dedicated?.units) {
+    const unit = dedicated.units
+    const agentType = dedicated.agent_type
+    const config = getEvolutionConfig(unit, instanceName)
+    if (!config) return null
+    return {
+      unit,
+      agentType,
+      channel: {
+        agentType,
+        config,
+        whatsappPhone: dedicated.whatsapp_phone,
+        persistPhone: async (phone: string) => {
+          await supabase
+            .from('unit_whatsapp_channels')
+            .update({ whatsapp_phone: phone })
+            .eq('unit_id', unit.id)
+            .eq('agent_type', agentType)
+        },
+      },
+    }
+  }
+
+  const { data: legacyUnitData } = await supabase.from('units').select('*').eq('evolution_instance_name', instanceName).maybeSingle()
+  const legacyUnit = legacyUnitData as Unit | null
+  if (!legacyUnit) return null
+
+  const channel = legacyWhatsappChannel(supabase, legacyUnit)
+  if (!channel) return null
+  return { unit: legacyUnit, agentType: null, channel }
+}
+
+/**
+ * Garante que exista uma instância dedicada (unit_whatsapp_channels) para
+ * este (unit, agent_type), criando a linha (com instanceName auto-gerado
+ * `unit-{slug}-{agentType}`) se ainda não existir. Usada pela tela de
+ * conexão (POST .../whatsapp/connect) quando o cliente escolhe
+ * explicitamente qual funcionário está conectando — diferente de
+ * resolveWhatsappChannel, NUNCA cai no fallback compartilhado: conectar
+ * um agent_type sempre garante um número próprio para ele dali em diante.
+ */
+export async function ensureDedicatedWhatsappChannel(
+  supabase: SupabaseClient,
+  unit: Unit,
+  agentType: string,
+): Promise<ResolvedWhatsappChannel | null> {
+  const { data } = await supabase
+    .from('unit_whatsapp_channels')
+    .select('evolution_instance_name, whatsapp_phone')
+    .eq('unit_id', unit.id)
+    .eq('agent_type', agentType)
+    .maybeSingle()
+
+  const existing = data as { evolution_instance_name: string; whatsapp_phone: string | null } | null
+  const instanceName = existing?.evolution_instance_name || `unit-${unit.slug}-${agentType}`
+
+  if (!existing) {
+    if (!unit.org_id) return null
+    await supabase.from('unit_whatsapp_channels').insert({
+      org_id: unit.org_id,
+      unit_id: unit.id,
+      agent_type: agentType,
+      evolution_instance_name: instanceName,
+    })
+  }
+
+  const config = getEvolutionConfig(unit, instanceName)
+  if (!config) return null
+  return {
+    agentType,
+    config,
+    whatsappPhone: existing?.whatsapp_phone ?? null,
+    persistPhone: async (phone: string) => {
+      await supabase
+        .from('unit_whatsapp_channels')
+        .update({ whatsapp_phone: phone })
+        .eq('unit_id', unit.id)
+        .eq('agent_type', agentType)
+    },
   }
 }
 
@@ -86,7 +266,10 @@ export async function getInstanceStatus(config: EvolutionUnitConfig): Promise<Wh
 }
 
 /**
- * Persiste units.whatsapp_phone quando a instância está de fato conectada
+ * Persiste o telefone conectado (via channel.persistPhone — units.whatsapp_phone
+ * ou unit_whatsapp_channels.whatsapp_phone, conforme o canal seja o
+ * fallback compartilhado ou dedicado a um agent_type, ver
+ * resolveWhatsappChannel) quando a instância está de fato conectada
  * ('open') mas o número ainda não foi salvo — única fonte de verdade sobre
  * "WhatsApp conectado" pro resto do sistema (computeSetupStatus etc.).
  *
@@ -110,10 +293,11 @@ export async function getInstanceStatus(config: EvolutionUnitConfig): Promise<Wh
  */
 export async function syncWhatsappPhoneIfConnected(
   supabase: SupabaseClient,
-  unit: Pick<Unit, 'id' | 'whatsapp_phone' | 'org_id'>,
-  config: EvolutionUnitConfig,
+  unit: Pick<Unit, 'id' | 'org_id'>,
+  channel: ResolvedWhatsappChannel,
 ): Promise<string | null> {
-  if (unit.whatsapp_phone) return unit.whatsapp_phone
+  if (channel.whatsappPhone) return channel.whatsappPhone
+  const config = channel.config
   try {
     const res = await fetch(`${config.apiUrl}/instance/fetchInstances`, {
       headers: { apikey: config.apiKey },
@@ -155,7 +339,7 @@ export async function syncWhatsappPhoneIfConnected(
     const owner = instance.instance?.owner ?? instance.ownerJid
     const phone = owner?.split('@')[0] ?? null
     if (phone) {
-      await supabase.from('units').update({ whatsapp_phone: phone }).eq('id', unit.id)
+      await channel.persistPhone(phone)
     }
     return phone
   } catch (error) {

@@ -15,11 +15,14 @@ type WhatsStatus = 'open' | 'connecting' | 'close' | 'not_configured' | 'error' 
 
 export function WhatsAppConnectStep({
   unitId,
+  agentType,
   alreadyConnected,
   onConnected,
   connectedHint = 'Seu número já está ligado à plataforma.',
 }: {
   unitId: string
+  /** Qual funcionário está conectando este número (migration 051) — quando a unidade tem mais de um funcionário elegível a WhatsApp, evita ambiguidade sobre qual número o cliente está escaneando. Omitido, usa o número único compartilhado histórico da unidade. */
+  agentType?: string
   alreadyConnected: boolean
   onConnected: () => void
   /** texto abaixo de "WhatsApp conectado!" — customizável por quem chama (ex.: próximo passo do fluxo) */
@@ -31,9 +34,11 @@ export function WhatsAppConnectStep({
   const [busy, setBusy] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  const statusUrl = `/api/units/${unitId}/whatsapp/status${agentType ? `?agentType=${encodeURIComponent(agentType)}` : ''}`
+
   async function fetchStatus(): Promise<WhatsStatus> {
     try {
-      const res = await fetch(`/api/units/${unitId}/whatsapp/status`)
+      const res = await fetch(statusUrl)
       const data = await res.json()
       const s: WhatsStatus = res.ok ? data.status : 'error'
       setStatus(s)
@@ -49,13 +54,17 @@ export function WhatsAppConnectStep({
     return () => {
       if (pollRef.current) clearInterval(pollRef.current)
     }
-  }, [unitId]) // fetchStatus é estável por render; refetch só quando muda a unidade
+  }, [unitId, agentType]) // fetchStatus é estável por render; refetch só quando muda a unidade/funcionário
 
   async function handleConnect() {
     setBusy(true)
     setError(null)
     try {
-      const res = await fetch(`/api/units/${unitId}/whatsapp/connect`, { method: 'POST' })
+      const res = await fetch(`/api/units/${unitId}/whatsapp/connect`, {
+        method: 'POST',
+        headers: agentType ? { 'Content-Type': 'application/json' } : undefined,
+        body: agentType ? JSON.stringify({ agentType }) : undefined,
+      })
       const data = await res.json()
       if (!res.ok) {
         setError(data.error ?? 'Não foi possível gerar o QR code agora. Tente de novo em instantes.')

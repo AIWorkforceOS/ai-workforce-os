@@ -14,6 +14,14 @@ import { Badge, Card, KpiCard, PageHeader } from '@/components/ui/dashboard-ui'
 const CLOSED_JOB_STATUSES = ['closed', 'cancelled', 'expired', 'handed_off']
 const TERMINAL_CANDIDATE_STAGES = ['approved', 'not_selected', 'unreachable', 'withdrew', 'disqualified']
 
+/** Funcionários que podem ter WhatsApp (ver hire-wizard.tsx) — usado para renderizar um card de conexão por funcionário ativo, evitando ambiguidade sobre qual número o cliente está escaneando (migration 051, item 5 do pedido). */
+const WHATSAPP_ELIGIBLE_AGENT_TYPES = ['sdr', 'recruiter', 'receptionist'] as const
+const WHATSAPP_AGENT_TYPE_LABEL: Record<string, string> = {
+  sdr: 'Sales Rep',
+  recruiter: 'Recrutador',
+  receptionist: 'Recepcionista',
+}
+
 export default async function UnitDetailPage({
   params,
   searchParams,
@@ -28,11 +36,17 @@ export default async function UnitDetailPage({
   const isSuperAdmin = appUser?.isSuperAdmin ?? false
   const isOrgAdmin = isSuperAdmin || appUser?.role === 'admin'
 
-  const [{ data: unit }, { data: summary }, { data: agentConfig }, { count: openJobsCount }, { count: activeCandidatesCount }, { data: ownerUser }] =
+  const [{ data: unit }, { data: summary }, { data: agentConfig }, { data: whatsappAgents }, { count: openJobsCount }, { count: activeCandidatesCount }, { data: ownerUser }] =
     await Promise.all([
       supabase.from('units').select('*').eq('id', id).single(),
       supabase.from('dashboard_summary').select('*').eq('unit_id', id).maybeSingle(),
       supabase.from('agent_configs').select('*').eq('unit_id', id).eq('agent_type', 'sdr').maybeSingle(),
+      supabase
+        .from('agent_configs')
+        .select('agent_type, persona_name')
+        .eq('unit_id', id)
+        .eq('is_active', true)
+        .in('agent_type', WHATSAPP_ELIGIBLE_AGENT_TYPES),
       supabase
         .from('job_openings')
         .select('id', { count: 'exact', head: true })
@@ -65,6 +79,7 @@ export default async function UnitDetailPage({
   const unitRow = unit as Unit
   const summaryRow = summary as DashboardSummaryRow | null
   const agentConfigRow = agentConfig as AgentConfig | null
+  const whatsappAgentRows = (whatsappAgents as { agent_type: string; persona_name: string }[] | null) ?? []
 
   const metrics = [
     { label: 'Contatos (leads)', value: summaryRow?.total_leads ?? 0 },
@@ -97,8 +112,21 @@ export default async function UnitDetailPage({
         ))}
       </div>
 
-      {/* WhatsApp primeiro: é a configuração que destrava o atendimento */}
-      <WhatsAppConnection unitId={unitRow.id} />
+      {/* WhatsApp primeiro: é a configuração que destrava o atendimento. Um card por funcionário com WhatsApp habilitado (migration 051) — cada um pode ter seu próprio número; sem nenhum funcionário desses ativo ainda, cai no card único histórico. */}
+      {whatsappAgentRows.length > 0 ? (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {whatsappAgentRows.map((agent) => (
+            <WhatsAppConnection
+              key={agent.agent_type}
+              unitId={unitRow.id}
+              agentType={agent.agent_type}
+              label={`${agent.persona_name} · ${WHATSAPP_AGENT_TYPE_LABEL[agent.agent_type] ?? agent.agent_type}`}
+            />
+          ))}
+        </div>
+      ) : (
+        <WhatsAppConnection unitId={unitRow.id} />
+      )}
 
       <Card className="flex flex-wrap items-center gap-2 px-6 py-3">
         <span className="text-sm text-slate-400">

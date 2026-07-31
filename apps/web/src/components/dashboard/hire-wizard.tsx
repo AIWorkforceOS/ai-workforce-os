@@ -327,7 +327,7 @@ function ConnectStep({
   if (cs.type === 'whatsapp') {
     return (
       <div className="space-y-5">
-        <WhatsAppConnectStep unitId={unit.id} alreadyConnected={!!unit.whatsapp_phone} onConnected={onContinue} />
+        <WhatsAppConnectStep unitId={unit.id} agentType={meta.agentType} alreadyConnected={!!unit.whatsapp_phone} onConnected={onContinue} />
         {!unit.whatsapp_phone && (
           <button
             onClick={onContinue}

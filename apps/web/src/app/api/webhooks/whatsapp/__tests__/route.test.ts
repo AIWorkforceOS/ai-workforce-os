@@ -89,6 +89,16 @@ describe('POST /api/webhooks/whatsapp — reentrega do provedor não duplica res
     }))
     vi.doMock('@/lib/evolution', () => ({
       getEvolutionConfig: () => ({ apiUrl: 'https://fake-evolution.test', apiKey: 'fake', instanceName: 'test-instance' }),
+      resolveWhatsappChannelByInstanceName: vi.fn(async () => ({
+        unit: buildUnit(),
+        agentType: null,
+        channel: {
+          agentType: null,
+          config: { apiUrl: 'https://fake-evolution.test', apiKey: 'fake', instanceName: 'test-instance' },
+          whatsappPhone: buildUnit().whatsapp_phone,
+          persistPhone: vi.fn(async () => {}),
+        },
+      })),
       getBase64FromMediaMessage: vi.fn(),
       syncWhatsappPhoneIfConnected: vi.fn(async () => {}),
       sendWhatsAppMessage,

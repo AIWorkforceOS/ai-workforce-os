@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { disconnectInstance, getEvolutionConfig } from '@/lib/evolution'
+import { disconnectInstance, legacyWhatsappChannel, resolveWhatsappChannel } from '@/lib/evolution'
 import type { Unit } from '@/lib/types'
 
-export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+/** `agentType` no corpo (opcional): ver apps/web/src/app/api/units/[id]/whatsapp/connect/route.ts. */
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
 
@@ -18,14 +19,18 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   if (!unit) {
     return NextResponse.json({ error: 'Unidade não encontrada.' }, { status: 404 })
   }
+  const unitRow = unit as Unit
 
-  const config = getEvolutionConfig(unit as Unit)
-  if (!config) {
+  const body = await request.json().catch(() => null)
+  const agentType: string | null = typeof body?.agentType === 'string' ? body.agentType : null
+  const channel = agentType ? await resolveWhatsappChannel(supabase, unitRow, agentType) : legacyWhatsappChannel(supabase, unitRow)
+
+  if (!channel) {
     return NextResponse.json({ error: 'Evolution API não configurada para esta unidade.' }, { status: 400 })
   }
 
   try {
-    await disconnectInstance(config)
+    await disconnectInstance(channel.config)
     return NextResponse.json({ ok: true })
   } catch (error) {
     return NextResponse.json(

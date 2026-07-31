@@ -1,9 +1,17 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { connectInstance, getEvolutionConfig } from '@/lib/evolution'
+import { connectInstance, ensureDedicatedWhatsappChannel, getEvolutionConfig } from '@/lib/evolution'
 import type { Unit } from '@/lib/types'
 
-export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+/**
+ * `agentType` no corpo (opcional): quando informado, conecta uma instância
+ * DEDICADA a esse funcionário (migration 051, unit_whatsapp_channels) —
+ * usado pela tela de conexão quando a unidade tem mais de um funcionário
+ * elegível a WhatsApp (ex.: Sales Rep e Recepcionista, cada um com seu
+ * próprio número). Omitido, mantém o comportamento histórico (número
+ * único compartilhado da unidade, units.evolution_instance_name).
+ */
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
 
@@ -16,8 +24,14 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   if (!unit) {
     return NextResponse.json({ error: 'Unidade não encontrada.' }, { status: 404 })
   }
+  const unitRow = unit as Unit
 
-  const config = getEvolutionConfig(unit as Unit)
+  const body = await request.json().catch(() => null)
+  const agentType: string | null = typeof body?.agentType === 'string' ? body.agentType : null
+
+  const dedicated = agentType ? await ensureDedicatedWhatsappChannel(supabase, unitRow, agentType) : null
+  const config = agentType ? dedicated?.config ?? null : getEvolutionConfig(unitRow)
+
   if (!config) {
     // Sem Evolution central (env) nem dedicada (unidade): situação de
     // infra que o cliente não resolve sozinho — mensagem em linguagem leiga.
@@ -27,8 +41,11 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     )
   }
 
-  // Save auto-generated instance name back to unit so the webhook can identify it
-  if (!unit.evolution_instance_name) {
+  // Comportamento histórico (sem agentType): salva o nome de instância
+  // auto-gerado de volta pra unidade, pro webhook conseguir identificá-la.
+  // Com agentType, ensureDedicatedWhatsappChannel já garante a linha em
+  // unit_whatsapp_channels.
+  if (!agentType && !unitRow.evolution_instance_name) {
     await supabase
       .from('units')
       .update({ evolution_instance_name: config.instanceName })

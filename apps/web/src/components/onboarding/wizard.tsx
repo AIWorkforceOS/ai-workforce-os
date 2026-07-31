@@ -180,6 +180,7 @@ export function OnboardingWizard({
               {step === 'whatsapp' && (
                 <WhatsAppConnectStep
                   unitId={unit.id}
+                  agentType="sdr"
                   alreadyConnected={whatsappDone}
                   onConnected={() => { router.refresh() }}
                   connectedHint="Seu número já está ligado à plataforma. Agora vamos montar o funcionário que vai atender por ele."

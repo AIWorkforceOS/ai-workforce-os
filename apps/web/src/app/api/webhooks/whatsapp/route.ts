@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { normalizePhone, routeInboundMessage } from '@/lib/inbound-router'
-import { getEvolutionConfig, getBase64FromMediaMessage, syncWhatsappPhoneIfConnected } from '@/lib/evolution'
+import { normalizePhone, routeInboundMessage, routeReceptionistChannelMessage } from '@/lib/inbound-router'
+import { getBase64FromMediaMessage, resolveWhatsappChannelByInstanceName, syncWhatsappPhoneIfConnected, type EvolutionUnitConfig } from '@/lib/evolution'
 import { getMessagingChannel } from '@/lib/channels/messaging-channel'
 import { getOpenAIApiKey, transcribeAudio } from '@/lib/openai'
 import { logOpenAIAudioUsage } from '@/lib/api-usage'
@@ -46,15 +46,15 @@ function extractInboundMessage(
 async function transcribeInboundAudio(params: {
   supabase: SupabaseClient
   unit: Unit
+  evolutionConfig: EvolutionUnitConfig
   messageId: string
   mimeType: string
   incomingPhone: string
 }): Promise<string | null> {
-  const { supabase, unit, messageId, mimeType, incomingPhone } = params
+  const { supabase, unit, evolutionConfig, messageId, mimeType, incomingPhone } = params
   const locale = unitDefaultLocale(unit)
   const openaiKey = getOpenAIApiKey()
-  const evolutionConfig = getEvolutionConfig(unit)
-  const messagingChannel = getMessagingChannel(unit)
+  const messagingChannel = getMessagingChannel(unit, null, evolutionConfig)
 
   const fail = async (eventType: string, message: string) => {
     await logSystemEvent(supabase, {
@@ -77,10 +77,10 @@ async function transcribeInboundAudio(params: {
     return null
   }
 
-  if (!openaiKey || !evolutionConfig) {
+  if (!openaiKey) {
     return fail(
       'audio_transcription_skipped',
-      `Áudio recebido na unidade "${unit.name}" mas OpenAI e/ou Evolution API não estão configurados — transcrição não é possível.`,
+      `Áudio recebido na unidade "${unit.name}" mas OpenAI não está configurada — transcrição não é possível.`,
     )
   }
 
@@ -151,20 +151,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true })
   }
 
-  const { data: unit } = await supabase
-    .from('units')
-    .select('*')
-    .eq('evolution_instance_name', instanceName)
-    .maybeSingle()
+  const resolution = await resolveWhatsappChannelByInstanceName(supabase, instanceName)
 
-  if (!unit) {
+  if (!resolution) {
     console.error(
-      `[webhook_whatsapp] mensagem recebida para instância "${instanceName}" mas nenhuma unidade corresponde a ela — verifique units.evolution_instance_name.`,
+      `[webhook_whatsapp] mensagem recebida para instância "${instanceName}" mas nenhuma unidade corresponde a ela — verifique unit_whatsapp_channels/units.evolution_instance_name.`,
     )
     return NextResponse.json({ error: 'Unidade não encontrada para esta instância.' }, { status: 404 })
   }
 
-  const unitRow = unit as Unit
+  const { unit: unitRow, agentType, channel: resolvedChannel } = resolution
 
   // Tudo a partir daqui (self-heal, transcrição de áudio, roteamento) pode
   // falhar por motivos externos (timeout da OpenAI, erro da Evolution API,
@@ -176,12 +172,7 @@ export async function POST(request: Request) {
     // Self-heal: uma mensagem real chegando por esta instância já prova que
     // ela está conectada — não depende de o cliente ter deixado a tela do QR
     // code aberta até o polling captar o status 'open' (ver syncWhatsappPhoneIfConnected).
-    if (!unitRow.whatsapp_phone) {
-      const evolutionConfig = getEvolutionConfig(unitRow)
-      if (evolutionConfig) {
-        await syncWhatsappPhoneIfConnected(supabase, unitRow, evolutionConfig)
-      }
-    }
+    await syncWhatsappPhoneIfConnected(supabase, unitRow, resolvedChannel)
 
     const remoteJid: string = key.remoteJid ?? ''
     const incomingPhone = normalizePhone(remoteJid.split('@')[0])
@@ -191,6 +182,7 @@ export async function POST(request: Request) {
       const transcribed = await transcribeInboundAudio({
         supabase,
         unit: unitRow,
+        evolutionConfig: resolvedChannel.config,
         messageId: extracted.messageId,
         mimeType: extracted.mimeType,
         incomingPhone,
@@ -207,17 +199,26 @@ export async function POST(request: Request) {
       ? new Date(Number(data.messageTimestamp) * 1000).toISOString()
       : new Date().toISOString()
 
-    const result = await routeInboundMessage({
+    // Instância dedicada à Recepcionista (migration 051): toda mensagem
+    // nesse número é dela, sem passar pela triagem genérica de Rota 3 —
+    // ver routeReceptionistChannelMessage. Qualquer outro agent_type (ou
+    // número compartilhado, sem canal dedicado) mantém o comportamento
+    // atual (cascata completa em routeInboundMessage).
+    const routeParams = {
       supabase,
       unit: unitRow,
-      channel: 'whatsapp',
+      channel: 'whatsapp' as const,
       incomingPhone,
       incomingEmail: null,
       text,
       externalMessageId: key.id ?? null,
       sentAt,
       wasAudioMessage: extracted.kind === 'audio',
-    })
+    }
+    const result =
+      agentType === 'receptionist'
+        ? await routeReceptionistChannelMessage(routeParams)
+        : await routeInboundMessage(routeParams)
 
     return NextResponse.json(result)
   } catch (error) {
