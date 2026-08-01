@@ -749,20 +749,50 @@ export async function processInboundMessage(params: {
     }
   }
 
-  try {
-    await channel.sendMessage(lead.phone, outgoingText, { voiceReply: wasAudioMessage, attachment: attachmentPayload })
-  } catch (error) {
-    // Registra a resposta que falhou no histórico (status 'failed') para
-    // que a falha fique visível na tela de Conversas, não só no log.
-    await supabase.from('conversations').insert({
+  // Grava a linha outbound ANTES de enviar (não depois): a Evolution API
+  // pode entregar o eco do próprio envio pelo webhook quase no mesmo
+  // instante em que despacha a mensagem, antes mesmo de nossa chamada
+  // `sendMessage` retornar. Se o insert só acontecesse depois do envio,
+  // esse eco chegava ao webhook antes de existir uma linha outbound para
+  // `isRecentOutboundEcho` (inbound-router.ts) comparar — o guard falhava
+  // silenciosamente, o eco virava uma mensagem inbound "nova" e podia ser
+  // atribuído a outro lead pelo matching de telefone por sufixo
+  // (phonesMatch), reproduzindo em produção o padrão que já derrubou este
+  // número de WhatsApp antes (ver isRecentOutboundEcho em inbound-router.ts).
+  const sentAt = new Date().toISOString()
+  const { data: outboundRow } = await supabase
+    .from('conversations')
+    .insert({
       lead_id: lead.id,
       unit_id: unit.id,
       channel: channelType,
       direction: 'outbound',
       content: outgoingText,
-      status: 'failed',
-      sent_at: new Date().toISOString(),
+      status: 'sent',
+      sent_at: sentAt,
     })
+    .select('id')
+    .single()
+
+  try {
+    await channel.sendMessage(lead.phone, outgoingText, { voiceReply: wasAudioMessage, attachment: attachmentPayload })
+  } catch (error) {
+    // Marca a linha já gravada como falha (a mensagem nunca chegou), em vez
+    // de inserir uma segunda linha — o histórico continua mostrando a
+    // falha na tela de Conversas.
+    if (outboundRow) {
+      await supabase.from('conversations').update({ status: 'failed' }).eq('id', outboundRow.id)
+    } else {
+      await supabase.from('conversations').insert({
+        lead_id: lead.id,
+        unit_id: unit.id,
+        channel: channelType,
+        direction: 'outbound',
+        content: outgoingText,
+        status: 'failed',
+        sent_at: new Date().toISOString(),
+      })
+    }
 
     await reportAgentFailure({
       supabase,
@@ -774,18 +804,6 @@ export async function processInboundMessage(params: {
     })
     return noHandoff
   }
-
-  const sentAt = new Date().toISOString()
-
-  await supabase.from('conversations').insert({
-    lead_id: lead.id,
-    unit_id: unit.id,
-    channel: channelType,
-    direction: 'outbound',
-    content: outgoingText,
-    status: 'sent',
-    sent_at: sentAt,
-  })
 
   // Só fecha quando todos os campos ensinados para este fechamento
   // estiverem coletados (lista vazia = nada ensinado para perguntar, então
