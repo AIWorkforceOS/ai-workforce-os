@@ -290,9 +290,17 @@ async function handleUnknownInbound(params: UnknownInboundContext): Promise<void
     })
 
     if (followUpQuestion) {
-      try {
-        await messagingChannel.sendMessage(incomingPhone, followUpQuestion, { voiceReply: wasAudioMessage })
-        await supabase.from('conversations').insert({
+      // Grava a linha outbound ANTES de enviar (não depois) — mesma razão do
+      // fix em conversation-engine.ts (processInboundMessage): a Evolution
+      // API pode entregar o eco do próprio envio quase no mesmo instante em
+      // que despacha a mensagem, antes da nossa chamada sendMessage
+      // retornar. Se o insert só acontecesse depois, esse eco chegava ao
+      // webhook antes de existir uma linha outbound para isRecentOutboundEcho
+      // comparar, e virava um inbound "novo" — o padrão que já derrubou
+      // este número de WhatsApp antes.
+      const { data: outboundRow } = await supabase
+        .from('conversations')
+        .insert({
           lead_id: existingScreeningLead.id,
           unit_id: unit.id,
           channel,
@@ -301,7 +309,15 @@ async function handleUnknownInbound(params: UnknownInboundContext): Promise<void
           status: 'sent',
           sent_at: new Date().toISOString(),
         })
+        .select('id')
+        .single()
+
+      try {
+        await messagingChannel.sendMessage(incomingPhone, followUpQuestion, { voiceReply: wasAudioMessage })
       } catch (error) {
+        if (outboundRow) {
+          await supabase.from('conversations').update({ status: 'failed' }).eq('id', outboundRow.id)
+        }
         console.error(`[inbound_router] follow-up triagem falhou: ${error instanceof Error ? error.message : String(error)}`)
       }
     }
@@ -362,10 +378,12 @@ async function handleUnknownInbound(params: UnknownInboundContext): Promise<void
     sent_at: sentAt,
   })
 
-  // Envia a pergunta de triagem
-  try {
-    await messagingChannel.sendMessage(incomingPhone, triageQuestion, { voiceReply: wasAudioMessage })
-    await supabase.from('conversations').insert({
+  // Envia a pergunta de triagem — grava a linha outbound ANTES de enviar
+  // (mesma razão do comentário na Fase 1 acima: fecha a corrida com o eco
+  // da Evolution API para isRecentOutboundEcho).
+  const { data: outboundRow } = await supabase
+    .from('conversations')
+    .insert({
       lead_id: leadRow.id,
       unit_id: unit.id,
       channel,
@@ -374,7 +392,15 @@ async function handleUnknownInbound(params: UnknownInboundContext): Promise<void
       status: 'sent',
       sent_at: new Date().toISOString(),
     })
+    .select('id')
+    .single()
+
+  try {
+    await messagingChannel.sendMessage(incomingPhone, triageQuestion, { voiceReply: wasAudioMessage })
   } catch (error) {
+    if (outboundRow) {
+      await supabase.from('conversations').update({ status: 'failed' }).eq('id', outboundRow.id)
+    }
     await logSystemEvent(supabase, {
       level: 'error',
       source: 'system',
@@ -480,6 +506,45 @@ export async function isRecentOutboundEcho(
   return (conversations.count ?? 0) > 0 || (candidateMessages.count ?? 0) > 0 || (customerMessages.count ?? 0) > 0
 }
 
+/**
+ * True quando o telefone recebido é um dos nossos próprios números
+ * conectados nesta organização (unit_whatsapp_channels de qualquer
+ * unidade/agent_type — migration 051 — ou o número compartilhado legado
+ * em units.whatsapp_phone). Confirmado em produção em 2026-08-01: dois
+ * agentes com números dedicados (Sales Rep e Recepcionista) acabaram
+ * "conversando" um com o outro depois de um teste manual usar o número
+ * de um agente como se fosse cliente do outro. A resposta automática de
+ * um agente chega no outro como mensagem inbound de verdade — remetente
+ * real, external_message_id real da Evolution — então nem o guard de
+ * self-echo (route.ts, compara com o número do PRÓPRIO canal) nem o
+ * isRecentOutboundEcho abaixo (depende do texto ainda ser idêntico e da
+ * janela de 60s) cobrem sozinhos este caso: sem saber que o remetente é
+ * um dos NOSSOS números (de qualquer agente), cada resposta automática
+ * vira um novo "cliente" pro outro agente, um loop de bot-para-bot — o
+ * padrão exato de tráfego automatizado entre dois números que a Meta
+ * detecta e usa para banir (este número já foi banido antes por um
+ * padrão parecido).
+ */
+export async function isOwnConnectedNumber(
+  supabase: SupabaseClient,
+  unit: Unit,
+  incomingPhone: string | null,
+): Promise<boolean> {
+  if (!incomingPhone || !unit.org_id) return false
+
+  const [{ data: dedicated }, { data: legacyUnits }] = await Promise.all([
+    supabase.from('unit_whatsapp_channels').select('whatsapp_phone').eq('org_id', unit.org_id),
+    supabase.from('units').select('whatsapp_phone').eq('org_id', unit.org_id),
+  ])
+
+  const candidates = [
+    ...(((dedicated as { whatsapp_phone: string | null }[] | null) ?? []).map((row) => row.whatsapp_phone)),
+    ...(((legacyUnits as { whatsapp_phone: string | null }[] | null) ?? []).map((row) => row.whatsapp_phone)),
+  ]
+
+  return candidates.some((phone) => phone && phonesMatch(normalizePhone(phone), incomingPhone))
+}
+
 export async function routeInboundMessage(params: InboundRouteParams): Promise<Record<string, unknown>> {
   const { supabase, unit: unitRow, channel, incomingPhone, incomingEmail, text, externalMessageId, sentAt, wasAudioMessage } = params
 
@@ -496,6 +561,18 @@ export async function routeInboundMessage(params: InboundRouteParams): Promise<R
       })
       return { ok: true, duplicate: true }
     }
+  }
+
+  if (await isOwnConnectedNumber(supabase, unitRow, incomingPhone)) {
+    await logSystemEvent(supabase, {
+      level: 'warning',
+      source: 'system',
+      eventType: 'inbound_from_own_number_blocked',
+      message: `Mensagem inbound ignorada na unidade "${unitRow.name}": o remetente (${incomingPhone}) é um dos nossos próprios números conectados (outro agente/canal desta organização), não um cliente real — provável loop de bot-para-bot.`,
+      orgId: unitRow.org_id,
+      unitId: unitRow.id,
+    })
+    return { ok: true, skipped: 'own_number' }
   }
 
   if (await isRecentOutboundEcho(supabase, unitRow.id, text)) {
@@ -812,6 +889,18 @@ export async function routeReceptionistChannelMessage(
       })
       return { ok: true, duplicate: true }
     }
+  }
+
+  if (await isOwnConnectedNumber(supabase, unitRow, incomingPhone)) {
+    await logSystemEvent(supabase, {
+      level: 'warning',
+      source: 'system',
+      eventType: 'inbound_from_own_number_blocked',
+      message: `Mensagem inbound ignorada na unidade "${unitRow.name}": o remetente (${incomingPhone}) é um dos nossos próprios números conectados (outro agente/canal desta organização), não um cliente real — provável loop de bot-para-bot.`,
+      orgId: unitRow.org_id,
+      unitId: unitRow.id,
+    })
+    return { ok: true, skipped: 'own_number' }
   }
 
   if (await isRecentOutboundEcho(supabase, unitRow.id, text)) {

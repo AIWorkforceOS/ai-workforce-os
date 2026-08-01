@@ -411,6 +411,28 @@ export async function processReceptionistInbound(params: {
     }
   }
 
+  // Grava a linha outbound ANTES de enviar (não depois): a Evolution API
+  // pode entregar o eco do próprio envio pelo webhook quase no mesmo
+  // instante em que despacha a mensagem, antes mesmo da nossa chamada
+  // sendMessage retornar. Se o insert só acontecesse depois, esse eco
+  // chegava ao webhook antes de existir uma linha outbound para
+  // isRecentOutboundEcho (inbound-router.ts) comparar — o guard falhava
+  // silenciosamente (mesma causa raiz corrigida em
+  // conversation-engine.ts/processInboundMessage).
+  const { data: outboundRow } = await supabase
+    .from('customer_messages')
+    .insert({
+      customer_id: customer.id,
+      unit_id: unit.id,
+      channel,
+      direction: 'outbound',
+      content: outgoingText,
+      status: 'sent',
+      sent_at: new Date().toISOString(),
+    })
+    .select('id')
+    .single()
+
   try {
     await channelImpl.sendMessage(recipient, outgoingText, {
       voiceReply: wasAudioMessage,
@@ -419,15 +441,19 @@ export async function processReceptionistInbound(params: {
       subject: config.persona_name,
     })
   } catch (error) {
-    await supabase.from('customer_messages').insert({
-      customer_id: customer.id,
-      unit_id: unit.id,
-      channel,
-      direction: 'outbound',
-      content: outgoingText,
-      status: 'failed',
-      sent_at: new Date().toISOString(),
-    })
+    if (outboundRow) {
+      await supabase.from('customer_messages').update({ status: 'failed' }).eq('id', outboundRow.id)
+    } else {
+      await supabase.from('customer_messages').insert({
+        customer_id: customer.id,
+        unit_id: unit.id,
+        channel,
+        direction: 'outbound',
+        content: outgoingText,
+        status: 'failed',
+        sent_at: new Date().toISOString(),
+      })
+    }
     await reportAgentFailure({
       supabase,
       unit,
@@ -438,16 +464,6 @@ export async function processReceptionistInbound(params: {
     })
     return failed
   }
-
-  await supabase.from('customer_messages').insert({
-    customer_id: customer.id,
-    unit_id: unit.id,
-    channel,
-    direction: 'outbound',
-    content: outgoingText,
-    status: 'sent',
-    sent_at: new Date().toISOString(),
-  })
 
   return { handled: true }
 }
@@ -728,6 +744,23 @@ export async function processReceptionistProspectInbound(params: {
     }
   }
 
+  // Grava a linha outbound ANTES de enviar — mesma razão do comentário em
+  // processReceptionistInbound acima (fecha a corrida com o eco da
+  // Evolution API para isRecentOutboundEcho).
+  const { data: outboundRow } = await supabase
+    .from('conversations')
+    .insert({
+      lead_id: lead.id,
+      unit_id: unit.id,
+      channel,
+      direction: 'outbound',
+      content: outgoingText,
+      status: 'sent',
+      sent_at: new Date().toISOString(),
+    })
+    .select('id')
+    .single()
+
   try {
     await channelImpl.sendMessage(recipient, outgoingText, {
       voiceReply: wasAudioMessage,
@@ -736,15 +769,19 @@ export async function processReceptionistProspectInbound(params: {
       subject: config.persona_name,
     })
   } catch (error) {
-    await supabase.from('conversations').insert({
-      lead_id: lead.id,
-      unit_id: unit.id,
-      channel,
-      direction: 'outbound',
-      content: outgoingText,
-      status: 'failed',
-      sent_at: new Date().toISOString(),
-    })
+    if (outboundRow) {
+      await supabase.from('conversations').update({ status: 'failed' }).eq('id', outboundRow.id)
+    } else {
+      await supabase.from('conversations').insert({
+        lead_id: lead.id,
+        unit_id: unit.id,
+        channel,
+        direction: 'outbound',
+        content: outgoingText,
+        status: 'failed',
+        sent_at: new Date().toISOString(),
+      })
+    }
     await reportAgentFailure({
       supabase,
       unit,
@@ -755,16 +792,6 @@ export async function processReceptionistProspectInbound(params: {
     })
     return failed
   }
-
-  await supabase.from('conversations').insert({
-    lead_id: lead.id,
-    unit_id: unit.id,
-    channel,
-    direction: 'outbound',
-    content: outgoingText,
-    status: 'sent',
-    sent_at: new Date().toISOString(),
-  })
 
   return { handled: true }
 }
