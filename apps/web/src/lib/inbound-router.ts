@@ -439,6 +439,47 @@ async function isDuplicateInboundMessage(
   return (conversations.count ?? 0) > 0 || (candidateMessages.count ?? 0) > 0 || (customerMessages.count ?? 0) > 0
 }
 
+/**
+ * Segunda camada de proteção contra eco do Baileys/Evolution API: mesmo
+ * quando o guard por número no webhook (route.ts) não pega o eco e o
+ * external_message_id não bate com nada já registrado, um texto IDÊNTICO a
+ * uma resposta nossa (outbound) enviada pra esta unidade nos últimos 60s é
+ * quase certamente esse mesmo eco reaparecendo — não precisa cair no mesmo
+ * lead, já que é justamente a falta de ORDER BY em leads que pode fazer o
+ * eco cair num lead diferente do que recebeu a resposta original.
+ */
+export async function isRecentOutboundEcho(
+  supabase: SupabaseClient,
+  unitId: string,
+  text: string,
+): Promise<boolean> {
+  const cutoff = new Date(Date.now() - 60_000).toISOString()
+  const [conversations, candidateMessages, customerMessages] = await Promise.all([
+    supabase
+      .from('conversations')
+      .select('id', { count: 'exact', head: true })
+      .eq('unit_id', unitId)
+      .eq('direction', 'outbound')
+      .eq('content', text)
+      .gte('sent_at', cutoff),
+    supabase
+      .from('candidate_messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('unit_id', unitId)
+      .eq('direction', 'outbound')
+      .eq('content', text)
+      .gte('sent_at', cutoff),
+    supabase
+      .from('customer_messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('unit_id', unitId)
+      .eq('direction', 'outbound')
+      .eq('content', text)
+      .gte('sent_at', cutoff),
+  ])
+  return (conversations.count ?? 0) > 0 || (candidateMessages.count ?? 0) > 0 || (customerMessages.count ?? 0) > 0
+}
+
 export async function routeInboundMessage(params: InboundRouteParams): Promise<Record<string, unknown>> {
   const { supabase, unit: unitRow, channel, incomingPhone, incomingEmail, text, externalMessageId, sentAt, wasAudioMessage } = params
 
@@ -457,6 +498,18 @@ export async function routeInboundMessage(params: InboundRouteParams): Promise<R
     }
   }
 
+  if (await isRecentOutboundEcho(supabase, unitRow.id, text)) {
+    await logSystemEvent(supabase, {
+      level: 'info',
+      source: 'system',
+      eventType: 'inbound_message_echo_skipped',
+      message: `Mensagem inbound ignorada na unidade "${unitRow.name}" por ser idêntica a uma resposta outbound enviada há menos de 60s — provável eco do Baileys/Evolution API.`,
+      orgId: unitRow.org_id,
+      unitId: unitRow.id,
+    })
+    return { ok: true, duplicate: true, echo: true }
+  }
+
   // Contextos possíveis
   const candidateContext = await findCandidateContext(supabase, unitRow, incomingPhone, incomingEmail)
 
@@ -464,6 +517,7 @@ export async function routeInboundMessage(params: InboundRouteParams): Promise<R
     .from('leads')
     .select('*')
     .eq('unit_id', unitRow.id)
+    .order('created_at', { ascending: true })
 
   const lead = ((leads as Lead[] | null) ?? []).find((row) =>
     identifierMatches(row, incomingPhone, incomingEmail),
@@ -689,7 +743,11 @@ async function findOrCreateReceptionistLead(
 ): Promise<Lead | null> {
   if (!incomingPhone && !incomingEmail) return null
 
-  const { data: leadsData } = await supabase.from('leads').select('*').eq('unit_id', unit.id)
+  const { data: leadsData } = await supabase
+    .from('leads')
+    .select('*')
+    .eq('unit_id', unit.id)
+    .order('created_at', { ascending: true })
   const existing = ((leadsData as Lead[] | null) ?? []).find((row) => identifierMatches(row, incomingPhone, incomingEmail))
   if (existing) return existing
 
@@ -754,6 +812,18 @@ export async function routeReceptionistChannelMessage(
       })
       return { ok: true, duplicate: true }
     }
+  }
+
+  if (await isRecentOutboundEcho(supabase, unitRow.id, text)) {
+    await logSystemEvent(supabase, {
+      level: 'info',
+      source: 'system',
+      eventType: 'inbound_message_echo_skipped',
+      message: `Mensagem inbound ignorada na unidade "${unitRow.name}" por ser idêntica a uma resposta outbound enviada há menos de 60s — provável eco do Baileys/Evolution API.`,
+      orgId: unitRow.org_id,
+      unitId: unitRow.id,
+    })
+    return { ok: true, duplicate: true, echo: true }
   }
 
   const recipient = incomingPhone ?? incomingEmail

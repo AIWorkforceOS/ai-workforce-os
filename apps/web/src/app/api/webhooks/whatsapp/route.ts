@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { normalizePhone, routeInboundMessage, routeReceptionistChannelMessage } from '@/lib/inbound-router'
+import { normalizePhone, phonesMatch, routeInboundMessage, routeReceptionistChannelMessage } from '@/lib/inbound-router'
 import { getBase64FromMediaMessage, resolveWhatsappChannelByInstanceName, syncWhatsappPhoneIfConnected, type EvolutionUnitConfig } from '@/lib/evolution'
 import { getMessagingChannel } from '@/lib/channels/messaging-channel'
 import { getOpenAIApiKey, transcribeAudio } from '@/lib/openai'
@@ -176,6 +176,25 @@ export async function POST(request: Request) {
 
     const remoteJid: string = key.remoteJid ?? ''
     const incomingPhone = normalizePhone(remoteJid.split('@')[0])
+
+    // Guarda contra eco do próprio envio: Evolution API (Baileys, protocolo
+    // multi-device não-oficial) às vezes reentrega uma mensagem que NÓS
+    // enviamos como se fosse um novo inbound, com `key.fromMe` ausente/falso
+    // — o guard de fromMe (linha ~145) sozinho não cobre esse caso. Se o
+    // remetente é o próprio número conectado a este canal, é eco, não uma
+    // mensagem nova.
+    const ownPhone = normalizePhone(resolvedChannel.whatsappPhone)
+    if (ownPhone && phonesMatch(ownPhone, incomingPhone)) {
+      await logSystemEvent(supabase, {
+        level: 'info',
+        source: 'evolution',
+        eventType: 'whatsapp_webhook_self_echo_skipped',
+        message: `Mensagem inbound na unidade "${unitRow.name}" veio do próprio número conectado a este canal (eco do Baileys/Evolution API) — ignorada.`,
+        orgId: unitRow.org_id,
+        unitId: unitRow.id,
+      })
+      return NextResponse.json({ ok: true, selfEcho: true })
+    }
 
     let text: string
     if (extracted.kind === 'audio') {
