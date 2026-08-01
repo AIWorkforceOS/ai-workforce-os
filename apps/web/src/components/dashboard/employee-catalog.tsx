@@ -23,7 +23,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, brandGradient } from '@/components/ui/dashboard-ui'
 import { computeTrainingCompleteness } from '@/lib/interview/completeness'
 import { buildClonedAgentConfig } from '@/lib/interview/clone'
-import { unitHasWhatsapp, type UnitWhatsappChannelRow } from '@/lib/setup-status'
+import { pickDefaultUnit, unitHasWhatsapp, type UnitWhatsappChannelRow } from '@/lib/setup-status'
 import type { VerticalKey } from '@/lib/verticals/catalog'
 import type { AgentConfig, Unit } from '@/lib/types'
 
@@ -80,8 +80,12 @@ export function EmployeeCatalog({
   // já que organizações com mais de uma unidade (ex.: franquias) precisam
   // de perfis de negócio e treinamentos diferentes por unidade.
   const mainUnitId = units[0]?.id ?? null
+  // Desempate determinístico (nunca "a primeira ativa que a query devolver" —
+  // com duas unidades no mesmo created_at exato isso virou bug real em
+  // produção, ver pickDefaultUnit): prioriza a unidade ativa com mais
+  // progresso de configuração já feito.
   const [selectedUnitId, setSelectedUnitId] = useState(
-    units.find((u) => u.is_active)?.id ?? mainUnitId ?? '',
+    pickDefaultUnit(units, configs, whatsappChannels)?.id ?? mainUnitId ?? '',
   )
   const selectedUnit = units.find((u) => u.id === selectedUnitId) ?? null
   const isMainUnit = selectedUnitId === mainUnitId

@@ -56,6 +56,35 @@ export function unitHasWhatsapp(
   return channels.some((c) => c.unit_id === unit.id && c.agent_type === agentType && !!c.whatsapp_phone)
 }
 
+/**
+ * Desempate determinístico pra escolher qual unidade uma tela mostra por
+ * padrão quando a org tem mais de uma (ex.: catálogo de Equipe Digital,
+ * onboarding) — nunca a ordem de retorno do banco, que NÃO é garantida
+ * quando duas unidades têm o mesmo created_at (visto em produção: unidades
+ * criadas no mesmo instante empatam e a ordem que o Postgres devolve pode
+ * mudar). Entre as unidades ativas (ou todas, se nenhuma estiver ativa),
+ * prioriza a que já tem mais progresso de configuração — WhatsApp
+ * conectado, funcionários ativos — já que essa é a que o dono
+ * provavelmente quer ver primeiro; o id como último desempate só existe
+ * pra nunca sobrar ambiguidade nenhuma, nunca como critério "certo" por si só.
+ */
+export function pickDefaultUnit<U extends UnitRow>(
+  units: U[],
+  agentConfigs: AgentConfigRow[],
+  whatsappChannels: UnitWhatsappChannelRow[] = [],
+): U | null {
+  if (units.length === 0) return null
+  const candidates = units.some((u) => u.is_active) ? units.filter((u) => u.is_active) : units
+
+  const score = (u: U): number => {
+    const hasWhatsapp = unitHasWhatsapp(u, whatsappChannels, 'sdr') ? 1 : 0
+    const activeAgents = agentConfigs.filter((c) => c.unit_id === u.id && c.is_active).length
+    return hasWhatsapp * 100 + activeAgents
+  }
+
+  return [...candidates].sort((a, b) => score(b) - score(a) || a.id.localeCompare(b.id))[0] ?? null
+}
+
 /** Os outros 5 funcionários digitais possíveis, além do Sales Rep (coberto por 'agent'/'active' acima). */
 const OTHER_EMPLOYEE_TYPES: { agentType: string; label: string }[] = [
   { agentType: 'receptionist', label: 'AI Receptionist ativo' },

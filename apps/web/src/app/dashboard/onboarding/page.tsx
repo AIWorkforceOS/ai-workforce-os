@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getAppUser } from '@/lib/app-user'
-import { computeSetupStatus, type UnitWhatsappChannelRow } from '@/lib/setup-status'
+import { computeSetupStatus, pickDefaultUnit, type UnitWhatsappChannelRow } from '@/lib/setup-status'
 import { fetchOrganizationManagementMode } from '@/lib/organizations'
 import { OnboardingWizard } from '@/components/onboarding/wizard'
 import type { AgentConfig, Unit } from '@/lib/types'
@@ -26,8 +26,10 @@ export default async function OnboardingPage() {
   const channelRows = (whatsappChannels ?? []) as UnitWhatsappChannelRow[]
   const status = computeSetupStatus(unitRows, configRows, channelRows)
 
-  // A primeira unidade é a "principal" do onboarding (criada no checkout).
-  const unit = unitRows[0] ?? null
+  // Unidade "principal" do onboarding — normalmente a primeira criada no
+  // checkout, mas com desempate determinístico (nunca a ordem crua da
+  // query) quando há mais de uma candidata, ver pickDefaultUnit.
+  const unit = pickDefaultUnit(unitRows, configRows, channelRows)
   const config = unit ? (configRows.find((c) => c.unit_id === unit.id) ?? null) : null
 
   return (

@@ -49,6 +49,9 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null; count?: num
   gte() {
     return this
   }
+  lt() {
+    return this
+  }
   order() {
     return this
   }

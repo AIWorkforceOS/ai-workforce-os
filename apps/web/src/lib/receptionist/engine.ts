@@ -18,6 +18,7 @@ import { unitDefaultLocale } from '@/lib/i18n/config'
 import type { Locale } from '@/lib/i18n/config'
 import { buildReceptionistSystemPrompt } from './prompt'
 import { notifyReceptionistHandoff, handoffToSales, type HandoffTarget } from './handoff'
+import { provisionCustomerFromLead } from './customers'
 import {
   loadUpcomingAppointments,
   loadActiveServices,
@@ -468,14 +469,84 @@ export async function processReceptionistInbound(params: {
 export type ReceptionistProspectIntentExtraction = {
   handoff?: 'none' | 'sales' | 'recruiting' | 'human'
   handoff_reason?: string | null
+  /** "book" = quer marcar um serviço novo (a única ação de agenda que faz sentido pra quem ainda não é cliente — sem histórico prévio, não há o que remarcar/cancelar/consultar). */
+  appointment_action?: 'none' | 'book'
+  service_name?: string | null
+  /** YYYY-MM-DD, resolvido pelo modelo a partir de linguagem natural — mesma regra do extrator do cliente cadastrado. */
+  desired_date?: string | null
+  /** HH:MM (24h) */
+  desired_time?: string | null
 }
 
-function buildProspectIntentExtractorPrompt(): string {
+function buildProspectIntentExtractorPrompt(params: { unit: Unit; services: Service[]; locale: Locale }): string {
+  const { unit, services, locale } = params
+  const now = new Date()
+  const today = localDateString(now, unit.timezone)
+  const weekday = new Intl.DateTimeFormat(locale === 'en' ? 'en-US' : 'pt-BR', {
+    weekday: 'long',
+    timeZone: unit.timezone,
+  }).format(now)
+  const servicesList = services.length > 0 ? services.map((s) => s.name).join(', ') : 'nenhum serviço cadastrado'
+
   return [
-    'Você está analisando a ÚLTIMA mensagem de alguém que escreveu para a recepcionista digital de uma empresa, mas que NÃO é um cliente cadastrado — pode ser um franqueado com dúvida operacional, alguém interessado em comprar uma franquia, um estudante perguntando sobre estágio, ou qualquer outro contato. Não escreva a resposta aqui — só decida se é preciso encaminhar a conversa para outra pessoa/setor.',
-    'Responda SOMENTE um JSON válido: {"handoff": "none"|"sales"|"recruiting"|"human", "handoff_reason": string|null}.',
-    '"handoff" = "sales" quando a pessoa demonstra interesse real em comprar/negociar algo (ex.: comprar uma franquia, fechar um serviço novo); "recruiting" quando pergunta sobre vaga/estágio/trabalhar na empresa; "human" quando é reclamação séria ou algo claramente fora do alcance de uma recepcionista; "none" quando é só uma dúvida geral que você mesma pode responder.',
+    'Você está analisando a ÚLTIMA mensagem de alguém que escreveu para a recepcionista digital de uma empresa, mas que NÃO é um cliente cadastrado — pode ser um cliente novo (primeira vez que fala com a empresa), um franqueado com dúvida operacional, alguém interessado em comprar uma franquia, um estudante perguntando sobre estágio, ou qualquer outro contato. Não escreva a resposta aqui — só extraia a decisão.',
+    `Hoje é ${today} (${weekday}), fuso horário ${unit.timezone}. Resolva datas relativas ("amanhã", "sexta que vem", "dia 5") pro formato YYYY-MM-DD com base nisso.`,
+    `Serviços que a unidade oferece: ${servicesList}.`,
+    'Responda SOMENTE um JSON válido: {"handoff": "none"|"sales"|"recruiting"|"human", "handoff_reason": string|null, "appointment_action": "none"|"book", "service_name": string|null, "desired_date": string|null, "desired_time": string|null}.',
+    '"handoff" = "sales" quando a pessoa demonstra interesse em comprar/negociar algo que NÃO é simplesmente marcar um dos serviços da lista acima (ex.: comprar uma franquia, fechar um contrato maior, negociar condições especiais); "recruiting" quando pergunta sobre vaga/estágio/trabalhar na empresa; "human" quando é reclamação séria ou algo claramente fora do alcance de uma recepcionista; "none" quando é só uma dúvida geral ou um agendamento (ver abaixo) que você mesma resolve.',
+    '"appointment_action" = "book" quando a pessoa quer marcar/agendar um dos serviços da lista acima (isso é rotina — ela é uma cliente nova, não precisa de "sales" nem de handoff nenhum pra isso, você mesma marca); use "service_name" com o nome mais parecido da lista. "desired_date" e "desired_time" só quando ela já deu ou confirmou um dia/horário NESTA mensagem — deixe null se ainda não disse.',
+    'Nunca invente um service_name fora da lista acima.',
   ].join(' ')
+}
+
+/**
+ * Resolve um pedido de agendamento de quem ainda não é cliente cadastrado.
+ * Age exatamente como resolveAppointmentAction faz pro cliente já
+ * cadastrado (nunca deixa o modelo "confirmar" algo que não foi de fato
+ * verificado/gravado), com uma diferença: só na hora de gravar o
+ * agendamento de verdade (endereço já resolvido: serviço + dia + horário
+ * livre) é que o cadastro é criado — via provisionCustomerFromLead, pela
+ * própria IA, sem nunca pedir pra pessoa "se cadastrar" (item do pedido).
+ */
+async function resolveProspectAppointmentAction(params: {
+  supabase: SupabaseClient
+  unit: Unit
+  lead: Lead
+  contactName: string
+  extraction: ReceptionistProspectIntentExtraction
+  services: Service[]
+  locale: Locale
+}): Promise<string | null> {
+  const { supabase, unit, lead, contactName, extraction, services, locale } = params
+  if ((extraction.appointment_action ?? 'none') !== 'book') return null
+
+  const service = resolveServiceByName(services, extraction.service_name)
+  if (!service) {
+    return services.length === 0
+      ? 'A unidade ainda não tem nenhum serviço cadastrado pra agendar — avise que vai verificar com o time.'
+      : 'Não ficou claro qual serviço a pessoa quer agendar — pergunte qual serviço, entre os oferecidos, sem pedir nenhum cadastro.'
+  }
+  if (!extraction.desired_date) {
+    return `A pessoa quer marcar ${service.name} mas não disse o dia — pergunte qual dia prefere, sem pedir nenhum cadastro.`
+  }
+
+  const slots = await computeSlotsForService(supabase, unit, service, extraction.desired_date)
+  if (!extraction.desired_time) {
+    return `Horários livres em ${extraction.desired_date} para ${service.name}: ${listSlotsText(slots, unit, locale)}. Pergunte qual horário ela prefere.`
+  }
+
+  const slot = findSlotAtTime(slots, unit, extraction.desired_time)
+  if (!slot) {
+    return `Horário pedido (${extraction.desired_time}) não está livre em ${extraction.desired_date}. Horários livres nesse dia: ${listSlotsText(slots, unit, locale)}.`
+  }
+
+  const customer = await provisionCustomerFromLead(supabase, { lead, unit, contactName })
+  if (!customer) {
+    return 'Não consegui concluir o agendamento agora (falha ao registrar o cadastro internamente) — diga que vai confirmar em seguida, sem culpar a pessoa por nada.'
+  }
+
+  const outcome = await executeBooking(supabase, unit, customer.customerId, service, slot, locale)
+  return outcome.context
 }
 
 async function fetchLeadConversationHistory(supabase: SupabaseClient, leadId: string, limit = 20): Promise<ChatMessage[]> {
@@ -552,16 +623,19 @@ export async function processReceptionistProspectInbound(params: {
     return failed
   }
 
-  const [history, organizationProfile] = await Promise.all([
+  const locale = unitDefaultLocale(unit)
+
+  const [history, organizationProfile, services] = await Promise.all([
     fetchLeadConversationHistory(supabase, lead.id),
     fetchOrganizationBusinessProfile(supabase, unit.org_id),
+    loadActiveServices(supabase, unit),
   ])
 
   const extraction = await generateStructuredReply<ReceptionistProspectIntentExtraction>({
     apiKey,
-    systemPrompt: buildProspectIntentExtractorPrompt(),
+    systemPrompt: buildProspectIntentExtractorPrompt({ unit, services, locale }),
     history,
-    maxTokens: 200,
+    maxTokens: 300,
   }).catch((error) => {
     console.error(`[receptionist_engine] extração de intenção (prospecto) falhou: ${error instanceof Error ? error.message : String(error)}`)
     return {} as ReceptionistProspectIntentExtraction
@@ -584,8 +658,14 @@ export async function processReceptionistProspectInbound(params: {
     }
   }
 
+  const appointmentContext = await resolveProspectAppointmentAction({ supabase, unit, lead, contactName, extraction, services, locale })
+
   const extraContext = [
-    'Esta pessoa NÃO é uma cliente cadastrada — pode ser um franqueado com dúvida operacional, um lead interessado em comprar franquia, um estudante perguntando sobre estágio ou qualquer outro contato. Ajude como puder; se não souber resolver, diga claramente que vai encaminhar para o setor certo, nunca deixe a pessoa sem resposta.',
+    'Esta pessoa NÃO é uma cliente cadastrada ainda — pode ser uma cliente nova falando pela primeira vez, um franqueado com dúvida operacional, um lead interessado em comprar franquia, um estudante perguntando sobre estágio ou qualquer outro contato. Ajude como puder; se não souber resolver, diga claramente que vai encaminhar para o setor certo, nunca deixe a pessoa sem resposta.',
+    'NUNCA peça para a pessoa "se cadastrar", "fazer um cadastro" ou enviar dados para virar cliente formalmente — isso não é uma ação que você peça pra ela fazer: se ela quiser marcar um serviço, você mesma agenda na conversa (ver instrução abaixo), sem burocracia nenhuma da parte dela.',
+    appointmentContext
+      ? `CONTEXTO DESTA RESPOSTA (ação de agenda já verificada/executada — baseie-se estritamente nisso, nunca contradiga nem invente outro resultado): ${appointmentContext}`
+      : '',
     handoffTarget
       ? 'Você já registrou o encaminhamento deste assunto para o time responsável — diga à pessoa, com naturalidade, que vai passar para quem cuida disso continuar.'
       : '',

@@ -81,3 +81,47 @@ export async function createCustomerFromDealLead(
   if (error) return { created: false, error: error.message }
   return { created: true }
 }
+
+// Auto-provisionamento Recepcionista (item do pedido: "sem exigir cadastro
+// prévio"): quando alguém que escreve na linha dedicada da Recepcionista
+// (ainda não é `customers`, ver processReceptionistProspectInbound) pede
+// pra agendar um serviço de verdade, a própria IA cria o cadastro na hora
+// — nunca pede pra pessoa se cadastrar ela mesma. Idempotência via
+// customers.lead_id + source='receptionist_self_service' (mesmo padrão de
+// createCustomerFromDealLead acima), pra não duplicar em retry de webhook
+// nem numa segunda mensagem de agendamento do mesmo contato.
+export async function provisionCustomerFromLead(
+  supabase: SupabaseClient,
+  params: { lead: Lead; unit: Unit; contactName: string },
+): Promise<{ customerId: string } | null> {
+  const { lead, unit, contactName } = params
+  if (!unit.org_id) return null
+
+  const { data: existing } = await supabase
+    .from('customers')
+    .select('id')
+    .eq('lead_id', lead.id)
+    .eq('source', 'receptionist_self_service')
+    .limit(1)
+    .maybeSingle()
+  if (existing) return { customerId: (existing as { id: string }).id }
+
+  const { data: inserted, error } = await supabase
+    .from('customers')
+    .insert({
+      org_id: unit.org_id,
+      unit_id: unit.id,
+      lead_id: lead.id,
+      name: contactName,
+      phone: lead.phone,
+      email: lead.email,
+      city: lead.city,
+      status: 'active',
+      source: 'receptionist_self_service',
+    })
+    .select('id')
+    .single()
+
+  if (error || !inserted) return null
+  return { customerId: (inserted as { id: string }).id }
+}
