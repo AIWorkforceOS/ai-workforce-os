@@ -160,4 +160,87 @@ describe('POST /api/webhooks/whatsapp — reentrega do provedor não duplica res
     const { data: leadsAfterSecond } = await supabase.from('leads').select('*')
     expect((leadsAfterSecond as unknown[]).length).toBe(1)
   })
+
+  // Regressão do incidente de 2026-08-01: Evolution API/Baileys reentregou
+  // uma resposta que NÓS mesmos enviamos como se fosse um inbound novo —
+  // `key.fromMe` chegou ausente/falso (o guard da linha ~145 não cobre esse
+  // caso), com `remoteJid` batendo com o PRÓPRIO número conectado ao canal.
+  // Sem o guard por ownPhone, isso criava um lead novo com o texto do
+  // próprio agente e podia disparar uma resposta a si mesmo (loop de
+  // auto-resposta — o mesmo padrão que já causou bloqueio do número antes).
+  it('mensagem cujo remetente é o próprio número conectado ao canal é tratada como eco e nunca processada como inbound novo', async () => {
+    const unit = buildUnit()
+    const { supabase } = createFakeSupabase({
+      units: [unit as unknown as Record<string, unknown>],
+    })
+
+    vi.doMock('@/lib/supabase/service', () => ({
+      createServiceClient: () => supabase,
+    }))
+    vi.doMock('@/lib/evolution', () => ({
+      getEvolutionConfig: () => ({ apiUrl: 'https://fake-evolution.test', apiKey: 'fake', instanceName: 'test-instance' }),
+      resolveWhatsappChannelByInstanceName: vi.fn(async () => ({
+        unit,
+        agentType: null,
+        channel: {
+          agentType: null,
+          config: { apiUrl: 'https://fake-evolution.test', apiKey: 'fake', instanceName: 'test-instance' },
+          // Número já sincronizado por uma mensagem anterior — é isto que o
+          // eco reentrega de volta como se fosse o remetente.
+          whatsappPhone: unit.whatsapp_phone,
+          persistPhone: vi.fn(async () => {}),
+        },
+      })),
+      resolveWhatsappChannel: vi.fn(async () => null),
+      getBase64FromMediaMessage: vi.fn(),
+      // Self-heal não teria nada novo pra persistir (já sincronizado).
+      syncWhatsappPhoneIfConnected: vi.fn(async () => unit.whatsapp_phone),
+      sendWhatsAppMessage,
+      sendTypingPresence: vi.fn(async () => ({ ok: true })),
+      sendRecordingPresence: vi.fn(async () => ({ ok: true })),
+      sendWhatsAppAudio: vi.fn(async () => ({ ok: true })),
+      sendWhatsAppDocument: vi.fn(async () => ({ ok: true })),
+    }))
+    vi.doMock('@/lib/openai', () => ({
+      getOpenAIApiKey: () => 'fake-key',
+      generateChatReply,
+      generateStructuredReply: vi.fn(async () => ({})),
+      transcribeAudio: vi.fn(),
+      synthesizeSpeech: vi.fn(),
+    }))
+
+    const { POST } = await import('../route')
+
+    // remoteJid é EXATAMENTE o número conectado ao canal (unit.whatsapp_phone),
+    // não o de um contato real — o eco reportado pela Evolution API.
+    const echoPayload = {
+      instance: 'test-instance',
+      data: {
+        key: {
+          id: 'ECHO-MSG-1',
+          remoteJid: `${unit.whatsapp_phone}@s.whatsapp.net`,
+          fromMe: false,
+        },
+        message: { conversation: 'Parece que você precisa de ajuda com algo relacionado a finanças ou contratos.' },
+      },
+    }
+
+    const response = await POST(
+      new Request('http://localhost/api/webhooks/whatsapp', {
+        method: 'POST',
+        body: JSON.stringify(echoPayload),
+      }),
+    )
+    const body = await response.json()
+
+    expect(body).toEqual({ ok: true, selfEcho: true })
+    expect(sendWhatsAppMessage).not.toHaveBeenCalled()
+    expect(generateChatReply).not.toHaveBeenCalled()
+
+    const { data: leadsAfter } = await supabase.from('leads').select('*')
+    expect((leadsAfter as unknown[]).length).toBe(0)
+
+    const { data: conversationsAfter } = await supabase.from('conversations').select('*')
+    expect((conversationsAfter as unknown[]).length).toBe(0)
+  })
 })

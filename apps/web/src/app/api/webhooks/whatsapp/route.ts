@@ -172,7 +172,7 @@ export async function POST(request: Request) {
     // Self-heal: uma mensagem real chegando por esta instância já prova que
     // ela está conectada — não depende de o cliente ter deixado a tela do QR
     // code aberta até o polling captar o status 'open' (ver syncWhatsappPhoneIfConnected).
-    await syncWhatsappPhoneIfConnected(supabase, unitRow, resolvedChannel)
+    const syncedPhone = await syncWhatsappPhoneIfConnected(supabase, unitRow, resolvedChannel)
 
     const remoteJid: string = key.remoteJid ?? ''
     const incomingPhone = normalizePhone(remoteJid.split('@')[0])
@@ -182,8 +182,13 @@ export async function POST(request: Request) {
     // enviamos como se fosse um novo inbound, com `key.fromMe` ausente/falso
     // — o guard de fromMe (linha ~145) sozinho não cobre esse caso. Se o
     // remetente é o próprio número conectado a este canal, é eco, não uma
-    // mensagem nova.
-    const ownPhone = normalizePhone(resolvedChannel.whatsappPhone)
+    // mensagem nova. Usa `syncedPhone` (valor recém-persistido acima) quando
+    // `resolvedChannel.whatsappPhone` ainda não tinha sido sincronizado nesta
+    // mesma invocação — sem isso, o self-heal na linha acima persiste o
+    // telefone no banco mas esta variável em memória continua vazia até a
+    // PRÓXIMA mensagem, deixando o guard inoperante bem na primeira vez que
+    // ele seria útil.
+    const ownPhone = normalizePhone(syncedPhone ?? resolvedChannel.whatsappPhone)
     if (ownPhone && phonesMatch(ownPhone, incomingPhone)) {
       await logSystemEvent(supabase, {
         level: 'info',
