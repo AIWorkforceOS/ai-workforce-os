@@ -346,7 +346,7 @@ export async function processReceptionistInbound(params: {
       ? `CONTEXTO DESTA RESPOSTA (ação de agenda já verificada/executada — baseie-se estritamente nisso, nunca contradiga nem invente outro resultado): ${appointmentContext}`
       : '',
     handoffTarget
-      ? 'Você já registrou o encaminhamento deste assunto para o time responsável — diga ao cliente, com naturalidade, que vai passar a conversa para a pessoa certa continuar.'
+      ? 'Você já registrou a verificação deste assunto com o time responsável — diga ao cliente, com naturalidade, que vai confirmar isso e volta com a resposta assim que tiver; você continua sendo quem fala com ele, nunca diga que outra pessoa vai entrar em contato.'
       : '',
   ]
     .filter(Boolean)
@@ -661,13 +661,13 @@ export async function processReceptionistProspectInbound(params: {
   const appointmentContext = await resolveProspectAppointmentAction({ supabase, unit, lead, contactName, extraction, services, locale })
 
   const extraContext = [
-    'Esta pessoa NÃO é uma cliente cadastrada ainda — pode ser uma cliente nova falando pela primeira vez, um franqueado com dúvida operacional, um lead interessado em comprar franquia, um estudante perguntando sobre estágio ou qualquer outro contato. Ajude como puder; se não souber resolver, diga claramente que vai encaminhar para o setor certo, nunca deixe a pessoa sem resposta.',
+    'Esta pessoa NÃO é uma cliente cadastrada ainda — pode ser uma cliente nova falando pela primeira vez, um franqueado com dúvida operacional, um lead interessado em comprar franquia, um estudante perguntando sobre estágio ou qualquer outro contato. Ajude como puder; tente resolver de verdade primeiro, e só se não conseguir diga claramente que vai verificar e volta com a resposta — nunca deixe a pessoa sem resposta e nunca diga que outra pessoa vai entrar em contato.',
     'NUNCA peça para a pessoa "se cadastrar", "fazer um cadastro" ou enviar dados para virar cliente formalmente — isso não é uma ação que você peça pra ela fazer: se ela quiser marcar um serviço, você mesma agenda na conversa (ver instrução abaixo), sem burocracia nenhuma da parte dela.',
     appointmentContext
       ? `CONTEXTO DESTA RESPOSTA (ação de agenda já verificada/executada — baseie-se estritamente nisso, nunca contradiga nem invente outro resultado): ${appointmentContext}`
       : '',
     handoffTarget
-      ? 'Você já registrou o encaminhamento deste assunto para o time responsável — diga à pessoa, com naturalidade, que vai passar para quem cuida disso continuar.'
+      ? 'Você já registrou a verificação deste assunto com o time responsável — diga à pessoa, com naturalidade, que vai confirmar isso e volta com a resposta assim que tiver; você continua sendo quem fala com ela, nunca diga que outra pessoa vai entrar em contato.'
       : '',
   ]
     .filter(Boolean)

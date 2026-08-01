@@ -245,7 +245,7 @@ export function buildSystemPrompt(
               .join(' ')
           : 'A empresa não ensinou nenhum dado específico para coletar neste momento — apenas confirme o fechamento com entusiasmo e reforce o valor da decisão.',
         dealAction ? `O que deve acontecer depois de coletar os dados: ${dealAction}.` : '',
-        'Assim que tiver os dados (se houver), avise o cliente que vai passar a finalização para o setor responsável e que alguém dará continuidade — não prometa prazos exatos nem detalhes que você não sabe.',
+        'Assim que tiver os dados (se houver), diga que você mesma vai finalizar isso internamente e volta com a confirmação assim que estiver pronta — você continua sendo quem fala com o cliente, nunca diga que outra pessoa vai entrar em contato, e não prometa prazos exatos nem detalhes que você não sabe.',
       ]
         .filter(Boolean)
         .join(' ')

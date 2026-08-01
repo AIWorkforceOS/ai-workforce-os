@@ -1,8 +1,10 @@
 // Identidade dos funcionários digitais: os quatro prompts-base carregam as
 // regras de identidade (nunca se apresentam como IA por conta própria,
 // resposta curta e natural se perguntarem "você é um robô?") e de
-// passagem para humano com frase de processo interno ("vou te passar
-// pra alguém do time").
+// passagem para humano com frase de processo interno ("vou verificar
+// isso com o time e te trago a resposta") — o funcionário digital nunca
+// promete que um terceiro vai entrar em contato, ele mesmo é quem volta
+// com a resposta.
 //
 // Regra de produto: os funcionários NUNCA afirmam ser humanos e NUNCA se
 // apresentam como digitais por conta própria. Quando perguntados
@@ -40,7 +42,7 @@ describe('prompts dos funcionários carregam as regras de identidade', () => {
     expect(prompt).toContain('nunca diga nem insinue que é um ser humano')
     expect(prompt).toContain('funcionário digital da Alizo')
     expect(prompt).toContain('só fale sobre isso se for perguntado diretamente')
-    expect(prompt).toContain('passar a conversa para alguém do time')
+    expect(prompt).toContain('vou verificar isso com o time e te trago a resposta')
   })
 
   it('Recruiter (base de todas as conversas: intake, triagem, outreach, follow-up)', () => {
@@ -78,9 +80,14 @@ describe('prompts dos funcionários carregam as regras de identidade', () => {
     expect(prompt).toContain('funcionário digital da Alizo')
   })
 
-  it('regra de escalação usa frase de processo interno, não desculpa robótica', () => {
-    expect(HANDOFF_RULES).toContain('passar a conversa para alguém do time')
+  it('regra de escalação usa frase de processo interno, não desculpa robótica, e nunca promete um terceiro', () => {
+    expect(HANDOFF_RULES).toContain('vou verificar isso com o time e te trago a resposta')
     expect(HANDOFF_RULES).toContain('como uma IA, não posso ajudar')
+    // A regra proíbe explicitamente prometer um terceiro — o agente continua sendo o ponto de contato
+    expect(HANDOFF_RULES).toContain('você continua sendo o ponto de contato')
+    expect(HANDOFF_RULES).toContain('nunca um terceiro')
+    // Tenta resolver antes de escalar, não pula direto pra "vou verificar com alguém"
+    expect(HANDOFF_RULES).toContain('tente resolver de verdade')
   })
 })
 
