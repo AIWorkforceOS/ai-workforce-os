@@ -16,6 +16,7 @@ import { buildTrainingCorrectionsContext } from '@/lib/agent-training'
 import { buildCombinedBusinessContext } from '@/lib/interview/engine'
 import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
 import { fetchActiveAttachments, buildAttachmentsContext } from '@/lib/attachments'
+import { resolveWhatsappChannel } from '@/lib/evolution'
 import type {
   AgentConfig,
   AgentTone,
@@ -329,11 +330,17 @@ export async function sendAcrossChannels(params: {
   /** Botão "Falar agora no WhatsApp" no e-mail — só na prospecção fria (ver triggerFirstContact em lib/leads/lead-intake.ts). */
   whatsappCta?: { phone: string; text: string } | null
 }): Promise<SendAcrossChannelsResult> {
+  // Instância dedicada do Sales Rep (migration 051), quando existir — sem
+  // isso, o disparo caía sempre no número compartilhado histórico da
+  // unidade (getEvolutionConfig sem override), mesmo quando o cliente
+  // conectou um número dedicado ao Sales Rep via QR code.
+  const sdrChannel = await resolveWhatsappChannel(params.supabase, params.unit, 'sdr')
   const attempts = await sendToLeadChannels({
     unit: params.unit,
     lead: params.lead,
     text: params.text,
     context: { subject: params.subject, personaName: params.personaName, whatsappCta: params.whatsappCta },
+    evolutionConfigOverride: sdrChannel?.config ?? null,
   })
 
   const sentAt = new Date().toISOString()
@@ -605,7 +612,12 @@ export async function processInboundMessage(params: {
   }
 
   const channelType = getUnitChannelType(unit)
-  const channel = getMessagingChannel(unit, supabase)
+  // Instância dedicada ao Sales Rep (migration 051), quando existir — sem
+  // isso, a resposta saía sempre pelo número compartilhado histórico da
+  // unidade (getEvolutionConfig sem override), mesmo com o cliente tendo
+  // conectado um número dedicado ao Sales Rep via QR code.
+  const sdrChannel = channelType === 'sms' ? null : await resolveWhatsappChannel(supabase, unit, 'sdr')
+  const channel = getMessagingChannel(unit, supabase, sdrChannel?.config ?? null)
   if (!channel) {
     await reportAgentFailure({
       supabase,

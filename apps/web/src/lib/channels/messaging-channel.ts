@@ -278,11 +278,13 @@ export async function sendToLeadChannels(params: {
   lead: Pick<Lead, 'phone' | 'email'>
   text: string
   context?: SendContext
+  /** Instância Evolution dedicada ao Sales Rep (migration 051), quando existir — ver resolveWhatsappChannel em lib/evolution.ts. Omitido, cai no número compartilhado histórico da unidade. */
+  evolutionConfigOverride?: EvolutionUnitConfig | null
 }): Promise<ChannelSendAttempt[]> {
   const attempts: ChannelSendAttempt[] = []
 
   if (params.lead.phone) {
-    const channel = getMessagingChannel(params.unit)
+    const channel = getMessagingChannel(params.unit, null, params.evolutionConfigOverride)
     if (channel) {
       try {
         await channel.sendMessage(params.lead.phone, params.text, params.context)

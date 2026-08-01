@@ -35,6 +35,27 @@ export type SetupStatus = {
 type UnitRow = Pick<Unit, 'id' | 'whatsapp_phone' | 'is_active'>
 type AgentConfigRow = Pick<AgentConfig, 'unit_id' | 'agent_type' | 'is_active' | 'persona_name'>
 
+/** Linha de unit_whatsapp_channels (migration 051) relevante pra saber se um número dedicado a um funcionário já foi conectado. */
+export type UnitWhatsappChannelRow = { unit_id: string; agent_type: string; whatsapp_phone: string | null }
+
+/**
+ * Uma unidade "tem WhatsApp" quando o número compartilhado histórico
+ * (units.whatsapp_phone) está preenchido OU quando existe uma instância
+ * dedicada (unit_whatsapp_channels, migration 051) já conectada para o
+ * `agentType` em questão — sem isso, unidades que conectaram o WhatsApp
+ * de um funcionário específico via QR code (ver ensureDedicatedWhatsappChannel
+ * em lib/evolution.ts) continuam aparecendo como "sem WhatsApp" pra sempre,
+ * mesmo com a conexão funcionando de verdade.
+ */
+export function unitHasWhatsapp(
+  unit: Pick<UnitRow, 'id' | 'whatsapp_phone'>,
+  channels: UnitWhatsappChannelRow[],
+  agentType: string,
+): boolean {
+  if (unit.whatsapp_phone) return true
+  return channels.some((c) => c.unit_id === unit.id && c.agent_type === agentType && !!c.whatsapp_phone)
+}
+
 /** Os outros 5 funcionários digitais possíveis, além do Sales Rep (coberto por 'agent'/'active' acima). */
 const OTHER_EMPLOYEE_TYPES: { agentType: string; label: string }[] = [
   { agentType: 'receptionist', label: 'AI Receptionist ativo' },
@@ -44,9 +65,13 @@ const OTHER_EMPLOYEE_TYPES: { agentType: string; label: string }[] = [
   { agentType: 'seo_specialist', label: 'Especialista em SEO ativo' },
 ]
 
-export function computeSetupStatus(units: UnitRow[], agentConfigs: AgentConfigRow[]): SetupStatus {
+export function computeSetupStatus(
+  units: UnitRow[],
+  agentConfigs: AgentConfigRow[],
+  whatsappChannels: UnitWhatsappChannelRow[] = [],
+): SetupStatus {
   const hasUnit = units.length > 0
-  const whatsappConnected = units.some((u) => !!u.whatsapp_phone)
+  const whatsappConnected = units.some((u) => unitHasWhatsapp(u, whatsappChannels, 'sdr'))
   const sdrConfigs = agentConfigs.filter((c) => c.agent_type === 'sdr')
   const agentConfigured = sdrConfigs.length > 0
   const agentActive = sdrConfigs.some((c) => c.is_active)

@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { getAppUser } from '@/lib/app-user'
-import { computeSetupStatus } from '@/lib/setup-status'
+import { computeSetupStatus, unitHasWhatsapp, type UnitWhatsappChannelRow } from '@/lib/setup-status'
 import { Building2, Plus } from 'lucide-react'
 import type { AgentConfig, DashboardSummaryRow, Organization, Unit } from '@/lib/types'
 import { Badge, type BadgeVariant, Card, EmptyState, PageHeader, PrimaryButton, TableShell, Td, Th, Tr } from '@/components/ui/dashboard-ui'
@@ -19,10 +19,11 @@ export default async function OrganizationsPage() {
   const appUser = await getAppUser()
   const supabase = await createClient()
 
-  const [{ data: organizations }, { data: units }, { data: configs }, { data: users }, { data: summary }, { data: candidates }] = await Promise.all([
+  const [{ data: organizations }, { data: units }, { data: configs }, { data: whatsappChannels }, { data: users }, { data: summary }, { data: candidates }] = await Promise.all([
     supabase.from('organizations').select('*').order('created_at', { ascending: false }),
     supabase.from('units').select('id, org_id, name, is_active, whatsapp_phone'),
     supabase.from('agent_configs').select('unit_id, agent_type, is_active, persona_name'),
+    supabase.from('unit_whatsapp_channels').select('unit_id, agent_type, whatsapp_phone'),
     supabase.from('users').select('id, org_id, is_active'),
     supabase.from('dashboard_summary').select('*'),
     supabase.from('candidates').select('org_id'),
@@ -31,6 +32,7 @@ export default async function OrganizationsPage() {
   const orgRows = (organizations ?? []) as Organization[]
   const unitRows = (units ?? []) as Pick<Unit, 'id' | 'org_id' | 'name' | 'is_active' | 'whatsapp_phone'>[]
   const configRows = (configs ?? []) as Pick<AgentConfig, 'unit_id' | 'agent_type' | 'is_active' | 'persona_name'>[]
+  const channelRows = (whatsappChannels ?? []) as UnitWhatsappChannelRow[]
   const userRows = (users ?? []) as { id: string; org_id: string | null; is_active: boolean }[]
   const summaryRows = (summary ?? []) as DashboardSummaryRow[]
   const candidateRows = (candidates ?? []) as { org_id: string }[]
@@ -39,12 +41,12 @@ export default async function OrganizationsPage() {
   const health = orgRows.map((org) => {
     const orgUnits = unitRows.filter((u) => u.org_id === org.id)
     const orgConfigs = configRows.filter((c) => orgUnits.some((u) => u.id === c.unit_id))
-    const setup = computeSetupStatus(orgUnits, orgConfigs)
+    const setup = computeSetupStatus(orgUnits, orgConfigs, channelRows)
     return {
       org,
       setup,
       unitCount: orgUnits.length,
-      whatsappCount: orgUnits.filter((u) => u.whatsapp_phone).length,
+      whatsappCount: orgUnits.filter((u) => unitHasWhatsapp(u, channelRows, 'sdr')).length,
       userCount: userRows.filter((u) => u.org_id === org.id && u.is_active).length,
       totalLeads: orgUnits.reduce((s, u) => s + Number(leadsByUnit.get(u.id)?.total_leads ?? 0), 0),
       totalConversations: orgUnits.reduce((s, u) => s + Number(leadsByUnit.get(u.id)?.total_conversations ?? 0), 0),

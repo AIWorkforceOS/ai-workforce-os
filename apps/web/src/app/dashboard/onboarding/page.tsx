@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getAppUser } from '@/lib/app-user'
-import { computeSetupStatus } from '@/lib/setup-status'
+import { computeSetupStatus, type UnitWhatsappChannelRow } from '@/lib/setup-status'
 import { fetchOrganizationManagementMode } from '@/lib/organizations'
 import { OnboardingWizard } from '@/components/onboarding/wizard'
 import type { AgentConfig, Unit } from '@/lib/types'
@@ -13,16 +13,18 @@ export default async function OnboardingPage() {
   const appUser = await getAppUser()
   if (!appUser) redirect('/login')
 
-  const [{ data: units }, { data: configs }, managementMode] = await Promise.all([
+  const [{ data: units }, { data: configs }, { data: whatsappChannels }, managementMode] = await Promise.all([
     supabase.from('units').select('*').order('created_at', { ascending: true }),
     supabase.from('agent_configs').select('*').eq('agent_type', 'sdr'),
+    supabase.from('unit_whatsapp_channels').select('unit_id, agent_type, whatsapp_phone'),
     // raw: o wizard precisa distinguir "ainda não escolheu" (null) de escolha feita
     fetchOrganizationManagementMode(supabase, appUser.orgId, { raw: true }),
   ])
 
   const unitRows = (units ?? []) as Unit[]
   const configRows = (configs ?? []) as AgentConfig[]
-  const status = computeSetupStatus(unitRows, configRows)
+  const channelRows = (whatsappChannels ?? []) as UnitWhatsappChannelRow[]
+  const status = computeSetupStatus(unitRows, configRows, channelRows)
 
   // A primeira unidade é a "principal" do onboarding (criada no checkout).
   const unit = unitRows[0] ?? null

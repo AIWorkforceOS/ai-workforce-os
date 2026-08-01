@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getAppUser } from '@/lib/app-user'
 import { fetchOrganizationVerticalKey } from '@/lib/organizations'
 import { EmployeeCatalog } from '@/components/dashboard/employee-catalog'
+import type { UnitWhatsappChannelRow } from '@/lib/setup-status'
 import type { AgentConfig, Unit } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -13,10 +14,11 @@ export default async function DigitalTeamPage() {
   const supabase = await createClient()
   const appUser = await getAppUser()
 
-  const [{ data: units }, { data: configs }, { count: openJobs }, { count: adAccounts }, { count: customers }, { count: socialAccounts }, { count: seoAudits }, verticalKey] =
+  const [{ data: units }, { data: configs }, { data: whatsappChannels }, { count: openJobs }, { count: adAccounts }, { count: customers }, { count: socialAccounts }, { count: seoAudits }, verticalKey] =
     await Promise.all([
       supabase.from('units').select('*').order('created_at', { ascending: true }),
       supabase.from('agent_configs').select('*'),
+      supabase.from('unit_whatsapp_channels').select('unit_id, agent_type, whatsapp_phone'),
       supabase.from('job_openings').select('id', { count: 'exact', head: true }),
       supabase.from('ad_accounts').select('id', { count: 'exact', head: true }),
       supabase.from('customers').select('id', { count: 'exact', head: true }),
@@ -29,6 +31,7 @@ export default async function DigitalTeamPage() {
     <EmployeeCatalog
       units={(units ?? []) as Unit[]}
       configs={(configs ?? []) as AgentConfig[]}
+      whatsappChannels={(whatsappChannels ?? []) as UnitWhatsappChannelRow[]}
       openJobs={openJobs ?? 0}
       adAccounts={adAccounts ?? 0}
       customers={customers ?? 0}

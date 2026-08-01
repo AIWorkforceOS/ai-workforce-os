@@ -23,6 +23,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, brandGradient } from '@/components/ui/dashboard-ui'
 import { computeTrainingCompleteness } from '@/lib/interview/completeness'
 import { buildClonedAgentConfig } from '@/lib/interview/clone'
+import { unitHasWhatsapp, type UnitWhatsappChannelRow } from '@/lib/setup-status'
 import type { VerticalKey } from '@/lib/verticals/catalog'
 import type { AgentConfig, Unit } from '@/lib/types'
 
@@ -55,6 +56,7 @@ const STATE_META: Record<EmployeeState, { label: string; style: React.CSSPropert
 export function EmployeeCatalog({
   units,
   configs,
+  whatsappChannels,
   openJobs,
   adAccounts,
   customers,
@@ -64,6 +66,7 @@ export function EmployeeCatalog({
 }: {
   units: Unit[]
   configs: AgentConfig[]
+  whatsappChannels: UnitWhatsappChannelRow[]
   openJobs: number
   adAccounts: number
   customers: number
@@ -88,7 +91,7 @@ export function EmployeeCatalog({
   // unidade dedicada.
   const whatsappHref = isMainUnit ? '/dashboard/onboarding' : `/dashboard/units/${selectedUnitId}`
 
-  const whatsappConnected = !!selectedUnit?.whatsapp_phone
+  const whatsappConnected = !!selectedUnit && unitHasWhatsapp(selectedUnit, whatsappChannels, 'sdr')
   const sdr = configs.find((c) => c.agent_type === 'sdr' && c.unit_id === selectedUnitId)
   const recruiter = configs.find((c) => c.agent_type === 'recruiter' && c.unit_id === selectedUnitId)
   const traffic = configs.find((c) => c.agent_type === 'traffic_specialist' && c.unit_id === selectedUnitId)

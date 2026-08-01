@@ -2,7 +2,7 @@
 // colocado (não é rota) pra page.tsx ficar só com o despacho por papel.
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { computeSetupStatus } from '@/lib/setup-status'
+import { computeSetupStatus, unitHasWhatsapp, type UnitWhatsappChannelRow } from '@/lib/setup-status'
 import { daysAgo, startOfMonth } from '@/lib/admin-metrics'
 import { LeadsByDayChart } from '@/components/dashboard/leads-by-day-chart'
 import { IntegrationsStatusCard } from '@/components/dashboard/integrations-status'
@@ -88,6 +88,7 @@ export async function ClientHome({ firstName, unitId }: { firstName: string; uni
   const [
     { data: units },
     { data: agentConfigs },
+    { data: whatsappChannels },
     { count: totalLeads },
     { count: newLeads24h },
     { count: wonLeads },
@@ -100,6 +101,7 @@ export async function ClientHome({ firstName, unitId }: { firstName: string; uni
   ] = await Promise.all([
     supabase.from('units').select('*').order('created_at', { ascending: true }),
     supabase.from('agent_configs').select('*'),
+    supabase.from('unit_whatsapp_channels').select('unit_id, agent_type, whatsapp_phone'),
     scopedToUnit(supabase.from('leads').select('id', { count: 'exact', head: true }), unitId),
     scopedToUnit(
       supabase.from('leads').select('id', { count: 'exact', head: true }).gte('created_at', since24h.toISOString()),
@@ -120,12 +122,13 @@ export async function ClientHome({ firstName, unitId }: { firstName: string; uni
 
   const allUnits = (units ?? []) as Unit[]
   const allConfigs = (agentConfigs ?? []) as AgentConfig[]
+  const channelRows = (whatsappChannels ?? []) as UnitWhatsappChannelRow[]
   // Dono de unidade: tudo que aparece na tela fala só da unidade dele.
   const unitRows = unitId ? allUnits.filter((u) => u.id === unitId) : allUnits
   const configRows = unitId ? allConfigs.filter((c) => c.unit_id === unitId) : allConfigs
   const ownUnit = unitId ? unitRows[0] : undefined
-  const setup = computeSetupStatus(unitRows, configRows)
-  const unitsWithoutWhatsApp = unitRows.filter((u) => u.is_active && !u.whatsapp_phone)
+  const setup = computeSetupStatus(unitRows, configRows, channelRows)
+  const unitsWithoutWhatsApp = unitRows.filter((u) => u.is_active && !unitHasWhatsapp(u, channelRows, 'sdr'))
   const summaryRows = ((summary ?? []) as DashboardSummaryRow[])
     .filter((r) => r.unit_id != null)
     .sort((a, b) => Number(b.total_leads) - Number(a.total_leads))
@@ -148,7 +151,7 @@ export async function ClientHome({ firstName, unitId }: { firstName: string; uni
   const contentActive = !!contentConfig?.is_active
   const seoConfig = configRows.find((c) => c.agent_type === 'seo_specialist')
   const seoActive = !!seoConfig?.is_active
-  const whatsappConnected = unitRows.some((u) => u.whatsapp_phone)
+  const whatsappConnected = unitRows.some((u) => unitHasWhatsapp(u, channelRows, 'sdr'))
   const sdrActive = !!sdrConfig?.is_active && whatsappConnected
   const sdrStateLabel = sdrActive
     ? 'Trabalhando'
@@ -388,7 +391,7 @@ export async function ClientHome({ firstName, unitId }: { firstName: string; uni
                     {unit.name}
                   </Link>
                 </div>
-                {unit.whatsapp_phone ? (
+                {unitHasWhatsapp(unit, channelRows, 'sdr') ? (
                   <span className="flex flex-shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold" style={{ background: 'rgba(34,197,94,0.12)', color: '#4ade80' }}>
                     <CheckCircle2 size={10} /> Conectado
                   </span>
@@ -500,6 +503,7 @@ export async function AdminHome({ firstName }: { firstName: string }) {
     { data: orgs },
     { data: units },
     { data: configs },
+    { data: whatsappChannels },
     { data: summary },
     { data: financial },
     { data: errorEventsData },
@@ -509,6 +513,7 @@ export async function AdminHome({ firstName }: { firstName: string }) {
     supabase.from('organizations').select('*').order('created_at', { ascending: false }),
     supabase.from('units').select('id, org_id, name, whatsapp_phone, is_active'),
     supabase.from('agent_configs').select('unit_id, agent_type, is_active, persona_name'),
+    supabase.from('unit_whatsapp_channels').select('unit_id, agent_type, whatsapp_phone'),
     supabase.from('dashboard_summary').select('*'),
     supabase.from('financial_records').select('type, amount, status'),
     // Erros de integração das últimas 24h (system_events, gravados pelos crons/APIs)
@@ -543,6 +548,7 @@ export async function AdminHome({ firstName }: { firstName: string }) {
   const orgRows = (orgs ?? []) as Organization[]
   const unitRows = (units ?? []) as Pick<Unit, 'id' | 'org_id' | 'name' | 'whatsapp_phone' | 'is_active'>[]
   const configRows = (configs ?? []) as Pick<AgentConfig, 'unit_id' | 'agent_type' | 'is_active' | 'persona_name'>[]
+  const channelRows = (whatsappChannels ?? []) as UnitWhatsappChannelRow[]
   const summaryRows = (summary ?? []) as DashboardSummaryRow[]
   const financialRows = (financial ?? []) as { type: string; amount: number; status: string }[]
   const errorEvents = (errorEventsData ?? []) as { org_id: string | null; source: string }[]
@@ -591,9 +597,9 @@ export async function AdminHome({ firstName }: { firstName: string }) {
   const orgHealth = orgRows.map((org) => {
     const orgUnits = unitsByOrg.get(org.id) ?? []
     const orgConfigs = orgUnits.flatMap((u) => configsByUnit.get(u.id) ?? [])
-    const setup = computeSetupStatus(orgUnits, orgConfigs)
+    const setup = computeSetupStatus(orgUnits, orgConfigs, channelRows)
     const totalLeads = orgUnits.reduce((s, u) => s + Number(leadsByUnit.get(u.id)?.total_leads ?? 0), 0)
-    return { org, setup, unitCount: orgUnits.length, whatsappCount: orgUnits.filter((u) => u.whatsapp_phone).length, totalLeads }
+    return { org, setup, unitCount: orgUnits.length, whatsappCount: orgUnits.filter((u) => unitHasWhatsapp(u, channelRows, 'sdr')).length, totalLeads }
   })
 
   const activeOrgs = orgHealth.filter((o) => o.org.is_active)

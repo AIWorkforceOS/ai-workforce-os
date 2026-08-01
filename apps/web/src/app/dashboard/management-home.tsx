@@ -5,7 +5,7 @@
 // padrão de home-views.tsx; a page.tsx despacha pra cá pelo modo da org.
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { computeSetupStatus } from '@/lib/setup-status'
+import { computeSetupStatus, type UnitWhatsappChannelRow } from '@/lib/setup-status'
 import { unitDefaultLocale } from '@/lib/i18n/config'
 import {
   AlertBanner,
@@ -108,6 +108,7 @@ export async function ManagementHome({ firstName, unitId }: { firstName: string;
   const [
     { data: units },
     { data: agentConfigs },
+    { data: whatsappChannels },
     { count: activeCustomers },
     { count: newCustomers7d },
     { data: upcoming },
@@ -117,6 +118,7 @@ export async function ManagementHome({ firstName, unitId }: { firstName: string;
   ] = await Promise.all([
     supabase.from('units').select('*').order('created_at', { ascending: true }),
     supabase.from('agent_configs').select('*'),
+    supabase.from('unit_whatsapp_channels').select('unit_id, agent_type, whatsapp_phone'),
     scopedToUnit(
       supabase.from('customers').select('id', { count: 'exact', head: true }).eq('status', 'active'),
       unitId,
@@ -154,10 +156,11 @@ export async function ManagementHome({ firstName, unitId }: { firstName: string;
 
   const allUnits = (units ?? []) as Unit[]
   const allConfigs = (agentConfigs ?? []) as AgentConfig[]
+  const channelRows = (whatsappChannels ?? []) as UnitWhatsappChannelRow[]
   const unitRows = unitId ? allUnits.filter((u) => u.id === unitId) : allUnits
   const configRows = unitId ? allConfigs.filter((c) => c.unit_id === unitId) : allConfigs
   const ownUnit = unitId ? unitRows[0] : undefined
-  const setup = computeSetupStatus(unitRows, configRows)
+  const setup = computeSetupStatus(unitRows, configRows, channelRows)
 
   const upcomingRows = ((upcoming ?? []) as unknown as UpcomingAppointment[])
   const weekRecords = ((recordsWeek ?? []) as ServiceRecordRow[])

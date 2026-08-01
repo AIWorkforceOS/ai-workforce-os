@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { computeSetupStatus } from '@/lib/setup-status'
+import { computeSetupStatus, unitHasWhatsapp, type UnitWhatsappChannelRow } from '@/lib/setup-status'
 import type { AgentConfig, Unit } from '@/lib/types'
 
 const AGENT_TYPE_LABEL: Record<string, string> = {
@@ -31,9 +31,10 @@ type SocialAccountRow = { connection_status: string }
  * queries à org do usuário autenticado — não precisa filtrar por org_id aqui.
  */
 export async function buildAccountContext(supabase: SupabaseClient): Promise<string | null> {
-  const [unitsResult, agentConfigsResult, adAccountsResult, socialAccountsResult] = await Promise.allSettled([
+  const [unitsResult, agentConfigsResult, whatsappChannelsResult, adAccountsResult, socialAccountsResult] = await Promise.allSettled([
     supabase.from('units').select('id, name, whatsapp_phone, is_active').order('created_at', { ascending: true }),
     supabase.from('agent_configs').select('unit_id, agent_type, persona_name, is_active, interview_status'),
+    supabase.from('unit_whatsapp_channels').select('unit_id, agent_type, whatsapp_phone'),
     supabase.from('ad_accounts').select('connection_status'),
     supabase.from('social_accounts').select('connection_status'),
   ])
@@ -42,6 +43,7 @@ export async function buildAccountContext(supabase: SupabaseClient): Promise<str
   const agentConfigs = extractRows<
     Pick<AgentConfig, 'unit_id' | 'agent_type' | 'persona_name' | 'is_active' | 'interview_status'>
   >(agentConfigsResult, 'agent_configs')
+  const whatsappChannels = extractRows<UnitWhatsappChannelRow>(whatsappChannelsResult, 'unit_whatsapp_channels') ?? []
   const adAccounts = extractRows<AdAccountRow>(adAccountsResult, 'ad_accounts')
   const socialAccounts = extractRows<SocialAccountRow>(socialAccountsResult, 'social_accounts')
 
@@ -52,7 +54,7 @@ export async function buildAccountContext(supabase: SupabaseClient): Promise<str
       sections.push('Unidades: nenhuma cadastrada ainda.')
     } else {
       const unitLines = units.map((u) => {
-        const status = u.whatsapp_phone ? 'WhatsApp conectado' : 'WhatsApp NÃO conectado'
+        const status = unitHasWhatsapp(u, whatsappChannels, 'sdr') ? 'WhatsApp conectado' : 'WhatsApp NÃO conectado'
         return `- ${u.name}${u.is_active ? '' : ' (inativa)'}: ${status}`
       })
       sections.push(`Unidades (${units.length}):\n${unitLines.join('\n')}`)
@@ -87,7 +89,7 @@ export async function buildAccountContext(supabase: SupabaseClient): Promise<str
   }
 
   if (units && agentConfigs) {
-    const setup = computeSetupStatus(units, agentConfigs)
+    const setup = computeSetupStatus(units, agentConfigs, whatsappChannels)
     if (setup.nextAction) {
       sections.push(`Próximo passo pendente do cliente: ${setup.nextAction.label} (${setup.nextAction.description})`)
     }

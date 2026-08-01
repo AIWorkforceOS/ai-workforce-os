@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getAppUser } from '@/lib/app-user'
-import { computeSetupStatus } from '@/lib/setup-status'
+import { computeSetupStatus, unitHasWhatsapp, type UnitWhatsappChannelRow } from '@/lib/setup-status'
 import { ChangePlanForm, DeleteOrgButton, ManagementModeForm, ProvisionUserForm, ResetPasswordButton, ToggleOrgActive } from '@/components/admin/org-actions'
 import { Badge, Card, TableShell, Td, Th, Tr } from '@/components/ui/dashboard-ui'
 import { AlertTriangle, ArrowLeft, Check, CheckCircle2, WifiOff } from 'lucide-react'
@@ -53,14 +53,18 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ id: 
   const leadsByUnit = new Map(summaryRows.map((r) => [r.unit_id, r]))
 
   const unitIds = unitRows.map((u) => u.id)
-  const { data: configs } = unitIds.length
-    ? await supabase.from('agent_configs').select('*').in('unit_id', unitIds)
-    : { data: [] }
+  const [{ data: configs }, { data: whatsappChannels }] = unitIds.length
+    ? await Promise.all([
+        supabase.from('agent_configs').select('*').in('unit_id', unitIds),
+        supabase.from('unit_whatsapp_channels').select('unit_id, agent_type, whatsapp_phone').in('unit_id', unitIds),
+      ])
+    : [{ data: [] }, { data: [] }]
   const configRows = (configs ?? []) as AgentConfig[]
+  const channelRows = (whatsappChannels ?? []) as UnitWhatsappChannelRow[]
 
   const { count: candidateCount } = await supabase.from('candidates').select('id', { count: 'exact', head: true }).eq('org_id', id)
 
-  const setup = computeSetupStatus(unitRows, configRows)
+  const setup = computeSetupStatus(unitRows, configRows, channelRows)
   const totalLeads = unitRows.reduce((s, u) => s + Number(leadsByUnit.get(u.id)?.total_leads ?? 0), 0)
   const totalConversations = unitRows.reduce((s, u) => s + Number(leadsByUnit.get(u.id)?.total_conversations ?? 0), 0)
   const errorEvents = eventRows.filter((e) => e.level === 'error')
@@ -131,7 +135,7 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ id: 
           <div className="mt-3 grid grid-cols-2 gap-3">
             {[
               { label: 'Unidades', value: unitRows.length },
-              { label: 'WhatsApp ativos', value: unitRows.filter((u) => u.whatsapp_phone).length },
+              { label: 'WhatsApp ativos', value: unitRows.filter((u) => unitHasWhatsapp(u, channelRows, 'sdr')).length },
               { label: 'Leads', value: totalLeads },
               { label: 'Acessos ativos', value: userRows.filter((u) => u.is_active).length },
             ].map(({ label, value }) => (
@@ -197,6 +201,8 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ id: 
             <tbody>
               {unitRows.map((unit) => {
                 const cfg = configRows.find((c) => c.unit_id === unit.id && c.agent_type === 'sdr')
+                const sdrChannel = channelRows.find((c) => c.unit_id === unit.id && c.agent_type === 'sdr')
+                const sdrPhone = unit.whatsapp_phone ?? sdrChannel?.whatsapp_phone ?? null
                 return (
                   <Tr key={unit.id}>
                     <Td>
@@ -206,9 +212,9 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ id: 
                       <p className="text-[11px] text-slate-500">{unit.region_city ?? '—'}</p>
                     </Td>
                     <Td>
-                      {unit.whatsapp_phone ? (
+                      {sdrPhone ? (
                         <span className="flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold" style={{ background: 'rgba(34,197,94,0.12)', color: '#4ade80' }}>
-                          <CheckCircle2 size={10} /> {unit.whatsapp_phone}
+                          <CheckCircle2 size={10} /> {sdrPhone}
                         </span>
                       ) : (
                         <span className="flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium text-slate-500" style={{ background: 'rgba(255,255,255,0.05)' }}>

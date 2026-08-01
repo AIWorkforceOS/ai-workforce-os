@@ -12,6 +12,7 @@ import { handleSalesDealHandoff } from '@/lib/sales/deal-handoff'
 import { processReceptionistInbound, processReceptionistProspectInbound } from '@/lib/receptionist/engine'
 import { logSystemEvent } from '@/lib/system-events'
 import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
+import { resolveWhatsappChannel } from '@/lib/evolution'
 import { getMessagingChannel } from '@/lib/channels/messaging-channel'
 import type { ChannelType } from '@/lib/channels/messaging-channel'
 import type { Customer, Lead, Unit } from '@/lib/types'
@@ -133,7 +134,14 @@ type UnknownInboundContext = {
 async function handleUnknownInbound(params: UnknownInboundContext): Promise<void> {
   const { supabase, unit, channel, incomingPhone, incomingEmail, text, externalMessageId, sentAt, wasAudioMessage } = params
   const apiKey = getOpenAIApiKey()
-  const messagingChannel = getMessagingChannel(unit, supabase)
+  // Instância dedicada ao Sales Rep (migration 051), quando existir — esta
+  // triagem (Rota 3) só é alcançada por mensagens que chegaram pela
+  // instância dedicada do Sales Rep ou pelo número compartilhado histórico
+  // (a Recepcionista tem seu próprio desvio antes de chegar aqui, ver
+  // app/api/webhooks/whatsapp/route.ts), então resolver a dedicada do
+  // Sales Rep aqui sempre bate com a instância certa.
+  const sdrChannel = channel === 'whatsapp' ? await resolveWhatsappChannel(supabase, unit, 'sdr') : null
+  const messagingChannel = getMessagingChannel(unit, supabase, sdrChannel?.config ?? null)
 
   if (!apiKey || !messagingChannel) return
 

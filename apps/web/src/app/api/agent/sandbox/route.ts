@@ -98,9 +98,22 @@ export async function POST(request: Request) {
     persona_name: 'Assistente',
     persona_tone: 'friendly',
   } as AgentConfig
+  // Para SDR/Recruiter o simulado É sempre um cliente/candidato — "como se
+  // fosse um cliente real" está correto. Para a Recepcionista isso é
+  // enganoso: no atendimento real, quem escreve pode ser cliente cadastrado,
+  // franqueado, lead de franquia ou candidato a estágio (ver "atende quem
+  // quer que escreva" em buildReceptionistSystemPrompt), e forçar a
+  // simulação a tratar todo mundo como "cliente real" empurra o modelo a
+  // sempre puxar o fluxo de cadastro de cliente novo, mesmo quando o dono
+  // está testando um cenário de não-cliente — o oposto do que a Recepcionista
+  // foi treinada para fazer (migration 051, item 4 do pedido).
+  const simulationContext =
+    agentType === 'receptionist'
+      ? 'Esta é uma conversa de TESTE feita pelo dono da empresa para ver como você responde. Quem está do outro lado pode estar simulando um cliente já cadastrado OU qualquer outro tipo de contato que você também atende (franqueado com dúvida, lead interessado em franquia, candidato a estágio, etc.) — identifique pelo contexto da própria conversa, exatamente como faria numa mensagem real, e nunca assuma que precisa cadastrar a pessoa como cliente antes de ajudar.'
+      : 'Esta é uma conversa de TESTE feita pelo dono da empresa para ver como você responde — atenda normalmente, como se fosse um cliente real.'
   const systemPrompt = [
     buildAgentSystemPrompt(agentType, configRow ?? fallbackConfig, unitRow, organizationProfile),
-    'Esta é uma conversa de TESTE feita pelo dono da empresa para ver como você responde — atenda normalmente, como se fosse um cliente real.',
+    simulationContext,
   ].join(' ')
 
   try {

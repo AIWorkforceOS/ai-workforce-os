@@ -99,6 +99,10 @@ describe('POST /api/webhooks/whatsapp — reentrega do provedor não duplica res
           persistPhone: vi.fn(async () => {}),
         },
       })),
+      // Sem canal dedicado (unit_whatsapp_channels) neste teste — cai no
+      // fallback legado, mesmo config da instância compartilhada acima
+      // (ver handleUnknownInbound em lib/inbound-router.ts).
+      resolveWhatsappChannel: vi.fn(async () => null),
       getBase64FromMediaMessage: vi.fn(),
       syncWhatsappPhoneIfConnected: vi.fn(async () => {}),
       sendWhatsAppMessage,
