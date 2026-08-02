@@ -440,18 +440,12 @@ export async function generateFollowUpMessage(
 async function findEscalationReason(
   incomingText: string,
   agentConfig: AgentConfig,
-  messageCount: number,
 ): Promise<string | null> {
   const keywords = agentConfig.escalation_rules?.keywords ?? []
   const matched = keywords.find((keyword) =>
     incomingText.toLowerCase().includes(keyword.toLowerCase()),
   )
   if (matched) return `palavra-chave de escalação detectada ("${matched}")`
-
-  const afterMessages = agentConfig.escalation_rules?.after_messages
-  if (afterMessages && messageCount >= afterMessages) {
-    return `limite de ${afterMessages} mensagens na conversa atingido`
-  }
 
   return null
 }
@@ -538,8 +532,7 @@ export async function processInboundMessage(params: {
   // valem só para disparos proativos (primeiro contato, follow-up). O
   // lead engajado que responde de madrugada recebe resposta na hora,
   // quantas mensagens forem necessárias para fechar o negócio. A
-  // proteção contra conversa interminável continua sendo a escalação
-  // por after_messages/keywords logo abaixo.
+  // escalação só ocorre por palavra-chave configurada.
 
   const { data: history } = await supabase
     .from('conversations')
@@ -553,10 +546,65 @@ export async function processInboundMessage(params: {
   const escalationReason = await findEscalationReason(
     incomingText,
     config,
-    historyRows.length + 1,
   )
 
   if (escalationReason) {
+    // Tenta enviar uma mensagem de confirmação ao cliente (best-effort,
+    // sem deixar uma falha aqui impedir o e-mail de escalação).
+    const channelType = getUnitChannelType(unit)
+    const apiKey = getOpenAIApiKey()
+    if (apiKey && lead.phone) {
+      try {
+        const sdrChannel = channelType === 'sms' ? null : await resolveWhatsappChannel(supabase, unit, 'sdr')
+        const channel = getMessagingChannel(unit, supabase, sdrChannel?.config ?? null)
+        if (channel) {
+          const systemPrompt = [
+            buildSystemPrompt(config, unit, undefined, undefined, undefined, lead.enrichment_data),
+            'Escreva uma mensagem BREVE (máximo 2 frases) reconhecendo a mensagem do cliente e avisando que alguém do time vai dar continuidade em breve — sem fazer promessas de prazos, mantendo o tom natural e o idioma combinado.',
+          ].join(' ')
+
+          const acknowledgmentMessage = await generateChatReply({
+            apiKey,
+            systemPrompt,
+            history: [{ role: 'user', content: incomingText }],
+          })
+
+          if (acknowledgmentMessage) {
+            const sentAt = new Date().toISOString()
+            const { data: outboundRow } = await supabase
+              .from('conversations')
+              .insert({
+                lead_id: lead.id,
+                unit_id: unit.id,
+                channel: channelType,
+                direction: 'outbound',
+                content: acknowledgmentMessage,
+                status: 'sent',
+                sent_at: sentAt,
+              })
+              .select('id')
+              .single()
+
+            try {
+              await channel.sendMessage(lead.phone, acknowledgmentMessage, { voiceReply: wasAudioMessage })
+            } catch (error) {
+              if (outboundRow) {
+                await supabase.from('conversations').update({ status: 'failed' }).eq('id', outboundRow.id)
+              }
+              console.error(
+                `[conversation_engine] Falha ao enviar mensagem de confirmação de escalação: ${error instanceof Error ? error.message : 'erro desconhecido'}`,
+              )
+            }
+          }
+        }
+      } catch (error) {
+        console.error(
+          `[conversation_engine] Falha ao gerar/enviar mensagem de confirmação de escalação: ${error instanceof Error ? error.message : 'erro desconhecido'}`,
+        )
+      }
+    }
+
+    // Envia e-mail de escalação ao proprietário da unidade
     const { data: org } = await supabase
       .from('organizations')
       .select('owner_email')
