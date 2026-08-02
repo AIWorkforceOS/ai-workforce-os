@@ -97,10 +97,9 @@ describe('generateInvoicePdf', () => {
       locale: 'en',
     })
     const raw = extractStreamText(buffer)
-    // A grade compacta desenha "{invoice_number} — {valor}" por célula, não a
-    // descrição do lançamento — o detalhamento aparece pelo número da fatura.
-    expect(raw).toContain('INV-0040')
-    expect(raw).toContain('INV-0041')
+    // A grade compacta desenha "{description} — {valor}" por célula.
+    expect(raw).toContain('Visita 1')
+    expect(raw).toContain('Visita 2')
     expect(raw).toContain('$120.00')
     expect(raw).toContain('$230.00')
   })
@@ -122,8 +121,8 @@ describe('generateInvoicePdf', () => {
     const reloaded = await PDFDocument.load(buffer)
     expect(reloaded.getPageCount()).toBe(1)
     const raw = extractStreamText(buffer)
-    expect(raw).toContain('INV-1000')
-    expect(raw).toContain('INV-1049')
+    expect(raw).toContain('Visita 0')
+    expect(raw).toContain('Visita 49')
   })
 
   it('quebra para uma nova página quando a quantidade de itens excede o que cabe numa página', async () => {
@@ -143,8 +142,8 @@ describe('generateInvoicePdf', () => {
     const reloaded = await PDFDocument.load(buffer)
     expect(reloaded.getPageCount()).toBeGreaterThan(1)
     const raw = extractStreamText(buffer)
-    expect(raw).toContain('INV-2000')
-    expect(raw).toContain('INV-2399')
+    expect(raw).toContain('Visita 0')
+    expect(raw).toContain('Visita 399')
   })
 
   it('não quebra a geração do PDF quando a logo não pode ser baixada/embutida (best-effort)', async () => {

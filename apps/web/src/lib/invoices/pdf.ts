@@ -296,7 +296,7 @@ export async function generateInvoicePdf(params: {
         currency: params.invoice.currency,
       })
       const cellText = truncateText(
-        `${item.invoice_number} — ${itemAmount}`,
+        `${item.description} — ${itemAmount}`,
         font,
         GRID_FONT_SIZE,
         colWidth - GRID_CELL_PADDING,
