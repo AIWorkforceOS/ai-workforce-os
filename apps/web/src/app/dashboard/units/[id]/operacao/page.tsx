@@ -15,7 +15,16 @@ import type { Customer, Employee, Service, Unit } from '@/lib/types'
  * Operação da unidade (migration 030): serviços executados + valores a
  * pagar por profissional + faturas para o cliente final. Fecha o ciclo
  * agenda → execução → pagamento do técnico → cobrança do cliente.
+ *
+ * force-dynamic: sem isso, os fetch() do supabase-js dentro desta rota
+ * (que usa cookies() só pra auth) caem no Data Cache padrão do Next —
+ * um cache de servidor que sobrevive a F5, diferente do Router Cache do
+ * navegador. Resultado real visto em produção: cliente editava telefone/
+ * e-mail/endereço e a tela de Operação/Financeiro continuava mostrando o
+ * dado antigo mesmo depois de recarregar a página inteira.
  */
+export const dynamic = 'force-dynamic'
+
 export default async function UnitOperationsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
