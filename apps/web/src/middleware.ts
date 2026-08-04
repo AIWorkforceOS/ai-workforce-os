@@ -31,7 +31,10 @@ export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request })
 
   // Auth só onde é preciso — não paga o custo do Supabase na landing/checkout
-  if (request.nextUrl.pathname.startsWith('/dashboard')) {
+  if (
+    request.nextUrl.pathname.startsWith('/dashboard') ||
+    request.nextUrl.pathname.startsWith('/portal-funcionario')
+  ) {
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,

@@ -44,6 +44,12 @@ export default function EditEmployeePage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const [accessEmail, setAccessEmail] = useState('')
+  const [accessPassword, setAccessPassword] = useState('')
+  const [accessBusy, setAccessBusy] = useState(false)
+  const [accessError, setAccessError] = useState<string | null>(null)
+  const [accessSuccess, setAccessSuccess] = useState<string | null>(null)
+
   useEffect(() => {
     supabase
       .from('employees')
@@ -66,8 +72,29 @@ export default function EditEmployeePage() {
           default_pay_type: emp.default_pay_type ?? 'per_service',
           is_active: emp.is_active,
         })
+        setAccessEmail(emp.email ?? '')
       })
   }, [params.id])
+
+  async function handleCreateAccess(e: React.FormEvent) {
+    e.preventDefault()
+    setAccessBusy(true)
+    setAccessError(null)
+    setAccessSuccess(null)
+    const res = await fetch(`/api/admin/employees/${params.id}/access`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: accessEmail, password: accessPassword }),
+    })
+    const data = await res.json().catch(() => null)
+    setAccessBusy(false)
+    if (!res.ok) {
+      setAccessError(data?.error ?? 'Erro ao criar acesso.')
+      return
+    }
+    setAccessPassword('')
+    setAccessSuccess(`Acesso criado para ${data.email}. Envie o e-mail e a senha ao funcionário — ele acessa em /portal-funcionario.`)
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -187,6 +214,45 @@ export default function EditEmployeePage() {
               Cancelar
             </Link>
           </div>
+        </FormSection>
+      </form>
+
+      <form onSubmit={handleCreateAccess} className="mt-6">
+        <FormSection title="Acesso ao Portal do Funcionário">
+          <p className="-mt-1 text-[11px] text-slate-500">
+            Cria uma conta de login para este funcionário. Ele só enxerga a própria agenda e os próprios
+            valores lançados (a partir de agosto/2026), em modo somente leitura. Escolha a senha aqui e
+            repasse ao funcionário — não há e-mail automático nesta fase.
+          </p>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>E-mail de acesso *</Label>
+            <Input required type="email" value={accessEmail} onChange={e => setAccessEmail(e.target.value)} />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>Senha *</Label>
+            <Input
+              required
+              type="password"
+              minLength={8}
+              value={accessPassword}
+              onChange={e => setAccessPassword(e.target.value)}
+              placeholder="Mínimo 8 caracteres"
+            />
+          </div>
+
+          {accessError && <p className="text-sm text-red-400">{accessError}</p>}
+          {accessSuccess && <p className="text-sm text-emerald-400">{accessSuccess}</p>}
+
+          <button
+            type="submit"
+            disabled={accessBusy}
+            className="rounded-xl px-4 py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+            style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
+          >
+            {accessBusy ? 'Criando acesso...' : 'Criar acesso'}
+          </button>
         </FormSection>
       </form>
     </div>

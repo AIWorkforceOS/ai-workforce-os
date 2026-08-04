@@ -13,6 +13,7 @@ const ROLE_LABEL_EN: Record<AppRole, string> = {
   super_admin: 'Super Admin',
   admin: 'Admin',
   viewer: 'Viewer',
+  employee: 'Employee',
 }
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
@@ -62,6 +63,12 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         </div>
       </div>
     )
+  }
+
+  // Funcionário (role='employee') não usa o dashboard administrativo —
+  // só o próprio Portal do Funcionário (agenda + financeiro read-only).
+  if (appUser.role === 'employee') {
+    redirect('/portal-funcionario')
   }
 
   const email = appUser.email

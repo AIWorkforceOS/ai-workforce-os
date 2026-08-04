@@ -1,7 +1,7 @@
 import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
 
-export type AppRole = 'super_admin' | 'admin' | 'viewer'
+export type AppRole = 'super_admin' | 'admin' | 'viewer' | 'employee'
 
 export type AppUser = {
   /** id em public.users (não é o id do Supabase Auth) */
@@ -14,12 +14,15 @@ export type AppUser = {
   isSuperAdmin: boolean
   /** Preenchido = "dono de unidade": só acessa a própria unidade (ver can_access_unit no banco). */
   unitId: string | null
+  /** Preenchido = a conta é de um funcionário (role='employee'): só vê os próprios dados no Portal do Funcionário. */
+  employeeId: string | null
 }
 
 export const ROLE_LABEL: Record<AppRole, string> = {
   super_admin: 'Super Admin',
   admin: 'Admin',
   viewer: 'Visualização',
+  employee: 'Funcionário',
 }
 
 type AppUserRow = {
@@ -29,6 +32,7 @@ type AppUserRow = {
   role: string
   org_id: string | null
   unit_id: string | null
+  employee_id: string | null
   is_active: boolean
   organizations: { name: string } | null
 }
@@ -51,14 +55,17 @@ export const getAppUser = cache(async (): Promise<AppUser | null> => {
 
   const { data } = await supabase
     .from('users')
-    .select('id, email, name, role, org_id, unit_id, is_active, organizations(name)')
+    .select('id, email, name, role, org_id, unit_id, employee_id, is_active, organizations(name)')
     .ilike('email', user.email)
     .maybeSingle()
 
   const row = data as AppUserRow | null
   if (!row || !row.is_active) return null
 
-  const role: AppRole = row.role === 'super_admin' || row.role === 'viewer' ? row.role : 'admin'
+  const role: AppRole =
+    row.role === 'super_admin' || row.role === 'viewer' || row.role === 'employee'
+      ? row.role
+      : 'admin'
 
   return {
     id: row.id,
@@ -69,5 +76,6 @@ export const getAppUser = cache(async (): Promise<AppUser | null> => {
     orgName: row.organizations?.name ?? null,
     isSuperAdmin: role === 'super_admin',
     unitId: row.unit_id,
+    employeeId: row.employee_id,
   }
 })
