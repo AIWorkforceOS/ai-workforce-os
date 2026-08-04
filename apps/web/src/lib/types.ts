@@ -430,6 +430,8 @@ export type Invoice = {
   /** BRL | USD, derivada do idioma da unidade na criação */
   currency: string
   due_date: string | null
+  /** mês operacional (dia 1) ao qual a fatura pertence na tela de Operação — migration 052, ver comentário lá para due_date/created_at não servirem */
+  reference_month: string
   status: InvoiceStatus
   sent_to_email: string | null
   sent_to_phone: string | null

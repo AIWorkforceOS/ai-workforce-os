@@ -4,6 +4,8 @@ import { useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'rea
 import { createClient } from '@/lib/supabase/client'
 import { computeSuggestedPay } from '@/lib/service-pay'
 import { normalizeServiceRecurrence, projectedMonthlyRevenue } from '@/lib/scheduling/service-recurrence'
+import { defaultDateForMonth, todayInTimezone } from '@/lib/service-operations-month'
+import { isInvoiceOverdue } from '@/lib/invoice-status'
 import {
   brandGradient,
   cardShadow,
@@ -106,11 +108,6 @@ function isInvoiceEditable(status: Invoice['status']): boolean {
   return status !== 'paid' && status !== 'consolidated' && status !== 'cancelled'
 }
 
-/** Hoje no fuso da unidade, como 'YYYY-MM-DD' (en-CA formata exatamente assim). */
-function todayInTimezone(timezone: string): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(new Date())
-}
-
 function formatDate(dateStr: string): string {
   const [year, month, day] = dateStr.split('-')
   return `${day}/${month}/${year}`
@@ -133,6 +130,9 @@ export function ServiceOperationsPanel({
   orgId,
   timezone,
   currency,
+  selectedMonth,
+  isCurrentMonth,
+  selectedMonthLabel,
   employees,
   services,
   customers,
@@ -145,6 +145,10 @@ export function ServiceOperationsPanel({
   timezone: string
   /** BRL | USD, derivada do idioma da unidade */
   currency: string
+  /** mês sendo trabalhado nesta tela ('YYYY-MM'), controlado pelo seletor em page.tsx */
+  selectedMonth: string
+  isCurrentMonth: boolean
+  selectedMonthLabel: string
   employees: Employee[]
   services: Service[]
   customers: CustomerOption[]
@@ -155,6 +159,9 @@ export function ServiceOperationsPanel({
   const intlLocale = currency === 'USD' ? 'en-US' : 'pt-BR'
   const fmtMoney = (value: number | null) =>
     value === null ? '—' : value.toLocaleString(intlLocale, { style: 'currency', currency })
+  const todayStr = todayInTimezone(timezone)
+  /** primeiro dia do mês selecionado — usado como reference_month das faturas criadas nesta sessão */
+  const selectedMonthStart = `${selectedMonth}-01`
 
   const [records, setRecords] = useState<ServiceRecordWithRelations[]>(initialRecords)
   const [invoices, setInvoices] = useState<InvoiceWithRelations[]>(initialInvoices)
@@ -163,7 +170,7 @@ export function ServiceOperationsPanel({
   // Serviços executados
   // -------------------------------------------------------------------
   const emptyRecordForm: RecordFormState = {
-    service_date: todayInTimezone(timezone),
+    service_date: defaultDateForMonth(selectedMonth, timezone),
     employee_id: employees[0]?.id ?? '',
     customer_id: '',
     service_id: '',
@@ -409,12 +416,10 @@ export function ServiceOperationsPanel({
   )
 
   const receivedThisMonth = useMemo(() => {
-    const now = new Date()
-    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
     return invoices
-      .filter((i) => i.status === 'paid' && i.paid_at && i.paid_at.slice(0, 7) === monthKey)
+      .filter((i) => i.status === 'paid' && i.paid_at && i.paid_at.slice(0, 7) === selectedMonth)
       .reduce((sum, i) => sum + Number(i.amount), 0)
-  }, [invoices])
+  }, [invoices, selectedMonth])
 
   // -------------------------------------------------------------------
   // Dados de cobrança — quem está cobrando, para aparecer na fatura em
@@ -614,6 +619,7 @@ export function ServiceOperationsPanel({
       p_unit_id: unitId,
       p_customer_id: customerId,
       p_invoice_ids: invoiceIds,
+      p_reference_month: selectedMonthStart,
     })
     setConsolidateBusyCustomerId(null)
     const newRow = (Array.isArray(data) ? data[0] : data) as Invoice | undefined
@@ -672,6 +678,7 @@ export function ServiceOperationsPanel({
           unit_id: unitId,
           invoice_number: `INV-${String(next).padStart(4, '0')}`,
           currency,
+          reference_month: selectedMonthStart,
           ...payload,
         })
         .select('*, customer:customers(id,name,email,phone)')
@@ -788,6 +795,7 @@ export function ServiceOperationsPanel({
       p_customer_id: customerId,
       p_service_record_ids: selected.map((r) => r.id),
       p_currency: currency,
+      p_reference_month: selectedMonthStart,
     })
     setPendingBusyCustomerId(null)
     const newRow = (Array.isArray(data) ? data[0] : data) as Invoice | undefined
@@ -871,10 +879,24 @@ export function ServiceOperationsPanel({
           realizado (recebido) de um lado, equipe (a pagar/pago) do outro.
           Alimentado automaticamente pelo cadastro do cliente e pela agenda,
           sem depender de lançamento manual. */}
+      {!isCurrentMonth && (
+        <div
+          className="rounded-xl px-4 py-2.5 text-xs font-semibold text-amber-300"
+          style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}
+        >
+          Você está trabalhando em {selectedMonthLabel} — os lançamentos abaixo são só desse mês, mas editar, gerar
+          cobrança e dar baixa funcionam normalmente aqui, como na tela do mês atual.
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
           { label: 'A receber (projetado este mês)', value: fmtMoney(projectedReceivable), sub: 'clientes recorrentes cadastrados' },
-          { label: 'Recebido (este mês)', value: fmtMoney(receivedThisMonth), sub: 'faturas pagas' },
+          {
+            label: isCurrentMonth ? 'Recebido (este mês)' : `Recebido em ${selectedMonthLabel}`,
+            value: fmtMoney(receivedThisMonth),
+            sub: 'faturas pagas',
+          },
           { label: 'A pagar à equipe', value: fmtMoney(totals.pendingDue), sub: 'serviços pendentes' },
           { label: 'Pago à equipe', value: fmtMoney(totals.paidDue), sub: 'já quitado' },
         ].map(({ label, value, sub }) => (
@@ -1677,13 +1699,19 @@ export function ServiceOperationsPanel({
                             )}
                           </Td>
                           <Td className="font-black text-white">{fmtMoney(Number(invoice.amount))}</Td>
-                          <Td className="text-slate-400">{invoice.due_date ? formatDate(invoice.due_date) : '—'}</Td>
+                          <Td className={isInvoiceOverdue(invoice, todayStr) ? 'font-semibold text-red-400' : 'text-slate-400'}>
+                            {invoice.due_date ? formatDate(invoice.due_date) : '—'}
+                          </Td>
                         </>
                       )}
                       <Td>
-                        <StatusPill variant={INVOICE_STATUS_VARIANT[invoice.status]}>
-                          {INVOICE_STATUS_LABEL[invoice.status]}
-                        </StatusPill>
+                        {isInvoiceOverdue(invoice, todayStr) ? (
+                          <StatusPill variant="red">Atrasado</StatusPill>
+                        ) : (
+                          <StatusPill variant={INVOICE_STATUS_VARIANT[invoice.status]}>
+                            {INVOICE_STATUS_LABEL[invoice.status]}
+                          </StatusPill>
+                        )}
                       </Td>
                       <Td>
                         {editingInvoiceId === invoice.id ? (
