@@ -8,8 +8,18 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 type Row = Record<string, unknown>
 type Db = Record<string, Row[]>
 
+/** Comparação ordenável genérica (string/number) — datas ISO comparam lexicalmente igual a uma coluna date/timestamptz real. */
+function compare(a: unknown, b: unknown): number {
+  const av = a as string | number
+  const bv = b as string | number
+  if (av < bv) return -1
+  if (av > bv) return 1
+  return 0
+}
+
 class FakeQuery implements PromiseLike<{ data: unknown; error: null; count?: number }> {
   private filters: [string, unknown][] = []
+  private orderBy: { key: string; ascending: boolean }[] = []
   private limitN: number | null = null
   private mode: 'select' | 'insert' | 'update' = 'select'
   private payload: Row | Row[] | null = null
@@ -46,13 +56,18 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null; count?: num
     this.filters.push([key, { __in: set } as unknown])
     return this
   }
-  gte() {
+  gte(key: string, value: unknown) {
+    this.filters.push([key, { __gte: value } as unknown])
     return this
   }
-  lt() {
+  lt(key: string, value: unknown) {
+    this.filters.push([key, { __lt: value } as unknown])
     return this
   }
-  order() {
+  // Suporta múltiplos .order() encadeados (desempate), igual ao Postgres:
+  // o primeiro .order() é o critério principal, os seguintes só desempatam.
+  order(key: string, opts?: { ascending?: boolean }) {
+    this.orderBy.push({ key, ascending: opts?.ascending ?? true })
     return this
   }
   limit(n: number) {
@@ -88,6 +103,18 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null; count?: num
         const cell = row[key]
         return typeof cell === 'string' && typeof target === 'string' && cell.toLowerCase() === target
       }
+      // gte/lt: comparação lexical funciona pra datas ISO ('YYYY-MM-DD'),
+      // igual ao que o Postgres faz numa coluna date/timestamptz de verdade.
+      if (value && typeof value === 'object' && '__gte' in (value as Record<string, unknown>)) {
+        const target = (value as { __gte: unknown }).__gte
+        const cell = row[key]
+        return cell !== null && cell !== undefined && compare(cell, target) >= 0
+      }
+      if (value && typeof value === 'object' && '__lt' in (value as Record<string, unknown>)) {
+        const target = (value as { __lt: unknown }).__lt
+        const cell = row[key]
+        return cell !== null && cell !== undefined && compare(cell, target) < 0
+      }
       return row[key] === value
     })
   }
@@ -116,6 +143,20 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null; count?: num
     }
 
     let rows = table.filter((row) => this.matches(row))
+    if (this.orderBy.length > 0) {
+      rows = [...rows].sort((a, b) => {
+        for (const { key, ascending } of this.orderBy) {
+          const av = a[key]
+          const bv = b[key]
+          if (av === bv) continue
+          if (av === null || av === undefined) return ascending ? -1 : 1
+          if (bv === null || bv === undefined) return ascending ? 1 : -1
+          const cmp = compare(av, bv)
+          return ascending ? cmp : -cmp
+        }
+        return 0
+      })
+    }
     if (this.limitN !== null) rows = rows.slice(0, this.limitN)
     if (this.singleMode === 'maybeSingle' || this.singleMode === 'single') {
       return { data: rows[0] ?? null, error: null, count: rows.length }

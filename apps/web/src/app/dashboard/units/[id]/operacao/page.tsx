@@ -12,11 +12,11 @@ import { unitDefaultLocale } from '@/lib/i18n/config'
 import {
   currentMonthInTimezone,
   monthLabel,
-  monthRange,
   mostRecentMonth,
   resolveMonthSelection,
   shiftMonth,
 } from '@/lib/service-operations-month'
+import { fetchOperationsData, findMostRecentDataMonth } from '@/lib/operations-queries'
 import type { Customer, Employee, Service, Unit } from '@/lib/types'
 
 /**
@@ -58,58 +58,26 @@ export default async function UnitOperationsPage({
   const selectedMonthLabel = monthLabel(selectedMonth, locale)
   const viewLabel = isAllMonths ? 'Todo o histórico' : selectedMonthLabel
 
-  let recordsQuery = supabase
-    .from('service_records')
-    .select('*, employee:employees(id,name), customer:customers(id,name,email), service:services(id,name)')
-    .eq('unit_id', id)
-  let invoicesQuery = supabase.from('invoices').select('*, customer:customers(id,name,email,phone)').eq('unit_id', id)
+  // <input type="month"> tem suporte inconsistente entre navegadores (ex.:
+  // cai pra texto livre em versões de Safari) — um <select> com valores
+  // fixos elimina qualquer chance de o navegador serializar um valor que
+  // resolveMonthSelection() não reconheça e caia silenciosamente no mês
+  // atual em vez do mês escolhido.
+  const monthOptions = Array.from({ length: 26 }, (_, i) => shiftMonth(currentMonth, 1 - i))
 
-  if (!isAllMonths) {
-    const { start: monthStart, nextStart: monthNextStart } = monthRange(selectedMonth)
-    recordsQuery = recordsQuery.gte('service_date', monthStart).lt('service_date', monthNextStart)
-    invoicesQuery = invoicesQuery.gte('reference_month', monthStart).lt('reference_month', monthNextStart)
-  }
-
-  // "Todo o histórico" não tem o filtro de mês pra limitar o resultado, então
-  // o teto de segurança é bem maior — não deve ser atingido em uso normal.
-  const rowLimit = isAllMonths ? 5000 : 1000
-
-  const [{ data: employees }, { data: services }, { data: customers }, { data: records }, { data: invoices }] =
-    await Promise.all([
-      supabase.from('employees').select('*').eq('unit_id', id).eq('is_active', true).order('name'),
-      supabase.from('services').select('*').eq('unit_id', id).eq('is_active', true).order('name'),
-      supabase.from('customers').select('id, name, email, phone, address, custom_fields').eq('unit_id', id).eq('status', 'active').order('name').limit(500),
-      recordsQuery
-        .order('service_date', { ascending: false })
-        .order('created_at', { ascending: false })
-        .limit(rowLimit),
-      invoicesQuery.order('created_at', { ascending: false }).limit(rowLimit),
-    ])
-
-  const recordsList = records ?? []
-  const invoicesList = invoices ?? []
+  const [{ data: employees }, { data: services }, { data: customers }, { records, invoices }] = await Promise.all([
+    supabase.from('employees').select('*').eq('unit_id', id).eq('is_active', true).order('name'),
+    supabase.from('services').select('*').eq('unit_id', id).eq('is_active', true).order('name'),
+    supabase.from('customers').select('id, name, email, phone, address, custom_fields').eq('unit_id', id).eq('status', 'active').order('name').limit(500),
+    fetchOperationsData(supabase, id, selectedMonth, isAllMonths),
+  ])
 
   // Mês atual (padrão da tela) veio vazio — em vez de parecer que os dados
   // sumiram, sugere direto o mês mais recente que realmente tem histórico.
   let suggestedMonth: string | null = null
-  if (!isAllMonths && isCurrentMonth && recordsList.length === 0 && invoicesList.length === 0) {
-    const [{ data: lastRecord }, { data: lastInvoice }] = await Promise.all([
-      supabase
-        .from('service_records')
-        .select('service_date')
-        .eq('unit_id', id)
-        .order('service_date', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      supabase
-        .from('invoices')
-        .select('reference_month')
-        .eq('unit_id', id)
-        .order('reference_month', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-    ])
-    suggestedMonth = mostRecentMonth([lastRecord?.service_date, lastInvoice?.reference_month])
+  if (!isAllMonths && isCurrentMonth && records.length === 0 && invoices.length === 0) {
+    const { lastServiceDate, lastReferenceMonth } = await findMostRecentDataMonth(supabase, id)
+    suggestedMonth = mostRecentMonth([lastServiceDate, lastReferenceMonth])
   }
   const suggestedMonthLabel = suggestedMonth ? monthLabel(suggestedMonth, locale) : null
 
@@ -137,21 +105,31 @@ export default async function UnitOperationsPage({
                 </span>
               ) : (
                 <>
-                  <Link
+                  {/* <a> puro, não <Link>: força um reload completo do servidor a
+                      cada troca de mês — nunca depende do Router Cache/prefetch
+                      do App Router pra decidir se busca dado novo (essa mesma
+                      tela já teve 2 bugs de cache hoje; aqui é dado financeiro,
+                      não pode arriscar mostrar o mês errado). */}
+                  <a
                     href={`?month=${shiftMonth(selectedMonth, -1)}`}
                     className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-300 transition-all hover:bg-white/5"
                     style={{ border: '1px solid rgba(255,255,255,0.08)' }}
                     aria-label="Mês anterior"
                   >
                     <ChevronLeft size={14} />
-                  </Link>
-                  <input
-                    type="month"
+                  </a>
+                  <select
                     name="month"
                     defaultValue={selectedMonth}
-                    className="rounded-xl bg-transparent px-3 py-2 text-xs font-bold text-white [color-scheme:dark]"
+                    className="rounded-xl bg-[#0b0f1a] px-3 py-2 text-xs font-bold text-white"
                     style={{ border: '1px solid rgba(255,255,255,0.08)' }}
-                  />
+                  >
+                    {monthOptions.map((m) => (
+                      <option key={m} value={m}>
+                        {monthLabel(m, locale)}
+                      </option>
+                    ))}
+                  </select>
                   <button
                     type="submit"
                     className="rounded-xl px-3 py-2 text-xs font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
@@ -159,32 +137,32 @@ export default async function UnitOperationsPage({
                   >
                     Ir
                   </button>
-                  <Link
+                  <a
                     href={`?month=${shiftMonth(selectedMonth, 1)}`}
                     className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-300 transition-all hover:bg-white/5"
                     style={{ border: '1px solid rgba(255,255,255,0.08)' }}
                     aria-label="Próximo mês"
                   >
                     <ChevronRight size={14} />
-                  </Link>
+                  </a>
                   {!isCurrentMonth && (
-                    <Link
+                    <a
                       href="?"
                       className="rounded-xl px-3 py-2 text-xs font-bold text-cyan-300 transition-all hover:bg-white/5"
                       style={{ border: '1px solid rgba(255,255,255,0.08)' }}
                     >
                       Mês atual
-                    </Link>
+                    </a>
                   )}
                 </>
               )}
-              <Link
+              <a
                 href={isAllMonths ? `?month=${currentMonth}` : '?month=all'}
                 className="rounded-xl px-3 py-2 text-xs font-bold text-cyan-300 transition-all hover:bg-white/5"
                 style={{ border: '1px solid rgba(255,255,255,0.08)' }}
               >
                 {isAllMonths ? 'Ver mês a mês' : 'Todos os meses'}
-              </Link>
+              </a>
             </form>
             <Link
               href="/dashboard/employees"
@@ -226,13 +204,13 @@ export default async function UnitOperationsPage({
             </span>
           )}
         </div>
-        <Link
+        <a
           href={isAllMonths ? `?month=${currentMonth}` : '?month=all'}
           className="rounded-xl px-3 py-1.5 text-xs font-bold text-cyan-300 transition-all hover:bg-white/5"
           style={{ border: '1px solid rgba(6,182,212,0.3)' }}
         >
           {isAllMonths ? 'Ver mês a mês' : 'Ver todo o histórico'}
-        </Link>
+        </a>
       </div>
 
       {suggestedMonth && suggestedMonthLabel && (
@@ -243,13 +221,13 @@ export default async function UnitOperationsPage({
           <p className="text-blue-200">
             <strong className="capitalize">{selectedMonthLabel}</strong> ainda não tem lançamentos.
           </p>
-          <Link
+          <a
             href={`?month=${suggestedMonth}`}
             className="rounded-xl px-3 py-1.5 text-xs font-bold text-blue-300 transition-all hover:bg-white/5"
             style={{ border: '1px solid rgba(59,130,246,0.3)' }}
           >
             Ver {suggestedMonthLabel} →
-          </Link>
+          </a>
         </div>
       )}
 
@@ -266,8 +244,8 @@ export default async function UnitOperationsPage({
           employees={(employees ?? []) as Employee[]}
           services={(services ?? []) as Service[]}
           customers={(customers ?? []) as Pick<Customer, 'id' | 'name' | 'email' | 'phone' | 'address' | 'custom_fields'>[]}
-          initialRecords={(records ?? []) as unknown as ServiceRecordWithRelations[]}
-          initialInvoices={(invoices ?? []) as unknown as InvoiceWithRelations[]}
+          initialRecords={records as unknown as ServiceRecordWithRelations[]}
+          initialInvoices={invoices as unknown as InvoiceWithRelations[]}
           initialBilling={{
             billing_company_name: unitRow.billing_company_name,
             billing_address: unitRow.billing_address,

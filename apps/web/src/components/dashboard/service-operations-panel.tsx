@@ -618,11 +618,17 @@ export function ServiceOperationsPanel({
     setConsolidateError(null)
     setConsolidateBusyCustomerId(customerId)
     const supabase = createClient()
+    // Sem p_reference_month explícito de propósito: o servidor deriva o mês
+    // operacional do reference_month das próprias faturas sendo
+    // consolidadas (migration 054) — usar o mês que a tela está mostrando
+    // no momento do clique gerava fatura no mês errado quando o usuário
+    // consolidava faturas de um mês diferente enquanto via "Todo o
+    // histórico" ou navegava por outro mês (bug real visto em produção
+    // com INV-0001, gerada em agosto pra serviços de julho).
     const { data, error } = await supabase.rpc('consolidate_invoices', {
       p_unit_id: unitId,
       p_customer_id: customerId,
       p_invoice_ids: invoiceIds,
-      p_reference_month: selectedMonthStart,
     })
     setConsolidateBusyCustomerId(null)
     const newRow = (Array.isArray(data) ? data[0] : data) as Invoice | undefined
@@ -660,6 +666,8 @@ export function ServiceOperationsPanel({
     amount: number
     due_date: string | null
     notes: string | null
+    /** mês operacional da fatura — sempre explícito por chamada: mês selecionado na tela pra fatura manual, ou o mês do lançamento de origem quando gerada a partir de um (nunca "o mês que a tela mostra agora" nesse segundo caso, pra não errar o mês numa fatura gerada de um registro de outro mês). */
+    reference_month: string
   }): Promise<{ invoice?: InvoiceWithRelations; error?: string }> {
     const supabase = createClient()
     const { data: existing } = await supabase
@@ -681,7 +689,6 @@ export function ServiceOperationsPanel({
           unit_id: unitId,
           invoice_number: `INV-${String(next).padStart(4, '0')}`,
           currency,
-          reference_month: selectedMonthStart,
           ...payload,
         })
         .select('*, customer:customers(id,name,email,phone)')
@@ -712,6 +719,8 @@ export function ServiceOperationsPanel({
       amount: Number(invoiceForm.amount),
       due_date: invoiceForm.due_date || null,
       notes: invoiceForm.notes.trim() || null,
+      // Fatura manual, sem lançamento de origem — o mês da tela é a única fonte possível.
+      reference_month: selectedMonthStart,
     })
     setInvoiceBusy(false)
     if (!result.invoice) {
@@ -740,6 +749,10 @@ export function ServiceOperationsPanel({
       amount: Number(record.amount_charged),
       due_date: null,
       notes: null,
+      // Deriva do mês do próprio lançamento, não do mês que a tela mostra
+      // agora — gerar fatura de um registro de julho enquanto navega em
+      // agosto (ou em "Todo o histórico") não pode nascer em agosto.
+      reference_month: `${record.service_date.slice(0, 7)}-01`,
     })
     if (!result.invoice) {
       setRecordRowBusyId(null)
@@ -793,12 +806,15 @@ export function ServiceOperationsPanel({
     setPendingError(null)
     setPendingBusyCustomerId(customerId)
     const supabase = createClient()
+    // Sem p_reference_month explícito, mesmo motivo de handleConsolidate:
+    // o servidor deriva o mês operacional do service_date dos próprios
+    // registros sendo faturados (migration 054), nunca do mês que a tela
+    // mostra no momento do clique.
     const { data, error } = await supabase.rpc('generate_service_records_invoice', {
       p_unit_id: unitId,
       p_customer_id: customerId,
       p_service_record_ids: selected.map((r) => r.id),
       p_currency: currency,
-      p_reference_month: selectedMonthStart,
     })
     setPendingBusyCustomerId(null)
     const newRow = (Array.isArray(data) ? data[0] : data) as Invoice | undefined
