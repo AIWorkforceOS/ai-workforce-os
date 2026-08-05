@@ -28,6 +28,31 @@ export function resolveSelectedMonth(raw: string | undefined, timezone: string):
 }
 
 /**
+ * 'all' = visão "todo o histórico" sem filtro de mês (?month=all); usada
+ * pra deixar óbvio que nenhum lançamento antigo foi apagado — o dono do
+ * produto se assustou ao ver agosto vazio por padrão e achar que julho
+ * tinha sumido. Qualquer outro valor cai em resolveSelectedMonth().
+ */
+export type MonthSelection = 'all' | string
+
+export function resolveMonthSelection(raw: string | undefined, timezone: string): MonthSelection {
+  if (raw === 'all') return 'all'
+  return resolveSelectedMonth(raw, timezone)
+}
+
+/**
+ * O mês mais recente entre datas 'YYYY-MM-DD' (ou já 'YYYY-MM')
+ * possivelmente nulas — usado pra sugerir "agosto ainda não tem
+ * lançamentos, ver julho" quando o mês atual (selecionado por padrão)
+ * está vazio mas existe histórico em outro mês.
+ */
+export function mostRecentMonth(dates: (string | null | undefined)[]): string | null {
+  const months = dates.filter((d): d is string => Boolean(d)).map((d) => d.slice(0, 7))
+  if (months.length === 0) return null
+  return months.reduce((max, m) => (m > max ? m : max))
+}
+
+/**
  * [início do mês, início do mês seguinte) em 'YYYY-MM-DD' — faixa
  * meia-aberta pronta pra filtrar colunas date/timestamptz com
  * gte(start).lt(nextStart), sem depender de "último dia do mês".

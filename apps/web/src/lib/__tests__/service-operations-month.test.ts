@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   defaultDateForMonth,
   monthRange,
+  mostRecentMonth,
+  resolveMonthSelection,
   resolveSelectedMonth,
   shiftMonth,
 } from '@/lib/service-operations-month'
@@ -54,6 +56,30 @@ describe('shiftMonth', () => {
     expect(shiftMonth('2026-08', -1)).toBe('2026-07')
     expect(shiftMonth('2026-01', -1)).toBe('2025-12')
     expect(shiftMonth('2026-12', 1)).toBe('2027-01')
+  })
+})
+
+describe('resolveMonthSelection', () => {
+  it('"all" é preservado literalmente (visão de todo o histórico)', () => {
+    expect(resolveMonthSelection('all', 'America/Sao_Paulo')).toBe('all')
+  })
+
+  it('mês válido e inválido se comportam igual a resolveSelectedMonth', () => {
+    expect(resolveMonthSelection('2026-07', 'America/Sao_Paulo')).toBe('2026-07')
+    expect(resolveMonthSelection('lixo', 'America/Sao_Paulo')).toMatch(/^\d{4}-\d{2}$/)
+    expect(resolveMonthSelection(undefined, 'America/Sao_Paulo')).toMatch(/^\d{4}-\d{2}$/)
+  })
+})
+
+describe('mostRecentMonth', () => {
+  it('escolhe o mês mais recente entre datas de fontes diferentes', () => {
+    expect(mostRecentMonth(['2026-07-15', '2026-05-02', null, undefined])).toBe('2026-07')
+    expect(mostRecentMonth(['2026-01-31', '2026-12-01'])).toBe('2026-12')
+  })
+
+  it('sem nenhuma data válida devolve null', () => {
+    expect(mostRecentMonth([null, undefined])).toBeNull()
+    expect(mostRecentMonth([])).toBeNull()
   })
 })
 

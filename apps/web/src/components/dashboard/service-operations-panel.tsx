@@ -132,6 +132,7 @@ export function ServiceOperationsPanel({
   currency,
   selectedMonth,
   isCurrentMonth,
+  isAllMonths,
   selectedMonthLabel,
   employees,
   services,
@@ -145,9 +146,11 @@ export function ServiceOperationsPanel({
   timezone: string
   /** BRL | USD, derivada do idioma da unidade */
   currency: string
-  /** mês sendo trabalhado nesta tela ('YYYY-MM'), controlado pelo seletor em page.tsx */
+  /** mês usado pra novos lançamentos (reference_month/data padrão), controlado pelo seletor em page.tsx — em "todo o histórico" cai no mês atual */
   selectedMonth: string
   isCurrentMonth: boolean
+  /** true = "todo o histórico" (?month=all), sem filtro de mês — initialRecords/initialInvoices vêm sem recorte */
+  isAllMonths: boolean
   selectedMonthLabel: string
   employees: Employee[]
   services: Service[]
@@ -417,9 +420,9 @@ export function ServiceOperationsPanel({
 
   const receivedThisMonth = useMemo(() => {
     return invoices
-      .filter((i) => i.status === 'paid' && i.paid_at && i.paid_at.slice(0, 7) === selectedMonth)
+      .filter((i) => i.status === 'paid' && i.paid_at && (isAllMonths || i.paid_at.slice(0, 7) === selectedMonth))
       .reduce((sum, i) => sum + Number(i.amount), 0)
-  }, [invoices, selectedMonth])
+  }, [invoices, selectedMonth, isAllMonths])
 
   // -------------------------------------------------------------------
   // Dados de cobrança — quem está cobrando, para aparecer na fatura em
@@ -893,7 +896,11 @@ export function ServiceOperationsPanel({
         {[
           { label: 'A receber (projetado este mês)', value: fmtMoney(projectedReceivable), sub: 'clientes recorrentes cadastrados' },
           {
-            label: isCurrentMonth ? 'Recebido (este mês)' : `Recebido em ${selectedMonthLabel}`,
+            label: isAllMonths
+              ? 'Recebido (todo o período)'
+              : isCurrentMonth
+                ? 'Recebido (este mês)'
+                : `Recebido em ${selectedMonthLabel}`,
             value: fmtMoney(receivedThisMonth),
             sub: 'faturas pagas',
           },
