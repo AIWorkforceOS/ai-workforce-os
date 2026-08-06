@@ -3,6 +3,7 @@ import { Webhook } from 'svix'
 import { createServiceClient } from '@/lib/supabase/service'
 import { routeInboundMessage } from '@/lib/inbound-router'
 import { getResendApiKey } from '@/lib/email'
+import { logSystemEvent } from '@/lib/system-events'
 import type { Unit } from '@/lib/types'
 
 export const maxDuration = 60
@@ -93,9 +94,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Assinatura inválida.' }, { status: 403 })
     }
   } else {
-    console.error(
-      '[webhook_email] RESEND_WEBHOOK_SECRET não configurada — requisição processada sem validar autenticidade.',
-    )
+    // console.error sozinho ficava invisível pra qualquer um fora de quem
+    // acompanha os logs da Vercel em tempo real — sem RESEND_WEBHOOK_SECRET
+    // configurada, QUALQUER requisição pode se passar por resposta de lead
+    // (inclusive disparando handleSalesDealHandoff com dados forjados) e
+    // ninguém no time ficava sabendo que esse risco está ativo em produção.
+    // logSystemEvent grava em system_events (visível no painel) além do
+    // console.error que já existia.
+    await logSystemEvent(supabase, {
+      level: 'warning',
+      source: 'resend',
+      eventType: 'email_webhook_unsigned',
+      message:
+        'RESEND_WEBHOOK_SECRET não configurada — o webhook de e-mail está processando requisições sem validar autenticidade (qualquer um pode forjar resposta de lead). Configure a variável de ambiente.',
+    })
   }
 
   const body = JSON.parse(rawBody) as { type?: string; created_at?: string; data?: Record<string, unknown> }

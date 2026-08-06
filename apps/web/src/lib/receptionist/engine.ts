@@ -103,6 +103,7 @@ function buildIntentExtractorPrompt(params: {
     `Serviços que a unidade oferece: ${servicesList}.`,
     'Responda SOMENTE um JSON válido: {"handoff": "none"|"sales"|"recruiting"|"human", "handoff_reason": string|null, "appointment_action": "none"|"info"|"reschedule"|"book"|"cancel", "appointment_id": string|null, "service_name": string|null, "desired_date": string|null, "desired_time": string|null}.',
     '"handoff" = "sales" quando o cliente quer negociar/comprar algo novo fora do que já está combinado; "recruiting" quando pergunta sobre vaga de emprego/trabalhar na empresa; "human" quando é reclamação séria, pedido de cancelamento de contrato, ou qualquer coisa fora do alcance de uma recepcionista; "none" no resto (dúvida geral, agenda, pós-venda simples que você mesma resolve).',
+    'IMPORTANTE: olhe o HISTÓRICO da conversa antes de decidir. Se você (o assistente) já escalou esse MESMO assunto para humano/vendas/recrutamento em uma mensagem anterior recente e o cliente não trouxe nenhuma informação nova sobre ele (só confirmou, agradeceu, disse "ok", "obrigado", "deu certo" ou repetiu o que já tinha dito), classifique "handoff" como "none" — não escale de novo o que já está escalado.',
     '"appointment_action" = "info" quando o cliente só quer confirmar/saber sobre um agendamento existente sem mudar nada; "reschedule" quando quer mudar o horário de um agendamento existente (use "appointment_id" com o id EXATO da lista acima — se só existe um agendamento futuro, use esse mesmo sem perguntar o id); "book" quando quer marcar um atendimento novo (use "service_name" com o nome mais parecido da lista de serviços); "cancel" quando quer cancelar um agendamento existente; "none" quando não é sobre agenda.',
     '"desired_date" e "desired_time" só quando o cliente deu ou confirmou um dia/horário NESTA mensagem — deixe null se ele ainda não disse ou se a ação não precisa disso.',
     'Nunca invente um appointment_id ou service_name fora das listas acima.',
@@ -346,7 +347,7 @@ export async function processReceptionistInbound(params: {
       ? `CONTEXTO DESTA RESPOSTA (ação de agenda já verificada/executada — baseie-se estritamente nisso, nunca contradiga nem invente outro resultado): ${appointmentContext}`
       : '',
     handoffTarget
-      ? 'Você já registrou a verificação deste assunto com o time responsável — diga ao cliente, com naturalidade, que vai confirmar isso e volta com a resposta assim que tiver; você continua sendo quem fala com ele, nunca diga que outra pessoa vai entrar em contato.'
+      ? 'Você já registrou a verificação deste assunto com o time responsável — diga ao cliente, com naturalidade, que vai confirmar isso e volta com a resposta assim que tiver; você continua sendo quem fala com ele, nunca diga que outra pessoa vai entrar em contato. Se essa MESMA frase ("vou verificar com o time"/equivalente) já apareceu antes no histórico desta conversa sobre este mesmo assunto, NÃO repita — o cliente já ouviu isso, repetir soa como disco riscado. Reconheça em poucas palavras (ex.: "ainda estou verificando isso") ou, se a mensagem dele for só um "ok"/agradecimento/confirmação, responda a ela normalmente sem reabrir a escalação.'
       : '',
   ]
     .filter(Boolean)
@@ -512,6 +513,7 @@ function buildProspectIntentExtractorPrompt(params: { unit: Unit; services: Serv
     '"handoff" = "sales" quando a pessoa demonstra interesse em comprar/negociar algo que NÃO é simplesmente marcar um dos serviços da lista acima (ex.: comprar uma franquia, fechar um contrato maior, negociar condições especiais); "recruiting" quando pergunta sobre vaga/estágio/trabalhar na empresa; "human" quando é reclamação séria ou algo claramente fora do alcance de uma recepcionista; "none" quando é só uma dúvida geral ou um agendamento (ver abaixo) que você mesma resolve.',
     '"appointment_action" = "book" quando a pessoa quer marcar/agendar um dos serviços da lista acima (isso é rotina — ela é uma cliente nova, não precisa de "sales" nem de handoff nenhum pra isso, você mesma marca); use "service_name" com o nome mais parecido da lista. "desired_date" e "desired_time" só quando ela já deu ou confirmou um dia/horário NESTA mensagem — deixe null se ainda não disse.',
     'Nunca invente um service_name fora da lista acima.',
+    'IMPORTANTE: olhe o HISTÓRICO da conversa antes de decidir. Se você (o assistente) já escalou esse MESMO assunto para humano/vendas/recrutamento em uma mensagem anterior recente e a pessoa não trouxe nenhuma informação nova sobre ele (só confirmou, agradeceu, disse "ok", "obrigado", "deu certo" ou repetiu o que já tinha dito), classifique "handoff" como "none" — não escale de novo o que já está escalado.',
   ].join(' ')
 }
 
@@ -683,7 +685,7 @@ export async function processReceptionistProspectInbound(params: {
       ? `CONTEXTO DESTA RESPOSTA (ação de agenda já verificada/executada — baseie-se estritamente nisso, nunca contradiga nem invente outro resultado): ${appointmentContext}`
       : '',
     handoffTarget
-      ? 'Você já registrou a verificação deste assunto com o time responsável — diga à pessoa, com naturalidade, que vai confirmar isso e volta com a resposta assim que tiver; você continua sendo quem fala com ela, nunca diga que outra pessoa vai entrar em contato.'
+      ? 'Você já registrou a verificação deste assunto com o time responsável — diga à pessoa, com naturalidade, que vai confirmar isso e volta com a resposta assim que tiver; você continua sendo quem fala com ela, nunca diga que outra pessoa vai entrar em contato. Se essa MESMA frase ("vou verificar com o time"/equivalente) já apareceu antes no histórico desta conversa sobre este mesmo assunto, NÃO repita — a pessoa já ouviu isso, repetir soa como disco riscado. Reconheça em poucas palavras (ex.: "ainda estou verificando isso") ou, se a mensagem dela for só um "ok"/agradecimento/confirmação, responda a ela normalmente sem reabrir a escalação.'
       : '',
   ]
     .filter(Boolean)

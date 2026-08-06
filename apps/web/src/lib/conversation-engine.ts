@@ -437,6 +437,36 @@ export async function generateFollowUpMessage(
   return generateChatReply({ apiKey, systemPrompt, history: chatHistory })
 }
 
+/**
+ * Fallback semântico (mesmo padrão do extrator de intenção da Recepcionista,
+ * lib/receptionist/engine.ts) para quando NENHUMA palavra-chave configurada
+ * bate — string.includes sozinho só pega quem usa exatamente a palavra
+ * cadastrada; alguém que escreve "quero desistir do contrato" ou "isso é um
+ * absurdo, vou processar vocês" nunca escalava se a keyword configurada
+ * fosse só "cancelar" ou "reclamação". Best-effort: falha aqui nunca deve
+ * impedir a resposta normal do SDR, só significa "sem escalação semântica
+ * desta vez" (mesmo comportamento de antes desta função existir).
+ */
+async function findSemanticEscalationReason(incomingText: string, apiKey: string): Promise<string | null> {
+  try {
+    const result = await generateStructuredReply<{ needs_escalation?: boolean; reason?: string | null }>({
+      apiKey,
+      systemPrompt: [
+        'Você está analisando a ÚLTIMA mensagem de um cliente numa conversa de vendas/atendimento.',
+        'Decida se ela exige escalação urgente para um humano AGORA — casos como ameaça de processo/jurídico, acusação grave (fraude, golpe), pedido explícito de cancelamento/rescisão de contrato, reclamação séria com ameaça de cancelamento, ou pedido explícito de falar com um humano/gerente.',
+        'NÃO escale dúvida comum, negociação normal de preço/condições, ou qualquer coisa que um vendedor consiga responder sozinho.',
+        'Responda SOMENTE um JSON válido: {"needs_escalation": boolean, "reason": string|null}. "reason" é uma frase curta explicando o motivo, só quando needs_escalation for true.',
+      ].join(' '),
+      history: [{ role: 'user', content: incomingText }],
+      maxTokens: 150,
+    })
+    if (result.needs_escalation && result.reason) return result.reason
+    return null
+  } catch {
+    return null
+  }
+}
+
 async function findEscalationReason(
   incomingText: string,
   agentConfig: AgentConfig,
@@ -447,7 +477,9 @@ async function findEscalationReason(
   )
   if (matched) return `palavra-chave de escalação detectada ("${matched}")`
 
-  return null
+  const apiKey = getOpenAIApiKey()
+  if (!apiKey) return null
+  return findSemanticEscalationReason(incomingText, apiKey)
 }
 
 async function reportAgentFailure(params: {

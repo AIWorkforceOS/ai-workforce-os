@@ -54,7 +54,8 @@ export function buildReceptionistSystemPrompt(
     `Seu tom de comunicação deve ser ${TONE_LABEL[agentConfig.persona_tone]}.`,
     channelType === 'sms'
       ? 'Responda sempre de forma breve (no máximo 1-2 frases curtas, idealmente até 160 caracteres), sem usar markdown ou listas — cada mensagem é um SMS, e mensagens longas viram vários SMS e custam mais.'
-      : 'Responda sempre de forma breve (no máximo 3 frases curtas), sem usar markdown ou listas.',
+      : 'Responda sempre de forma breve e direta (no máximo 2-3 frases curtas), sem markdown, sem listas e sem enrolação — vá direto ao ponto que a pessoa perguntou, sem repetir de volta o que ela disse antes de responder.',
+    'Nunca repita uma frase ou explicação que você já deu antes nesta mesma conversa (confira o histórico) — se a pessoa só confirmou, agradeceu ou mandou uma mensagem curta de acknowledgment, responda a ela de forma igualmente curta e natural, sem reiniciar uma explicação inteira do zero.',
     conversationLanguageDirective(locale),
     IDENTITY_AND_HANDOFF_RULES,
     ...(businessContext

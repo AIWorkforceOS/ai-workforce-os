@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import twilio from 'twilio'
 import { createServiceClient } from '@/lib/supabase/service'
 import { normalizePhone, phonesMatch, routeInboundMessage } from '@/lib/inbound-router'
+import { logSystemEvent } from '@/lib/system-events'
 import type { Unit } from '@/lib/types'
 
 export const maxDuration = 60
@@ -66,9 +67,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Assinatura inválida.' }, { status: 403 })
     }
   } else {
-    console.error(
-      `[webhook_sms] sem auth token ou sem header de assinatura para a unidade "${unitRow.name}" — requisição processada sem validar autenticidade (configure twilio_auth_token).`,
-    )
+    // Mesma razão do webhook de e-mail (ver comentário lá): console.error
+    // sozinho fica invisível fora dos logs da Vercel — sem auth token
+    // configurado, qualquer um pode forjar mensagem de cliente por SMS
+    // pra esta unidade, e ninguém no time ficava sabendo que esse risco
+    // está ativo. logSystemEvent grava em system_events (visível no painel).
+    await logSystemEvent(supabase, {
+      level: 'warning',
+      source: 'twilio',
+      eventType: 'sms_webhook_unsigned',
+      message: `Sem auth token ou sem header de assinatura para a unidade "${unitRow.name}" — o webhook de SMS está processando requisições sem validar autenticidade. Configure twilio_auth_token.`,
+      orgId: unitRow.org_id,
+      unitId: unitRow.id,
+    })
   }
 
   const incomingPhone = normalizePhone(from)

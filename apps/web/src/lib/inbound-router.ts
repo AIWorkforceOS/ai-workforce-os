@@ -210,7 +210,7 @@ async function handleUnknownInbound(params: UnknownInboundContext): Promise<void
     if (screeningInterpretation.is_candidate_or_employee) {
       // Atualiza lead para indicar que é candidato (source: 'unknown_inbound_candidate')
       // e volta para 'new' para rotar pelo Sales Rep (que vai encaminhar ao Recruiter se necessário)
-      await supabase
+      const { data: updatedCandidateLead } = await supabase
         .from('leads')
         .update({
           status: 'new',
@@ -218,6 +218,8 @@ async function handleUnknownInbound(params: UnknownInboundContext): Promise<void
           last_contacted_at: sentAt,
         })
         .eq('id', existingScreeningLead.id)
+        .select()
+        .single()
 
       await logSystemEvent(supabase, {
         level: 'info',
@@ -228,6 +230,28 @@ async function handleUnknownInbound(params: UnknownInboundContext): Promise<void
         unitId: unit.id,
         leadId: existingScreeningLead.id,
       })
+
+      // Sem isto, a MENSAGEM ATUAL (a que acabou de provar ser candidato)
+      // nunca recebia resposta nenhuma — o update acima só fazia efeito na
+      // PRÓXIMA mensagem da pessoa (routeInboundMessage não bate mais a
+      // condição da Rota 3 depois dele), deixando quem respondeu a
+      // triagem sem nenhuma resposta. Confirmado em produção: leads presos
+      // exatamente aqui, sem nenhum retorno depois de identificar o motivo
+      // real do contato — a raiz do "Sales nunca responde".
+      const candidateLead = (updatedCandidateLead as Lead | null) ?? {
+        ...existingScreeningLead,
+        status: 'new',
+        source: 'unknown_inbound_candidate',
+        last_contacted_at: sentAt,
+      }
+      const candidateResult = await processInboundMessage({ supabase, unit, lead: candidateLead, incomingText: text, wasAudioMessage })
+      if (candidateResult.dealHandoffReady) {
+        try {
+          await handleSalesDealHandoff(supabase, { leadId: candidateLead.id, unit })
+        } catch (error) {
+          console.error(`[inbound_router] handoff Sales→Recrutador falhou: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
       return
     }
 
@@ -235,7 +259,7 @@ async function handleUnknownInbound(params: UnknownInboundContext): Promise<void
     if (screeningInterpretation.is_company) {
       // Atualiza lead para empresa (source: 'unknown_inbound')
       // e status normal para rotar pelo Sales Rep
-      await supabase
+      const { data: updatedCompanyLead } = await supabase
         .from('leads')
         .update({
           status: 'replied',
@@ -243,6 +267,8 @@ async function handleUnknownInbound(params: UnknownInboundContext): Promise<void
           last_contacted_at: sentAt,
         })
         .eq('id', existingScreeningLead.id)
+        .select()
+        .single()
 
       await logSystemEvent(supabase, {
         level: 'info',
@@ -253,6 +279,23 @@ async function handleUnknownInbound(params: UnknownInboundContext): Promise<void
         unitId: unit.id,
         leadId: existingScreeningLead.id,
       })
+
+      // Mesma razão do subcaso 1 acima: gera a resposta de vendas agora,
+      // pra mensagem atual, em vez de só deixar o lead pronto pra próxima.
+      const companyLead = (updatedCompanyLead as Lead | null) ?? {
+        ...existingScreeningLead,
+        status: 'replied',
+        source: 'unknown_inbound',
+        last_contacted_at: sentAt,
+      }
+      const companyResult = await processInboundMessage({ supabase, unit, lead: companyLead, incomingText: text, wasAudioMessage })
+      if (companyResult.dealHandoffReady) {
+        try {
+          await handleSalesDealHandoff(supabase, { leadId: companyLead.id, unit })
+        } catch (error) {
+          console.error(`[inbound_router] handoff Sales→Recrutador falhou: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
       return
     }
 
@@ -276,6 +319,41 @@ async function handleUnknownInbound(params: UnknownInboundContext): Promise<void
           last_contacted_at: sentAt,
         })
         .eq('id', existingScreeningLead.id)
+
+      // Não dá pra confirmar o cadastro automaticamente (por isso o "paused"
+      // acima, aguardando revisão humana), mas a pessoa não pode ficar sem
+      // nenhuma resposta — mesma razão dos subcasos 1/2 acima.
+      const existingCustomerAck = await generateChatReply({
+        apiKey,
+        systemPrompt:
+          'Você é um assistente que recebe mensagens de números desconhecidos. A pessoa disse que já é cliente, mas o número dela não bate com nenhum cadastro nosso. Responda breve e amigável (1-2 frases) dizendo que vai conferir o cadastro dela e volta com uma resposta em breve — sem pedir desculpas nem soar robótico, e sem confirmar nada que você ainda não verificou.',
+        history: [{ role: 'user', content: text }],
+      }).catch(() => null)
+
+      if (existingCustomerAck) {
+        const { data: ackOutboundRow } = await supabase
+          .from('conversations')
+          .insert({
+            lead_id: existingScreeningLead.id,
+            unit_id: unit.id,
+            channel,
+            direction: 'outbound',
+            content: existingCustomerAck,
+            status: 'sent',
+            sent_at: new Date().toISOString(),
+          })
+          .select('id')
+          .single()
+
+        try {
+          await messagingChannel.sendMessage(incomingPhone, existingCustomerAck, { voiceReply: wasAudioMessage })
+        } catch (error) {
+          if (ackOutboundRow) {
+            await supabase.from('conversations').update({ status: 'failed' }).eq('id', ackOutboundRow.id)
+          }
+          console.error(`[inbound_router] ack de cliente não identificado falhou: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
       return
     }
 

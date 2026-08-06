@@ -140,9 +140,13 @@ export async function POST(request: Request) {
   const instanceName: string | undefined = body.instance
   const data = body.data ?? {}
   const key = data.key ?? {}
+  const remoteJid: string = key.remoteJid ?? ''
 
   // Ignora mensagens enviadas pela própria unidade (eco do envio outbound)
-  if (!instanceName || key.fromMe) {
+  // e mensagens de grupo do WhatsApp (JID termina em @g.us, diferente do
+  // contato individual @s.whatsapp.net) — os funcionários digitais só
+  // devem responder em conversas privadas 1:1, nunca em grupo.
+  if (!instanceName || key.fromMe || remoteJid.endsWith('@g.us')) {
     return NextResponse.json({ ok: true })
   }
 
@@ -174,7 +178,6 @@ export async function POST(request: Request) {
     // code aberta até o polling captar o status 'open' (ver syncWhatsappPhoneIfConnected).
     const syncedPhone = await syncWhatsappPhoneIfConnected(supabase, unitRow, resolvedChannel)
 
-    const remoteJid: string = key.remoteJid ?? ''
     const incomingPhone = normalizePhone(remoteJid.split('@')[0])
 
     // Guarda contra eco do próprio envio: Evolution API (Baileys, protocolo
