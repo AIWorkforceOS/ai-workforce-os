@@ -27,25 +27,46 @@ type SocialAccountRow = { connection_status: string }
  * respostas genéricas pra quem já tem contexto disponível no banco.
  *
  * Best-effort: cada busca é isolada: se uma falhar, o pedaço correspondente
- * some do resumo em vez de derrubar o chat inteiro. RLS já escopa todas as
- * queries à org do usuário autenticado — não precisa filtrar por org_id aqui.
+ * some do resumo em vez de derrubar o chat inteiro. Quando chamado com o
+ * client de sessão autenticada do dashboard (Kai), RLS já escopa tudo à org
+ * do usuário e `orgId` pode ficar de fora. Mas o Funcionário TI interno
+ * (lib/ti/engine.ts) reusa esta função a partir de um client service-role
+ * (fluxo de webhook, sem RLS) — ali `orgId` é obrigatório na prática, senão
+ * o resumo vazaria dados de TODAS as orgs. `agent_configs` não tem coluna
+ * org_id própria, então é filtrada em memória pelas unidades já restritas.
  */
-export async function buildAccountContext(supabase: SupabaseClient): Promise<string | null> {
+export async function buildAccountContext(supabase: SupabaseClient, orgId?: string | null): Promise<string | null> {
+  let unitsQuery = supabase.from('units').select('id, name, whatsapp_phone, is_active').order('created_at', { ascending: true })
+  let whatsappChannelsQuery = supabase.from('unit_whatsapp_channels').select('unit_id, agent_type, whatsapp_phone')
+  let adAccountsQuery = supabase.from('ad_accounts').select('connection_status')
+  let socialAccountsQuery = supabase.from('social_accounts').select('connection_status')
+  if (orgId) {
+    unitsQuery = unitsQuery.eq('org_id', orgId)
+    whatsappChannelsQuery = whatsappChannelsQuery.eq('org_id', orgId)
+    adAccountsQuery = adAccountsQuery.eq('org_id', orgId)
+    socialAccountsQuery = socialAccountsQuery.eq('org_id', orgId)
+  }
+
   const [unitsResult, agentConfigsResult, whatsappChannelsResult, adAccountsResult, socialAccountsResult] = await Promise.allSettled([
-    supabase.from('units').select('id, name, whatsapp_phone, is_active').order('created_at', { ascending: true }),
+    unitsQuery,
     supabase.from('agent_configs').select('unit_id, agent_type, persona_name, is_active, interview_status'),
-    supabase.from('unit_whatsapp_channels').select('unit_id, agent_type, whatsapp_phone'),
-    supabase.from('ad_accounts').select('connection_status'),
-    supabase.from('social_accounts').select('connection_status'),
+    whatsappChannelsQuery,
+    adAccountsQuery,
+    socialAccountsQuery,
   ])
 
   const units = extractRows<Pick<Unit, 'id' | 'name' | 'whatsapp_phone' | 'is_active'>>(unitsResult, 'units')
-  const agentConfigs = extractRows<
+  let agentConfigs = extractRows<
     Pick<AgentConfig, 'unit_id' | 'agent_type' | 'persona_name' | 'is_active' | 'interview_status'>
   >(agentConfigsResult, 'agent_configs')
   const whatsappChannels = extractRows<UnitWhatsappChannelRow>(whatsappChannelsResult, 'unit_whatsapp_channels') ?? []
   const adAccounts = extractRows<AdAccountRow>(adAccountsResult, 'ad_accounts')
   const socialAccounts = extractRows<SocialAccountRow>(socialAccountsResult, 'social_accounts')
+
+  if (orgId && units && agentConfigs) {
+    const unitIds = new Set(units.map((u) => u.id))
+    agentConfigs = agentConfigs.filter((c) => unitIds.has(c.unit_id))
+  }
 
   const sections: string[] = []
 

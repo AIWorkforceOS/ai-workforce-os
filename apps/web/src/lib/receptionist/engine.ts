@@ -19,6 +19,7 @@ import type { Locale } from '@/lib/i18n/config'
 import { buildReceptionistSystemPrompt } from './prompt'
 import { notifyReceptionistHandoff, handoffToSales, type HandoffTarget } from './handoff'
 import { provisionCustomerFromLead } from './customers'
+import { answerTechSupportQuestion } from '@/lib/ti/engine'
 import {
   loadUpcomingAppointments,
   loadActiveServices,
@@ -78,7 +79,7 @@ async function resolveReceptionistMessagingChannel(supabase: SupabaseClient, uni
 // se aplica e contraria o pedido explícito de disponibilidade full-time.
 
 export type ReceptionistIntentExtraction = {
-  handoff?: 'none' | 'sales' | 'recruiting' | 'human'
+  handoff?: 'none' | 'sales' | 'recruiting' | 'human' | 'ti'
   handoff_reason?: string | null
   appointment_action?: 'none' | 'info' | 'reschedule' | 'book' | 'cancel'
   appointment_id?: string | null
@@ -114,8 +115,8 @@ function buildIntentExtractorPrompt(params: {
     `Hoje é ${today} (${weekday}), fuso horário ${unit.timezone}. Resolva datas relativas ("amanhã", "sexta que vem", "dia 5") pro formato YYYY-MM-DD com base nisso.`,
     `Agendamentos futuros deste cliente: ${upcomingList}.`,
     `Serviços que a unidade oferece: ${servicesList}.`,
-    'Responda SOMENTE um JSON válido: {"handoff": "none"|"sales"|"recruiting"|"human", "handoff_reason": string|null, "appointment_action": "none"|"info"|"reschedule"|"book"|"cancel", "appointment_id": string|null, "service_name": string|null, "desired_date": string|null, "desired_time": string|null}.',
-    '"handoff" = "sales" quando o cliente quer negociar/comprar algo novo fora do que já está combinado; "recruiting" quando pergunta sobre vaga de emprego/trabalhar na empresa; "human" quando é reclamação séria, pedido de cancelamento de contrato, ou qualquer coisa fora do alcance de uma recepcionista; "none" no resto (dúvida geral, agenda, pós-venda simples que você mesma resolve).',
+    'Responda SOMENTE um JSON válido: {"handoff": "none"|"sales"|"recruiting"|"human"|"ti", "handoff_reason": string|null, "appointment_action": "none"|"info"|"reschedule"|"book"|"cancel", "appointment_id": string|null, "service_name": string|null, "desired_date": string|null, "desired_time": string|null}.',
+    '"handoff" = "sales" quando o cliente quer negociar/comprar algo novo fora do que já está combinado; "recruiting" quando pergunta sobre vaga de emprego/trabalhar na empresa; "human" quando é reclamação séria, pedido de cancelamento de contrato, ou qualquer coisa fora do alcance de uma recepcionista; "ti" quando o cliente tem dúvida sobre como usar ou achar alguma funcionalidade da própria PLATAFORMA ALIZO (o sistema, não o negócio dele), ou relatou um erro/bug/comportamento estranho do SISTEMA; "none" no resto (dúvida geral, agenda, pós-venda simples que você mesma resolve).',
     'IMPORTANTE: olhe o HISTÓRICO da conversa antes de decidir. Se você (o assistente) já escalou esse MESMO assunto para humano/vendas/recrutamento em uma mensagem anterior recente e o cliente não trouxe nenhuma informação nova sobre ele (só confirmou, agradeceu, disse "ok", "obrigado", "deu certo" ou repetiu o que já tinha dito), classifique "handoff" como "none" — não escale de novo o que já está escalado.',
     '"appointment_action" = "info" quando o cliente só quer confirmar/saber sobre um agendamento existente sem mudar nada; "reschedule" quando quer mudar o horário de um agendamento existente (use "appointment_id" com o id EXATO da lista acima — se só existe um agendamento futuro, use esse mesmo sem perguntar o id); "book" quando quer marcar um atendimento novo (use "service_name" com o nome mais parecido da lista de serviços); "cancel" quando quer cancelar um agendamento existente; "none" quando não é sobre agenda.',
     '"desired_date" e "desired_time" só quando o cliente deu ou confirmou um dia/horário NESTA mensagem — deixe null se ele ainda não disse ou se a ação não precisa disso.',
@@ -368,10 +369,24 @@ export async function processReceptionistInbound(params: {
     return {} as ReceptionistIntentExtraction
   })
 
-  // Fase B: executa a ação (agenda/handoff) e monta o contexto factual que ancora a resposta.
+  // Fase B: executa a ação (agenda/handoff/TI) e monta o contexto factual que ancora a resposta.
+  const rawHandoff = extraction.handoff ?? 'none'
   let handoffTarget: HandoffTarget | null = null
-  if (extraction.handoff && extraction.handoff !== 'none') {
-    handoffTarget = extraction.handoff
+  let tiAnswerContext = ''
+
+  if (rawHandoff === 'ti') {
+    try {
+      const tiResult = await answerTechSupportQuestion(supabase, { unit, question: incomingText })
+      tiAnswerContext = `CONTEXTO DESTA RESPOSTA (TI interno já verificou e respondeu${tiResult.filedIncident ? '; um chamado técnico já foi registrado para o time' : ''} — baseie sua resposta ao cliente estritamente nisso, com naturalidade, sem inventar nada além disso): ${tiResult.answer}`
+    } catch (error) {
+      console.error(`[receptionist_engine] TI interno falhou ao responder: ${error instanceof Error ? error.message : String(error)}`)
+      handoffTarget = 'human'
+    }
+  } else if (rawHandoff !== 'none') {
+    handoffTarget = rawHandoff
+  }
+
+  if (handoffTarget) {
     const contact = { name: customer.name, phone: customer.phone, email: customer.email }
     const alreadyEscalated = await hasRecentEventForContact(supabase, {
       eventType: `receptionist_handoff_${handoffTarget}`,
@@ -385,7 +400,7 @@ export async function processReceptionistInbound(params: {
         contact,
         contactId: customer.id,
         target: handoffTarget,
-        reason: extraction.handoff_reason?.trim() || 'assunto fora do escopo da recepcionista',
+        reason: extraction.handoff_reason?.trim() || (rawHandoff === 'ti' ? 'TI interno falhou ao responder a dúvida sobre a plataforma' : 'assunto fora do escopo da recepcionista'),
         lastMessage: incomingText,
       })
       if (handoffTarget === 'sales') {
@@ -408,6 +423,7 @@ export async function processReceptionistInbound(params: {
     appointmentContext
       ? `CONTEXTO DESTA RESPOSTA (ação de agenda já verificada/executada — baseie-se estritamente nisso, nunca contradiga nem invente outro resultado): ${appointmentContext}`
       : '',
+    tiAnswerContext,
     handoffTarget
       ? 'Você já registrou a verificação deste assunto com o time responsável — diga ao cliente, com naturalidade, que vai confirmar isso e volta com a resposta assim que tiver; você continua sendo quem fala com ele, nunca diga que outra pessoa vai entrar em contato. Se essa MESMA frase ("vou verificar com o time"/equivalente) já apareceu antes no histórico desta conversa sobre este mesmo assunto, NÃO repita — o cliente já ouviu isso, repetir soa como disco riscado. Reconheça em poucas palavras (ex.: "ainda estou verificando isso") ou, se a mensagem dele for só um "ok"/agradecimento/confirmação, responda a ela normalmente sem reabrir a escalação.'
       : '',
@@ -546,7 +562,7 @@ export async function processReceptionistInbound(params: {
 // (só handoff).
 
 export type ReceptionistProspectIntentExtraction = {
-  handoff?: 'none' | 'sales' | 'recruiting' | 'human'
+  handoff?: 'none' | 'sales' | 'recruiting' | 'human' | 'ti'
   handoff_reason?: string | null
   /** "book" = quer marcar um serviço novo (a única ação de agenda que faz sentido pra quem ainda não é cliente — sem histórico prévio, não há o que remarcar/cancelar/consultar). */
   appointment_action?: 'none' | 'book'
@@ -571,8 +587,8 @@ function buildProspectIntentExtractorPrompt(params: { unit: Unit; services: Serv
     'Você está analisando a ÚLTIMA mensagem de alguém que escreveu para a recepcionista digital de uma empresa, mas que NÃO é um cliente cadastrado — pode ser um cliente novo (primeira vez que fala com a empresa), um franqueado com dúvida operacional, alguém interessado em comprar uma franquia, um estudante perguntando sobre estágio, ou qualquer outro contato. Não escreva a resposta aqui — só extraia a decisão.',
     `Hoje é ${today} (${weekday}), fuso horário ${unit.timezone}. Resolva datas relativas ("amanhã", "sexta que vem", "dia 5") pro formato YYYY-MM-DD com base nisso.`,
     `Serviços que a unidade oferece: ${servicesList}.`,
-    'Responda SOMENTE um JSON válido: {"handoff": "none"|"sales"|"recruiting"|"human", "handoff_reason": string|null, "appointment_action": "none"|"book", "service_name": string|null, "desired_date": string|null, "desired_time": string|null}.',
-    '"handoff" = "sales" quando a pessoa demonstra interesse em comprar/negociar algo que NÃO é simplesmente marcar um dos serviços da lista acima (ex.: comprar uma franquia, fechar um contrato maior, negociar condições especiais); "recruiting" quando pergunta sobre vaga/estágio/trabalhar na empresa; "human" quando é reclamação séria ou algo claramente fora do alcance de uma recepcionista; "none" quando é só uma dúvida geral ou um agendamento (ver abaixo) que você mesma resolve.',
+    'Responda SOMENTE um JSON válido: {"handoff": "none"|"sales"|"recruiting"|"human"|"ti", "handoff_reason": string|null, "appointment_action": "none"|"book", "service_name": string|null, "desired_date": string|null, "desired_time": string|null}.',
+    '"handoff" = "sales" quando a pessoa demonstra interesse em comprar/negociar algo que NÃO é simplesmente marcar um dos serviços da lista acima (ex.: comprar uma franquia, fechar um contrato maior, negociar condições especiais); "recruiting" quando pergunta sobre vaga/estágio/trabalhar na empresa; "human" quando é reclamação séria ou algo claramente fora do alcance de uma recepcionista; "ti" quando a pessoa (ex.: um franqueado) tem dúvida sobre como usar ou achar alguma funcionalidade da própria PLATAFORMA ALIZO (o sistema, não o negócio), ou relatou um erro/bug/comportamento estranho do SISTEMA; "none" quando é só uma dúvida geral ou um agendamento (ver abaixo) que você mesma resolve.',
     '"appointment_action" = "book" quando a pessoa quer marcar/agendar um dos serviços da lista acima (isso é rotina — ela é uma cliente nova, não precisa de "sales" nem de handoff nenhum pra isso, você mesma marca); use "service_name" com o nome mais parecido da lista. "desired_date" e "desired_time" só quando ela já deu ou confirmou um dia/horário NESTA mensagem — deixe null se ainda não disse.',
     'Nunca invente um service_name fora da lista acima.',
     'IMPORTANTE: olhe o HISTÓRICO da conversa antes de decidir. Se você (o assistente) já escalou esse MESMO assunto para humano/vendas/recrutamento em uma mensagem anterior recente e a pessoa não trouxe nenhuma informação nova sobre ele (só confirmou, agradeceu, disse "ok", "obrigado", "deu certo" ou repetiu o que já tinha dito), classifique "handoff" como "none" — não escale de novo o que já está escalado.',
@@ -723,9 +739,23 @@ export async function processReceptionistProspectInbound(params: {
     return {} as ReceptionistProspectIntentExtraction
   })
 
+  const rawHandoff = extraction.handoff ?? 'none'
   let handoffTarget: HandoffTarget | null = null
-  if (extraction.handoff && extraction.handoff !== 'none') {
-    handoffTarget = extraction.handoff
+  let tiAnswerContext = ''
+
+  if (rawHandoff === 'ti') {
+    try {
+      const tiResult = await answerTechSupportQuestion(supabase, { unit, question: incomingText })
+      tiAnswerContext = `CONTEXTO DESTA RESPOSTA (TI interno já verificou e respondeu${tiResult.filedIncident ? '; um chamado técnico já foi registrado para o time' : ''} — baseie sua resposta à pessoa estritamente nisso, com naturalidade, sem inventar nada além disso): ${tiResult.answer}`
+    } catch (error) {
+      console.error(`[receptionist_engine] TI interno falhou ao responder (prospecto): ${error instanceof Error ? error.message : String(error)}`)
+      handoffTarget = 'human'
+    }
+  } else if (rawHandoff !== 'none') {
+    handoffTarget = rawHandoff
+  }
+
+  if (handoffTarget) {
     const contact = { name: contactName, phone: lead.phone, email: lead.email }
     const alreadyEscalated = await hasRecentEventForContact(supabase, {
       eventType: `receptionist_handoff_${handoffTarget}`,
@@ -739,7 +769,7 @@ export async function processReceptionistProspectInbound(params: {
         contact,
         contactId: lead.id,
         target: handoffTarget,
-        reason: extraction.handoff_reason?.trim() || 'assunto fora do escopo da recepcionista',
+        reason: extraction.handoff_reason?.trim() || (rawHandoff === 'ti' ? 'TI interno falhou ao responder a dúvida sobre a plataforma' : 'assunto fora do escopo da recepcionista'),
         lastMessage: incomingText,
       })
       if (handoffTarget === 'sales') {
@@ -761,6 +791,7 @@ export async function processReceptionistProspectInbound(params: {
     appointmentContext
       ? `CONTEXTO DESTA RESPOSTA (ação de agenda já verificada/executada — baseie-se estritamente nisso, nunca contradiga nem invente outro resultado): ${appointmentContext}`
       : '',
+    tiAnswerContext,
     handoffTarget
       ? 'Você já registrou a verificação deste assunto com o time responsável — diga à pessoa, com naturalidade, que vai confirmar isso e volta com a resposta assim que tiver; você continua sendo quem fala com ela, nunca diga que outra pessoa vai entrar em contato. Se essa MESMA frase ("vou verificar com o time"/equivalente) já apareceu antes no histórico desta conversa sobre este mesmo assunto, NÃO repita — a pessoa já ouviu isso, repetir soa como disco riscado. Reconheça em poucas palavras (ex.: "ainda estou verificando isso") ou, se a mensagem dela for só um "ok"/agradecimento/confirmação, responda a ela normalmente sem reabrir a escalação.'
       : '',

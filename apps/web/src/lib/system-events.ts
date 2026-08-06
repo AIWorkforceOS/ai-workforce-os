@@ -22,6 +22,7 @@ export type SystemEventSource =
   | 'content'
   | 'seo'
   | 'checkout'
+  | 'ti'
 
 export type SystemEventInput = {
   level: SystemEventLevel
