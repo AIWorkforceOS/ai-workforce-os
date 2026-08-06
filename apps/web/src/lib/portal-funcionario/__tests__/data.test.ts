@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createFakeSupabase } from '@/lib/__tests__/fake-supabase'
-import { fetchEmployeePortalData, isOnOrAfterPortalStart, PORTAL_DATA_SINCE } from '../data'
+import { fetchEmployeePortalData, fetchEmployeeUnitContext, isOnOrAfterPortalStart, PORTAL_DATA_SINCE } from '../data'
 
 describe('isOnOrAfterPortalStart', () => {
   it('exclui datas anteriores ao corte de agosto/2026', () => {
@@ -52,5 +52,40 @@ describe('fetchEmployeePortalData', () => {
 
     expect(result.appointments.map((a) => a.id)).toEqual(['appt-new'])
     expect(result.serviceRecords.map((r) => r.id)).toEqual(['rec-new'])
+  })
+})
+
+describe('fetchEmployeeUnitContext', () => {
+  it('resolve timezone e locale a partir da unidade do funcionário', async () => {
+    const { supabase } = createFakeSupabase({
+      employees: [{ id: 'emp-a', unit_id: 'unit-1' }],
+      units: [{ id: 'unit-1', timezone: 'America/New_York', default_conversation_language: 'en' }],
+    })
+
+    const context = await fetchEmployeeUnitContext(supabase, 'emp-a')
+
+    expect(context).toEqual({ timezone: 'America/New_York', locale: 'en' })
+  })
+
+  it('cai no fallback (São Paulo/pt) quando a unidade não define idioma', async () => {
+    const { supabase } = createFakeSupabase({
+      employees: [{ id: 'emp-a', unit_id: 'unit-1' }],
+      units: [{ id: 'unit-1', timezone: 'America/Sao_Paulo', default_conversation_language: null }],
+    })
+
+    const context = await fetchEmployeeUnitContext(supabase, 'emp-a')
+
+    expect(context).toEqual({ timezone: 'America/Sao_Paulo', locale: 'pt' })
+  })
+
+  it('cai no fallback total quando o funcionário não tem unidade vinculada', async () => {
+    const { supabase } = createFakeSupabase({
+      employees: [{ id: 'emp-a', unit_id: null }],
+      units: [],
+    })
+
+    const context = await fetchEmployeeUnitContext(supabase, 'emp-a')
+
+    expect(context).toEqual({ timezone: 'America/Sao_Paulo', locale: 'pt' })
   })
 })

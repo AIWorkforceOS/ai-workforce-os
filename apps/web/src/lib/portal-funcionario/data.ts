@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { DEFAULT_LOCALE, unitDefaultLocale, type Locale } from '@/lib/i18n/config'
 
 /**
  * Corte de dados do Portal do Funcionário: a Alizo começou a operar o
@@ -70,4 +71,47 @@ export async function fetchEmployeePortalData(
   )
 
   return { appointments, serviceRecords }
+}
+
+export type EmployeeUnitContext = {
+  timezone: string
+  locale: Locale
+}
+
+const FALLBACK_TIMEZONE = 'America/Sao_Paulo'
+
+/**
+ * Fuso e idioma da unidade do funcionário — necessários pro seletor de
+ * mês (lib/service-operations-month.ts espera timezone da unidade, não
+ * do servidor) e pros rótulos/moeda do financeiro do portal. Dois
+ * passos (employees -> units) porque não há join pronto; RLS cobre os
+ * dois (employees_select libera a própria linha, units_select libera a
+ * unidade do próprio usuário — migrations 005/034/053).
+ */
+export async function fetchEmployeeUnitContext(
+  supabase: SupabaseClient,
+  employeeId: string,
+): Promise<EmployeeUnitContext> {
+  const { data: employee } = await supabase
+    .from('employees')
+    .select('unit_id')
+    .eq('id', employeeId)
+    .maybeSingle()
+
+  const unitId = (employee as { unit_id: string | null } | null)?.unit_id
+  if (!unitId) return { timezone: FALLBACK_TIMEZONE, locale: DEFAULT_LOCALE }
+
+  const { data: unit } = await supabase
+    .from('units')
+    .select('timezone, default_conversation_language')
+    .eq('id', unitId)
+    .maybeSingle()
+
+  if (!unit) return { timezone: FALLBACK_TIMEZONE, locale: DEFAULT_LOCALE }
+  const unitRow = unit as { timezone: string | null; default_conversation_language: Locale | null }
+
+  return {
+    timezone: unitRow.timezone ?? FALLBACK_TIMEZONE,
+    locale: unitDefaultLocale({ default_conversation_language: unitRow.default_conversation_language }),
+  }
 }
