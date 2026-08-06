@@ -12,7 +12,7 @@ export const PAY_TYPE_LABEL: Record<EmployeePayType, string> = {
   percent: '% do serviço',
 }
 
-function round2(value: number): number {
+export function round2(value: number): number {
   return Math.round(value * 100) / 100
 }
 

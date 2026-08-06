@@ -37,7 +37,23 @@ export async function fetchOperationsData(
     invoicesQuery.order('created_at', { ascending: false }).limit(rowLimit),
   ])
 
-  return { records: (records ?? []) as Record<string, unknown>[], invoices: (invoices ?? []) as Record<string, unknown>[] }
+  const recordRows = (records ?? []) as Record<string, unknown>[]
+  const recordIds = recordRows.map((r) => r.id as string)
+
+  // Ledger de pagamentos parciais (migration 055) — buscado à parte porque é
+  // 1:N por lançamento (não dá pra trazer no mesmo select). Carrega o
+  // histórico completo dos lançamentos já filtrados acima, mesmo que um
+  // pagamento tenha acontecido num mês diferente do service_date.
+  const { data: payments } =
+    recordIds.length > 0
+      ? await supabase.from('service_record_payments').select('*').in('service_record_id', recordIds).order('created_at', { ascending: true })
+      : { data: [] as Record<string, unknown>[] }
+
+  return {
+    records: recordRows,
+    invoices: (invoices ?? []) as Record<string, unknown>[],
+    payments: (payments ?? []) as Record<string, unknown>[],
+  }
 }
 
 /**

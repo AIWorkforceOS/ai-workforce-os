@@ -8,6 +8,7 @@ import type {
   InvoiceWithRelations,
   ServiceRecordWithRelations,
 } from '@/components/dashboard/service-operations-panel'
+import type { ServiceRecordPayment } from '@/lib/types'
 import { unitDefaultLocale } from '@/lib/i18n/config'
 import {
   currentMonthInTimezone,
@@ -65,7 +66,7 @@ export default async function UnitOperationsPage({
   // atual em vez do mês escolhido.
   const monthOptions = Array.from({ length: 26 }, (_, i) => shiftMonth(currentMonth, 1 - i))
 
-  const [{ data: employees }, { data: services }, { data: customers }, { records, invoices }] = await Promise.all([
+  const [{ data: employees }, { data: services }, { data: customers }, { records, invoices, payments }] = await Promise.all([
     supabase.from('employees').select('*').eq('unit_id', id).eq('is_active', true).order('name'),
     supabase.from('services').select('*').eq('unit_id', id).eq('is_active', true).order('name'),
     supabase.from('customers').select('id, name, email, phone, address, custom_fields').eq('unit_id', id).eq('status', 'active').order('name').limit(500),
@@ -246,6 +247,7 @@ export default async function UnitOperationsPage({
           customers={(customers ?? []) as Pick<Customer, 'id' | 'name' | 'email' | 'phone' | 'address' | 'custom_fields'>[]}
           initialRecords={records as unknown as ServiceRecordWithRelations[]}
           initialInvoices={invoices as unknown as InvoiceWithRelations[]}
+          initialPayments={payments as unknown as ServiceRecordPayment[]}
           initialBilling={{
             billing_company_name: unitRow.billing_company_name,
             billing_address: unitRow.billing_address,

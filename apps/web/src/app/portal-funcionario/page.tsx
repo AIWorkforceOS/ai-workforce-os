@@ -23,11 +23,13 @@ const APPOINTMENT_STATUS_VARIANT: Record<string, BadgeVariant> = {
 
 const PAYMENT_STATUS_LABEL: Record<string, string> = {
   pending: 'Pendente',
+  partial: 'Pago parcial',
   paid: 'Pago',
 }
 
 const PAYMENT_STATUS_VARIANT: Record<string, BadgeVariant> = {
   pending: 'amber',
+  partial: 'blue',
   paid: 'green',
 }
 
@@ -113,11 +115,20 @@ export default async function PortalFuncionarioPage() {
                   </p>
                   <p className="mt-0.5 text-[12px] text-slate-400">{formatDate(rec.service_date)}</p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold text-white">{formatCurrency(rec.amount_due)}</span>
-                  <Badge variant={PAYMENT_STATUS_VARIANT[rec.payment_status] ?? 'slate'}>
-                    {PAYMENT_STATUS_LABEL[rec.payment_status] ?? rec.payment_status}
-                  </Badge>
+                <div className="flex flex-col items-end gap-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-white">{formatCurrency(rec.amount_due)}</span>
+                    <Badge variant={PAYMENT_STATUS_VARIANT[rec.payment_status] ?? 'slate'}>
+                      {PAYMENT_STATUS_LABEL[rec.payment_status] ?? rec.payment_status}
+                    </Badge>
+                  </div>
+                  {rec.amount_paid_to_employee > 0 && (
+                    <p className="text-[11px] text-slate-400">
+                      Pago {formatCurrency(rec.amount_paid_to_employee)}
+                      {rec.payment_status === 'partial' &&
+                        ` · falta ${formatCurrency(Math.max((rec.amount_due ?? 0) - rec.amount_paid_to_employee, 0))}`}
+                    </p>
+                  )}
                 </div>
               </div>
             ))}

@@ -28,6 +28,8 @@ export type PortalServiceRecord = {
   service_date: string
   description: string | null
   amount_due: number | null
+  /** já pago a este funcionário (migration 055) */
+  amount_paid_to_employee: number
   payment_status: string
   paid_at: string | null
   customers: { name: string } | null
@@ -55,7 +57,7 @@ export async function fetchEmployeePortalData(
       .order('starts_at', { ascending: true }),
     supabase
       .from('service_records')
-      .select('id, service_date, description, amount_due, payment_status, paid_at, customers(name)')
+      .select('id, service_date, description, amount_due, amount_paid_to_employee, payment_status, paid_at, customers(name)')
       .eq('employee_id', employeeId)
       .order('service_date', { ascending: false }),
   ])

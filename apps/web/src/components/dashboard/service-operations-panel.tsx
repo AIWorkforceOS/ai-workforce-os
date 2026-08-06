@@ -2,10 +2,11 @@
 
 import { useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { computeSuggestedPay } from '@/lib/service-pay'
+import { computeSuggestedPay, round2 } from '@/lib/service-pay'
 import { normalizeServiceRecurrence, projectedMonthlyRevenue } from '@/lib/scheduling/service-recurrence'
 import { defaultDateForMonth, todayInTimezone } from '@/lib/service-operations-month'
 import { isInvoiceOverdue } from '@/lib/invoice-status'
+import { UNASSIGNED_EMPLOYEE_ID, summarizeByEmployee, summarizeInvoices, summarizeServiceRecords } from '@/lib/service-financials'
 import {
   brandGradient,
   cardShadow,
@@ -21,7 +22,19 @@ import {
   Tr,
   Textarea,
 } from '@/components/ui/dashboard-ui'
-import type { Customer, Employee, Invoice, Service, ServiceRecord, Unit } from '@/lib/types'
+import type { Customer, Employee, Invoice, Service, ServiceRecord, ServiceRecordPayment, Unit } from '@/lib/types'
+
+const PAYMENT_STATUS_LABEL: Record<ServiceRecord['payment_status'], string> = {
+  pending: 'Pendente',
+  partial: 'Parcial',
+  paid: 'Pago',
+}
+
+const PAYMENT_STATUS_VARIANT: Record<ServiceRecord['payment_status'], 'slate' | 'amber' | 'green'> = {
+  pending: 'slate',
+  partial: 'amber',
+  paid: 'green',
+}
 
 const SERVICE_RECURRENCE_LABEL: Record<string, string> = {
   once: 'Único',
@@ -139,6 +152,7 @@ export function ServiceOperationsPanel({
   customers,
   initialRecords,
   initialInvoices,
+  initialPayments,
   initialBilling,
 }: {
   unitId: string
@@ -157,6 +171,8 @@ export function ServiceOperationsPanel({
   customers: CustomerOption[]
   initialRecords: ServiceRecordWithRelations[]
   initialInvoices: InvoiceWithRelations[]
+  /** ledger de pagamentos parciais dos lançamentos acima (migration 055) */
+  initialPayments: ServiceRecordPayment[]
   initialBilling: BillingIdentity
 }) {
   const intlLocale = currency === 'USD' ? 'en-US' : 'pt-BR'
@@ -168,6 +184,7 @@ export function ServiceOperationsPanel({
 
   const [records, setRecords] = useState<ServiceRecordWithRelations[]>(initialRecords)
   const [invoices, setInvoices] = useState<InvoiceWithRelations[]>(initialInvoices)
+  const [payments, setPayments] = useState<ServiceRecordPayment[]>(initialPayments)
 
   // -------------------------------------------------------------------
   // Serviços executados
@@ -189,6 +206,15 @@ export function ServiceOperationsPanel({
   const [recordRowBusyId, setRecordRowBusyId] = useState<string | null>(null)
   const [recordRowError, setRecordRowError] = useState<string | null>(null)
   const [recordSearchQuery, setRecordSearchQuery] = useState('')
+  /** funcionário selecionado na "Equipe" abaixo — filtra a tabela de lançamentos pra essa visão por funcionário (migration 055) */
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
+
+  // Pagamento (parcial ou total) de um lançamento à equipe — migration 055.
+  const [payingRecordId, setPayingRecordId] = useState<string | null>(null)
+  const [payAmountInput, setPayAmountInput] = useState('')
+  const [payBusy, setPayBusy] = useState(false)
+  const [payError, setPayError] = useState<string | null>(null)
+  const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null)
 
   function applyRecordChange(next: Partial<RecordFormState>, touchedDue = amountDueTouched) {
     setRecordForm((prev) => {
@@ -251,22 +277,87 @@ export function ServiceOperationsPanel({
     setAmountDueTouched(false)
   }
 
-  async function handleRecordPayment(record: ServiceRecordWithRelations, paid: boolean) {
+  /** Recarrega o ledger de um lançamento direto do banco (fonte de verdade do histórico) depois de registrar pagamento/estorno. */
+  async function refreshPaymentsForRecord(recordId: string) {
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('service_record_payments')
+      .select('*')
+      .eq('service_record_id', recordId)
+      .order('created_at', { ascending: true })
+    setPayments((prev) => [
+      ...prev.filter((p) => p.service_record_id !== recordId),
+      ...((data ?? []) as unknown as ServiceRecordPayment[]),
+    ])
+  }
+
+  function handleStartPayment(record: ServiceRecordWithRelations) {
+    setPayError(null)
+    setPayingRecordId(record.id)
+    const remaining = round2(Math.max((record.amount_due ?? 0) - record.amount_paid_to_employee, 0))
+    setPayAmountInput(remaining > 0 ? String(remaining) : '')
+  }
+
+  function handleCancelPayment() {
+    setPayingRecordId(null)
+    setPayError(null)
+  }
+
+  async function handleConfirmPayment(record: ServiceRecordWithRelations) {
+    setPayError(null)
+    const amount = Number(payAmountInput)
+    if (payAmountInput.trim() === '' || !Number.isFinite(amount) || amount <= 0) {
+      setPayError('Informe um valor de pagamento maior que zero.')
+      return
+    }
+    const remaining = round2(Math.max((record.amount_due ?? 0) - record.amount_paid_to_employee, 0))
+    if (amount > remaining) {
+      setPayError(`Esse valor excede o saldo devido (${fmtMoney(remaining)}).`)
+      return
+    }
+    setPayBusy(true)
+    const supabase = createClient()
+    const { data, error } = await supabase.rpc('register_service_record_payment', {
+      p_service_record_id: record.id,
+      p_amount: amount,
+    })
+    setPayBusy(false)
+    if (error || !data) {
+      setPayError(error?.message ?? 'Não foi possível registrar o pagamento.')
+      return
+    }
+    const updated = data as unknown as ServiceRecord
+    setRecords((prev) => prev.map((r) => (r.id === record.id ? { ...r, ...updated } : r)))
+    await refreshPaymentsForRecord(record.id)
+    setPayingRecordId(null)
+    setPayAmountInput('')
+  }
+
+  /** Estorna TODO o valor já pago (nunca deleta o histórico — registra uma linha negativa de correção, ver migration 055) e reabre o lançamento. */
+  async function handleReversePayment(record: ServiceRecordWithRelations) {
+    if (record.amount_paid_to_employee <= 0) return
+    if (
+      !window.confirm(
+        `Estornar o pagamento de ${fmtMoney(record.amount_paid_to_employee)} já registrado para este lançamento? Ele volta a aparecer como pendente.`,
+      )
+    )
+      return
     setRecordRowError(null)
     setRecordRowBusyId(record.id)
     const supabase = createClient()
-    const { data, error } = await supabase
-      .from('service_records')
-      .update({ payment_status: paid ? 'paid' : 'pending', paid_at: paid ? new Date().toISOString() : null })
-      .eq('id', record.id)
-      .select('*, employee:employees(id,name), customer:customers(id,name,email), service:services(id,name)')
-      .single()
+    const { data, error } = await supabase.rpc('register_service_record_payment', {
+      p_service_record_id: record.id,
+      p_amount: -record.amount_paid_to_employee,
+      p_note: 'Estorno (reabertura pela tela de Operação)',
+    })
     setRecordRowBusyId(null)
     if (error || !data) {
-      setRecordRowError('Não foi possível atualizar o pagamento.')
+      setRecordRowError('Não foi possível estornar o pagamento.')
       return
     }
-    setRecords((prev) => prev.map((r) => (r.id === record.id ? (data as unknown as ServiceRecordWithRelations) : r)))
+    const updated = data as unknown as ServiceRecord
+    setRecords((prev) => prev.map((r) => (r.id === record.id ? { ...r, ...updated } : r)))
+    await refreshPaymentsForRecord(record.id)
   }
 
   async function handleRecordDelete(record: ServiceRecordWithRelations) {
@@ -360,32 +451,41 @@ export function ServiceOperationsPanel({
     setEditingRecordId(null)
   }
 
-  const totals = useMemo(() => {
-    const pendingDue = records
-      .filter((r) => r.payment_status === 'pending' && r.amount_due !== null)
-      .reduce((sum, r) => sum + Number(r.amount_due), 0)
-    const paidDue = records
-      .filter((r) => r.payment_status === 'paid' && r.amount_due !== null)
-      .reduce((sum, r) => sum + Number(r.amount_due), 0)
-    const charged = records.filter((r) => r.amount_charged !== null).reduce((sum, r) => sum + Number(r.amount_charged), 0)
-
-    const byEmployee = new Map<string, number>()
-    for (const r of records) {
-      if (r.payment_status !== 'pending' || r.amount_due === null) continue
-      const name = r.employee?.name ?? 'Sem profissional'
-      byEmployee.set(name, (byEmployee.get(name) ?? 0) + Number(r.amount_due))
+  // Fonte única dos totais mostrados nos cards do topo, nos chips por
+  // funcionário e na visão detalhada de um funcionário — todos calculados
+  // a partir do MESMO array `records` pelas mesmas funções puras
+  // (lib/service-financials.ts), então a soma das partes bate com o total
+  // exibido sempre, por construção (não por coincidência).
+  const financials = useMemo(() => summarizeServiceRecords(records), [records])
+  const invoiceFinancials = useMemo(() => summarizeInvoices(invoices), [invoices])
+  const employeeSummaries = useMemo(() => summarizeByEmployee(records), [records])
+  const paymentsByRecordId = useMemo(() => {
+    const map = new Map<string, ServiceRecordPayment[]>()
+    for (const payment of payments) {
+      const list = map.get(payment.service_record_id) ?? []
+      list.push(payment)
+      map.set(payment.service_record_id, list)
     }
-    return { pendingDue, paidDue, charged, byEmployee: [...byEmployee.entries()].sort((a, b) => b[1] - a[1]) }
-  }, [records])
+    return map
+  }, [payments])
 
   const filteredRecords = useMemo(() => {
     const query = normalizeSearchText(recordSearchQuery)
-    if (!query) return records
     return records.filter((record) => {
+      if (selectedEmployeeId !== null) {
+        const employeeKey = record.employee_id ?? UNASSIGNED_EMPLOYEE_ID
+        if (employeeKey !== selectedEmployeeId) return false
+      }
+      if (!query) return true
       const haystacks = [record.employee?.name, record.customer?.name, record.description, record.id]
       return haystacks.some((field) => normalizeSearchText(field).includes(query))
     })
-  }, [records, recordSearchQuery])
+  }, [records, recordSearchQuery, selectedEmployeeId])
+
+  const selectedEmployeeSummary = useMemo(
+    () => (selectedEmployeeId === null ? null : (employeeSummaries.find((e) => e.employeeId === selectedEmployeeId) ?? null)),
+    [employeeSummaries, selectedEmployeeId],
+  )
 
   // -------------------------------------------------------------------
   // A receber (projetado) — direto do cadastro do cliente, não depende de
@@ -417,12 +517,6 @@ export function ServiceOperationsPanel({
     () => recurringCustomers.reduce((sum, c) => sum + c.monthly, 0),
     [recurringCustomers]
   )
-
-  const receivedThisMonth = useMemo(() => {
-    return invoices
-      .filter((i) => i.status === 'paid' && i.paid_at && (isAllMonths || i.paid_at.slice(0, 7) === selectedMonth))
-      .reduce((sum, i) => sum + Number(i.amount), 0)
-  }, [invoices, selectedMonth, isAllMonths])
 
   // -------------------------------------------------------------------
   // Dados de cobrança — quem está cobrando, para aparecer na fatura em
@@ -894,10 +988,14 @@ export function ServiceOperationsPanel({
 
   return (
     <div className="flex flex-col gap-8">
-      {/* Resumo — as 4 categorias do financeiro: projetado (a receber) e
-          realizado (recebido) de um lado, equipe (a pagar/pago) do outro.
-          Alimentado automaticamente pelo cadastro do cliente e pela agenda,
-          sem depender de lançamento manual. */}
+      {/* Resumo financeiro real do mês — dois grupos: dinheiro do cliente
+          (ordens executadas → faturadas → recebidas) e folha da equipe
+          (devido → pago). Todo card vem das mesmas funções puras de
+          lib/service-financials.ts a partir do MESMO array de lançamentos,
+          então "Já faturado" + "Ainda não faturado" = "Total em ordens" e
+          "Pago à equipe" + "A pagar à equipe" = total da folha sempre,
+          sem exceção — não são números soltos que podem discordar entre
+          si. */}
       {!isCurrentMonth && (
         <div
           className="rounded-xl px-4 py-2.5 text-xs font-semibold text-amber-300"
@@ -908,37 +1006,76 @@ export function ServiceOperationsPanel({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {[
-          { label: 'A receber (projetado este mês)', value: fmtMoney(projectedReceivable), sub: 'clientes recorrentes cadastrados' },
-          {
-            label: isAllMonths
-              ? 'Recebido (todo o período)'
-              : isCurrentMonth
-                ? 'Recebido (este mês)'
-                : `Recebido em ${selectedMonthLabel}`,
-            value: fmtMoney(receivedThisMonth),
-            sub: 'faturas pagas',
-          },
-          { label: 'A pagar à equipe', value: fmtMoney(totals.pendingDue), sub: 'serviços pendentes' },
-          { label: 'Pago à equipe', value: fmtMoney(totals.paidDue), sub: 'já quitado' },
-        ].map(({ label, value, sub }) => (
-          <div
-            key={label}
-            className="rounded-2xl bg-[#141a2b] p-4"
-            style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}
-          >
-            <p className="text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">{label}</p>
-            <p className="mt-1 text-lg font-black tracking-tight text-white">{value}</p>
-            <p className="mt-0.5 text-[11px] text-slate-500">{sub}</p>
-          </div>
-        ))}
+      <div className="flex flex-col gap-2">
+        <SectionLabel>
+          {isAllMonths ? 'Cliente — todo o período' : isCurrentMonth ? 'Cliente — este mês' : `Cliente — ${selectedMonthLabel}`}
+        </SectionLabel>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[
+            { label: 'Total em ordens', value: fmtMoney(financials.totalOrdersAmount), sub: 'tudo que foi executado no período' },
+            { label: 'Já faturado', value: fmtMoney(financials.invoicedAmount), sub: 'ordens vinculadas a uma fatura' },
+            { label: 'Ainda não faturado', value: fmtMoney(financials.notInvoicedAmount), sub: 'ver "Faturar serviços pendentes" abaixo' },
+            {
+              label: 'Recebido do cliente',
+              value: fmtMoney(invoiceFinancials.receivedAmount),
+              sub: `de ${fmtMoney(invoiceFinancials.activeInvoicedAmount)} faturado`,
+            },
+          ].map(({ label, value, sub }) => (
+            <div
+              key={label}
+              className="rounded-2xl bg-[#141a2b] p-4"
+              style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}
+            >
+              <p className="text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">{label}</p>
+              <p className="mt-1 text-lg font-black tracking-tight text-white">{value}</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">{sub}</p>
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* Clientes recorrentes — projeção automática, direto do cadastro */}
+      <div className="flex flex-col gap-2">
+        <SectionLabel>Equipe</SectionLabel>
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            {
+              label: 'A pagar à equipe',
+              value: fmtMoney(financials.employeeDue),
+              sub: `de ${fmtMoney(financials.employeeTotalPayroll)} no total`,
+            },
+            {
+              label: 'Pago à equipe',
+              value: fmtMoney(financials.employeePaid),
+              sub: `de ${fmtMoney(financials.employeeTotalPayroll)} no total`,
+            },
+          ].map(({ label, value, sub }) => (
+            <div
+              key={label}
+              className="rounded-2xl bg-[#141a2b] p-4"
+              style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}
+            >
+              <p className="text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">{label}</p>
+              <p className="mt-1 text-lg font-black tracking-tight text-white">{value}</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">{sub}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Clientes recorrentes — projeção automática, direto do cadastro.
+          Separada dos cards acima de propósito: é uma ESTIMATIVA (valor ×
+          frequência cadastrados no cliente), não o valor real executado —
+          misturar as duas coisas no mesmo grid foi parte da confusão
+          "8.375 em ordens vs. 8.145 faturado" relatada pelo dono do
+          produto. */}
       {recurringCustomers.length > 0 && (
         <div className="flex flex-col gap-3">
-          <SectionLabel>Clientes recorrentes (a receber)</SectionLabel>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <SectionLabel>Clientes recorrentes (projeção, não é valor executado)</SectionLabel>
+            <p className="text-xs font-semibold text-slate-400">
+              Projeção mensal: <span className="text-white">{fmtMoney(projectedReceivable)}</span>
+            </p>
+          </div>
           <div
             className="overflow-hidden rounded-2xl bg-[#141a2b]"
             style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)' }}
@@ -982,17 +1119,79 @@ export function ServiceOperationsPanel({
       <div className="flex flex-col gap-3">
         <SectionLabel>Serviços executados</SectionLabel>
 
-        {totals.byEmployee.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {totals.byEmployee.map(([name, amount]) => (
-              <span
-                key={name}
-                className="rounded-lg px-2.5 py-1 text-[11px] font-bold text-amber-300"
-                style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)' }}
+        {/* Equipe — visão por funcionário (migration 055): clicar num
+            profissional filtra a tabela de lançamentos abaixo só para ele
+            e mostra o resumo (cobrado/devido/pago/restante) exatamente
+            desse recorte — os mesmos números da tabela filtrada, nunca um
+            total calculado à parte. */}
+        {employeeSummaries.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">
+                Equipe — clique num profissional para ver os lançamentos dele
+              </p>
+              {selectedEmployeeId !== null && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedEmployeeId(null)}
+                  className="text-[11px] font-bold text-cyan-300 hover:text-cyan-200"
+                >
+                  Limpar filtro ×
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {employeeSummaries.map((emp) => {
+                const active = selectedEmployeeId === emp.employeeId
+                return (
+                  <button
+                    key={emp.employeeId}
+                    type="button"
+                    onClick={() => setSelectedEmployeeId(active ? null : emp.employeeId)}
+                    className="flex flex-col items-start gap-0.5 rounded-xl px-3 py-2 text-left transition-all"
+                    style={{
+                      background: active ? 'rgba(6,182,212,0.14)' : 'rgba(255,255,255,0.04)',
+                      border: active ? '1px solid rgba(6,182,212,0.4)' : '1px solid rgba(255,255,255,0.08)',
+                    }}
+                  >
+                    <span className="text-xs font-bold text-white">{emp.employeeName}</span>
+                    <span className="text-[11px] text-slate-400">
+                      Pago {fmtMoney(emp.totalPaid)} · Falta {fmtMoney(emp.totalRemaining)}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {selectedEmployeeSummary && (
+          <div className="rounded-2xl bg-[#141a2b] p-4" style={{ boxShadow: cardShadow }}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-bold text-white">
+                {selectedEmployeeSummary.employeeName} — {selectedEmployeeSummary.recordCount} lançamento(s) no período
+              </p>
+              <button
+                type="button"
+                onClick={() => setSelectedEmployeeId(null)}
+                className="text-xs font-bold text-cyan-300 hover:text-cyan-200"
               >
-                {name}: {fmtMoney(amount)} pendente
-              </span>
-            ))}
+                Ver todos os profissionais
+              </button>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {[
+                { label: 'Cobrado do cliente', value: selectedEmployeeSummary.totalCharged },
+                { label: 'Devido ao profissional', value: selectedEmployeeSummary.totalDue },
+                { label: 'Já pago', value: selectedEmployeeSummary.totalPaid },
+                { label: 'Ainda falta pagar', value: selectedEmployeeSummary.totalRemaining },
+              ].map(({ label, value }) => (
+                <div key={label} className="rounded-xl bg-white/5 p-3">
+                  <p className="text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">{label}</p>
+                  <p className="mt-1 text-base font-black text-white">{fmtMoney(value)}</p>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -1115,7 +1314,11 @@ export function ServiceOperationsPanel({
         )}
 
         {records.length > 0 && filteredRecords.length === 0 && (
-          <p className="text-sm text-slate-400">Nenhum lançamento encontrado para “{recordSearchQuery}”.</p>
+          <p className="text-sm text-slate-400">
+            {recordSearchQuery
+              ? `Nenhum lançamento encontrado para “${recordSearchQuery}”.`
+              : 'Este profissional não tem lançamentos neste período.'}
+          </p>
         )}
 
         {filteredRecords.length > 0 && (
@@ -1220,13 +1423,46 @@ export function ServiceOperationsPanel({
                             </p>
                           </Td>
                           <Td className="text-slate-300">{fmtMoney(record.amount_charged === null ? null : Number(record.amount_charged))}</Td>
-                          <Td className="text-slate-300">{fmtMoney(record.amount_due === null ? null : Number(record.amount_due))}</Td>
+                          <Td className="text-slate-300">
+                            {fmtMoney(record.amount_due === null ? null : Number(record.amount_due))}
+                            {record.amount_paid_to_employee > 0 && (
+                              <p className="mt-0.5 text-[11px] text-slate-500">
+                                pago {fmtMoney(record.amount_paid_to_employee)}
+                                {record.payment_status === 'partial' &&
+                                  ` · falta ${fmtMoney(round2(Math.max((record.amount_due ?? 0) - record.amount_paid_to_employee, 0)))}`}
+                              </p>
+                            )}
+                          </Td>
                         </>
                       )}
                       <Td>
-                        <StatusPill variant={record.payment_status === 'paid' ? 'green' : 'amber'}>
-                          {record.payment_status === 'paid' ? 'Pago' : 'Pendente'}
-                        </StatusPill>
+                        {record.amount_due === null ? (
+                          <StatusPill variant="slate">Sem valor</StatusPill>
+                        ) : (
+                          <StatusPill variant={PAYMENT_STATUS_VARIANT[record.payment_status]}>
+                            {PAYMENT_STATUS_LABEL[record.payment_status]}
+                          </StatusPill>
+                        )}
+                        {(paymentsByRecordId.get(record.id)?.length ?? 0) > 0 && (
+                          <button
+                            type="button"
+                            className="mt-1 block text-[11px] font-semibold text-slate-500 hover:text-slate-300"
+                            onClick={() => setExpandedHistoryId((prev) => (prev === record.id ? null : record.id))}
+                          >
+                            {expandedHistoryId === record.id ? 'ocultar histórico' : `histórico (${paymentsByRecordId.get(record.id)!.length})`}
+                          </button>
+                        )}
+                        {expandedHistoryId === record.id && (
+                          <ul className="mt-1 flex flex-col gap-0.5 text-[11px] text-slate-400">
+                            {paymentsByRecordId.get(record.id)!.map((p) => (
+                              <li key={p.id}>
+                                {new Date(p.created_at).toLocaleDateString('pt-BR')} · {p.amount > 0 ? '+' : ''}
+                                {fmtMoney(p.amount)}
+                                {p.note ? ` — ${p.note}` : ''}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
                       </Td>
                       <Td>
                         {editingRecordId === record.id ? (
@@ -1251,25 +1487,56 @@ export function ServiceOperationsPanel({
                               </button>
                             </div>
                           </div>
+                        ) : payingRecordId === record.id ? (
+                          <div className="flex flex-col gap-1.5">
+                            {payError && <p className="text-xs text-red-400">{payError}</p>}
+                            <Input
+                              type="number"
+                              min={0.01}
+                              step="0.01"
+                              value={payAmountInput}
+                              onChange={(e) => setPayAmountInput(e.target.value)}
+                              placeholder="Valor pago"
+                            />
+                            <div className="flex flex-wrap gap-3 text-xs font-semibold">
+                              <button
+                                type="button"
+                                disabled={payBusy}
+                                className="text-green-400 hover:text-green-300 disabled:opacity-40"
+                                onClick={() => handleConfirmPayment(record)}
+                              >
+                                {payBusy ? 'Registrando…' : 'Confirmar'}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={payBusy}
+                                className="text-slate-400 hover:text-slate-300 disabled:opacity-40"
+                                onClick={handleCancelPayment}
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          </div>
                         ) : (
                           <div className="flex flex-wrap gap-3 text-xs font-semibold">
-                            {record.payment_status === 'pending' ? (
+                            {record.payment_status !== 'paid' && record.amount_due !== null && (
                               <button
                                 type="button"
                                 disabled={recordRowBusyId === record.id}
                                 className="text-green-400 hover:text-green-300 disabled:opacity-40"
-                                onClick={() => handleRecordPayment(record, true)}
+                                onClick={() => handleStartPayment(record)}
                               >
-                                Marcar pago
+                                Pagar
                               </button>
-                            ) : (
+                            )}
+                            {record.amount_paid_to_employee > 0 && (
                               <button
                                 type="button"
                                 disabled={recordRowBusyId === record.id}
                                 className="text-amber-400 hover:text-amber-300 disabled:opacity-40"
-                                onClick={() => handleRecordPayment(record, false)}
+                                onClick={() => handleReversePayment(record)}
                               >
-                                Reabrir
+                                Estornar
                               </button>
                             )}
                             {record.invoice_id === null ? (

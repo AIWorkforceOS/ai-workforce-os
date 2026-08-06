@@ -25,6 +25,11 @@ function seedData() {
       { id: 'inv-jul', unit_id: 'unit-1', reference_month: '2026-07-01', amount: 450, status: 'draft' },
       { id: 'inv-aug', unit_id: 'unit-1', reference_month: '2026-08-01', amount: 300, status: 'draft' },
     ],
+    service_record_payments: [
+      { id: 'pay-jul-1', service_record_id: 'rec-jul-1', amount: 40, created_at: '2026-07-05T00:00:00Z' },
+      { id: 'pay-jul-2', service_record_id: 'rec-jul-2', amount: 20, created_at: '2026-07-10T00:00:00Z' },
+      { id: 'pay-aug', service_record_id: 'rec-aug', amount: 50, created_at: '2026-08-03T00:00:00Z' },
+    ],
   }
 }
 
@@ -36,6 +41,23 @@ describe('fetchOperationsData', () => {
 
     expect(records.map((r) => r.id).sort()).toEqual(['rec-jul-1', 'rec-jul-2'])
     expect(invoices.map((i) => i.id)).toEqual(['inv-jul'])
+  })
+
+  it('traz o ledger de pagamentos (migration 055) só dos lançamentos do mês filtrado, não de outros meses', async () => {
+    const { supabase } = createFakeSupabase(seedData())
+
+    const { payments } = await fetchOperationsData(supabase, 'unit-1', '2026-07', false)
+
+    expect(payments.map((p) => p.id).sort()).toEqual(['pay-jul-1', 'pay-jul-2'])
+  })
+
+  it('sem nenhum lançamento no recorte, não tenta buscar pagamentos e devolve lista vazia', async () => {
+    const { supabase } = createFakeSupabase(seedData())
+
+    const { records, payments } = await fetchOperationsData(supabase, 'unit-1', '2026-01', false)
+
+    expect(records).toEqual([])
+    expect(payments).toEqual([])
   })
 
   it('mês selecionado = agosto/2026 devolve só agosto', async () => {

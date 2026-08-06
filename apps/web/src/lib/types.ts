@@ -374,7 +374,7 @@ export type Appointment = {
   updated_at: string
 }
 
-export type ServiceRecordPaymentStatus = 'pending' | 'paid'
+export type ServiceRecordPaymentStatus = 'pending' | 'partial' | 'paid'
 
 /**
  * Serviço executado (tabela service_records, migration 030): "esse
@@ -398,11 +398,30 @@ export type ServiceRecord = {
   /** valor a pagar ao profissional */
   amount_due: number | null
   payment_status: ServiceRecordPaymentStatus
+  /** total já pago ao profissional — sempre SUM(service_record_payments.amount) deste lançamento (migration 055), derivado por trigger, nunca escrito direto */
+  amount_paid_to_employee: number
   paid_at: string | null
   /** fatura (individual ou consolidada) que já cobriu este lançamento — null = avulso pendente de fatura */
   invoice_id: string | null
   created_at: string
   updated_at: string
+}
+
+/**
+ * Ledger append-only de pagamentos à equipe por lançamento (tabela
+ * service_record_payments, migration 055) — uma linha por transação
+ * (amount positivo = pagamento, negativo = estorno/correção). Nunca
+ * editado nem deletado; é a fonte de verdade de "quando e quanto foi
+ * pago" por trás do rollup em service_records.amount_paid_to_employee.
+ */
+export type ServiceRecordPayment = {
+  id: string
+  org_id: string
+  unit_id: string
+  service_record_id: string
+  amount: number
+  note: string | null
+  created_at: string
 }
 
 export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'cancelled' | 'consolidated'

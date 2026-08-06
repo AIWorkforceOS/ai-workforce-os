@@ -72,7 +72,9 @@ type UpcomingAppointment = {
 type ServiceRecordRow = {
   amount_charged: number | null
   amount_due: number | null
-  payment_status: 'pending' | 'paid'
+  /** já pago ao profissional (migration 055) — usado pra calcular o saldo ainda devido de lançamentos parciais */
+  amount_paid_to_employee: number
+  payment_status: 'pending' | 'partial' | 'paid'
 }
 
 const STATUS_VARIANT: Record<AppointmentStatus, BadgeVariant> = {
@@ -143,12 +145,17 @@ export async function ManagementHome({ firstName, unitId }: { firstName: string;
     scopedToUnit(
       supabase
         .from('service_records')
-        .select('amount_charged, amount_due, payment_status')
+        .select('amount_charged, amount_due, amount_paid_to_employee, payment_status')
         .gte('service_date', sevenDaysAgo.toISOString().slice(0, 10)),
       unitId,
     ),
+    // 'pending' OU 'partial' — um pagamento parcial (migration 055) ainda
+    // tem saldo devido, não pode ser tratado como já quitado nesse total.
     scopedToUnit(
-      supabase.from('service_records').select('amount_charged, amount_due, payment_status').eq('payment_status', 'pending'),
+      supabase
+        .from('service_records')
+        .select('amount_charged, amount_due, amount_paid_to_employee, payment_status')
+        .neq('payment_status', 'paid'),
       unitId,
     ),
     scopedToUnit(supabase.from('invoices').select('amount').eq('status', 'sent'), unitId),
@@ -176,7 +183,13 @@ export async function ManagementHome({ firstName, unitId }: { firstName: string;
     value === null ? '—' : value.toLocaleString(intlLocale, { style: 'currency', currency })
 
   const billedWeek = weekRecords.reduce((s, r) => s + Number(r.amount_charged ?? 0), 0)
-  const teamPayPending = pendingRecords.reduce((s, r) => s + Number(r.amount_due ?? 0), 0)
+  // Saldo AINDA devido, não o valor total combinado — um lançamento
+  // 'partial' já teve parte paga (migration 055), contar amount_due
+  // inteiro de novo infla o "a pagar" mostrado no dashboard.
+  const teamPayPending = pendingRecords.reduce(
+    (s, r) => s + Math.max(Number(r.amount_due ?? 0) - Number(r.amount_paid_to_employee ?? 0), 0),
+    0,
+  )
   const invoicesOutstanding = invoiceRows.reduce((s, r) => s + Number(r.amount), 0)
   const expectedWeek = upcomingRows.reduce((s, a) => s + (appointmentPrice(a) ?? 0), 0)
 
