@@ -9,7 +9,7 @@ import {
 } from '@/lib/channels/messaging-channel'
 import { resolveWhatsappChannel } from '@/lib/evolution'
 import { sendTechnicalAlertEmail } from '@/lib/email'
-import { logSystemEvent, shouldNotifyForEvent, type SystemEventSource } from '@/lib/system-events'
+import { logSystemEvent, shouldNotifyForEvent, hasRecentEventForContact, type SystemEventSource } from '@/lib/system-events'
 import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
 import { fetchActiveAttachments, buildAttachmentsContext } from '@/lib/attachments'
 import { fmtMoment } from '@/lib/scheduling/appointment-notifications'
@@ -32,6 +32,19 @@ import {
 } from './scheduling'
 import type { AgentConfig, Customer, EmployeeAttachment, Lead, Service, Unit } from '@/lib/types'
 import type { CustomerMessage, UpcomingAppointment } from './types'
+
+/**
+ * Janela de cooldown de reescalação de handoff: dentro dela, um novo
+ * handoff pro MESMO alvo pro MESMO contato não dispara um novo alerta pro
+ * time nem um novo acionamento do Sales (notifyReceptionistHandoff/
+ * handoffToSales) — só o guard de prompt (buildIntentExtractorPrompt) não
+ * bastava sob uso real (9 alertas em 22min pro mesmo contato, confirmado em
+ * produção). 120min é uma escolha de produto sem pedido explícito de
+ * duração: alto o bastante pra cobrir uma sequência de "ok"/"obrigado" numa
+ * mesma conversa, baixo o bastante pra não engolir um handoff genuinamente
+ * novo se o mesmo assunto reaparecer horas depois.
+ */
+const HANDOFF_COOLDOWN_MINUTES = 120
 
 /**
  * Resolve o canal de mensagens da Recepcionista para esta unidade —
@@ -240,6 +253,37 @@ async function resolveAppointmentAction(params: {
   return `Horários livres em ${extraction.desired_date} para ${service.name}: ${listSlotsText(slots, unit, locale)}. Pergunte qual horário o cliente prefere.`
 }
 
+/**
+ * True quando já existe uma mensagem inbound mais recente que a que está
+ * sendo processada agora, para o mesmo contato — sinal de que 2 mensagens
+ * chegaram quase juntas e 2 pipelines rodaram em paralelo (sem debounce
+ * nenhum antes disso: cada inbound sempre disparava extração → geração →
+ * envio, independente). Quando true, quem chama deve parar sem responder:
+ * a mensagem mais nova vai processar e ver AMBAS no histórico (o insert do
+ * inbound acontece antes de chamar o pipeline, ver inbound-router.ts), então
+ * a resposta dela cobre as duas — responder aqui também duplicaria a
+ * resposta pro cliente (bug confirmado: 2 respostas em 1-5s de diferença).
+ */
+async function isInboundMessageStale(
+  supabase: SupabaseClient,
+  table: 'customer_messages' | 'conversations',
+  contactColumn: 'customer_id' | 'lead_id',
+  contactId: string,
+  inboundMessageId: string,
+): Promise<boolean> {
+  const { data } = await supabase
+    .from(table)
+    .select('id')
+    .eq(contactColumn, contactId)
+    .eq('direction', 'inbound')
+    .order('sent_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const latestId = (data as { id: string } | null)?.id
+  return Boolean(latestId) && latestId !== inboundMessageId
+}
+
 export type ProcessReceptionistResult = { handled: boolean }
 
 export async function processReceptionistInbound(params: {
@@ -252,8 +296,10 @@ export async function processReceptionistInbound(params: {
   /** Telefone ou e-mail exato de onde a mensagem veio, usado como destinatário da resposta. */
   recipient: string
   wasAudioMessage?: boolean
+  /** Id da linha inbound (customer_messages) que o roteador já inseriu antes de chamar esta função — usado no staleness check (ver isInboundMessageStale) para não responder 2x quando 2 mensagens chegam quase juntas. */
+  inboundMessageId?: string
 }): Promise<ProcessReceptionistResult> {
-  const { supabase, unit, customer, incomingText, channel, recipient, wasAudioMessage } = params
+  const { supabase, unit, customer, incomingText, channel, recipient, wasAudioMessage, inboundMessageId } = params
   const failed: ProcessReceptionistResult = { handled: false }
 
   const { data: agentConfigRow } = await supabase
@@ -327,20 +373,36 @@ export async function processReceptionistInbound(params: {
   if (extraction.handoff && extraction.handoff !== 'none') {
     handoffTarget = extraction.handoff
     const contact = { name: customer.name, phone: customer.phone, email: customer.email }
-    await notifyReceptionistHandoff(supabase, {
-      unit,
-      contact,
+    const alreadyEscalated = await hasRecentEventForContact(supabase, {
+      eventType: `receptionist_handoff_${handoffTarget}`,
+      unitId: unit.id,
       contactId: customer.id,
-      target: handoffTarget,
-      reason: extraction.handoff_reason?.trim() || 'assunto fora do escopo da recepcionista',
-      lastMessage: incomingText,
+      windowMinutes: HANDOFF_COOLDOWN_MINUTES,
     })
-    if (handoffTarget === 'sales') {
-      await handoffToSales(supabase, { unit, contact })
+    if (!alreadyEscalated) {
+      await notifyReceptionistHandoff(supabase, {
+        unit,
+        contact,
+        contactId: customer.id,
+        target: handoffTarget,
+        reason: extraction.handoff_reason?.trim() || 'assunto fora do escopo da recepcionista',
+        lastMessage: incomingText,
+      })
+      if (handoffTarget === 'sales') {
+        await handoffToSales(supabase, { unit, contact })
+      }
     }
   }
 
   const appointmentContext = await resolveAppointmentAction({ supabase, unit, customer, extraction, upcoming, services, locale })
+
+  // Staleness check (debounce sem migration nova): se já existe uma
+  // mensagem inbound mais nova que esta pra este cliente, outra mensagem
+  // chegou quase junto e já vai processar vendo AMBAS no histórico — para
+  // aqui sem gerar/enviar resposta, silenciosamente (não é uma falha).
+  if (inboundMessageId && (await isInboundMessageStale(supabase, 'customer_messages', 'customer_id', customer.id, inboundMessageId))) {
+    return failed
+  }
 
   const extraContext = [
     appointmentContext
@@ -589,8 +651,10 @@ export async function processReceptionistProspectInbound(params: {
   channel: ChannelType
   recipient: string
   wasAudioMessage?: boolean
+  /** Id da linha inbound (conversations) que o roteador já inseriu antes de chamar esta função — mesmo staleness check de processReceptionistInbound. */
+  inboundMessageId?: string
 }): Promise<ProcessReceptionistResult> {
-  const { supabase, unit, lead, incomingText, channel, recipient, wasAudioMessage } = params
+  const { supabase, unit, lead, incomingText, channel, recipient, wasAudioMessage, inboundMessageId } = params
   const failed: ProcessReceptionistResult = { handled: false }
   const contactName = lead.contact_name || lead.company_name
 
@@ -663,20 +727,33 @@ export async function processReceptionistProspectInbound(params: {
   if (extraction.handoff && extraction.handoff !== 'none') {
     handoffTarget = extraction.handoff
     const contact = { name: contactName, phone: lead.phone, email: lead.email }
-    await notifyReceptionistHandoff(supabase, {
-      unit,
-      contact,
+    const alreadyEscalated = await hasRecentEventForContact(supabase, {
+      eventType: `receptionist_handoff_${handoffTarget}`,
+      unitId: unit.id,
       contactId: lead.id,
-      target: handoffTarget,
-      reason: extraction.handoff_reason?.trim() || 'assunto fora do escopo da recepcionista',
-      lastMessage: incomingText,
+      windowMinutes: HANDOFF_COOLDOWN_MINUTES,
     })
-    if (handoffTarget === 'sales') {
-      await handoffToSales(supabase, { unit, contact })
+    if (!alreadyEscalated) {
+      await notifyReceptionistHandoff(supabase, {
+        unit,
+        contact,
+        contactId: lead.id,
+        target: handoffTarget,
+        reason: extraction.handoff_reason?.trim() || 'assunto fora do escopo da recepcionista',
+        lastMessage: incomingText,
+      })
+      if (handoffTarget === 'sales') {
+        await handoffToSales(supabase, { unit, contact })
+      }
     }
   }
 
   const appointmentContext = await resolveProspectAppointmentAction({ supabase, unit, lead, contactName, extraction, services, locale })
+
+  // Staleness check — mesma razão de processReceptionistInbound acima.
+  if (inboundMessageId && (await isInboundMessageStale(supabase, 'conversations', 'lead_id', lead.id, inboundMessageId))) {
+    return failed
+  }
 
   const extraContext = [
     'Esta pessoa NÃO é uma cliente cadastrada ainda — pode ser uma cliente nova falando pela primeira vez, um franqueado com dúvida operacional, um lead interessado em comprar franquia, um estudante perguntando sobre estágio ou qualquer outro contato. Ajude como puder; tente resolver de verdade primeiro, e só se não conseguir diga claramente que vai verificar e volta com a resposta — nunca deixe a pessoa sem resposta e nunca diga que outra pessoa vai entrar em contato.',

@@ -1,6 +1,14 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { normalizePhone, phonesMatch, routeInboundMessage, routeReceptionistChannelMessage } from '@/lib/inbound-router'
+import {
+  normalizePhone,
+  phonesMatch,
+  routeInboundMessage,
+  routeReceptionistChannelMessage,
+  isRecentOutboundEcho,
+  findCustomerContext,
+  findLeadByIdentifier,
+} from '@/lib/inbound-router'
 import { getBase64FromMediaMessage, resolveWhatsappChannelByInstanceName, syncWhatsappPhoneIfConnected, type EvolutionUnitConfig } from '@/lib/evolution'
 import { getMessagingChannel } from '@/lib/channels/messaging-channel'
 import { getOpenAIApiKey, transcribeAudio } from '@/lib/openai'
@@ -126,6 +134,74 @@ async function transcribeInboundAudio(params: {
   }
 }
 
+function resolveSentAt(messageTimestamp: unknown): string {
+  return messageTimestamp ? new Date(Number(messageTimestamp) * 1000).toISOString() : new Date().toISOString()
+}
+
+/**
+ * Mensagem `key.fromMe=true` chegando pela instância dedicada da
+ * Recepcionista (migration 051): normalmente é eco do próprio envio
+ * automático dela (fecha a mesma corrida descrita em engine.ts) — mas pode
+ * ser alguém da equipe digitando manualmente no WhatsApp conectado pra
+ * intervir na conversa (dar a solução que a IA não achou, responder algo
+ * que ela não sabia). Sem isso, essa intervenção nunca aparecia no
+ * histórico que a IA lê (fetchCustomerHistory/fetchLeadConversationHistory,
+ * lib/receptionist/engine.ts) e a Recepcionista continuava "achando" que
+ * ainda estava resolvendo um assunto que o humano já tinha resolvido
+ * (pedido do Vinicius, 2026-08-06). Nunca dispara sendMessage (a pessoa já
+ * mandou pelo WhatsApp de verdade) nem roda o pipeline de IA — só grava a
+ * mensagem como uma linha outbound normal, pra aparecer no histórico da
+ * próxima vez que o cliente escrever. Se o número não bate com nenhum
+ * customer/lead cadastrado, ignora (nunca cria lead a partir de mensagem da
+ * própria equipe).
+ */
+async function captureReceptionistOperatorMessage(params: {
+  supabase: SupabaseClient
+  unit: Unit
+  remoteJid: string
+  message: Record<string, unknown> | undefined
+  messageId: string | null
+  messageTimestamp: unknown
+}): Promise<void> {
+  const { supabase, unit, remoteJid, message, messageId, messageTimestamp } = params
+  const extracted = extractInboundMessage(message, messageId)
+  if (!extracted || extracted.kind !== 'text') return
+
+  const text = extracted.text
+  const isEcho = await isRecentOutboundEcho(supabase, unit.id, text)
+  if (isEcho) return
+
+  const incomingPhone = normalizePhone(remoteJid.split('@')[0])
+  const sentAt = resolveSentAt(messageTimestamp)
+
+  const customer = await findCustomerContext(supabase, unit, incomingPhone, null)
+  if (customer) {
+    await supabase.from('customer_messages').insert({
+      customer_id: customer.id,
+      unit_id: unit.id,
+      channel: 'whatsapp',
+      direction: 'outbound',
+      content: text,
+      status: 'sent',
+      sent_at: sentAt,
+    })
+    return
+  }
+
+  const lead = await findLeadByIdentifier(supabase, unit, incomingPhone, null)
+  if (!lead) return
+
+  await supabase.from('conversations').insert({
+    lead_id: lead.id,
+    unit_id: unit.id,
+    channel: 'whatsapp',
+    direction: 'outbound',
+    content: text,
+    status: 'sent',
+    sent_at: sentAt,
+  })
+}
+
 export async function POST(request: Request) {
   const supabase = createServiceClient()
   if (!supabase) {
@@ -142,12 +218,44 @@ export async function POST(request: Request) {
   const key = data.key ?? {}
   const remoteJid: string = key.remoteJid ?? ''
 
-  // Ignora mensagens enviadas pela própria unidade (eco do envio outbound)
-  // e mensagens de grupo do WhatsApp (JID termina em @g.us, diferente do
-  // contato individual @s.whatsapp.net) — os funcionários digitais só
+  // Ignora mensagens de grupo do WhatsApp (JID termina em @g.us, diferente
+  // do contato individual @s.whatsapp.net) — os funcionários digitais só
   // devem responder em conversas privadas 1:1, nunca em grupo.
-  if (!instanceName || key.fromMe || remoteJid.endsWith('@g.us')) {
+  if (!instanceName || remoteJid.endsWith('@g.us')) {
     return NextResponse.json({ ok: true })
+  }
+
+  // Mensagens `fromMe` (enviadas pela própria unidade) deixam de ser
+  // descartadas incondicionalmente: só pra instâncias da Recepcionista, uma
+  // mensagem `fromMe` que não é eco do envio automático é alguém da equipe
+  // intervindo manualmente na conversa (ver captureReceptionistOperatorMessage).
+  // Qualquer outro agente/canal mantém o comportamento de sempre (descarta).
+  if (key.fromMe) {
+    const resolution = await resolveWhatsappChannelByInstanceName(supabase, instanceName)
+    if (!resolution || resolution.agentType !== 'receptionist') {
+      return NextResponse.json({ ok: true })
+    }
+    try {
+      await captureReceptionistOperatorMessage({
+        supabase,
+        unit: resolution.unit,
+        remoteJid,
+        message: data.message,
+        messageId: key.id ?? null,
+        messageTimestamp: data.messageTimestamp,
+      })
+      return NextResponse.json({ ok: true })
+    } catch (error) {
+      await logSystemEvent(supabase, {
+        level: 'error',
+        source: 'evolution',
+        eventType: 'whatsapp_webhook_processing_failed',
+        message: `Falha ao processar mensagem enviada pela própria equipe na unidade "${resolution.unit.name}": ${error instanceof Error ? error.message : String(error)}`,
+        orgId: resolution.unit.org_id,
+        unitId: resolution.unit.id,
+      })
+      return NextResponse.json({ ok: true, error: 'internal_error' })
+    }
   }
 
   const extracted = extractInboundMessage(data.message, key.id ?? null)
@@ -222,9 +330,7 @@ export async function POST(request: Request) {
       text = extracted.text
     }
 
-    const sentAt = data.messageTimestamp
-      ? new Date(Number(data.messageTimestamp) * 1000).toISOString()
-      : new Date().toISOString()
+    const sentAt = resolveSentAt(data.messageTimestamp)
 
     // Instância dedicada à Recepcionista (migration 051): toda mensagem
     // nesse número é dela, sem passar pela triagem genérica de Rota 3 —

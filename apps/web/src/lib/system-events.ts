@@ -94,6 +94,42 @@ export async function logSystemEvent(
 }
 
 /**
+ * True quando já existe um evento deste tipo, nesta unidade, associado a
+ * este contato (metadata.contact_id) dentro da janela — usado para não
+ * reescalar um handoff já registrado a cada nova mensagem do mesmo contato
+ * (ex.: cliente respondendo "ok"/"obrigado" repetidamente pós-escalação).
+ * Filtra em memória em vez de usar o operador JSON `->>` do Postgres porque
+ * o volume por unidade/tipo de evento numa janela de poucas horas é
+ * pequeno — não vale a complexidade de um filtro JSON só pra isso. Em caso
+ * de erro na consulta, retorna false (não bloqueia a escalação).
+ */
+export async function hasRecentEventForContact(
+  supabase: SupabaseClient,
+  params: { eventType: string; unitId: string; contactId: string; windowMinutes: number },
+): Promise<boolean> {
+  const { eventType, unitId, contactId, windowMinutes } = params
+  const windowStart = new Date(Date.now() - windowMinutes * 60 * 1000).toISOString()
+
+  try {
+    const { data, error } = await supabase
+      .from('system_events')
+      .select('metadata')
+      .eq('event_type', eventType)
+      .eq('unit_id', unitId)
+      .gte('created_at', windowStart)
+      .order('created_at', { ascending: false })
+      .limit(20)
+
+    if (error) return false
+    return ((data as { metadata: Record<string, unknown> | null }[] | null) ?? []).some(
+      (row) => (row.metadata as Record<string, unknown> | null)?.contact_id === contactId,
+    )
+  } catch {
+    return false
+  }
+}
+
+/**
  * Evita spam de notificação: retorna true se NÃO houve evento igual
  * (mesmo event_type + unidade) nas últimas `windowHours` horas.
  * Em caso de erro na consulta, retorna false (não notifica) para não
