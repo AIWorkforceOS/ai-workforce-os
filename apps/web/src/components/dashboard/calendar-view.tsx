@@ -8,7 +8,7 @@ import { addDays } from '@/lib/calendar-dates'
 import { nextOccurrenceAfter, RECURRENCE_PILL_LABEL, type RecurrenceType } from '@/lib/scheduling/recurrence'
 import { AppointmentFormModal } from '@/components/dashboard/appointment-form-modal'
 import { ServiceOrderAttachModal } from '@/components/dashboard/service-order-attach-modal'
-import { Card, StatusPill, type BadgeVariant } from '@/components/ui/dashboard-ui'
+import { Badge, Card, StatusPill, type BadgeVariant } from '@/components/ui/dashboard-ui'
 import { computeSuggestedPay } from '@/lib/service-pay'
 import type {
   Appointment,
@@ -48,6 +48,18 @@ const STATUS_LABEL: Record<AppointmentStatus, string> = {
 }
 
 const ACTIVE_STATUSES: AppointmentStatus[] = ['scheduled', 'confirmed']
+
+const SERVICE_ORDER_STATUS_LABEL: Record<string, string> = {
+  pending: 'Ordem pendente',
+  completed: 'Ordem finalizada',
+  quote: 'Ordem em cotação',
+}
+
+const SERVICE_ORDER_STATUS_VARIANT: Record<string, BadgeVariant> = {
+  pending: 'amber',
+  completed: 'green',
+  quote: 'purple',
+}
 
 /** Fire-and-forget: a mutação em `appointments` já foi gravada, o aviso automático nunca deve bloquear a UI nem virar erro pro usuário (falhas ficam em system_events). */
 function notifyAppointment(unitId: string, appointmentId: string, event: 'cancelled' | 'no_show') {
@@ -389,14 +401,21 @@ export function CalendarView({
                       )}
 
                       {appointment.employee_id && (
-                        <button
-                          type="button"
-                          className="flex items-center gap-1.5 text-xs font-semibold text-indigo-400 hover:text-indigo-300"
-                          onClick={() => setModal({ mode: 'service-order', appointment })}
-                        >
-                          <ClipboardList size={12} />
-                          {appointment.service_order_file_url ? 'Ver ordem de serviço' : 'Anexar ordem de serviço'}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          {appointment.service_order_file_url && (
+                            <Badge variant={SERVICE_ORDER_STATUS_VARIANT[appointment.service_order_status] ?? 'slate'}>
+                              {SERVICE_ORDER_STATUS_LABEL[appointment.service_order_status] ?? appointment.service_order_status}
+                            </Badge>
+                          )}
+                          <button
+                            type="button"
+                            className="flex items-center gap-1.5 text-xs font-semibold text-indigo-400 hover:text-indigo-300"
+                            onClick={() => setModal({ mode: 'service-order', appointment })}
+                          >
+                            <ClipboardList size={12} />
+                            {appointment.service_order_file_url ? 'Ver ordem de serviço' : 'Anexar ordem de serviço'}
+                          </button>
+                        </div>
                       )}
                     </div>
                   )

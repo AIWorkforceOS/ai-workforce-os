@@ -1,14 +1,123 @@
 'use client'
 
 import { useState, type ChangeEvent } from 'react'
-import { FileText, Sparkles, X } from 'lucide-react'
+import { CheckCircle2, Clock, FileText, Link2, Package, Sparkles, UserCheck, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { isExtractableAttachment } from '@/lib/service-orders/extraction'
-import { Card, Input, Label, Textarea } from '@/components/ui/dashboard-ui'
+import { Badge, Card, Input, Label, Textarea, type BadgeVariant } from '@/components/ui/dashboard-ui'
 import type { AppointmentWithRelations } from '@/components/dashboard/calendar-view'
 
 const FILE_MAX_BYTES = 15 * 1024 * 1024
 const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
+
+const SERVICE_ORDER_STATUS_LABEL: Record<string, string> = {
+  pending: 'Pendente',
+  completed: 'Finalizado',
+  quote: 'Cotação',
+}
+
+const SERVICE_ORDER_STATUS_VARIANT: Record<string, BadgeVariant> = {
+  pending: 'amber',
+  completed: 'green',
+  quote: 'purple',
+}
+
+function formatCurrencyBrl(value: number): string {
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
+/**
+ * Tudo que o TÉCNICO preencheu depois que o admin anexou a ordem
+ * (assinatura, fotos, material/valor, horas, link de compra) — pedido
+ * direto do dono do produto: o admin precisa enxergar isso pra
+ * acompanhar o trabalho, não só o que ele mesmo anexou. Só aparece
+ * quando existe algo preenchido pelo técnico.
+ */
+function TechnicianReportSection({ appointment }: { appointment: AppointmentWithRelations }) {
+  const hasTechnicianData = Boolean(
+    appointment.service_order_signed_by ||
+      appointment.service_order_photos.length > 0 ||
+      appointment.service_order_material_description ||
+      appointment.service_order_material_value != null ||
+      appointment.service_order_hours_needed != null ||
+      appointment.service_order_part_purchase_link ||
+      appointment.service_order_status !== 'pending',
+  )
+  if (!hasTechnicianData) return null
+
+  return (
+    <div className="flex flex-col gap-3 rounded-xl p-4" style={{ background: 'rgba(129,140,248,0.06)', border: '1px solid rgba(129,140,248,0.18)' }}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-[11px] font-black uppercase tracking-wider text-indigo-300">O que o técnico registrou</span>
+        <Badge variant={SERVICE_ORDER_STATUS_VARIANT[appointment.service_order_status] ?? 'slate'}>
+          {SERVICE_ORDER_STATUS_LABEL[appointment.service_order_status] ?? appointment.service_order_status}
+        </Badge>
+      </div>
+
+      {appointment.service_order_signed_by && (
+        <p className="flex items-center gap-1.5 text-xs text-slate-300">
+          <UserCheck size={13} className="text-indigo-300" />
+          Assinado por <span className="font-semibold text-white">{appointment.service_order_signed_by}</span>
+          {appointment.service_order_signed_at
+            ? ` em ${new Date(appointment.service_order_signed_at).toLocaleDateString('pt-BR')}`
+            : ''}
+        </p>
+      )}
+
+      {appointment.service_order_hours_needed != null && (
+        <p className="flex items-center gap-1.5 text-xs text-slate-300">
+          <Clock size={13} className="text-indigo-300" />
+          Horas necessárias: <span className="font-semibold text-white">{appointment.service_order_hours_needed}h</span>
+        </p>
+      )}
+
+      {(appointment.service_order_material_description || appointment.service_order_material_value != null) && (
+        <div className="flex flex-col gap-1 text-xs text-slate-300">
+          <p className="flex items-center gap-1.5">
+            <Package size={13} className="text-indigo-300" />
+            <span className="font-semibold text-white">Material necessário</span>
+          </p>
+          {appointment.service_order_material_description && <p className="pl-[19px]">{appointment.service_order_material_description}</p>}
+          {appointment.service_order_material_value != null && (
+            <p className="pl-[19px] font-semibold text-white">{formatCurrencyBrl(appointment.service_order_material_value)}</p>
+          )}
+        </div>
+      )}
+
+      {appointment.service_order_part_purchase_link && (
+        <a
+          href={appointment.service_order_part_purchase_link}
+          target="_blank"
+          rel="noreferrer"
+          className="flex w-fit items-center gap-1.5 text-xs font-bold text-cyan-400 hover:text-cyan-300"
+        >
+          <Link2 size={13} />
+          Link de compra da peça
+        </a>
+      )}
+
+      {appointment.service_order_photos.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <p className="text-xs font-semibold text-slate-300">Fotos do atendimento ({appointment.service_order_photos.length})</p>
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+            {appointment.service_order_photos.map((photo, i) => (
+              <a
+                key={i}
+                href={photo.url}
+                target="_blank"
+                rel="noreferrer"
+                className="block overflow-hidden rounded-lg transition-opacity hover:opacity-80"
+                style={{ border: '1px solid rgba(255,255,255,0.1)' }}
+              >
+                <img src={photo.url} alt="Foto do atendimento" className="aspect-square w-full object-cover" />
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 /**
  * Anexar (ou editar) a ordem de serviço de um agendamento — Fase A do
@@ -40,10 +149,12 @@ export function ServiceOrderAttachModal({
   const [extractionFailed, setExtractionFailed] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState(false)
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const selected = event.target.files?.[0]
     setError(null)
+    setSuccess(false)
     if (!selected) {
       setFile(null)
       return
@@ -113,6 +224,7 @@ export function ServiceOrderAttachModal({
 
   async function handleSave() {
     setError(null)
+    setSuccess(false)
     if (!fileUrl) {
       setError('Envie o arquivo da ordem de serviço.')
       return
@@ -135,7 +247,11 @@ export function ServiceOrderAttachModal({
       return
     }
     await onSaved()
-    onClose()
+    // Não fecha o modal automaticamente: o admin já clicou "Salvar" mais de
+    // uma vez achando que não tinha funcionado, porque o único feedback
+    // antes disso era o modal sumir sem aviso. Agora fica visível até o
+    // admin fechar de propósito.
+    setSuccess(true)
   }
 
   return (
@@ -212,27 +328,50 @@ export function ServiceOrderAttachModal({
               />
             </div>
 
+            <TechnicianReportSection appointment={appointment} />
+
             {error && <p className="text-sm text-red-400">{error}</p>}
 
-            <div className="flex gap-3">
-              <button
-                type="button"
-                disabled={saving || uploading || extracting}
-                onClick={handleSave}
-                className="flex-1 rounded-xl px-4 py-2.5 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
-                style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
+            {success && (
+              <div
+                className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-bold text-emerald-300"
+                style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)' }}
               >
-                {saving ? 'Salvando…' : 'Salvar ordem de serviço'}
-              </button>
+                <CheckCircle2 size={16} />
+                Ordem de serviço salva com sucesso.
+              </div>
+            )}
+
+            {success ? (
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-xl px-4 py-2.5 text-sm text-slate-300 hover:bg-white/5"
-                style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+                className="rounded-xl px-4 py-2.5 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
+                style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
               >
-                Cancelar
+                Fechar
               </button>
-            </div>
+            ) : (
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  disabled={saving || uploading || extracting}
+                  onClick={handleSave}
+                  className="flex-1 rounded-xl px-4 py-2.5 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+                  style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
+                >
+                  {saving ? 'Salvando…' : 'Salvar ordem de serviço'}
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-xl px-4 py-2.5 text-sm text-slate-300 hover:bg-white/5"
+                  style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+                >
+                  Cancelar
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </Card>

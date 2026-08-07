@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { CalendarDays, ChevronLeft, ChevronRight, ClipboardCheck, FileText, List, MapPin } from 'lucide-react'
 import { Badge, EmptyState, type BadgeVariant } from '@/components/ui/dashboard-ui'
 import { currentMonthInTimezone, monthLabel, shiftMonth } from '@/lib/service-operations-month'
+import { dayKeyInTimezone, groupAppointmentsByTodayTomorrow } from '@/lib/portal-funcionario/agenda-grouping'
 import type { PortalAppointment, PortalServiceOrderPhoto } from '@/lib/portal-funcionario/data'
 
 // Agenda do Portal do Funcionário: agendamento clicável (abre o
@@ -41,10 +42,6 @@ const SERVICE_ORDER_STATUS_VARIANT: Record<string, BadgeVariant> = {
   pending: 'amber',
   completed: 'green',
   quote: 'purple',
-}
-
-function dayKeyInTimezone(iso: string, timezone: string): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(new Date(iso))
 }
 
 function formatDateTime(iso: string, locale: string): string {
@@ -211,6 +208,45 @@ function AppointmentList({
   )
 }
 
+/**
+ * Uma seção "Hoje" ou "Amanhã" da aba Lista — pedido direto do dono do
+ * produto pra não misturar tudo numa lista só. Qualquer outra data
+ * continua acessível pela aba Calendário (calendarGrid mais abaixo).
+ */
+function AgendaDaySection({
+  label,
+  emptyMessage,
+  appointments,
+  locale,
+  expandedId,
+  onToggle,
+}: {
+  label: string
+  emptyMessage: string
+  appointments: PortalAppointment[]
+  locale: string
+  expandedId: string | null
+  onToggle: (id: string) => void
+}) {
+  return (
+    <div>
+      <div className="flex items-center gap-2 px-5 pb-1 pt-4">
+        <h3 className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-500">{label}</h3>
+        {appointments.length > 0 && <Badge variant="cyan">{appointments.length}</Badge>}
+      </div>
+      {appointments.length === 0 ? (
+        <p className="px-5 pb-4 text-sm text-slate-500">{emptyMessage}</p>
+      ) : (
+        <div className="flex flex-col divide-y" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+          {appointments.map((appt) => (
+            <AppointmentRow key={appt.id} appt={appt} locale={locale} expanded={expandedId === appt.id} onToggle={() => onToggle(appt.id)} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 const WEEKDAY_LABELS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S']
 
 export function AgendaSection({
@@ -240,6 +276,11 @@ export function AgendaSection({
   }, [appointments, timezone])
 
   const todayKey = useMemo(() => currentMonthInTimezone(timezone) === calendarMonth ? new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(new Date()) : null, [timezone, calendarMonth])
+
+  const { today: todayAppointments, tomorrow: tomorrowAppointments } = useMemo(
+    () => groupAppointmentsByTodayTomorrow(appointments, timezone),
+    [appointments, timezone],
+  )
 
   const toggleExpanded = (id: string) => setExpandedId((current) => (current === id ? null : id))
 
@@ -299,7 +340,24 @@ export function AgendaSection({
       </div>
 
       {viewMode === 'lista' && (
-        <AppointmentList appointments={appointments} locale={locale} expandedId={expandedId} onToggle={toggleExpanded} />
+        <div className="pb-2">
+          <AgendaDaySection
+            label="Hoje"
+            emptyMessage="Nenhum atendimento hoje."
+            appointments={todayAppointments}
+            locale={locale}
+            expandedId={expandedId}
+            onToggle={toggleExpanded}
+          />
+          <AgendaDaySection
+            label="Amanhã"
+            emptyMessage="Nenhum atendimento amanhã."
+            appointments={tomorrowAppointments}
+            locale={locale}
+            expandedId={expandedId}
+            onToggle={toggleExpanded}
+          />
+        </div>
       )}
 
       {viewMode === 'calendario' && (

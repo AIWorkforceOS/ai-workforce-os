@@ -383,6 +383,11 @@ export type Appointment = {
   service_order_signed_at: string | null
   /** Só relevante quando service_order_status = 'quote'. */
   service_order_part_purchase_link: string | null
+  /** Material/valor só fazem sentido quando service_order_status = 'quote' (migration 057). */
+  service_order_material_description: string | null
+  service_order_material_value: number | null
+  /** Estimativa de horas, preenchível independente do status (migration 057). */
+  service_order_hours_needed: number | null
   service_order_photos: { url: string; uploaded_at: string }[]
   created_at: string
   updated_at: string
