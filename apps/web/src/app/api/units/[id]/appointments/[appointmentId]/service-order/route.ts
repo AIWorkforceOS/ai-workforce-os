@@ -76,19 +76,41 @@ export async function PATCH(
   }
 
   const photoFiles = formData.getAll('photos').filter((entry): entry is File => entry instanceof File && entry.size > 0)
-  const uploadedPhotos: PortalServiceOrderPhoto[] = []
-  for (const [index, file] of photoFiles.entries()) {
-    const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_')
-    const path = `${unitId}/${appointmentId}/foto-${Date.now()}-${index}-${safeName}`
-    const { error: uploadError } = await supabase.storage
-      .from('service-orders')
-      .upload(path, file, { contentType: file.type || undefined })
-    if (uploadError) {
-      return NextResponse.json({ error: `Não foi possível enviar a foto "${file.name}".` }, { status: 500 })
+  const materialPhotoFiles = formData
+    .getAll('materialPhotos')
+    .filter((entry): entry is File => entry instanceof File && entry.size > 0)
+
+  /** Sobe uma lista de fotos pro bucket service-orders e devolve as entradas já marcadas com `kind` — usado tanto pras fotos do atendimento quanto pras notas fiscais de compra de material. */
+  async function uploadPhotos(
+    files: File[],
+    prefix: string,
+    kind: PortalServiceOrderPhoto['kind'],
+  ): Promise<PortalServiceOrderPhoto[] | { error: string }> {
+    const uploaded: PortalServiceOrderPhoto[] = []
+    for (const [index, file] of files.entries()) {
+      const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_')
+      const path = `${unitId}/${appointmentId}/${prefix}-${Date.now()}-${index}-${safeName}`
+      const { error: uploadError } = await supabase.storage
+        .from('service-orders')
+        .upload(path, file, { contentType: file.type || undefined })
+      if (uploadError) {
+        return { error: `Não foi possível enviar a foto "${file.name}".` }
+      }
+      const { data: publicUrl } = supabase.storage.from('service-orders').getPublicUrl(path)
+      uploaded.push({ url: publicUrl.publicUrl, uploaded_at: new Date().toISOString(), kind })
     }
-    const { data: publicUrl } = supabase.storage.from('service-orders').getPublicUrl(path)
-    uploadedPhotos.push({ url: publicUrl.publicUrl, uploaded_at: new Date().toISOString() })
+    return uploaded
   }
+
+  const uploadedServicePhotos = await uploadPhotos(photoFiles, 'foto', 'service')
+  if ('error' in uploadedServicePhotos) {
+    return NextResponse.json({ error: uploadedServicePhotos.error }, { status: 500 })
+  }
+  const uploadedMaterialPhotos = await uploadPhotos(materialPhotoFiles, 'nota-fiscal', 'material_invoice')
+  if ('error' in uploadedMaterialPhotos) {
+    return NextResponse.json({ error: uploadedMaterialPhotos.error }, { status: 500 })
+  }
+  const uploadedPhotos: PortalServiceOrderPhoto[] = [...uploadedServicePhotos, ...uploadedMaterialPhotos]
 
   const signatureFile = formData.get('signature')
   let uploadedSignatureUrl: string | null = null

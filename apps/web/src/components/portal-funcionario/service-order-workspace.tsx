@@ -1,10 +1,23 @@
 'use client'
 
-import { useRef, useState, type ChangeEvent, type FormEvent } from 'react'
-import { Camera, CheckCircle2, Clock, PenLine, Receipt } from 'lucide-react'
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { Camera, CheckCircle2, Clock, Download, PenLine, Receipt, ShoppingCart, X } from 'lucide-react'
 import { Input, Label, Textarea } from '@/components/ui/dashboard-ui'
-import type { PortalAppointment, PortalServiceOrderPhoto } from '@/lib/portal-funcionario/data'
+import type { PortalAppointment } from '@/lib/portal-funcionario/data'
 import { SignaturePad } from './signature-pad'
+
+/** Gera (e revoga ao trocar/desmontar) URLs de preview locais pros arquivos ainda não enviados — evita recriar um object URL novo a cada render. */
+function useFilePreviews(files: File[]): string[] {
+  const [urls, setUrls] = useState<string[]>([])
+  useEffect(() => {
+    const next = files.map((file) => URL.createObjectURL(file))
+    setUrls(next)
+    return () => {
+      for (const url of next) URL.revokeObjectURL(url)
+    }
+  }, [files])
+  return urls
+}
 
 type ServiceOrderPatch = Pick<
   PortalAppointment,
@@ -46,16 +59,41 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
     appt.service_order_hours_needed != null ? String(appt.service_order_hours_needed) : '',
   )
   const [photos, setPhotos] = useState<File[]>([])
+  const [materialPhotos, setMaterialPhotos] = useState<File[]>([])
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null)
   const [showSignaturePad, setShowSignaturePad] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const materialFileInputRef = useRef<HTMLInputElement>(null)
 
+  // capture="environment" abre a câmera nativa que tira 1 foto e fecha o input a cada toque —
+  // por isso acumula com o que já foi selecionado em vez de substituir, senão cada foto nova apaga a anterior.
   function handlePhotosChange(event: ChangeEvent<HTMLInputElement>) {
-    setPhotos(Array.from(event.target.files ?? []))
+    const newFiles = Array.from(event.target.files ?? [])
+    if (newFiles.length > 0) setPhotos((prev) => [...prev, ...newFiles])
+    event.target.value = ''
   }
+
+  function removePhoto(index: number) {
+    setPhotos((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  function handleMaterialPhotosChange(event: ChangeEvent<HTMLInputElement>) {
+    const newFiles = Array.from(event.target.files ?? [])
+    if (newFiles.length > 0) setMaterialPhotos((prev) => [...prev, ...newFiles])
+    event.target.value = ''
+  }
+
+  function removeMaterialPhoto(index: number) {
+    setMaterialPhotos((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const photoPreviews = useFilePreviews(photos)
+  const materialPhotoPreviews = useFilePreviews(materialPhotos)
+  const savedServicePhotos = appt.service_order_photos.filter((photo) => photo.kind !== 'material_invoice')
+  const savedMaterialInvoicePhotos = appt.service_order_photos.filter((photo) => photo.kind === 'material_invoice')
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -79,6 +117,7 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
     formData.set('materialValue', status === 'quote' ? materialValue.trim() : '')
     formData.set('hoursNeeded', hoursNeeded.trim())
     for (const photo of photos) formData.append('photos', photo)
+    for (const photo of materialPhotos) formData.append('materialPhotos', photo)
     if (signatureDataUrl) {
       const signatureBlob = await dataUrlToBlob(signatureDataUrl)
       formData.set('signature', new File([signatureBlob], 'assinatura.png', { type: 'image/png' }))
@@ -99,8 +138,10 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
       setAppt((prev) => ({ ...prev, ...patch }))
       setSuccess(true)
       setPhotos([])
+      setMaterialPhotos([])
       setSignatureDataUrl(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
+      if (materialFileInputRef.current) materialFileInputRef.current.value = ''
     } catch {
       setError('Não foi possível salvar. Verifique sua conexão e tente novamente.')
     } finally {
@@ -253,13 +294,36 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label>Fotos</Label>
-        {appt.service_order_photos.length > 0 && (
+        <Label>Fotos do atendimento</Label>
+        {savedServicePhotos.length > 0 && (
           <div className="flex flex-wrap gap-2">
-            {appt.service_order_photos.map((photo: PortalServiceOrderPhoto, i: number) => (
+            {savedServicePhotos.map((photo, i) => (
               <a key={i} href={photo.url} target="_blank" rel="noreferrer">
                 <img src={photo.url} alt="Foto do atendimento" className="h-16 w-16 rounded-lg object-cover" />
               </a>
+            ))}
+          </div>
+        )}
+        {photos.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {photos.map((photo, i) => (
+              <div key={i} className="relative h-16 w-16">
+                <img
+                  src={photoPreviews[i]}
+                  alt="Nova foto"
+                  className="h-16 w-16 rounded-lg object-cover"
+                  style={{ border: '2px solid rgba(6,182,212,0.5)' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => removePhoto(i)}
+                  className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full text-white"
+                  style={{ background: '#ef4444' }}
+                  aria-label="Remover foto"
+                >
+                  <X size={12} />
+                </button>
+              </div>
             ))}
           </div>
         )}
@@ -280,6 +344,82 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
           </p>
         )}
       </div>
+
+      <div
+        className="flex flex-col gap-2 rounded-2xl p-4"
+        style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.18)' }}
+      >
+        <Label>
+          <span className="inline-flex items-center gap-1.5">
+            <ShoppingCart size={13} />
+            Compra de material
+          </span>
+        </Label>
+        <p className="text-xs text-slate-400">Tire uma foto da nota fiscal da compra do material para anexar como comprovante.</p>
+        {savedMaterialInvoicePhotos.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {savedMaterialInvoicePhotos.map((photo, i) => (
+              <a key={i} href={photo.url} target="_blank" rel="noreferrer">
+                <img src={photo.url} alt="Nota fiscal de material" className="h-16 w-16 rounded-lg object-cover" />
+              </a>
+            ))}
+          </div>
+        )}
+        {materialPhotos.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {materialPhotos.map((photo, i) => (
+              <div key={i} className="relative h-16 w-16">
+                <img
+                  src={materialPhotoPreviews[i]}
+                  alt="Nova nota fiscal"
+                  className="h-16 w-16 rounded-lg object-cover"
+                  style={{ border: '2px solid rgba(16,185,129,0.5)' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => removeMaterialPhoto(i)}
+                  className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full text-white"
+                  style={{ background: '#ef4444' }}
+                  aria-label="Remover foto"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => materialFileInputRef.current?.click()}
+          className="flex w-fit items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-emerald-300 transition-colors hover:text-emerald-200"
+          style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)' }}
+        >
+          <Camera size={13} />
+          Compra Material
+        </button>
+        <input
+          ref={materialFileInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          multiple
+          onChange={handleMaterialPhotosChange}
+          className="hidden"
+        />
+      </div>
+
+      {appt.service_order_status !== 'pending' && (
+        <a
+          href={`/api/units/${appt.unit_id}/appointments/${appt.id}/service-order/pdf`}
+          target="_blank"
+          rel="noreferrer"
+          className="flex w-fit items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-slate-200 transition-colors hover:text-white"
+          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)' }}
+        >
+          <Download size={13} />
+          Baixar ordem de serviço em PDF
+        </a>
+      )}
 
       <div
         className="sticky bottom-0 -mx-4 mt-2 flex flex-col gap-2 px-4 py-3 sm:mx-0 sm:rounded-2xl"

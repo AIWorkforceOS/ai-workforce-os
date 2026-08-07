@@ -13,7 +13,8 @@ export function isOnOrAfterPortalStart(isoDate: string): boolean {
   return isoDate >= PORTAL_DATA_SINCE
 }
 
-export type PortalServiceOrderPhoto = { url: string; uploaded_at: string }
+/** kind ausente = foto do atendimento (fotos salvas antes da Fase B não tinham essa distinção; campo dentro do jsonb, sem migration nova). */
+export type PortalServiceOrderPhoto = { url: string; uploaded_at: string; kind?: 'service' | 'material_invoice' }
 
 export type PortalAppointment = {
   id: string

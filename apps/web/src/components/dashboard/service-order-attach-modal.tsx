@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, type ChangeEvent } from 'react'
-import { CheckCircle2, Clock, FileText, Link2, Package, Sparkles, UserCheck, X } from 'lucide-react'
+import { CheckCircle2, Clock, Download, FileText, Link2, Package, Receipt, Sparkles, UserCheck, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { isExtractableAttachment } from '@/lib/service-orders/extraction'
+import { downloadFile } from '@/lib/download-file'
 import { Badge, Card, Input, Label, Textarea, type BadgeVariant } from '@/components/ui/dashboard-ui'
 import type { AppointmentWithRelations } from '@/components/dashboard/calendar-view'
 
@@ -26,14 +27,32 @@ function formatCurrencyBrl(value: number): string {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
+/** Botão pequeno de baixar — usado em cima de cada anexo (foto, assinatura, arquivo original) pro admin conseguir salvar tudo localmente, não só visualizar. */
+function DownloadButton({ url, filename, label }: { url: string; filename: string; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={() => downloadFile(url, filename)}
+      className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-bold text-slate-300 transition-colors hover:text-white"
+      style={{ background: 'rgba(255,255,255,0.08)' }}
+      aria-label={label}
+      title={label}
+    >
+      <Download size={11} />
+    </button>
+  )
+}
+
 /**
  * Tudo que o TÉCNICO preencheu depois que o admin anexou a ordem
  * (assinatura, fotos, material/valor, horas, link de compra) — pedido
  * direto do dono do produto: o admin precisa enxergar isso pra
  * acompanhar o trabalho, não só o que ele mesmo anexou. Só aparece
- * quando existe algo preenchido pelo técnico.
+ * quando existe algo preenchido pelo técnico. Cada anexo tem um botão
+ * de baixar — o admin precisa conseguir salvar tudo, não só ver
+ * inline.
  */
-function TechnicianReportSection({ appointment }: { appointment: AppointmentWithRelations }) {
+function TechnicianReportSection({ unitId, appointment }: { unitId: string; appointment: AppointmentWithRelations }) {
   const hasTechnicianData = Boolean(
     appointment.service_order_signed_by ||
       appointment.service_order_signature_url ||
@@ -46,13 +65,30 @@ function TechnicianReportSection({ appointment }: { appointment: AppointmentWith
   )
   if (!hasTechnicianData) return null
 
+  const servicePhotos = appointment.service_order_photos.filter((photo) => photo.kind !== 'material_invoice')
+  const materialInvoicePhotos = appointment.service_order_photos.filter((photo) => photo.kind === 'material_invoice')
+
   return (
     <div className="flex flex-col gap-3 rounded-xl p-4" style={{ background: 'rgba(129,140,248,0.06)', border: '1px solid rgba(129,140,248,0.18)' }}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-[11px] font-black uppercase tracking-wider text-indigo-300">O que o técnico registrou</span>
-        <Badge variant={SERVICE_ORDER_STATUS_VARIANT[appointment.service_order_status] ?? 'slate'}>
-          {SERVICE_ORDER_STATUS_LABEL[appointment.service_order_status] ?? appointment.service_order_status}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant={SERVICE_ORDER_STATUS_VARIANT[appointment.service_order_status] ?? 'slate'}>
+            {SERVICE_ORDER_STATUS_LABEL[appointment.service_order_status] ?? appointment.service_order_status}
+          </Badge>
+          {appointment.service_order_status !== 'pending' && (
+            <a
+              href={`/api/units/${unitId}/appointments/${appointment.id}/service-order/pdf`}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold text-cyan-300 hover:text-cyan-200"
+              style={{ background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.25)' }}
+            >
+              <Receipt size={11} />
+              Baixar PDF da ordem
+            </a>
+          )}
+        </div>
       </div>
 
       {appointment.service_order_signed_by && (
@@ -66,14 +102,17 @@ function TechnicianReportSection({ appointment }: { appointment: AppointmentWith
       )}
 
       {appointment.service_order_signature_url && (
-        <a href={appointment.service_order_signature_url} target="_blank" rel="noreferrer" className="block w-fit">
-          <img
-            src={appointment.service_order_signature_url}
-            alt="Assinatura do gerente"
-            className="h-16 rounded-lg object-contain"
-            style={{ background: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
-          />
-        </a>
+        <div className="flex w-fit items-end gap-1.5">
+          <a href={appointment.service_order_signature_url} target="_blank" rel="noreferrer" className="block">
+            <img
+              src={appointment.service_order_signature_url}
+              alt="Assinatura do gerente"
+              className="h-16 rounded-lg object-contain"
+              style={{ background: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
+            />
+          </a>
+          <DownloadButton url={appointment.service_order_signature_url} filename="assinatura.png" label="Baixar assinatura" />
+        </div>
       )}
 
       {appointment.service_order_hours_needed != null && (
@@ -108,21 +147,37 @@ function TechnicianReportSection({ appointment }: { appointment: AppointmentWith
         </a>
       )}
 
-      {appointment.service_order_photos.length > 0 && (
+      {servicePhotos.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          <p className="text-xs font-semibold text-slate-300">Fotos do atendimento ({appointment.service_order_photos.length})</p>
+          <p className="text-xs font-semibold text-slate-300">Fotos do atendimento ({servicePhotos.length})</p>
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-            {appointment.service_order_photos.map((photo, i) => (
-              <a
-                key={i}
-                href={photo.url}
-                target="_blank"
-                rel="noreferrer"
-                className="block overflow-hidden rounded-lg transition-opacity hover:opacity-80"
-                style={{ border: '1px solid rgba(255,255,255,0.1)' }}
-              >
-                <img src={photo.url} alt="Foto do atendimento" className="aspect-square w-full object-cover" />
-              </a>
+            {servicePhotos.map((photo, i) => (
+              <div key={i} className="relative overflow-hidden rounded-lg" style={{ border: '1px solid rgba(255,255,255,0.1)' }}>
+                <a href={photo.url} target="_blank" rel="noreferrer" className="block transition-opacity hover:opacity-80">
+                  <img src={photo.url} alt="Foto do atendimento" className="aspect-square w-full object-cover" />
+                </a>
+                <div className="absolute right-1 top-1">
+                  <DownloadButton url={photo.url} filename={`foto-atendimento-${i + 1}.jpg`} label="Baixar foto" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {materialInvoicePhotos.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <p className="text-xs font-semibold text-slate-300">Notas fiscais de material ({materialInvoicePhotos.length})</p>
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+            {materialInvoicePhotos.map((photo, i) => (
+              <div key={i} className="relative overflow-hidden rounded-lg" style={{ border: '1px solid rgba(255,255,255,0.1)' }}>
+                <a href={photo.url} target="_blank" rel="noreferrer" className="block transition-opacity hover:opacity-80">
+                  <img src={photo.url} alt="Nota fiscal de material" className="aspect-square w-full object-cover" />
+                </a>
+                <div className="absolute right-1 top-1">
+                  <DownloadButton url={photo.url} filename={`nota-fiscal-${i + 1}.jpg`} label="Baixar nota fiscal" />
+                </div>
+              </div>
             ))}
           </div>
         </div>
@@ -285,15 +340,18 @@ export function ServiceOrderAttachModal({
             <div className="flex flex-col gap-1.5">
               <Label>Arquivo da ordem (PDF ou foto)</Label>
               {fileUrl && !file && (
-                <a
-                  href={fileUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-1.5 text-xs font-bold text-cyan-400 hover:text-cyan-300"
-                >
-                  <FileText size={13} />
-                  {fileName || 'Ver arquivo já anexado'}
-                </a>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={fileUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1.5 text-xs font-bold text-cyan-400 hover:text-cyan-300"
+                  >
+                    <FileText size={13} />
+                    {fileName || 'Ver arquivo já anexado'}
+                  </a>
+                  <DownloadButton url={fileUrl} filename={fileName || 'ordem-de-servico'} label="Baixar arquivo original" />
+                </div>
               )}
               <input
                 type="file"
@@ -340,7 +398,7 @@ export function ServiceOrderAttachModal({
               />
             </div>
 
-            <TechnicianReportSection appointment={appointment} />
+            <TechnicianReportSection unitId={unitId} appointment={appointment} />
 
             {error && <p className="text-sm text-red-400">{error}</p>}
 

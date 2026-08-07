@@ -390,7 +390,8 @@ export type Appointment = {
   service_order_material_value: number | null
   /** Estimativa de horas, preenchível independente do status (migration 057). */
   service_order_hours_needed: number | null
-  service_order_photos: { url: string; uploaded_at: string }[]
+  /** kind ausente = foto do atendimento (fotos salvas antes da Fase B não tinham essa distinção; campo dentro do jsonb, sem migration nova). */
+  service_order_photos: { url: string; uploaded_at: string; kind?: 'service' | 'material_invoice' }[]
   created_at: string
   updated_at: string
 }
