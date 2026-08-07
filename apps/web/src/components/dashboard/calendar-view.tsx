@@ -1,12 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { CalendarPlus, MapPin } from 'lucide-react'
+import { CalendarPlus, ClipboardList, MapPin } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { localDateString, zonedTimeToUtc } from '@/lib/slot-engine'
 import { addDays } from '@/lib/calendar-dates'
 import { nextOccurrenceAfter, RECURRENCE_PILL_LABEL, type RecurrenceType } from '@/lib/scheduling/recurrence'
 import { AppointmentFormModal } from '@/components/dashboard/appointment-form-modal'
+import { ServiceOrderAttachModal } from '@/components/dashboard/service-order-attach-modal'
 import { Card, StatusPill, type BadgeVariant } from '@/components/ui/dashboard-ui'
 import { computeSuggestedPay } from '@/lib/service-pay'
 import type {
@@ -28,6 +29,7 @@ export type AppointmentWithRelations = Appointment & {
 type ModalState =
   | { mode: 'create'; date: string }
   | { mode: 'reschedule'; appointment: AppointmentWithRelations }
+  | { mode: 'service-order'; appointment: AppointmentWithRelations }
 
 const STATUS_VARIANT: Record<AppointmentStatus, BadgeVariant> = {
   scheduled: 'cyan',
@@ -385,6 +387,17 @@ export function CalendarView({
                           </button>
                         </div>
                       )}
+
+                      {appointment.employee_id && (
+                        <button
+                          type="button"
+                          className="flex items-center gap-1.5 text-xs font-semibold text-indigo-400 hover:text-indigo-300"
+                          onClick={() => setModal({ mode: 'service-order', appointment })}
+                        >
+                          <ClipboardList size={12} />
+                          {appointment.service_order_file_url ? 'Ver ordem de serviço' : 'Anexar ordem de serviço'}
+                        </button>
+                      )}
                     </div>
                   )
                 })}
@@ -394,7 +407,7 @@ export function CalendarView({
         )
       })}
 
-      {modal && (
+      {modal && (modal.mode === 'create' || modal.mode === 'reschedule') && (
         <AppointmentFormModal
           unitId={unitId}
           orgId={orgId!}
@@ -406,6 +419,15 @@ export function CalendarView({
           mode={modal.mode}
           initialDate={modal.mode === 'create' ? modal.date : localDateString(new Date(modal.appointment.starts_at), timezone)}
           appointment={modal.mode === 'reschedule' ? modal.appointment : undefined}
+          onClose={() => setModal(null)}
+          onSaved={reload}
+        />
+      )}
+
+      {modal && modal.mode === 'service-order' && (
+        <ServiceOrderAttachModal
+          unitId={unitId}
+          appointment={modal.appointment}
           onClose={() => setModal(null)}
           onSaved={reload}
         />

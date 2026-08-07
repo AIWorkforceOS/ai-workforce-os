@@ -1,10 +1,10 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import { CalendarDays, ChevronLeft, ChevronRight, List, MapPin } from 'lucide-react'
-import { Badge, EmptyState, type BadgeVariant } from '@/components/ui/dashboard-ui'
+import { useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { CalendarDays, Camera, ChevronLeft, ChevronRight, ClipboardCheck, FileText, List, MapPin } from 'lucide-react'
+import { Badge, EmptyState, Input, Label, Select, type BadgeVariant } from '@/components/ui/dashboard-ui'
 import { currentMonthInTimezone, monthLabel, shiftMonth } from '@/lib/service-operations-month'
-import type { PortalAppointment } from '@/lib/portal-funcionario/data'
+import type { PortalAppointment, PortalServiceOrderPhoto } from '@/lib/portal-funcionario/data'
 
 // Agenda do Portal do Funcionário: agendamento clicável (abre o
 // detalhe com a descrição/observações completas, hoje só visível como
@@ -30,6 +30,18 @@ const STATUS_VARIANT: Record<string, BadgeVariant> = {
   no_show: 'red',
 }
 
+const SERVICE_ORDER_STATUS_LABEL: Record<string, string> = {
+  pending: 'Pendente',
+  completed: 'Finalizado',
+  quote: 'Cotação',
+}
+
+const SERVICE_ORDER_STATUS_VARIANT: Record<string, BadgeVariant> = {
+  pending: 'amber',
+  completed: 'green',
+  quote: 'purple',
+}
+
 function dayKeyInTimezone(iso: string, timezone: string): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(new Date(iso))
 }
@@ -44,16 +56,224 @@ function formatTimeRange(startsAt: string, endsAt: string, locale: string): stri
   return `${start} – ${end}`
 }
 
+type ServiceOrderUpdate = Pick<
+  PortalAppointment,
+  'service_order_status' | 'service_order_signed_by' | 'service_order_signed_at' | 'service_order_part_purchase_link' | 'service_order_photos'
+>
+
+/**
+ * Ordem de serviço anexada pelo admin (Fase A Mawi/360): resumo em PT +
+ * endereço (já mostrado acima, na linha do agendamento) + número, link
+ * pra abrir o arquivo original (mostrar ao gerente da loja) e o fluxo
+ * de finalizar — nome de quem assinou, fotos, "Finalizado" ou
+ * "Cotação" (com link de compra da peça). Some da tela quando o admin
+ * não anexou nada para este agendamento.
+ */
+function ServiceOrderPanel({
+  appt,
+  onUpdated,
+}: {
+  appt: PortalAppointment
+  onUpdated: (patch: ServiceOrderUpdate) => void
+}) {
+  const hasOrder = Boolean(appt.service_order_number || appt.service_order_file_url || appt.service_order_summary_pt)
+  const [showForm, setShowForm] = useState(false)
+  const [signedBy, setSignedBy] = useState('')
+  const [status, setStatus] = useState<'completed' | 'quote'>(appt.service_order_status === 'quote' ? 'quote' : 'completed')
+  const [partPurchaseLink, setPartPurchaseLink] = useState(appt.service_order_part_purchase_link ?? '')
+  const [photos, setPhotos] = useState<File[]>([])
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  if (!hasOrder) return null
+
+  function handlePhotosChange(event: ChangeEvent<HTMLInputElement>) {
+    setPhotos(Array.from(event.target.files ?? []))
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setError(null)
+    setSuccess(false)
+
+    if (status === 'completed' && !signedBy.trim()) {
+      setError('Informe o nome de quem assinou para finalizar.')
+      return
+    }
+
+    const formData = new FormData()
+    formData.set('status', status)
+    formData.set('signedBy', signedBy.trim())
+    formData.set('partPurchaseLink', status === 'quote' ? partPurchaseLink.trim() : '')
+    for (const photo of photos) formData.append('photos', photo)
+
+    setSubmitting(true)
+    try {
+      const response = await fetch(`/api/units/${appt.unit_id}/appointments/${appt.id}/service-order`, {
+        method: 'PATCH',
+        body: formData,
+      })
+      const data = await response.json().catch(() => null)
+      if (!response.ok || !data?.appointment) {
+        setError(data?.error ?? 'Não foi possível salvar. Tente novamente.')
+        return
+      }
+      onUpdated(data.appointment as ServiceOrderUpdate)
+      setSuccess(true)
+      setShowForm(false)
+      setPhotos([])
+      setSignedBy('')
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    } catch {
+      setError('Não foi possível salvar. Verifique sua conexão e tente novamente.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div
+      className="mt-1 flex flex-col gap-2.5 rounded-xl px-4 py-3"
+      style={{ background: 'rgba(129,140,248,0.06)', border: '1px solid rgba(129,140,248,0.18)' }}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-300">
+          Ordem de serviço {appt.service_order_number ? `Nº ${appt.service_order_number}` : ''}
+        </span>
+        <Badge variant={SERVICE_ORDER_STATUS_VARIANT[appt.service_order_status] ?? 'slate'}>
+          {SERVICE_ORDER_STATUS_LABEL[appt.service_order_status] ?? appt.service_order_status}
+        </Badge>
+      </div>
+
+      {appt.service_order_summary_pt && <p className="text-slate-300">{appt.service_order_summary_pt}</p>}
+
+      {appt.service_order_file_url && (
+        <a
+          href={appt.service_order_file_url}
+          target="_blank"
+          rel="noreferrer"
+          className="flex w-fit items-center gap-1.5 text-xs font-bold text-indigo-300 hover:text-indigo-200"
+        >
+          <FileText size={13} />
+          Abrir ordem de serviço
+        </a>
+      )}
+
+      {appt.service_order_status !== 'pending' && appt.service_order_signed_by && (
+        <p className="text-[12px] text-slate-400">
+          Assinado por <span className="font-semibold text-slate-200">{appt.service_order_signed_by}</span>
+          {appt.service_order_signed_at ? ` em ${new Date(appt.service_order_signed_at).toLocaleDateString('pt-BR')}` : ''}
+        </p>
+      )}
+
+      {appt.service_order_photos.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {appt.service_order_photos.map((photo: PortalServiceOrderPhoto, i: number) => (
+            <a key={i} href={photo.url} target="_blank" rel="noreferrer">
+              <img src={photo.url} alt="Foto do atendimento" className="h-14 w-14 rounded-lg object-cover" />
+            </a>
+          ))}
+        </div>
+      )}
+
+      {!showForm ? (
+        <button
+          type="button"
+          onClick={() => setShowForm(true)}
+          className="flex w-fit items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
+          style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)' }}
+        >
+          <ClipboardCheck size={13} />
+          {appt.service_order_status === 'pending' ? 'Finalizar atendimento' : 'Atualizar finalização'}
+        </button>
+      ) : (
+        <form onSubmit={handleSubmit} className="flex flex-col gap-2.5" onClick={(e) => e.stopPropagation()}>
+          <div className="flex flex-col gap-1">
+            <Label>O que aconteceu?</Label>
+            <Select value={status} onChange={(e) => setStatus(e.target.value as 'completed' | 'quote')}>
+              <option value="completed">Finalizado</option>
+              <option value="quote">Cotação</option>
+            </Select>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <Label>Nome de quem assinou {status === 'completed' ? '*' : '(opcional)'}</Label>
+            <Input value={signedBy} onChange={(e) => setSignedBy(e.target.value)} placeholder="Nome do gerente da loja" />
+          </div>
+
+          {status === 'quote' && (
+            <div className="flex flex-col gap-1">
+              <Label>Link de compra da peça</Label>
+              <Input
+                type="url"
+                value={partPurchaseLink}
+                onChange={(e) => setPartPurchaseLink(e.target.value)}
+                placeholder="https://..."
+              />
+            </div>
+          )}
+
+          <div className="flex flex-col gap-1">
+            <Label>Fotos</Label>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              multiple
+              onChange={handlePhotosChange}
+              className="text-xs text-slate-300 file:mr-2 file:rounded-lg file:border-0 file:bg-white/10 file:px-2.5 file:py-1 file:text-[11px] file:font-bold file:text-slate-200"
+            />
+            {photos.length > 0 && (
+              <p className="flex items-center gap-1 text-[11px] text-slate-400">
+                <Camera size={11} />
+                {photos.length} foto{photos.length === 1 ? '' : 's'} selecionada{photos.length === 1 ? '' : 's'}
+              </p>
+            )}
+          </div>
+
+          {error && <p className="text-xs text-red-400">{error}</p>}
+
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={submitting}
+              className="rounded-lg px-3 py-1.5 text-xs font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+              style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)' }}
+            >
+              {submitting ? 'Salvando…' : 'Salvar'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowForm(false)}
+              className="rounded-lg px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5"
+              style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              Cancelar
+            </button>
+          </div>
+        </form>
+      )}
+
+      {success && <p className="text-[11px] font-semibold text-emerald-400">Salvo com sucesso.</p>}
+    </div>
+  )
+}
+
 function AppointmentRow({
   appt,
   locale,
   expanded,
   onToggle,
+  onOrderUpdated,
 }: {
   appt: PortalAppointment
   locale: string
   expanded: boolean
   onToggle: () => void
+  onOrderUpdated: (patch: ServiceOrderUpdate) => void
 }) {
   return (
     <div>
@@ -91,6 +311,7 @@ function AppointmentRow({
               <span>{appt.address}</span>
             </div>
           )}
+          <ServiceOrderPanel appt={appt} onUpdated={onOrderUpdated} />
         </div>
       )}
     </div>
@@ -102,11 +323,13 @@ function AppointmentList({
   locale,
   expandedId,
   onToggle,
+  onOrderUpdated,
 }: {
   appointments: PortalAppointment[]
   locale: string
   expandedId: string | null
   onToggle: (id: string) => void
+  onOrderUpdated: (appointmentId: string, patch: ServiceOrderUpdate) => void
 }) {
   if (appointments.length === 0) {
     return (
@@ -126,6 +349,7 @@ function AppointmentList({
           locale={locale}
           expanded={expandedId === appt.id}
           onToggle={() => onToggle(appt.id)}
+          onOrderUpdated={(patch) => onOrderUpdated(appt.id, patch)}
         />
       ))}
     </div>
@@ -135,7 +359,7 @@ function AppointmentList({
 const WEEKDAY_LABELS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S']
 
 export function AgendaSection({
-  appointments,
+  appointments: initialAppointments,
   timezone,
   locale,
 }: {
@@ -143,10 +367,15 @@ export function AgendaSection({
   timezone: string
   locale: string
 }) {
+  const [appointments, setAppointments] = useState(initialAppointments)
   const [viewMode, setViewMode] = useState<'lista' | 'calendario'>('lista')
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [calendarMonth, setCalendarMonth] = useState(() => currentMonthInTimezone(timezone))
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
+
+  function handleOrderUpdated(appointmentId: string, patch: ServiceOrderUpdate) {
+    setAppointments((prev) => prev.map((a) => (a.id === appointmentId ? { ...a, ...patch } : a)))
+  }
 
   const appointmentsByDay = useMemo(() => {
     const map = new Map<string, PortalAppointment[]>()
@@ -219,7 +448,13 @@ export function AgendaSection({
       </div>
 
       {viewMode === 'lista' && (
-        <AppointmentList appointments={appointments} locale={locale} expandedId={expandedId} onToggle={toggleExpanded} />
+        <AppointmentList
+          appointments={appointments}
+          locale={locale}
+          expandedId={expandedId}
+          onToggle={toggleExpanded}
+          onOrderUpdated={handleOrderUpdated}
+        />
       )}
 
       {viewMode === 'calendario' && (
@@ -302,6 +537,7 @@ export function AgendaSection({
                   locale={locale}
                   expandedId={expandedId}
                   onToggle={toggleExpanded}
+                  onOrderUpdated={handleOrderUpdated}
                 />
               </div>
             ) : (

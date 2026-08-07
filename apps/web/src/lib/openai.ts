@@ -145,6 +145,60 @@ export async function generateStructuredReply<T = Record<string, unknown>>(param
 }
 
 /**
+ * Igual a generateStructuredReply, mas manda uma imagem junto (Chat
+ * Completions com content array — gpt-4o-mini tem visão nativa, não
+ * precisa trocar de modelo). `imageUrl` pode ser uma URL pública normal
+ * (ex.: arquivo recém-upload no Storage) ou uma data URL base64 — a API
+ * da OpenAI aceita as duas formas do mesmo jeito. Usada pela extração
+ * da ordem de serviço (lib/service-orders/extraction.ts).
+ */
+export async function generateStructuredReplyFromImage<T = Record<string, unknown>>(params: {
+  apiKey: string
+  systemPrompt: string
+  imageUrl: string
+  userText?: string
+  model?: string
+  maxTokens?: number
+  temperature?: number
+}): Promise<T> {
+  const model = params.model ?? 'gpt-4o-mini'
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${params.apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: params.systemPrompt },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: params.userText ?? 'Analise a imagem anexada.' },
+            { type: 'image_url', image_url: { url: params.imageUrl } },
+          ],
+        },
+      ],
+      temperature: params.temperature ?? 0.2,
+      max_tokens: params.maxTokens ?? 1000,
+      response_format: { type: 'json_object' },
+    }),
+  })
+
+  const data = await response.json()
+
+  if (!response.ok) {
+    throw new Error(data?.error?.message ?? `OpenAI retornou status ${response.status}`)
+  }
+
+  await logOpenAIUsage({ endpoint: 'chat.completions.vision', model, usage: data.usage })
+
+  const content = (data.choices?.[0]?.message?.content ?? '').trim()
+  return JSON.parse(content) as T
+}
+
+/**
  * Transcreve um áudio (ex.: nota de voz do WhatsApp) para texto via Whisper.
  * Recebe o arquivo em base64 (formato em que a Evolution API devolve mídia
  * descriptografada) e devolve o texto já pronto para entrar no motor de

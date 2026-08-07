@@ -13,8 +13,11 @@ export function isOnOrAfterPortalStart(isoDate: string): boolean {
   return isoDate >= PORTAL_DATA_SINCE
 }
 
+export type PortalServiceOrderPhoto = { url: string; uploaded_at: string }
+
 export type PortalAppointment = {
   id: string
+  unit_id: string
   starts_at: string
   ends_at: string
   status: string
@@ -22,6 +25,15 @@ export type PortalAppointment = {
   notes: string | null
   customers: { name: string } | null
   services: { name: string } | null
+  /** Ordem de serviço anexada pelo admin (Fase A Mawi/360) — null quando não há ordem para este agendamento. */
+  service_order_number: string | null
+  service_order_file_url: string | null
+  service_order_summary_pt: string | null
+  service_order_status: 'pending' | 'completed' | 'quote'
+  service_order_signed_by: string | null
+  service_order_signed_at: string | null
+  service_order_part_purchase_link: string | null
+  service_order_photos: PortalServiceOrderPhoto[]
 }
 
 export type PortalServiceRecord = {
@@ -53,7 +65,9 @@ export async function fetchEmployeePortalData(
   const [{ data: appointmentsData }, { data: serviceRecordsData }] = await Promise.all([
     supabase
       .from('appointments')
-      .select('id, starts_at, ends_at, status, address, notes, customers(name), services(name)')
+      .select(
+        'id, unit_id, starts_at, ends_at, status, address, notes, customers(name), services(name), service_order_number, service_order_file_url, service_order_summary_pt, service_order_status, service_order_signed_by, service_order_signed_at, service_order_part_purchase_link, service_order_photos',
+      )
       .eq('employee_id', employeeId)
       .order('starts_at', { ascending: true }),
     supabase

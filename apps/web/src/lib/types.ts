@@ -370,6 +370,20 @@ export type Appointment = {
   rescheduled_notified_at: string | null
   cancelled_notified_at: string | null
   no_show_notified_at: string | null
+  /** Número da ordem de serviço da contratante (ex.: Mawi/360) — migration 056, Fase A. */
+  service_order_number: string | null
+  /** URL pública (bucket service-orders) do arquivo original da ordem, PDF ou foto. */
+  service_order_file_url: string | null
+  service_order_file_name: string | null
+  /** Resumo em português gerado por IA (visão) a partir do anexo — bônus, pode ficar null. */
+  service_order_summary_pt: string | null
+  /** Status da ORDEM (distinto de `status`, que é o do agendamento): pending = nada registrado; completed = executado e assinado; quote = visita de orçamento. */
+  service_order_status: 'pending' | 'completed' | 'quote'
+  service_order_signed_by: string | null
+  service_order_signed_at: string | null
+  /** Só relevante quando service_order_status = 'quote'. */
+  service_order_part_purchase_link: string | null
+  service_order_photos: { url: string; uploaded_at: string }[]
   created_at: string
   updated_at: string
 }
