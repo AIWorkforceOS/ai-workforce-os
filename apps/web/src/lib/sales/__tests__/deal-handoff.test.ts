@@ -185,6 +185,50 @@ describe('buildSystemPrompt — o agente só pede o que foi ensinado para ESTA c
   })
 })
 
+// Regressão do pedido de 2026-08-06 (teste real no WhatsApp: "não escuta
+// o cliente, não trabalha a dor, não sabe apresentar bem o produto") —
+// garante que a metodologia de vendas completa (estágios, gate de
+// descoberta, playbook de objeção) está de fato no prompt, não só as
+// regras genéricas antigas. Não testa o comportamento do LLM em si (só
+// dá pra validar isso chamando a API de verdade), só que o texto do
+// prompt contém as seções da metodologia.
+describe('buildSystemPrompt — metodologia de vendas de elite (SPIN, gate de descoberta, objeções)', () => {
+  it('inclui os estágios obrigatórios da conversa (SPIN Selling)', () => {
+    const prompt = buildSystemPrompt(makeConfig(cleaningServicesProfile), unit)
+    expect(prompt).toContain('SPIN Selling')
+    expect(prompt).toContain('Descoberta')
+    expect(prompt).toContain('Apresentação da solução')
+    expect(prompt).toContain('Tratamento de objeção')
+  })
+
+  it('inclui o gate que proíbe apresentar produto/preço antes da descoberta', () => {
+    const prompt = buildSystemPrompt(makeConfig(cleaningServicesProfile), unit)
+    expect(prompt).toContain('GATE OBRIGATÓRIO')
+    expect(prompt).toContain('é proibido apresentar produto, preço ou lista de funcionalidades')
+  })
+
+  it('inclui escuta ativa operacionalizada e espelhamento de linguagem', () => {
+    const prompt = buildSystemPrompt(makeConfig(cleaningServicesProfile), unit)
+    expect(prompt).toContain('ESCUTA ATIVA NA PRÁTICA')
+    expect(prompt).toContain('RAPPORT E PNL')
+  })
+
+  it('inclui o playbook de objeção por tipo', () => {
+    const prompt = buildSystemPrompt(makeConfig(cleaningServicesProfile), unit)
+    expect(prompt).toContain('PLAYBOOK DE OBJEÇÃO')
+    expect(prompt).toContain('"é caro"')
+    expect(prompt).toContain('"vou pensar" / "preciso de um tempo"')
+    expect(prompt).toContain('"já uso o concorrente X"')
+  })
+
+  it('inclui técnica de fechamento assumptivo/por alternativa e exemplos de diálogo', () => {
+    const prompt = buildSystemPrompt(makeConfig(cleaningServicesProfile), unit)
+    expect(prompt).toContain('TÉCNICA DE FECHAMENTO')
+    expect(prompt).toContain('fechamento assumptivo')
+    expect(prompt).toContain('EXEMPLOS PARA CALIBRAR O PADRÃO')
+  })
+})
+
 describe('handleSalesDealHandoff — a ação executada é a que foi ensinada, não uma categoria fixa', () => {
   beforeEach(() => {
     vi.stubEnv('RESEND_API_KEY', 're_test')
