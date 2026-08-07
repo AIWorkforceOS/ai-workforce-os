@@ -2,6 +2,12 @@ import { inflateSync } from 'node:zlib'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import { generateServiceOrderPdf } from '../pdf'
+import { detectSignatureFieldsFromImage, detectSignatureFieldsFromPdf } from '../signature-fields'
+
+vi.mock('../signature-fields', () => ({
+  detectSignatureFieldsFromPdf: vi.fn(),
+  detectSignatureFieldsFromImage: vi.fn(),
+}))
 
 /** Mesma técnica de apps/web/src/lib/invoices/__tests__/pdf.test.ts — pdf-lib comprime/hex-codifica o texto, então precisa inflar os streams pra conseguir procurar por conteúdo. */
 function extractStreamText(buffer: Buffer): string {
@@ -57,6 +63,8 @@ const baseAppointment = {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.mocked(detectSignatureFieldsFromPdf).mockReset()
+  vi.mocked(detectSignatureFieldsFromImage).mockReset()
 })
 
 describe('generateServiceOrderPdf — carimbo na ordem original', () => {
@@ -154,6 +162,187 @@ describe('generateServiceOrderPdf — carimbo na ordem original', () => {
 
     const raw = extractStreamText(buffer)
     expect(raw).toContain('ORDEM DE SERVIÇO')
+  })
+})
+
+describe('generateServiceOrderPdf — carimbo nos campos localizados pela IA (Signature/Print Name/Date)', () => {
+  it('carimba exatamente nos campos detectados em vez do box fixo, quando a IA localiza os 3 campos', async () => {
+    const originalBytes = await buildSamplePdfBytes('ORDEM ORIGINAL MAWI/360')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.includes('assinatura')) return { ok: true, arrayBuffer: async () => TINY_PNG.buffer.slice(TINY_PNG.byteOffset, TINY_PNG.byteOffset + TINY_PNG.byteLength) } as unknown as Response
+        return { ok: true, arrayBuffer: async () => originalBytes } as unknown as Response
+      }),
+    )
+    vi.mocked(detectSignatureFieldsFromPdf).mockResolvedValue({
+      pageNumber: 1,
+      signature: { xFrac: 0.6, yFrac: 0.85 },
+      printName: { xFrac: 0.6, yFrac: 0.9 },
+      date: { xFrac: 0.85, yFrac: 0.9 },
+    })
+
+    const buffer = await generateServiceOrderPdf({
+      appointment: {
+        ...baseAppointment,
+        service_order_file_url: 'https://example.com/ordem-original.pdf',
+        service_order_file_name: 'ordem-original.pdf',
+        service_order_signature_url: 'https://example.com/assinatura.png',
+      },
+      unitName: 'Alizo Cleaning',
+      customerName: 'Loja Mawi 12',
+    })
+
+    expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+    const raw = extractStreamText(buffer)
+    expect(raw).toContain('Maria Gerente')
+    // Marcador exclusivo do box fixo — não deve aparecer quando o carimbo preciso funcionou.
+    expect(raw).not.toContain('Assinatura do responsável')
+    expect(raw).not.toContain('Assinado em')
+  })
+
+  it('pula campos que a IA não localizou, sem travar a geração nem cair pro box inteiro', async () => {
+    const originalBytes = await buildSamplePdfBytes('ORDEM ORIGINAL MAWI/360')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, arrayBuffer: async () => originalBytes }) as unknown as Response),
+    )
+    // Só o print_name foi localizado — signature e date vieram null (formulário sem esses rótulos, ou IA sem confiança).
+    vi.mocked(detectSignatureFieldsFromPdf).mockResolvedValue({
+      pageNumber: 1,
+      signature: null,
+      printName: { xFrac: 0.6, yFrac: 0.9 },
+      date: null,
+    })
+
+    const buffer = await generateServiceOrderPdf({
+      appointment: {
+        ...baseAppointment,
+        service_order_file_url: 'https://example.com/ordem-original.pdf',
+        service_order_file_name: 'ordem-original.pdf',
+      },
+      unitName: 'Alizo Cleaning',
+      customerName: 'Loja Mawi 12',
+    })
+
+    expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+    const raw = extractStreamText(buffer)
+    expect(raw).toContain('Maria Gerente')
+    expect(raw).not.toContain('Assinatura do responsável')
+  })
+
+  it('carimba na página certa quando a IA aponta pra uma página diferente da última', async () => {
+    const doc = await PDFDocument.create()
+    const font = await doc.embedFont(StandardFonts.Helvetica)
+    doc.addPage([400, 500]).drawText('PAGINA 1 - TERMOS', { x: 40, y: 400, size: 14, font, color: rgb(0, 0, 0) })
+    doc.addPage([400, 500]).drawText('PAGINA 2 - ASSINATURAS', { x: 40, y: 400, size: 14, font, color: rgb(0, 0, 0) })
+    const bytes = await doc.save()
+    const originalBytes = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, arrayBuffer: async () => originalBytes }) as unknown as Response),
+    )
+    // Campos ficam na primeira página, não na última (comportamento antigo assumia sempre a última).
+    vi.mocked(detectSignatureFieldsFromPdf).mockResolvedValue({
+      pageNumber: 1,
+      signature: null,
+      printName: { xFrac: 0.5, yFrac: 0.9 },
+      date: null,
+    })
+
+    const buffer = await generateServiceOrderPdf({
+      appointment: {
+        ...baseAppointment,
+        service_order_file_url: 'https://example.com/ordem-original.pdf',
+        service_order_file_name: 'ordem-original.pdf',
+      },
+      unitName: 'Alizo Cleaning',
+      customerName: 'Loja Mawi 12',
+    })
+
+    const reloaded = await PDFDocument.load(buffer)
+    expect(reloaded.getPageCount()).toBe(2)
+    const raw = extractStreamText(buffer)
+    expect(raw).toContain('PAGINA 1 - TERMOS')
+    expect(raw).toContain('PAGINA 2 - ASSINATURAS')
+    expect(raw).toContain('Maria Gerente')
+    expect(raw).not.toContain('Assinatura do responsável')
+  })
+
+  it('cai pro box fixo quando a IA não retorna nenhum campo localizado', async () => {
+    const originalBytes = await buildSamplePdfBytes('ORDEM ORIGINAL MAWI/360')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, arrayBuffer: async () => originalBytes }) as unknown as Response),
+    )
+    vi.mocked(detectSignatureFieldsFromPdf).mockResolvedValue(null)
+
+    const buffer = await generateServiceOrderPdf({
+      appointment: {
+        ...baseAppointment,
+        service_order_file_url: 'https://example.com/ordem-original.pdf',
+        service_order_file_name: 'ordem-original.pdf',
+      },
+      unitName: 'Alizo Cleaning',
+      customerName: 'Loja Mawi 12',
+    })
+
+    const raw = extractStreamText(buffer)
+    expect(raw).toContain('Assinatura do responsável')
+    expect(raw).toContain('Maria Gerente')
+  })
+
+  it('cai pro box fixo quando a chamada de IA falha por completo (erro de rede/sem API key)', async () => {
+    const originalBytes = await buildSamplePdfBytes('ORDEM ORIGINAL MAWI/360')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, arrayBuffer: async () => originalBytes }) as unknown as Response),
+    )
+    vi.mocked(detectSignatureFieldsFromPdf).mockRejectedValue(new Error('falha de rede'))
+
+    const buffer = await generateServiceOrderPdf({
+      appointment: {
+        ...baseAppointment,
+        service_order_file_url: 'https://example.com/ordem-original.pdf',
+        service_order_file_name: 'ordem-original.pdf',
+      },
+      unitName: 'Alizo Cleaning',
+      customerName: 'Loja Mawi 12',
+    })
+
+    expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+    const raw = extractStreamText(buffer)
+    expect(raw).toContain('Assinatura do responsável')
+  })
+
+  it('usa o mesmo raciocínio pra ordem em imagem, via detectSignatureFieldsFromImage', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, arrayBuffer: async () => TINY_PNG.buffer.slice(TINY_PNG.byteOffset, TINY_PNG.byteOffset + TINY_PNG.byteLength) }) as unknown as Response),
+    )
+    vi.mocked(detectSignatureFieldsFromImage).mockResolvedValue({
+      pageNumber: 1,
+      signature: null,
+      printName: { xFrac: 0.5, yFrac: 0.9 },
+      date: { xFrac: 0.8, yFrac: 0.9 },
+    })
+
+    const buffer = await generateServiceOrderPdf({
+      appointment: {
+        ...baseAppointment,
+        service_order_file_url: 'https://example.com/ordem-original.png',
+        service_order_file_name: 'ordem-original.png',
+      },
+      unitName: 'Alizo Cleaning',
+      customerName: 'Loja Mawi 12',
+    })
+
+    expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+    const raw = extractStreamText(buffer)
+    expect(raw).toContain('Maria Gerente')
+    expect(raw).not.toContain('Assinatura do responsável')
+    expect(detectSignatureFieldsFromImage).toHaveBeenCalledWith({ imageUrl: 'https://example.com/ordem-original.png' })
   })
 })
 

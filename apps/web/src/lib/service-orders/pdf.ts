@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib'
 import type { PortalServiceOrderPhoto } from '@/lib/portal-funcionario/data'
 import { isExtractableImageFile, isExtractablePdfFile } from '@/lib/service-orders/extraction'
+import { detectSignatureFieldsFromImage, detectSignatureFieldsFromPdf, type SignatureFieldLocations } from '@/lib/service-orders/signature-fields'
 
 /**
  * Gerador do PDF baixável da ordem de serviço — pedido do dono do
@@ -10,6 +11,16 @@ import { isExtractableImageFile, isExtractablePdfFile } from '@/lib/service-orde
  * assinatura, nome e data CARIMBADOS nela, não um resumo à parte. Se o
  * original for PDF, carimba a última página dele. Se for imagem,
  * embute a imagem como fundo de uma página nova e carimba por cima.
+ *
+ * A posição do carimbo tenta seguir os campos reais "Signature" /
+ * "Print Name" / "Date" impressos no formulário original (localizados
+ * por IA multimodal — ver lib/service-orders/signature-fields.ts),
+ * já que cada contratante usa um layout diferente. Se a IA não achar
+ * um campo específico (ou falhar por completo — sem API key, erro de
+ * rede, resposta inválida), cai pro box fixo no canto inferior direito
+ * de antes (stampSignatureBlock) — nunca trava a geração do PDF por
+ * causa disso.
+ *
  * Fallback (sem arquivo original anexado, ou falha ao baixar/embutir
  * — ex. formato de imagem sem suporte no pdf-lib como gif/webp): gera
  * o resumo textual de antes, pra sempre devolver algum PDF.
@@ -154,6 +165,87 @@ function stampSignatureBlock(
   }
 }
 
+/**
+ * Desenha assinatura/nome/data em cima dos campos reais do formulário,
+ * já localizados pela IA (frações 0.0–1.0, origem no canto superior
+ * esquerdo — ver signature-fields.ts). Cada campo é independente: se a
+ * IA não localizou um deles (ou não temos o dado, ex. sem assinatura
+ * ainda), simplesmente pula esse campo em vez de travar ou desenhar
+ * algo errado. Devolve true se carimbou pelo menos um campo.
+ */
+function stampSignatureAtFields(page: PDFPage, locations: SignatureFieldLocations, opts: { signatureImage: PDFImage | null; signedBy: string | null; signedAt: string | null; font: PDFFont; bold: PDFFont }): boolean {
+  const { signatureImage, signedBy, signedAt, font, bold } = opts
+  const { width, height } = page.getSize()
+  let stampedAny = false
+
+  function toPdfPoint(frac: { xFrac: number; yFrac: number }) {
+    return { x: frac.xFrac * width, y: height - frac.yFrac * height }
+  }
+
+  if (locations.signature && signatureImage) {
+    const { x, y } = toPdfPoint(locations.signature)
+    const maxW = 170
+    const maxH = 42
+    const scale = Math.min(maxW / signatureImage.width, maxH / signatureImage.height, 1)
+    const w = signatureImage.width * scale
+    const h = signatureImage.height * scale
+    page.drawImage(signatureImage, { x: x - w / 2, y: y - h / 2, width: w, height: h })
+    stampedAny = true
+  }
+
+  if (locations.printName && signedBy) {
+    const { x, y } = toPdfPoint(locations.printName)
+    const size = 10
+    page.drawText(signedBy, { x, y: y - size / 2, size, font: bold, color: DARK })
+    stampedAny = true
+  }
+
+  if (locations.date && signedAt) {
+    const { x, y } = toPdfPoint(locations.date)
+    const size = 9
+    const dateLabel = new Date(signedAt).toLocaleDateString('pt-BR')
+    page.drawText(dateLabel, { x, y: y - size / 2, size, font, color: DARK })
+    stampedAny = true
+  }
+
+  return stampedAny
+}
+
+/**
+ * Tenta localizar os campos reais do formulário via IA e carimbar em
+ * cima deles. Best-effort isolado: qualquer falha (IA indisponível,
+ * campo não encontrado, erro inesperado) devolve false e quem chama
+ * cai pro box fixo — nunca derruba a geração do documento original.
+ */
+async function tryStampAtDetectedFields(params: {
+  pages: PDFPage[]
+  lastPage: PDFPage
+  fileName: string
+  bytes: ArrayBuffer
+  fileUrl: string
+  stampOpts: { signatureImage: PDFImage | null; signedBy: string | null; signedAt: string | null; font: PDFFont; bold: PDFFont }
+}): Promise<boolean> {
+  try {
+    const locations = isExtractablePdfFile(params.fileName)
+      ? await detectSignatureFieldsFromPdf({
+          fileName: params.fileName,
+          base64Pdf: Buffer.from(params.bytes).toString('base64'),
+          pageCount: params.pages.length,
+        })
+      : await detectSignatureFieldsFromImage({ imageUrl: params.fileUrl })
+
+    if (!locations) return false
+
+    const targetPage = params.pages[locations.pageNumber - 1] ?? params.lastPage
+    return stampSignatureAtFields(targetPage, locations, params.stampOpts)
+  } catch (error) {
+    console.error(
+      `[service_order_pdf] falha ao carimbar nos campos detectados, caindo pro box fixo: ${error instanceof Error ? error.message : String(error)}`,
+    )
+    return false
+  }
+}
+
 /** Embute os bytes de uma imagem original (jpg/png) conforme a extensão do nome do arquivo — gif/webp não têm suporte de embed no pdf-lib e derrubam pra exceção (capturada por quem chama). */
 async function embedImageByFileName(doc: PDFDocument, bytes: ArrayBuffer, fileName: string): Promise<PDFImage> {
   const lower = fileName.toLowerCase()
@@ -194,8 +286,12 @@ async function tryStampOriginalDocument(a: ServiceOrderPdfAppointment): Promise<
     const font = await doc.embedFont(StandardFonts.Helvetica)
     const bold = await doc.embedFont(StandardFonts.HelveticaBold)
     const signatureImage = a.service_order_signature_url ? await tryEmbedImageFromUrl(doc, a.service_order_signature_url) : null
+    const stampOpts = { signatureImage, signedBy: a.service_order_signed_by, signedAt: a.service_order_signed_at, font, bold }
 
-    stampSignatureBlock(lastPage, { signatureImage, signedBy: a.service_order_signed_by, signedAt: a.service_order_signed_at, font, bold })
+    const stampedAtFields = await tryStampAtDetectedFields({ pages, lastPage, fileName, bytes, fileUrl: a.service_order_file_url, stampOpts })
+    if (!stampedAtFields) {
+      stampSignatureBlock(lastPage, stampOpts)
+    }
 
     const savedBytes = await doc.save()
     return Buffer.from(savedBytes)
