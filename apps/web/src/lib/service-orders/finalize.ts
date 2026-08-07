@@ -21,6 +21,7 @@ export function isServiceOrderStatus(value: unknown): value is ServiceOrderStatu
 export const ALLOWED_EMPLOYEE_UPDATE_COLUMNS = [
   'service_order_signed_by',
   'service_order_signed_at',
+  'service_order_signature_url',
   'service_order_status',
   'service_order_part_purchase_link',
   'service_order_material_description',
@@ -61,6 +62,8 @@ export function buildServiceOrderUpdatePayload(
   input: ServiceOrderFinalizeInput,
   existingPhotos: PortalServiceOrderPhoto[],
   uploadedPhotos: PortalServiceOrderPhoto[],
+  existingSignatureUrl: string | null = null,
+  uploadedSignatureUrl: string | null = null,
 ): ServiceOrderFinalizeResult {
   if (!isServiceOrderStatus(input.status)) {
     return { ok: false, error: 'Selecione "Finalizado" ou "Cotação".' }
@@ -85,6 +88,8 @@ export function buildServiceOrderUpdatePayload(
     service_order_material_value: input.status === 'quote' ? materialValue : null,
     // Horas necessárias é uma estimativa útil nos dois status — nunca é limpo por causa do status.
     service_order_hours_needed: hoursNeeded,
+    // Assinatura desenhada: mantém a já salva se não veio uma nova neste envio (nunca é limpa por causa do status, igual às horas).
+    service_order_signature_url: uploadedSignatureUrl ?? existingSignatureUrl,
   }
   if (signedBy) {
     payload.service_order_signed_by = signedBy

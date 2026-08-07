@@ -7,6 +7,7 @@ type AppointmentRow = {
   id: string
   unit_id: string
   service_order_photos: PortalServiceOrderPhoto[] | null
+  service_order_signature_url: string | null
 }
 
 /**
@@ -65,7 +66,7 @@ export async function PATCH(
   // sem vazar qual dos dois é o caso.
   const { data: existing } = await supabase
     .from('appointments')
-    .select('id, unit_id, service_order_photos')
+    .select('id, unit_id, service_order_photos, service_order_signature_url')
     .eq('id', appointmentId)
     .eq('unit_id', unitId)
     .maybeSingle()
@@ -89,7 +90,27 @@ export async function PATCH(
     uploadedPhotos.push({ url: publicUrl.publicUrl, uploaded_at: new Date().toISOString() })
   }
 
-  const finalCheck = buildServiceOrderUpdatePayload(finalizeInput, appointment.service_order_photos ?? [], uploadedPhotos)
+  const signatureFile = formData.get('signature')
+  let uploadedSignatureUrl: string | null = null
+  if (signatureFile instanceof File && signatureFile.size > 0) {
+    const path = `${unitId}/${appointmentId}/assinatura-${Date.now()}.png`
+    const { error: signatureUploadError } = await supabase.storage
+      .from('service-orders')
+      .upload(path, signatureFile, { contentType: signatureFile.type || 'image/png' })
+    if (signatureUploadError) {
+      return NextResponse.json({ error: 'Não foi possível enviar a assinatura.' }, { status: 500 })
+    }
+    const { data: signaturePublicUrl } = supabase.storage.from('service-orders').getPublicUrl(path)
+    uploadedSignatureUrl = signaturePublicUrl.publicUrl
+  }
+
+  const finalCheck = buildServiceOrderUpdatePayload(
+    finalizeInput,
+    appointment.service_order_photos ?? [],
+    uploadedPhotos,
+    appointment.service_order_signature_url ?? null,
+    uploadedSignatureUrl,
+  )
   if (!finalCheck.ok) {
     return NextResponse.json({ error: finalCheck.error }, { status: 400 })
   }
@@ -99,7 +120,7 @@ export async function PATCH(
     .update(finalCheck.payload)
     .eq('id', appointmentId)
     .select(
-      'id, service_order_status, service_order_signed_by, service_order_signed_at, service_order_part_purchase_link, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_photos',
+      'id, service_order_status, service_order_signed_by, service_order_signed_at, service_order_signature_url, service_order_part_purchase_link, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_photos',
     )
     .maybeSingle()
 

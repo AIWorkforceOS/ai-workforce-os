@@ -1,21 +1,29 @@
 'use client'
 
 import { useRef, useState, type ChangeEvent, type FormEvent } from 'react'
-import { Camera, CheckCircle2, Clock, Receipt } from 'lucide-react'
+import { Camera, CheckCircle2, Clock, PenLine, Receipt } from 'lucide-react'
 import { Input, Label, Textarea } from '@/components/ui/dashboard-ui'
 import type { PortalAppointment, PortalServiceOrderPhoto } from '@/lib/portal-funcionario/data'
+import { SignaturePad } from './signature-pad'
 
 type ServiceOrderPatch = Pick<
   PortalAppointment,
   | 'service_order_status'
   | 'service_order_signed_by'
   | 'service_order_signed_at'
+  | 'service_order_signature_url'
   | 'service_order_part_purchase_link'
   | 'service_order_material_description'
   | 'service_order_material_value'
   | 'service_order_hours_needed'
   | 'service_order_photos'
 >
+
+/** data: URL (gerada pelo canvas) → Blob, pra anexar no FormData como arquivo igual às fotos. */
+async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
+  const response = await fetch(dataUrl)
+  return response.blob()
+}
 
 /**
  * Formulário único da ordem de serviço, pensado pro celular em campo:
@@ -38,6 +46,8 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
     appt.service_order_hours_needed != null ? String(appt.service_order_hours_needed) : '',
   )
   const [photos, setPhotos] = useState<File[]>([])
+  const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null)
+  const [showSignaturePad, setShowSignaturePad] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
@@ -56,6 +66,10 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
       setError('Informe o nome de quem assinou para finalizar.')
       return
     }
+    if (status === 'completed' && !signatureDataUrl && !appt.service_order_signature_url) {
+      setError('Peça para o gerente da loja assinar para finalizar.')
+      return
+    }
 
     const formData = new FormData()
     formData.set('status', status)
@@ -65,6 +79,10 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
     formData.set('materialValue', status === 'quote' ? materialValue.trim() : '')
     formData.set('hoursNeeded', hoursNeeded.trim())
     for (const photo of photos) formData.append('photos', photo)
+    if (signatureDataUrl) {
+      const signatureBlob = await dataUrlToBlob(signatureDataUrl)
+      formData.set('signature', new File([signatureBlob], 'assinatura.png', { type: 'image/png' }))
+    }
 
     setSubmitting(true)
     try {
@@ -81,12 +99,25 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
       setAppt((prev) => ({ ...prev, ...patch }))
       setSuccess(true)
       setPhotos([])
+      setSignatureDataUrl(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
     } catch {
       setError('Não foi possível salvar. Verifique sua conexão e tente novamente.')
     } finally {
       setSubmitting(false)
     }
+  }
+
+  if (showSignaturePad) {
+    return (
+      <SignaturePad
+        onSave={(dataUrl) => {
+          setSignatureDataUrl(dataUrl)
+          setShowSignaturePad(false)
+        }}
+        onCancel={() => setShowSignaturePad(false)}
+      />
+    )
   }
 
   return (
@@ -106,6 +137,27 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
           placeholder="Nome do gerente da loja"
           className="py-3 text-base"
         />
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>Assinatura do gerente {status === 'completed' ? '*' : '(opcional)'}</Label>
+        {(signatureDataUrl || appt.service_order_signature_url) && (
+          <img
+            src={signatureDataUrl ?? appt.service_order_signature_url ?? undefined}
+            alt="Assinatura do gerente"
+            className="h-24 w-full rounded-xl object-contain"
+            style={{ background: '#fff' }}
+          />
+        )}
+        <button
+          type="button"
+          onClick={() => setShowSignaturePad(true)}
+          className="flex w-fit items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-cyan-300 transition-colors hover:text-cyan-200"
+          style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.25)' }}
+        >
+          <PenLine size={13} />
+          {signatureDataUrl || appt.service_order_signature_url ? 'Assinar novamente' : 'Assinar'}
+        </button>
       </div>
 
       <div className="flex flex-col gap-2">

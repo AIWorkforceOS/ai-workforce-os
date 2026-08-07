@@ -36,6 +36,7 @@ function formatCurrencyBrl(value: number): string {
 function TechnicianReportSection({ appointment }: { appointment: AppointmentWithRelations }) {
   const hasTechnicianData = Boolean(
     appointment.service_order_signed_by ||
+      appointment.service_order_signature_url ||
       appointment.service_order_photos.length > 0 ||
       appointment.service_order_material_description ||
       appointment.service_order_material_value != null ||
@@ -62,6 +63,17 @@ function TechnicianReportSection({ appointment }: { appointment: AppointmentWith
             ? ` em ${new Date(appointment.service_order_signed_at).toLocaleDateString('pt-BR')}`
             : ''}
         </p>
+      )}
+
+      {appointment.service_order_signature_url && (
+        <a href={appointment.service_order_signature_url} target="_blank" rel="noreferrer" className="block w-fit">
+          <img
+            src={appointment.service_order_signature_url}
+            alt="Assinatura do gerente"
+            className="h-16 rounded-lg object-contain"
+            style={{ background: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
+          />
+        </a>
       )}
 
       {appointment.service_order_hours_needed != null && (

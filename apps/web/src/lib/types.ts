@@ -381,6 +381,8 @@ export type Appointment = {
   service_order_status: 'pending' | 'completed' | 'quote'
   service_order_signed_by: string | null
   service_order_signed_at: string | null
+  /** URL pública (bucket service-orders) da assinatura desenhada por toque pelo gerente da loja (migration 058). */
+  service_order_signature_url: string | null
   /** Só relevante quando service_order_status = 'quote'. */
   service_order_part_purchase_link: string | null
   /** Material/valor só fazem sentido quando service_order_status = 'quote' (migration 057). */

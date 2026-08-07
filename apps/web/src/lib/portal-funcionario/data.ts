@@ -33,6 +33,8 @@ export type PortalAppointment = {
   service_order_status: 'pending' | 'completed' | 'quote'
   service_order_signed_by: string | null
   service_order_signed_at: string | null
+  /** URL pública (bucket service-orders) da assinatura desenhada por toque pelo gerente da loja (migration 058). */
+  service_order_signature_url: string | null
   service_order_part_purchase_link: string | null
   /** Material/valor só fazem sentido quando service_order_status = 'quote' (migration 057). */
   service_order_material_description: string | null
@@ -60,7 +62,7 @@ export type EmployeePortalData = {
 }
 
 const APPOINTMENT_SELECT_COLUMNS =
-  'id, unit_id, starts_at, ends_at, status, address, notes, customers(name), services(name), service_order_number, service_order_file_url, service_order_file_name, service_order_summary_pt, service_order_status, service_order_signed_by, service_order_signed_at, service_order_part_purchase_link, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_photos'
+  'id, unit_id, starts_at, ends_at, status, address, notes, customers(name), services(name), service_order_number, service_order_file_url, service_order_file_name, service_order_summary_pt, service_order_status, service_order_signed_by, service_order_signed_at, service_order_signature_url, service_order_part_purchase_link, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_photos'
 
 /**
  * Busca a agenda e o financeiro de UM funcionário (isolado por

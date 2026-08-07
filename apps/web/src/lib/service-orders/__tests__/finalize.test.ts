@@ -96,6 +96,32 @@ describe('buildServiceOrderUpdatePayload', () => {
     expect(result.payload.service_order_photos).toEqual([...existing, ...uploaded])
   })
 
+  it('sem assinatura nova, mantém a URL da assinatura já salva', () => {
+    const result = buildServiceOrderUpdatePayload(
+      { status: 'quote', signedBy: '', ...BASE_INPUT },
+      [],
+      [],
+      'https://x/assinatura-antiga.png',
+      null,
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('esperava sucesso')
+    expect(result.payload.service_order_signature_url).toBe('https://x/assinatura-antiga.png')
+  })
+
+  it('assinatura nova enviada substitui a anterior', () => {
+    const result = buildServiceOrderUpdatePayload(
+      { status: 'completed', signedBy: 'Maria Gerente', ...BASE_INPUT },
+      [],
+      [],
+      'https://x/assinatura-antiga.png',
+      'https://x/assinatura-nova.png',
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('esperava sucesso')
+    expect(result.payload.service_order_signature_url).toBe('https://x/assinatura-nova.png')
+  })
+
   it('só os campos da lista de execução da ordem aparecem no payload — nunca reagendamento/reatribuição', () => {
     const result = buildServiceOrderUpdatePayload(
       { status: 'completed', signedBy: 'Maria Gerente', ...BASE_INPUT },
