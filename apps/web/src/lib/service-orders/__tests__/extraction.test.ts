@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { extractServiceOrderFromImage, isExtractableImageFile } from '../extraction'
+import {
+  extractServiceOrderFromImage,
+  extractServiceOrderFromPdf,
+  isExtractableAttachment,
+  isExtractableImageFile,
+  isExtractablePdfFile,
+} from '../extraction'
 
 function mockFetchOnce(body: unknown, ok = true) {
   const fetchMock = vi.fn(async () => ({ ok, json: async () => body }))
@@ -9,6 +15,16 @@ function mockFetchOnce(body: unknown, ok = true) {
 
 function chatCompletionBody(content: unknown) {
   return { choices: [{ message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 500, completion_tokens: 60 } }
+}
+
+/** Duas chamadas fetch em sequência: 1ª baixa o PDF do Storage, 2ª chama a OpenAI. */
+function mockFetchSequenceForPdf(chatBody: unknown, chatOk = true) {
+  const fetchMock = vi
+    .fn()
+    .mockImplementationOnce(async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) }))
+    .mockImplementationOnce(async () => ({ ok: chatOk, json: async () => chatBody }))
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
 }
 
 afterEach(() => {
@@ -28,6 +44,20 @@ describe('isExtractableImageFile', () => {
     expect(isExtractableImageFile('ordem-360.pdf')).toBe(false)
     expect(isExtractableImageFile('ordem-360')).toBe(false)
     expect(isExtractableImageFile('ordem.docx')).toBe(false)
+  })
+})
+
+describe('isExtractablePdfFile / isExtractableAttachment', () => {
+  it('reconhece PDF como extraível (documento nativo, sem OCR)', () => {
+    expect(isExtractablePdfFile('ordem-360.pdf')).toBe(true)
+    expect(isExtractablePdfFile('ORDEM.PDF')).toBe(true)
+    expect(isExtractablePdfFile('ordem.jpg')).toBe(false)
+  })
+
+  it('isExtractableAttachment aceita imagem ou PDF, rejeita outros formatos', () => {
+    expect(isExtractableAttachment('ordem.jpg')).toBe(true)
+    expect(isExtractableAttachment('ordem.pdf')).toBe(true)
+    expect(isExtractableAttachment('ordem.docx')).toBe(false)
   })
 })
 
@@ -92,6 +122,63 @@ describe('extractServiceOrderFromImage', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await extractServiceOrderFromImage('https://example.com/ordem.jpg')
+
+    expect(result).toBeNull()
+  })
+})
+
+describe('extractServiceOrderFromPdf', () => {
+  it('baixa o PDF, converte pra base64 e extrai os dados via content part de arquivo', async () => {
+    vi.stubEnv('OPENAI_API_KEY', 'sk-test')
+    const fetchMock = mockFetchSequenceForPdf(
+      chatCompletionBody({
+        summary_pt: 'Trocar a fechadura da porta dos fundos.',
+        address: '123 Main St, Phoenix, AZ',
+        order_number: '132617',
+      }),
+    )
+
+    const result = await extractServiceOrderFromPdf('https://example.com/ordem.pdf', 'ordem-360.pdf')
+
+    expect(result).toEqual({
+      summaryPt: 'Trocar a fechadura da porta dos fundos.',
+      address: '123 Main St, Phoenix, AZ',
+      orderNumber: '132617',
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const openAiCall = fetchMock.mock.calls[1]!
+    const requestBody = JSON.parse(openAiCall[1].body)
+    const filePart = requestBody.messages[1].content.find((part: { type: string }) => part.type === 'file')
+    expect(filePart.file.filename).toBe('ordem-360.pdf')
+    expect(filePart.file.file_data).toMatch(/^data:application\/pdf;base64,/)
+  })
+
+  it('não trava o fluxo (devolve null) quando a OPENAI_API_KEY não está configurada', async () => {
+    vi.stubEnv('OPENAI_API_KEY', '')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await extractServiceOrderFromPdf('https://example.com/ordem.pdf', 'ordem.pdf')
+
+    expect(result).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('não trava o fluxo (devolve null) quando o download do PDF falha', async () => {
+    vi.stubEnv('OPENAI_API_KEY', 'sk-test')
+    const fetchMock = vi.fn(async () => ({ ok: false, status: 404 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await extractServiceOrderFromPdf('https://example.com/ordem.pdf', 'ordem.pdf')
+
+    expect(result).toBeNull()
+  })
+
+  it('não trava o fluxo (devolve null) quando a chamada à OpenAI falha', async () => {
+    vi.stubEnv('OPENAI_API_KEY', 'sk-test')
+    mockFetchSequenceForPdf({ error: { message: 'documento não pôde ser processado' } }, false)
+
+    const result = await extractServiceOrderFromPdf('https://example.com/ordem.pdf', 'ordem.pdf')
 
     expect(result).toBeNull()
   })

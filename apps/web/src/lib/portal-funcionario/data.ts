@@ -28,11 +28,17 @@ export type PortalAppointment = {
   /** Ordem de serviço anexada pelo admin (Fase A Mawi/360) — null quando não há ordem para este agendamento. */
   service_order_number: string | null
   service_order_file_url: string | null
+  service_order_file_name: string | null
   service_order_summary_pt: string | null
   service_order_status: 'pending' | 'completed' | 'quote'
   service_order_signed_by: string | null
   service_order_signed_at: string | null
   service_order_part_purchase_link: string | null
+  /** Material/valor só fazem sentido quando service_order_status = 'quote' (migration 057). */
+  service_order_material_description: string | null
+  service_order_material_value: number | null
+  /** Estimativa de horas, preenchível independente do status (migration 057). */
+  service_order_hours_needed: number | null
   service_order_photos: PortalServiceOrderPhoto[]
 }
 
@@ -53,6 +59,9 @@ export type EmployeePortalData = {
   serviceRecords: PortalServiceRecord[]
 }
 
+const APPOINTMENT_SELECT_COLUMNS =
+  'id, unit_id, starts_at, ends_at, status, address, notes, customers(name), services(name), service_order_number, service_order_file_url, service_order_file_name, service_order_summary_pt, service_order_status, service_order_signed_by, service_order_signed_at, service_order_part_purchase_link, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_photos'
+
 /**
  * Busca a agenda e o financeiro de UM funcionário (isolado por
  * employee_id — reforçado no RLS de appointments/service_records,
@@ -65,9 +74,7 @@ export async function fetchEmployeePortalData(
   const [{ data: appointmentsData }, { data: serviceRecordsData }] = await Promise.all([
     supabase
       .from('appointments')
-      .select(
-        'id, unit_id, starts_at, ends_at, status, address, notes, customers(name), services(name), service_order_number, service_order_file_url, service_order_summary_pt, service_order_status, service_order_signed_by, service_order_signed_at, service_order_part_purchase_link, service_order_photos',
-      )
+      .select(APPOINTMENT_SELECT_COLUMNS)
       .eq('employee_id', employeeId)
       .order('starts_at', { ascending: true }),
     supabase
@@ -85,6 +92,30 @@ export async function fetchEmployeePortalData(
   )
 
   return { appointments, serviceRecords }
+}
+
+/**
+ * Busca UM agendamento pelo id, restrito ao próprio funcionário — usada
+ * pela página dedicada de trabalhar a ordem de serviço
+ * (app/portal-funcionario/ordem/[appointmentId]/page.tsx). O filtro
+ * `.eq('employee_id', employeeId)` é defesa em profundidade: a RLS de
+ * appointments_select (migration 053) já restringe por
+ * current_app_employee_id(), mas repetir aqui deixa explícito que esta
+ * função nunca devolve o agendamento de outro funcionário.
+ */
+export async function fetchPortalAppointmentById(
+  supabase: SupabaseClient,
+  employeeId: string,
+  appointmentId: string,
+): Promise<PortalAppointment | null> {
+  const { data } = await supabase
+    .from('appointments')
+    .select(APPOINTMENT_SELECT_COLUMNS)
+    .eq('id', appointmentId)
+    .eq('employee_id', employeeId)
+    .maybeSingle()
+
+  return (data as unknown as PortalAppointment | null) ?? null
 }
 
 export type EmployeeUnitContext = {

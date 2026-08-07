@@ -49,6 +49,9 @@ export async function PATCH(
     status: formData.get('status'),
     signedBy: formData.get('signedBy'),
     partPurchaseLink: formData.get('partPurchaseLink'),
+    materialDescription: formData.get('materialDescription'),
+    materialValue: formData.get('materialValue'),
+    hoursNeeded: formData.get('hoursNeeded'),
   }
   // Validação cedo (antes de subir fotos) — evita gastar upload num payload que já vai ser rejeitado.
   const earlyCheck = buildServiceOrderUpdatePayload(finalizeInput, [], [])
@@ -96,7 +99,7 @@ export async function PATCH(
     .update(finalCheck.payload)
     .eq('id', appointmentId)
     .select(
-      'id, service_order_status, service_order_signed_by, service_order_signed_at, service_order_part_purchase_link, service_order_photos',
+      'id, service_order_status, service_order_signed_by, service_order_signed_at, service_order_part_purchase_link, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_photos',
     )
     .maybeSingle()
 

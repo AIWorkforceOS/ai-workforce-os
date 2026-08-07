@@ -1,16 +1,17 @@
 import { NextResponse } from 'next/server'
 import { getAppUser } from '@/lib/app-user'
-import { extractServiceOrderFromImage } from '@/lib/service-orders/extraction'
+import { extractServiceOrderFromAttachment, isExtractableAttachment } from '@/lib/service-orders/extraction'
 
 /**
- * Extração por IA (visão) da ordem de serviço recém-anexada — chamada
- * pelo admin logo depois do upload da imagem no Storage (ver
- * service-order-attach-modal.tsx), antes de salvar. Só sugere: o admin
- * sempre revisa/edita os campos antes de confirmar, nunca salva
- * automático. Não escreve nada no banco; se a extração falhar (sem
- * OPENAI_API_KEY, imagem ilegível, erro da OpenAI), devolve os três
- * campos como null — o fluxo principal (anexo + visualização) nunca
- * trava por causa disso.
+ * Extração por IA (visão/documento) da ordem de serviço recém-anexada
+ * — chamada pelo admin logo depois do upload (imagem OU PDF) no
+ * Storage (ver service-order-attach-modal.tsx), antes de salvar. Só
+ * sugere: o admin sempre revisa/edita os campos antes de confirmar,
+ * nunca salva automático. Não escreve nada no banco; se a extração
+ * falhar (sem OPENAI_API_KEY, documento ilegível, erro da OpenAI),
+ * devolve os três campos como null e `failed: true` — o modal usa isso
+ * pra avisar o admin que precisa preencher manualmente, mas o fluxo
+ * principal (anexo + visualização) nunca trava por causa disso.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string; appointmentId: string }> }) {
   const { id } = await params
@@ -27,16 +28,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   const body = await request.json().catch(() => null)
-  const imageUrl = (body as { imageUrl?: unknown } | null)?.imageUrl
-  if (typeof imageUrl !== 'string' || !imageUrl) {
-    return NextResponse.json({ error: 'Informe a URL da imagem.' }, { status: 400 })
+  const fileUrl = (body as { fileUrl?: unknown } | null)?.fileUrl
+  const fileName = (body as { fileName?: unknown } | null)?.fileName
+  if (typeof fileUrl !== 'string' || !fileUrl || typeof fileName !== 'string' || !fileName) {
+    return NextResponse.json({ error: 'Informe a URL e o nome do arquivo.' }, { status: 400 })
   }
 
-  const extraction = await extractServiceOrderFromImage(imageUrl)
+  if (!isExtractableAttachment(fileName)) {
+    return NextResponse.json({ summaryPt: null, address: null, orderNumber: null, failed: false })
+  }
+
+  const extraction = await extractServiceOrderFromAttachment(fileUrl, fileName)
 
   return NextResponse.json({
     summaryPt: extraction?.summaryPt ?? null,
     address: extraction?.address ?? null,
     orderNumber: extraction?.orderNumber ?? null,
+    failed: extraction === null,
   })
 }

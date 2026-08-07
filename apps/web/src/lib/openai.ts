@@ -199,6 +199,65 @@ export async function generateStructuredReplyFromImage<T = Record<string, unknow
 }
 
 /**
+ * Igual a generateStructuredReplyFromImage, mas manda um PDF em vez de
+ * imagem — Chat Completions aceita content part nativo `{ type: 'file',
+ * file: { filename, file_data } }` desde 2025 (mesmo modelo com visão,
+ * sem precisar converter em imagem nem rodar OCR à parte; `file_data` é
+ * uma data URL base64, não aceita URL remota como o image_url aceita).
+ * Usada pela extração da ordem de serviço quando o anexo é PDF
+ * (lib/service-orders/extraction.ts).
+ */
+export async function generateStructuredReplyFromPdf<T = Record<string, unknown>>(params: {
+  apiKey: string
+  systemPrompt: string
+  fileName: string
+  base64Pdf: string
+  userText?: string
+  model?: string
+  maxTokens?: number
+  temperature?: number
+}): Promise<T> {
+  const model = params.model ?? 'gpt-4o-mini'
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${params.apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: params.systemPrompt },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: params.userText ?? 'Analise o documento anexado.' },
+            {
+              type: 'file',
+              file: { filename: params.fileName, file_data: `data:application/pdf;base64,${params.base64Pdf}` },
+            },
+          ],
+        },
+      ],
+      temperature: params.temperature ?? 0.2,
+      max_tokens: params.maxTokens ?? 1000,
+      response_format: { type: 'json_object' },
+    }),
+  })
+
+  const data = await response.json()
+
+  if (!response.ok) {
+    throw new Error(data?.error?.message ?? `OpenAI retornou status ${response.status}`)
+  }
+
+  await logOpenAIUsage({ endpoint: 'chat.completions.pdf', model, usage: data.usage })
+
+  const content = (data.choices?.[0]?.message?.content ?? '').trim()
+  return JSON.parse(content) as T
+}
+
+/**
  * Transcreve um áudio (ex.: nota de voz do WhatsApp) para texto via Whisper.
  * Recebe o arquivo em base64 (formato em que a Evolution API devolve mídia
  * descriptografada) e devolve o texto já pronto para entrar no motor de

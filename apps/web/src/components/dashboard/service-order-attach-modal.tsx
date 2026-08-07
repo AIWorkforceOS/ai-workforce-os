@@ -3,7 +3,7 @@
 import { useState, type ChangeEvent } from 'react'
 import { FileText, Sparkles, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { isExtractableImageFile } from '@/lib/service-orders/extraction'
+import { isExtractableAttachment } from '@/lib/service-orders/extraction'
 import { Card, Input, Label, Textarea } from '@/components/ui/dashboard-ui'
 import type { AppointmentWithRelations } from '@/components/dashboard/calendar-view'
 
@@ -37,6 +37,7 @@ export function ServiceOrderAttachModal({
   const [address, setAddress] = useState(appointment.address ?? '')
   const [uploading, setUploading] = useState(false)
   const [extracting, setExtracting] = useState(false)
+  const [extractionFailed, setExtractionFailed] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -61,6 +62,7 @@ export function ServiceOrderAttachModal({
   async function handleUploadAndExtract() {
     if (!file) return
     setError(null)
+    setExtractionFailed(false)
     setUploading(true)
     const supabase = createClient()
     const path = `${unitId}/${appointment.id}/ordem-${Date.now()}-${file.name}`
@@ -76,8 +78,7 @@ export function ServiceOrderAttachModal({
     setFileUrl(publicUrlData.publicUrl)
     setFileName(file.name)
 
-    if (!isExtractableImageFile(file.name)) {
-      // PDF: sem OCR nesta fase — o arquivo já fica anexado e abrível, os campos ficam pra preenchimento manual.
+    if (!isExtractableAttachment(file.name)) {
       return
     }
 
@@ -86,17 +87,25 @@ export function ServiceOrderAttachModal({
       const response = await fetch(`/api/units/${unitId}/appointments/${appointment.id}/service-order/extract`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl: publicUrlData.publicUrl }),
+        body: JSON.stringify({ fileUrl: publicUrlData.publicUrl, fileName: file.name }),
       })
       if (response.ok) {
-        const data = (await response.json()) as { summaryPt: string | null; address: string | null; orderNumber: string | null }
+        const data = (await response.json()) as {
+          summaryPt: string | null
+          address: string | null
+          orderNumber: string | null
+          failed: boolean
+        }
         if (data.summaryPt) setSummaryPt(data.summaryPt)
         if (data.orderNumber) setOrderNumber(data.orderNumber)
         // Só preenche endereço se ainda estiver vazio — nunca sobrescreve o que já foi digitado.
         if (data.address && !address.trim()) setAddress(data.address)
+        setExtractionFailed(data.failed)
+      } else {
+        setExtractionFailed(true)
       }
     } catch {
-      // Extração é bônus — falha aqui nunca deve travar o anexo do arquivo em si.
+      setExtractionFailed(true)
     } finally {
       setExtracting(false)
     }
@@ -175,6 +184,11 @@ export function ServiceOrderAttachModal({
                   <Sparkles size={13} />
                   {uploading ? 'Enviando…' : extracting ? 'Lendo o documento…' : 'Enviar e preencher com IA'}
                 </button>
+              )}
+              {extractionFailed && (
+                <p className="text-xs font-semibold text-amber-400">
+                  Não consegui ler o documento automaticamente. Preencha os campos abaixo manualmente.
+                </p>
               )}
             </div>
 
