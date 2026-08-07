@@ -15,6 +15,8 @@ type ServiceOrderPdfRow = {
   service_order_hours_needed: number | null
   service_order_part_purchase_link: string | null
   service_order_photos: PortalServiceOrderPhoto[]
+  service_order_file_url: string | null
+  service_order_file_name: string | null
   address: string | null
   starts_at: string
   customer: { name: string } | null
@@ -46,7 +48,7 @@ export async function GET(
   const { data } = await supabase
     .from('appointments')
     .select(
-      'service_order_number, service_order_status, service_order_summary_pt, service_order_signed_by, service_order_signed_at, service_order_signature_url, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_part_purchase_link, service_order_photos, address, starts_at, customer:customers(name)',
+      'service_order_number, service_order_status, service_order_summary_pt, service_order_signed_by, service_order_signed_at, service_order_signature_url, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_part_purchase_link, service_order_photos, service_order_file_url, service_order_file_name, address, starts_at, customer:customers(name)',
     )
     .eq('id', appointmentId)
     .eq('unit_id', unitId)

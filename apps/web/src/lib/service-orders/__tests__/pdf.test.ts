@@ -1,6 +1,6 @@
 import { inflateSync } from 'node:zlib'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { PDFDocument } from 'pdf-lib'
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import { generateServiceOrderPdf } from '../pdf'
 
 /** Mesma técnica de apps/web/src/lib/invoices/__tests__/pdf.test.ts — pdf-lib comprime/hex-codifica o texto, então precisa inflar os streams pra conseguir procurar por conteúdo. */
@@ -28,6 +28,15 @@ const TINY_PNG = Buffer.from(
   'base64',
 )
 
+async function buildSamplePdfBytes(text: string): Promise<ArrayBuffer> {
+  const doc = await PDFDocument.create()
+  const page = doc.addPage([400, 500])
+  const font = await doc.embedFont(StandardFonts.Helvetica)
+  page.drawText(text, { x: 40, y: 400, size: 14, font, color: rgb(0, 0, 0) })
+  const bytes = await doc.save()
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+}
+
 const baseAppointment = {
   service_order_number: 'OS-1001',
   service_order_status: 'completed' as const,
@@ -40,6 +49,8 @@ const baseAppointment = {
   service_order_hours_needed: 2.5,
   service_order_part_purchase_link: null,
   service_order_photos: [],
+  service_order_file_url: null,
+  service_order_file_name: null,
   address: '123 Desert Rd, Phoenix, AZ',
   starts_at: '2026-08-06T13:00:00.000Z',
 }
@@ -48,7 +59,105 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('generateServiceOrderPdf', () => {
+describe('generateServiceOrderPdf — carimbo na ordem original', () => {
+  it('carimba a assinatura/nome/data em cima do PDF original em vez de gerar um resumo', async () => {
+    const originalBytes = await buildSamplePdfBytes('ORDEM ORIGINAL MAWI/360')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.includes('assinatura')) return { ok: true, arrayBuffer: async () => TINY_PNG.buffer.slice(TINY_PNG.byteOffset, TINY_PNG.byteOffset + TINY_PNG.byteLength) } as unknown as Response
+        return { ok: true, arrayBuffer: async () => originalBytes } as unknown as Response
+      }),
+    )
+
+    const buffer = await generateServiceOrderPdf({
+      appointment: {
+        ...baseAppointment,
+        service_order_file_url: 'https://example.com/ordem-original.pdf',
+        service_order_file_name: 'ordem-original.pdf',
+        service_order_signature_url: 'https://example.com/assinatura.png',
+      },
+      unitName: 'Alizo Cleaning',
+      customerName: 'Loja Mawi 12',
+    })
+
+    expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+    const reloaded = await PDFDocument.load(buffer)
+    expect(reloaded.getPageCount()).toBe(1)
+
+    const raw = extractStreamText(buffer)
+    expect(raw).toContain('ORDEM ORIGINAL MAWI/360')
+    expect(raw).toContain('Maria Gerente')
+    expect(raw).toContain('Assinatura do responsável')
+    // Não é o resumo gerado à parte — não deve conter o cabeçalho do layout antigo.
+    expect(raw).not.toContain('ORDEM DE SERVIÇO')
+  })
+
+  it('embute a imagem original como fundo de uma página nova e carimba por cima quando o anexo é uma foto', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, arrayBuffer: async () => TINY_PNG.buffer.slice(TINY_PNG.byteOffset, TINY_PNG.byteOffset + TINY_PNG.byteLength) }) as unknown as Response),
+    )
+
+    const buffer = await generateServiceOrderPdf({
+      appointment: {
+        ...baseAppointment,
+        service_order_file_url: 'https://example.com/ordem-original.png',
+        service_order_file_name: 'ordem-original.png',
+      },
+      unitName: 'Alizo Cleaning',
+      customerName: 'Loja Mawi 12',
+    })
+
+    expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+    const reloaded = await PDFDocument.load(buffer)
+    expect(reloaded.getPageCount()).toBe(1)
+    const raw = extractStreamText(buffer)
+    expect(raw).toContain('Maria Gerente')
+  })
+
+  it('cai pro resumo gerado quando o download do arquivo original falha', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false }) as Response),
+    )
+
+    const buffer = await generateServiceOrderPdf({
+      appointment: {
+        ...baseAppointment,
+        service_order_file_url: 'https://example.com/ordem-original.pdf',
+        service_order_file_name: 'ordem-original.pdf',
+      },
+      unitName: 'Alizo Cleaning',
+      customerName: 'Loja Mawi 12',
+    })
+
+    const raw = extractStreamText(buffer)
+    expect(raw).toContain('ORDEM DE SERVIÇO')
+    expect(raw).toContain('OS-1001')
+  })
+
+  it('cai pro resumo gerado quando o formato do arquivo original não é suportado (ex.: webp)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, arrayBuffer: async () => TINY_PNG.buffer.slice(TINY_PNG.byteOffset, TINY_PNG.byteOffset + TINY_PNG.byteLength) }) as unknown as Response),
+    )
+    const buffer = await generateServiceOrderPdf({
+      appointment: {
+        ...baseAppointment,
+        service_order_file_url: 'https://example.com/ordem-original.webp',
+        service_order_file_name: 'ordem-original.webp',
+      },
+      unitName: 'Alizo Cleaning',
+      customerName: 'Loja Mawi 12',
+    })
+
+    const raw = extractStreamText(buffer)
+    expect(raw).toContain('ORDEM DE SERVIÇO')
+  })
+})
+
+describe('generateServiceOrderPdf — resumo de fallback (sem ordem original anexada)', () => {
   it('gera um PDF não vazio e válido só com os campos de texto', async () => {
     const buffer = await generateServiceOrderPdf({ appointment: baseAppointment, unitName: 'Alizo Cleaning', customerName: 'Loja Mawi 12' })
     expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-')

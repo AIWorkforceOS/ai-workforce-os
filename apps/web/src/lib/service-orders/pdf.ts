@@ -1,14 +1,18 @@
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage } from 'pdf-lib'
+import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib'
 import type { PortalServiceOrderPhoto } from '@/lib/portal-funcionario/data'
+import { isExtractableImageFile, isExtractablePdfFile } from '@/lib/service-orders/extraction'
 
 /**
- * Gerador de PDF da ordem de serviço preenchida (assinatura, fotos,
- * material, horas) — pedido do dono do produto: depois de assinada e
- * salva, tanto o técnico quanto o admin precisam conseguir baixar um
- * PDF com tudo que foi registrado. Mesmo padrão de
- * lib/invoices/pdf.ts (pdf-lib, sem browser headless), arquivo
- * independente por simplicidade (o conteúdo/layout não tem nada em
- * comum com fatura além da biblioteca).
+ * Gerador do PDF baixável da ordem de serviço — pedido do dono do
+ * produto: o documento final precisa ser a ORDEM ORIGINAL (o arquivo
+ * que a contratante, ex. Mawi/360, mandou e o admin anexou —
+ * service_order_file_url/service_order_file_name, migration 056) com a
+ * assinatura, nome e data CARIMBADOS nela, não um resumo à parte. Se o
+ * original for PDF, carimba a última página dele. Se for imagem,
+ * embute a imagem como fundo de uma página nova e carimba por cima.
+ * Fallback (sem arquivo original anexado, ou falha ao baixar/embutir
+ * — ex. formato de imagem sem suporte no pdf-lib como gif/webp): gera
+ * o resumo textual de antes, pra sempre devolver algum PDF.
  */
 
 const PAGE_WIDTH = 612 // Letter (pt)
@@ -80,22 +84,142 @@ async function tryEmbedImageFromUrl(doc: PDFDocument, url: string): Promise<PDFI
   }
 }
 
-export async function generateServiceOrderPdf(params: {
-  appointment: {
-    service_order_number: string | null
-    service_order_status: 'pending' | 'completed' | 'quote'
-    service_order_summary_pt: string | null
-    service_order_signed_by: string | null
-    service_order_signed_at: string | null
-    service_order_signature_url: string | null
-    service_order_material_description: string | null
-    service_order_material_value: number | null
-    service_order_hours_needed: number | null
-    service_order_part_purchase_link: string | null
-    service_order_photos: PortalServiceOrderPhoto[]
-    address: string | null
-    starts_at: string
+type ServiceOrderPdfAppointment = {
+  service_order_number: string | null
+  service_order_status: 'pending' | 'completed' | 'quote'
+  service_order_summary_pt: string | null
+  service_order_signed_by: string | null
+  service_order_signed_at: string | null
+  service_order_signature_url: string | null
+  service_order_material_description: string | null
+  service_order_material_value: number | null
+  service_order_hours_needed: number | null
+  service_order_part_purchase_link: string | null
+  service_order_photos: PortalServiceOrderPhoto[]
+  service_order_file_url: string | null
+  service_order_file_name: string | null
+  address: string | null
+  starts_at: string
+}
+
+/** Desenha a assinatura + nome + data num box no canto inferior direito da página — funciona tanto sobre o PDF/imagem original quanto no resumo de fallback. Não desenha nada se não houver assinatura nem nome (ordem ainda não assinada). */
+function stampSignatureBlock(
+  page: PDFPage,
+  opts: { signatureImage: PDFImage | null; signedBy: string | null; signedAt: string | null; font: PDFFont; bold: PDFFont },
+) {
+  const { signatureImage, signedBy, signedAt, font, bold } = opts
+  if (!signatureImage && !signedBy) return
+
+  const { width } = page.getSize()
+  const margin = 24
+  const padding = 12
+  const boxWidth = Math.min(230, Math.max(120, width - margin * 2))
+
+  let sigW = 0
+  let sigH = 0
+  if (signatureImage) {
+    const maxW = boxWidth - padding * 2
+    const maxH = 46
+    const scale = Math.min(maxW / signatureImage.width, maxH / signatureImage.height, 1)
+    sigW = signatureImage.width * scale
+    sigH = signatureImage.height * scale
   }
+
+  let contentHeight = 12 // rótulo
+  if (signatureImage) contentHeight += sigH + 6
+  if (signedBy) contentHeight += 14
+  if (signedAt) contentHeight += 12
+  const boxHeight = contentHeight + padding * 2
+
+  const boxX = width - boxWidth - margin
+  const boxY = margin
+
+  page.drawRectangle({ x: boxX, y: boxY, width: boxWidth, height: boxHeight, color: rgb(1, 1, 1), opacity: 0.94, borderColor: LINE, borderWidth: 1 })
+
+  let cursorY = boxY + boxHeight - padding - 8
+  page.drawText('Assinatura do responsável', { x: boxX + padding, y: cursorY, size: 8, font: bold, color: MUTED })
+  cursorY -= 12
+
+  if (signatureImage) {
+    page.drawImage(signatureImage, { x: boxX + padding, y: cursorY - sigH, width: sigW, height: sigH })
+    cursorY -= sigH + 6
+  }
+  if (signedBy) {
+    page.drawText(signedBy, { x: boxX + padding, y: cursorY, size: 10, font: bold, color: DARK })
+    cursorY -= 14
+  }
+  if (signedAt) {
+    const dateLabel = new Date(signedAt).toLocaleString('pt-BR')
+    page.drawText(`Assinado em ${dateLabel}`, { x: boxX + padding, y: cursorY, size: 8.5, font, color: MUTED })
+  }
+}
+
+/** Embute os bytes de uma imagem original (jpg/png) conforme a extensão do nome do arquivo — gif/webp não têm suporte de embed no pdf-lib e derrubam pra exceção (capturada por quem chama). */
+async function embedImageByFileName(doc: PDFDocument, bytes: ArrayBuffer, fileName: string): Promise<PDFImage> {
+  const lower = fileName.toLowerCase()
+  if (lower.endsWith('.png')) return doc.embedPng(bytes)
+  return doc.embedJpg(bytes)
+}
+
+/**
+ * Baixa a ordem original anexada e carimba assinatura/nome/data nela.
+ * Best-effort: qualquer falha (download, formato não suportado, PDF
+ * corrompido) devolve null e quem chama cai pro resumo gerado.
+ */
+async function tryStampOriginalDocument(a: ServiceOrderPdfAppointment): Promise<Buffer | null> {
+  if (!a.service_order_file_url) return null
+  const fileName = a.service_order_file_name ?? ''
+
+  try {
+    const res = await fetch(a.service_order_file_url)
+    if (!res.ok) return null
+    const bytes = await res.arrayBuffer()
+
+    let doc: PDFDocument
+    if (isExtractablePdfFile(fileName)) {
+      doc = await PDFDocument.load(bytes, { ignoreEncryption: true })
+    } else if (isExtractableImageFile(fileName)) {
+      doc = await PDFDocument.create()
+      const image = await embedImageByFileName(doc, bytes, fileName)
+      const page = doc.addPage([image.width, image.height])
+      page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height })
+    } else {
+      return null
+    }
+
+    const pages = doc.getPages()
+    const lastPage = pages[pages.length - 1]
+    if (!lastPage) return null
+
+    const font = await doc.embedFont(StandardFonts.Helvetica)
+    const bold = await doc.embedFont(StandardFonts.HelveticaBold)
+    const signatureImage = a.service_order_signature_url ? await tryEmbedImageFromUrl(doc, a.service_order_signature_url) : null
+
+    stampSignatureBlock(lastPage, { signatureImage, signedBy: a.service_order_signed_by, signedAt: a.service_order_signed_at, font, bold })
+
+    const savedBytes = await doc.save()
+    return Buffer.from(savedBytes)
+  } catch (error) {
+    console.error(
+      `[service_order_pdf] falha ao carimbar a ordem original, caindo pro resumo gerado: ${error instanceof Error ? error.message : String(error)}`,
+    )
+    return null
+  }
+}
+
+export async function generateServiceOrderPdf(params: {
+  appointment: ServiceOrderPdfAppointment
+  unitName: string
+  customerName: string | null
+}): Promise<Buffer> {
+  const stamped = await tryStampOriginalDocument(params.appointment)
+  if (stamped) return stamped
+  return generateSummaryServiceOrderPdf(params)
+}
+
+/** Fallback: resumo gerado do zero (número, endereço, resumo do trabalho, material, fotos, assinatura) — usado quando não há ordem original anexada ou não foi possível carimbá-la. */
+async function generateSummaryServiceOrderPdf(params: {
+  appointment: ServiceOrderPdfAppointment
   unitName: string
   customerName: string | null
 }): Promise<Buffer> {
