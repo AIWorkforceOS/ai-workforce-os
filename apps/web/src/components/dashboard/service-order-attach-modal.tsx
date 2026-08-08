@@ -189,10 +189,13 @@ function TechnicianReportSection({ unitId, appointment }: { unitId: string; appo
 /**
  * Anexar (ou editar) a ordem de serviço de um agendamento — Fase A do
  * fluxo Mawi/360 (general_maintenance). O admin sobe o PDF/foto da
- * ordem recebida da contratante; se for imagem, chama a extração por
- * IA (resumo em PT + endereço + número) pra pré-preencher os campos,
+ * ordem recebida da contratante; a extração por IA lê o documento e
+ * pré-preenche todos os campos do "Sign Off Sheet" fixo (PO, endereço,
+ * local, IVR, prioridade, tipo, emissor, escopo do trabalho completo),
  * mas SEMPRE deixa revisar/editar antes de salvar — nunca some direto
- * pro banco sem passar pelos olhos de alguém, é extração de IA.
+ * pro banco sem passar pelos olhos de alguém, é extração de IA. Esses
+ * campos alimentam o PDF baixável (lib/service-orders/pdf.ts), que
+ * reproduz o layout oficial da 360 com posições fixas.
  */
 export function ServiceOrderAttachModal({
   unitId,
@@ -211,6 +214,15 @@ export function ServiceOrderAttachModal({
   const [orderNumber, setOrderNumber] = useState(appointment.service_order_number ?? '')
   const [summaryPt, setSummaryPt] = useState(appointment.service_order_summary_pt ?? '')
   const [address, setAddress] = useState(appointment.address ?? '')
+  // Campos do "Sign Off Sheet" fixo (migration 059) — só o admin preenche, pré-preenchidos pela extração por IA.
+  const [clientPo, setClientPo] = useState(appointment.service_order_client_po ?? '')
+  const [priority, setPriority] = useState(appointment.service_order_priority ?? '')
+  const [orderType, setOrderType] = useState(appointment.service_order_order_type ?? '')
+  const [ivrPin, setIvrPin] = useState(appointment.service_order_ivr_pin ?? '')
+  const [locationName, setLocationName] = useState(appointment.service_order_location_name ?? '')
+  const [locationPhone, setLocationPhone] = useState(appointment.service_order_location_phone ?? '')
+  const [issuerName, setIssuerName] = useState(appointment.service_order_issuer_name ?? '')
+  const [issuerEmail, setIssuerEmail] = useState(appointment.service_order_issuer_email ?? '')
   const [uploading, setUploading] = useState(false)
   const [extracting, setExtracting] = useState(false)
   const [extractionFailed, setExtractionFailed] = useState(false)
@@ -272,12 +284,28 @@ export function ServiceOrderAttachModal({
           summaryPt: string | null
           address: string | null
           orderNumber: string | null
+          clientPo: string | null
+          priority: string | null
+          orderType: string | null
+          ivrPin: string | null
+          locationName: string | null
+          locationPhone: string | null
+          issuerName: string | null
+          issuerEmail: string | null
           failed: boolean
         }
         if (data.summaryPt) setSummaryPt(data.summaryPt)
         if (data.orderNumber) setOrderNumber(data.orderNumber)
         // Só preenche endereço se ainda estiver vazio — nunca sobrescreve o que já foi digitado.
         if (data.address && !address.trim()) setAddress(data.address)
+        if (data.clientPo && !clientPo.trim()) setClientPo(data.clientPo)
+        if (data.priority && !priority.trim()) setPriority(data.priority)
+        if (data.orderType && !orderType.trim()) setOrderType(data.orderType)
+        if (data.ivrPin && !ivrPin.trim()) setIvrPin(data.ivrPin)
+        if (data.locationName && !locationName.trim()) setLocationName(data.locationName)
+        if (data.locationPhone && !locationPhone.trim()) setLocationPhone(data.locationPhone)
+        if (data.issuerName && !issuerName.trim()) setIssuerName(data.issuerName)
+        if (data.issuerEmail && !issuerEmail.trim()) setIssuerEmail(data.issuerEmail)
         setExtractionFailed(data.failed)
       } else {
         setExtractionFailed(true)
@@ -306,6 +334,14 @@ export function ServiceOrderAttachModal({
         service_order_number: orderNumber.trim() || null,
         service_order_summary_pt: summaryPt.trim() || null,
         address: address.trim() || null,
+        service_order_client_po: clientPo.trim() || null,
+        service_order_priority: priority.trim() || null,
+        service_order_order_type: orderType.trim() || null,
+        service_order_ivr_pin: ivrPin.trim() || null,
+        service_order_location_name: locationName.trim() || null,
+        service_order_location_phone: locationPhone.trim() || null,
+        service_order_issuer_name: issuerName.trim() || null,
+        service_order_issuer_email: issuerEmail.trim() || null,
       })
       .eq('id', appointment.id)
     setSaving(false)
@@ -379,8 +415,32 @@ export function ServiceOrderAttachModal({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <Label>Número da ordem</Label>
+              <Label>Número da ordem (Vendor PO #)</Label>
               <Input value={orderNumber} onChange={(e) => setOrderNumber(e.target.value)} placeholder="Ex: 132617" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <Label>Client PO #</Label>
+                <Input value={clientPo} onChange={(e) => setClientPo(e.target.value)} placeholder="Opcional" />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>Prioridade</Label>
+                <Input value={priority} onChange={(e) => setPriority(e.target.value)} placeholder="Ex: Low" />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>Tipo da ordem</Label>
+                <Input value={orderType} onChange={(e) => setOrderType(e.target.value)} placeholder="Ex: Interior" />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>IVR Pin #</Label>
+                <Input value={ivrPin} onChange={(e) => setIvrPin(e.target.value)} placeholder="Opcional" />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label>Nome/código do local</Label>
+              <Input value={locationName} onChange={(e) => setLocationName(e.target.value)} placeholder="Ex: PB - Tanger - Loc # 6800" />
             </div>
 
             <div className="flex flex-col gap-1.5">
@@ -389,12 +449,28 @@ export function ServiceOrderAttachModal({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <Label>Resumo do trabalho (em português)</Label>
+              <Label>Telefone do local</Label>
+              <Input value={locationPhone} onChange={(e) => setLocationPhone(e.target.value)} placeholder="Opcional" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <Label>Nome de quem emitiu a ordem</Label>
+                <Input value={issuerName} onChange={(e) => setIssuerName(e.target.value)} placeholder="Ex: Taina Dias" />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>E-mail de quem emitiu</Label>
+                <Input value={issuerEmail} onChange={(e) => setIssuerEmail(e.target.value)} placeholder="nome@empresa.com" />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label>Escopo do trabalho (em português)</Label>
               <Textarea
-                rows={4}
+                rows={6}
                 value={summaryPt}
                 onChange={(e) => setSummaryPt(e.target.value)}
-                placeholder="O técnico vê este texto direto na agenda — descreva objetivamente o que precisa ser feito."
+                placeholder="Texto completo do que precisa ser feito — vai pro PDF da ordem exatamente como escrito aqui."
               />
             </div>
 

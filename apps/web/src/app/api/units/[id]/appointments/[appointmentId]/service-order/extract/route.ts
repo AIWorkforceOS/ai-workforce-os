@@ -34,8 +34,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'Informe a URL e o nome do arquivo.' }, { status: 400 })
   }
 
+  const empty = {
+    summaryPt: null,
+    address: null,
+    orderNumber: null,
+    clientPo: null,
+    priority: null,
+    orderType: null,
+    ivrPin: null,
+    locationName: null,
+    locationPhone: null,
+    issuerName: null,
+    issuerEmail: null,
+  }
+
   if (!isExtractableAttachment(fileName)) {
-    return NextResponse.json({ summaryPt: null, address: null, orderNumber: null, failed: false })
+    return NextResponse.json({ ...empty, failed: false })
   }
 
   const extraction = await extractServiceOrderFromAttachment(fileUrl, fileName)
@@ -44,6 +58,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     summaryPt: extraction?.summaryPt ?? null,
     address: extraction?.address ?? null,
     orderNumber: extraction?.orderNumber ?? null,
+    clientPo: extraction?.clientPo ?? null,
+    priority: extraction?.priority ?? null,
+    orderType: extraction?.orderType ?? null,
+    ivrPin: extraction?.ivrPin ?? null,
+    locationName: extraction?.locationName ?? null,
+    locationPhone: extraction?.locationPhone ?? null,
+    issuerName: extraction?.issuerName ?? null,
+    issuerEmail: extraction?.issuerEmail ?? null,
     failed: extraction === null,
   })
 }

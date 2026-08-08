@@ -32,20 +32,48 @@ export type ServiceOrderExtraction = {
   summaryPt: string | null
   address: string | null
   orderNumber: string | null
+  clientPo: string | null
+  priority: string | null
+  orderType: string | null
+  ivrPin: string | null
+  locationName: string | null
+  locationPhone: string | null
+  issuerName: string | null
+  issuerEmail: string | null
 }
 
-const SYSTEM_PROMPT = `Você recebe o documento (foto, print ou PDF) de uma ordem de serviço de manutenção geral enviada por uma empresa contratante (ex.: Mawi/360) para um técnico de campo.
+const SYSTEM_PROMPT = `Você recebe o documento (foto, print ou PDF) de uma ordem de serviço de manutenção geral enviada por uma empresa contratante (ex.: Mawi/360) para um técnico de campo — normalmente um "Sign Off Sheet" com cabeçalho fixo da contratante e campos específicos da ordem (PO, prioridade, tipo, local, IVR, contato do emissor).
 
 Leia o documento e responda em JSON com exatamente estas chaves:
 {
-  "summary_pt": "resumo curto e direto EM PORTUGUÊS do que precisa ser feito, para o técnico bater o olho e já saber a tarefa sem ler o documento inteiro (2-4 frases, sem enrolação). Se o documento já estiver em português, ainda assim escreva um resumo objetivo, não copie o texto inteiro.",
+  "summary_pt": "o texto COMPLETO do escopo do trabalho (\\"Scope Of Work\\"), em PORTUGUÊS, fiel ao que está escrito no documento — NÃO é um resumo de 2-4 frases, é o texto integral que o técnico vai ler como a descrição oficial da tarefa, preservando parágrafos quando existirem. Se o documento já estiver em português, ainda assim organize o texto de forma legível, sem cortar conteúdo. null se não conseguir identificar.",
   "address": "endereço completo do local do atendimento, como aparece no documento (rua, número, cidade, estado). null se não conseguir identificar com confiança.",
-  "order_number": "número ou código da ordem de serviço, como aparece no documento. null se não conseguir identificar com confiança."
+  "order_number": "número ou código da ordem de serviço (Vendor PO #), como aparece no documento. null se não conseguir identificar com confiança.",
+  "client_po": "número do Client PO #, quando existir e for distinto do Vendor PO #. null se não conseguir identificar.",
+  "priority": "prioridade da ordem (ex.: Low, Medium, High), como impressa no documento. null se não conseguir identificar.",
+  "order_type": "tipo da ordem (ex.: Interior, Exterior), como impresso no documento. null se não conseguir identificar.",
+  "ivr_pin": "PIN do IVR do local do atendimento, se houver impresso. null se não conseguir identificar.",
+  "location_name": "nome ou código do local do atendimento (ex.: \\"PB - Tanger - Loc # 6800\\"), distinto do endereço completo. null se não conseguir identificar.",
+  "location_phone": "telefone do local do atendimento, se houver impresso. null se não conseguir identificar.",
+  "issuer_name": "nome da pessoa de contato da contratante que emitiu a ordem, se houver. null se não conseguir identificar.",
+  "issuer_email": "e-mail dessa pessoa de contato, se houver. null se não conseguir identificar."
 }
 
 Nunca invente informação que não está no documento — prefira null a um palpite. Responda só o JSON, nada mais.`
 
-type RawExtraction = { summary_pt?: unknown; address?: unknown; order_number?: unknown }
+type RawExtraction = {
+  summary_pt?: unknown
+  address?: unknown
+  order_number?: unknown
+  client_po?: unknown
+  priority?: unknown
+  order_type?: unknown
+  ivr_pin?: unknown
+  location_name?: unknown
+  location_phone?: unknown
+  issuer_name?: unknown
+  issuer_email?: unknown
+}
 
 function cleanString(value: unknown): string | null {
   if (typeof value !== 'string') return null
@@ -59,6 +87,14 @@ function toExtraction(raw: RawExtraction): ServiceOrderExtraction {
     summaryPt: cleanString(raw.summary_pt),
     address: cleanString(raw.address),
     orderNumber: cleanString(raw.order_number),
+    clientPo: cleanString(raw.client_po),
+    priority: cleanString(raw.priority),
+    orderType: cleanString(raw.order_type),
+    ivrPin: cleanString(raw.ivr_pin),
+    locationName: cleanString(raw.location_name),
+    locationPhone: cleanString(raw.location_phone),
+    issuerName: cleanString(raw.issuer_name),
+    issuerEmail: cleanString(raw.issuer_email),
   }
 }
 

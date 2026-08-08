@@ -78,6 +78,49 @@ describe('extractServiceOrderFromImage', () => {
       summaryPt: 'Trocar a fechadura da porta dos fundos e verificar o batente.',
       address: '123 Main St, Phoenix, AZ',
       orderNumber: '132617',
+      clientPo: null,
+      priority: null,
+      orderType: null,
+      ivrPin: null,
+      locationName: null,
+      locationPhone: null,
+      issuerName: null,
+      issuerEmail: null,
+    })
+  })
+
+  it('extrai todos os campos do Sign Off Sheet quando a IA os localiza no documento', async () => {
+    vi.stubEnv('OPENAI_API_KEY', 'sk-test')
+    mockFetchOnce(
+      chatCompletionBody({
+        summary_pt: 'Texto completo do escopo do trabalho, conforme impresso no documento.',
+        address: '123 Main St, Phoenix, AZ',
+        order_number: '132617',
+        client_po: 'CPO-77',
+        priority: 'Low',
+        order_type: 'Interior',
+        ivr_pin: '19471464',
+        location_name: 'PB - Tanger - Loc # 6800',
+        location_phone: '305-555-0101',
+        issuer_name: 'Taina Dias',
+        issuer_email: 'taina@360serviceprovider.com',
+      }),
+    )
+
+    const result = await extractServiceOrderFromImage('https://example.com/ordem.jpg')
+
+    expect(result).toEqual({
+      summaryPt: 'Texto completo do escopo do trabalho, conforme impresso no documento.',
+      address: '123 Main St, Phoenix, AZ',
+      orderNumber: '132617',
+      clientPo: 'CPO-77',
+      priority: 'Low',
+      orderType: 'Interior',
+      ivrPin: '19471464',
+      locationName: 'PB - Tanger - Loc # 6800',
+      locationPhone: '305-555-0101',
+      issuerName: 'Taina Dias',
+      issuerEmail: 'taina@360serviceprovider.com',
     })
   })
 
@@ -91,6 +134,14 @@ describe('extractServiceOrderFromImage', () => {
       summaryPt: 'Serviço de pintura no corredor.',
       address: null,
       orderNumber: null,
+      clientPo: null,
+      priority: null,
+      orderType: null,
+      ivrPin: null,
+      locationName: null,
+      locationPhone: null,
+      issuerName: null,
+      issuerEmail: null,
     })
   })
 
@@ -144,6 +195,14 @@ describe('extractServiceOrderFromPdf', () => {
       summaryPt: 'Trocar a fechadura da porta dos fundos.',
       address: '123 Main St, Phoenix, AZ',
       orderNumber: '132617',
+      clientPo: null,
+      priority: null,
+      orderType: null,
+      ivrPin: null,
+      locationName: null,
+      locationPhone: null,
+      issuerName: null,
+      issuerEmail: null,
     })
     expect(fetchMock).toHaveBeenCalledTimes(2)
     const openAiCall = fetchMock.mock.calls[1]!

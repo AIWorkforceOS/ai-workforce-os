@@ -392,6 +392,16 @@ export type Appointment = {
   service_order_hours_needed: number | null
   /** kind ausente = foto do atendimento (fotos salvas antes da Fase B não tinham essa distinção; campo dentro do jsonb, sem migration nova). */
   service_order_photos: { url: string; uploaded_at: string; kind?: 'service' | 'material_invoice' }[]
+  /** Campos do "Sign Off Sheet" fixo da 360 (migration 059) — só o admin preenche, pré-preenchidos pela extração por IA. Ver lib/service-orders/pdf.ts. */
+  service_order_client_po: string | null
+  service_order_priority: string | null
+  service_order_order_type: string | null
+  service_order_ivr_pin: string | null
+  /** Nome/código do local (ex.: "PB - Tanger - Loc # 6800"), distinto de `address` (o endereço completo). */
+  service_order_location_name: string | null
+  service_order_location_phone: string | null
+  service_order_issuer_name: string | null
+  service_order_issuer_email: string | null
   created_at: string
   updated_at: string
 }

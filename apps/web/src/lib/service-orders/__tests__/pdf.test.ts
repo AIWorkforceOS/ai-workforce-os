@@ -1,12 +1,11 @@
 import { inflateSync } from 'node:zlib'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import { PDFDocument } from 'pdf-lib'
 import { generateServiceOrderPdf } from '../pdf'
-import { detectSignatureFieldsFromImage, detectSignatureFieldsFromPdf } from '../signature-fields'
 
-vi.mock('../signature-fields', () => ({
-  detectSignatureFieldsFromPdf: vi.fn(),
-  detectSignatureFieldsFromImage: vi.fn(),
+const readFileSyncMock = vi.fn()
+vi.mock('node:fs', () => ({
+  readFileSync: (...args: unknown[]) => readFileSyncMock(...args),
 }))
 
 /** Mesma técnica de apps/web/src/lib/invoices/__tests__/pdf.test.ts — pdf-lib comprime/hex-codifica o texto, então precisa inflar os streams pra conseguir procurar por conteúdo. */
@@ -28,416 +27,194 @@ function extractStreamText(buffer: Buffer): string {
   return out.replace(/<([0-9A-Fa-f]+)>/g, (_, hex: string) => Buffer.from(hex, 'hex').toString('latin1'))
 }
 
-// PNG 1x1 válido, usado como resposta mockada de fetch pra testar o caminho de embed de imagem sem depender de rede.
+// PNG 1x1 válido, usado tanto como logo mockada quanto como resposta de fetch da assinatura.
 const TINY_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
   'base64',
 )
 
-async function buildSamplePdfBytes(text: string): Promise<ArrayBuffer> {
-  const doc = await PDFDocument.create()
-  const page = doc.addPage([400, 500])
-  const font = await doc.embedFont(StandardFonts.Helvetica)
-  page.drawText(text, { x: 40, y: 400, size: 14, font, color: rgb(0, 0, 0) })
-  const bytes = await doc.save()
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
-}
-
 const baseAppointment = {
   service_order_number: 'OS-1001',
-  service_order_status: 'completed' as const,
+  service_order_client_po: 'CPO-77',
+  service_order_priority: 'Low',
+  service_order_order_type: 'Interior',
+  service_order_ivr_pin: '19471464',
+  service_order_location_name: 'PB - Tanger - Loc # 6800',
+  service_order_location_phone: '305-555-0101',
+  service_order_issuer_name: 'Taina Dias',
+  service_order_issuer_email: 'taina@360serviceprovider.com',
   service_order_summary_pt: 'Trocar fechadura da porta principal.',
   service_order_signed_by: 'Maria Gerente',
   service_order_signed_at: '2026-08-06T14:00:00.000Z',
-  service_order_signature_url: null,
-  service_order_material_description: null,
-  service_order_material_value: null,
-  service_order_hours_needed: 2.5,
-  service_order_part_purchase_link: null,
-  service_order_photos: [],
-  service_order_file_url: null,
-  service_order_file_name: null,
+  service_order_signature_url: null as string | null,
   address: '123 Desert Rd, Phoenix, AZ',
   starts_at: '2026-08-06T13:00:00.000Z',
 }
 
 afterEach(() => {
   vi.unstubAllGlobals()
-  vi.mocked(detectSignatureFieldsFromPdf).mockReset()
-  vi.mocked(detectSignatureFieldsFromImage).mockReset()
+  readFileSyncMock.mockReset()
 })
 
-describe('generateServiceOrderPdf — carimbo na ordem original', () => {
-  it('carimba a assinatura/nome/data em cima do PDF original em vez de gerar um resumo', async () => {
-    const originalBytes = await buildSamplePdfBytes('ORDEM ORIGINAL MAWI/360')
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
-        if (url.includes('assinatura')) return { ok: true, arrayBuffer: async () => TINY_PNG.buffer.slice(TINY_PNG.byteOffset, TINY_PNG.byteOffset + TINY_PNG.byteLength) } as unknown as Response
-        return { ok: true, arrayBuffer: async () => originalBytes } as unknown as Response
-      }),
-    )
-
-    const buffer = await generateServiceOrderPdf({
-      appointment: {
-        ...baseAppointment,
-        service_order_file_url: 'https://example.com/ordem-original.pdf',
-        service_order_file_name: 'ordem-original.pdf',
-        service_order_signature_url: 'https://example.com/assinatura.png',
-      },
-      unitName: 'Alizo Cleaning',
-      customerName: 'Loja Mawi 12',
+describe('generateServiceOrderPdf — Sign Off Sheet fixo', () => {
+  it('gera um PDF válido de uma página com os campos fixos e dinâmicos do template', async () => {
+    readFileSyncMock.mockImplementation(() => {
+      throw new Error('ENOENT')
     })
+
+    const buffer = await generateServiceOrderPdf({ appointment: baseAppointment, unitName: 'Alizo Cleaning' })
 
     expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-')
     const reloaded = await PDFDocument.load(buffer)
     expect(reloaded.getPageCount()).toBe(1)
 
     const raw = extractStreamText(buffer)
-    expect(raw).toContain('ORDEM ORIGINAL MAWI/360')
-    expect(raw).toContain('Maria Gerente')
-    expect(raw).toContain('Assinatura do responsável')
-    // Não é o resumo gerado à parte — não deve conter o cabeçalho do layout antigo.
-    expect(raw).not.toContain('ORDEM DE SERVIÇO')
-  })
-
-  it('embute a imagem original como fundo de uma página nova e carimba por cima quando o anexo é uma foto', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({ ok: true, arrayBuffer: async () => TINY_PNG.buffer.slice(TINY_PNG.byteOffset, TINY_PNG.byteOffset + TINY_PNG.byteLength) }) as unknown as Response),
-    )
-
-    const buffer = await generateServiceOrderPdf({
-      appointment: {
-        ...baseAppointment,
-        service_order_file_url: 'https://example.com/ordem-original.png',
-        service_order_file_name: 'ordem-original.png',
-      },
-      unitName: 'Alizo Cleaning',
-      customerName: 'Loja Mawi 12',
-    })
-
-    expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-')
-    const reloaded = await PDFDocument.load(buffer)
-    expect(reloaded.getPageCount()).toBe(1)
-    const raw = extractStreamText(buffer)
-    expect(raw).toContain('Maria Gerente')
-  })
-
-  it('cai pro resumo gerado quando o download do arquivo original falha', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({ ok: false }) as Response),
-    )
-
-    const buffer = await generateServiceOrderPdf({
-      appointment: {
-        ...baseAppointment,
-        service_order_file_url: 'https://example.com/ordem-original.pdf',
-        service_order_file_name: 'ordem-original.pdf',
-      },
-      unitName: 'Alizo Cleaning',
-      customerName: 'Loja Mawi 12',
-    })
-
-    const raw = extractStreamText(buffer)
-    expect(raw).toContain('ORDEM DE SERVIÇO')
+    // Bloco fixo da contratante (não muda por ordem).
+    expect(raw).toContain('360 Service Provider')
+    expect(raw).toContain('11098 Biscayne Boulevard, Suite 305')
+    expect(raw).toContain('Miami, FL 33161')
+    expect(raw).toContain('Phone # 786-281-3413')
+    // Título + Vendor PO #.
+    expect(raw).toContain('SIGN OFF SHEET')
+    expect(raw).toContain('VENDOR PO #')
     expect(raw).toContain('OS-1001')
-  })
-
-  it('cai pro resumo gerado quando o formato do arquivo original não é suportado (ex.: webp)', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({ ok: true, arrayBuffer: async () => TINY_PNG.buffer.slice(TINY_PNG.byteOffset, TINY_PNG.byteOffset + TINY_PNG.byteLength) }) as unknown as Response),
-    )
-    const buffer = await generateServiceOrderPdf({
-      appointment: {
-        ...baseAppointment,
-        service_order_file_url: 'https://example.com/ordem-original.webp',
-        service_order_file_name: 'ordem-original.webp',
-      },
-      unitName: 'Alizo Cleaning',
-      customerName: 'Loja Mawi 12',
-    })
-
-    const raw = extractStreamText(buffer)
-    expect(raw).toContain('ORDEM DE SERVIÇO')
-  })
-})
-
-describe('generateServiceOrderPdf — carimbo nos campos localizados pela IA (Signature/Print Name/Date)', () => {
-  it('carimba exatamente nos campos detectados em vez do box fixo, quando a IA localiza os 3 campos', async () => {
-    const originalBytes = await buildSamplePdfBytes('ORDEM ORIGINAL MAWI/360')
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
-        if (url.includes('assinatura')) return { ok: true, arrayBuffer: async () => TINY_PNG.buffer.slice(TINY_PNG.byteOffset, TINY_PNG.byteOffset + TINY_PNG.byteLength) } as unknown as Response
-        return { ok: true, arrayBuffer: async () => originalBytes } as unknown as Response
-      }),
-    )
-    vi.mocked(detectSignatureFieldsFromPdf).mockResolvedValue({
-      pageNumber: 1,
-      signature: { xFrac: 0.6, yFrac: 0.85 },
-      printName: { xFrac: 0.6, yFrac: 0.9 },
-      date: { xFrac: 0.85, yFrac: 0.9 },
-    })
-
-    const buffer = await generateServiceOrderPdf({
-      appointment: {
-        ...baseAppointment,
-        service_order_file_url: 'https://example.com/ordem-original.pdf',
-        service_order_file_name: 'ordem-original.pdf',
-        service_order_signature_url: 'https://example.com/assinatura.png',
-      },
-      unitName: 'Alizo Cleaning',
-      customerName: 'Loja Mawi 12',
-    })
-
-    expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-')
-    const raw = extractStreamText(buffer)
-    expect(raw).toContain('Maria Gerente')
-    // Marcador exclusivo do box fixo — não deve aparecer quando o carimbo preciso funcionou.
-    expect(raw).not.toContain('Assinatura do responsável')
-    expect(raw).not.toContain('Assinado em')
-  })
-
-  it('pula campos que a IA não localizou, sem travar a geração nem cair pro box inteiro', async () => {
-    const originalBytes = await buildSamplePdfBytes('ORDEM ORIGINAL MAWI/360')
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({ ok: true, arrayBuffer: async () => originalBytes }) as unknown as Response),
-    )
-    // Só o print_name foi localizado — signature e date vieram null (formulário sem esses rótulos, ou IA sem confiança).
-    vi.mocked(detectSignatureFieldsFromPdf).mockResolvedValue({
-      pageNumber: 1,
-      signature: null,
-      printName: { xFrac: 0.6, yFrac: 0.9 },
-      date: null,
-    })
-
-    const buffer = await generateServiceOrderPdf({
-      appointment: {
-        ...baseAppointment,
-        service_order_file_url: 'https://example.com/ordem-original.pdf',
-        service_order_file_name: 'ordem-original.pdf',
-      },
-      unitName: 'Alizo Cleaning',
-      customerName: 'Loja Mawi 12',
-    })
-
-    expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-')
-    const raw = extractStreamText(buffer)
-    expect(raw).toContain('Maria Gerente')
-    expect(raw).not.toContain('Assinatura do responsável')
-  })
-
-  it('carimba na página certa quando a IA aponta pra uma página diferente da última', async () => {
-    const doc = await PDFDocument.create()
-    const font = await doc.embedFont(StandardFonts.Helvetica)
-    doc.addPage([400, 500]).drawText('PAGINA 1 - TERMOS', { x: 40, y: 400, size: 14, font, color: rgb(0, 0, 0) })
-    doc.addPage([400, 500]).drawText('PAGINA 2 - ASSINATURAS', { x: 40, y: 400, size: 14, font, color: rgb(0, 0, 0) })
-    const bytes = await doc.save()
-    const originalBytes = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
-
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({ ok: true, arrayBuffer: async () => originalBytes }) as unknown as Response),
-    )
-    // Campos ficam na primeira página, não na última (comportamento antigo assumia sempre a última).
-    vi.mocked(detectSignatureFieldsFromPdf).mockResolvedValue({
-      pageNumber: 1,
-      signature: null,
-      printName: { xFrac: 0.5, yFrac: 0.9 },
-      date: null,
-    })
-
-    const buffer = await generateServiceOrderPdf({
-      appointment: {
-        ...baseAppointment,
-        service_order_file_url: 'https://example.com/ordem-original.pdf',
-        service_order_file_name: 'ordem-original.pdf',
-      },
-      unitName: 'Alizo Cleaning',
-      customerName: 'Loja Mawi 12',
-    })
-
-    const reloaded = await PDFDocument.load(buffer)
-    expect(reloaded.getPageCount()).toBe(2)
-    const raw = extractStreamText(buffer)
-    expect(raw).toContain('PAGINA 1 - TERMOS')
-    expect(raw).toContain('PAGINA 2 - ASSINATURAS')
-    expect(raw).toContain('Maria Gerente')
-    expect(raw).not.toContain('Assinatura do responsável')
-  })
-
-  it('cai pro box fixo quando a IA não retorna nenhum campo localizado', async () => {
-    const originalBytes = await buildSamplePdfBytes('ORDEM ORIGINAL MAWI/360')
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({ ok: true, arrayBuffer: async () => originalBytes }) as unknown as Response),
-    )
-    vi.mocked(detectSignatureFieldsFromPdf).mockResolvedValue(null)
-
-    const buffer = await generateServiceOrderPdf({
-      appointment: {
-        ...baseAppointment,
-        service_order_file_url: 'https://example.com/ordem-original.pdf',
-        service_order_file_name: 'ordem-original.pdf',
-      },
-      unitName: 'Alizo Cleaning',
-      customerName: 'Loja Mawi 12',
-    })
-
-    const raw = extractStreamText(buffer)
-    expect(raw).toContain('Assinatura do responsável')
-    expect(raw).toContain('Maria Gerente')
-  })
-
-  it('cai pro box fixo quando a chamada de IA falha por completo (erro de rede/sem API key)', async () => {
-    const originalBytes = await buildSamplePdfBytes('ORDEM ORIGINAL MAWI/360')
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({ ok: true, arrayBuffer: async () => originalBytes }) as unknown as Response),
-    )
-    vi.mocked(detectSignatureFieldsFromPdf).mockRejectedValue(new Error('falha de rede'))
-
-    const buffer = await generateServiceOrderPdf({
-      appointment: {
-        ...baseAppointment,
-        service_order_file_url: 'https://example.com/ordem-original.pdf',
-        service_order_file_name: 'ordem-original.pdf',
-      },
-      unitName: 'Alizo Cleaning',
-      customerName: 'Loja Mawi 12',
-    })
-
-    expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-')
-    const raw = extractStreamText(buffer)
-    expect(raw).toContain('Assinatura do responsável')
-  })
-
-  it('usa o mesmo raciocínio pra ordem em imagem, via detectSignatureFieldsFromImage', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({ ok: true, arrayBuffer: async () => TINY_PNG.buffer.slice(TINY_PNG.byteOffset, TINY_PNG.byteOffset + TINY_PNG.byteLength) }) as unknown as Response),
-    )
-    vi.mocked(detectSignatureFieldsFromImage).mockResolvedValue({
-      pageNumber: 1,
-      signature: null,
-      printName: { xFrac: 0.5, yFrac: 0.9 },
-      date: { xFrac: 0.8, yFrac: 0.9 },
-    })
-
-    const buffer = await generateServiceOrderPdf({
-      appointment: {
-        ...baseAppointment,
-        service_order_file_url: 'https://example.com/ordem-original.png',
-        service_order_file_name: 'ordem-original.png',
-      },
-      unitName: 'Alizo Cleaning',
-      customerName: 'Loja Mawi 12',
-    })
-
-    expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-')
-    const raw = extractStreamText(buffer)
-    expect(raw).toContain('Maria Gerente')
-    expect(raw).not.toContain('Assinatura do responsável')
-    expect(detectSignatureFieldsFromImage).toHaveBeenCalledWith({ imageUrl: 'https://example.com/ordem-original.png' })
-  })
-})
-
-describe('generateServiceOrderPdf — resumo de fallback (sem ordem original anexada)', () => {
-  it('gera um PDF não vazio e válido só com os campos de texto', async () => {
-    const buffer = await generateServiceOrderPdf({ appointment: baseAppointment, unitName: 'Alizo Cleaning', customerName: 'Loja Mawi 12' })
-    expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-')
-    const reloaded = await PDFDocument.load(buffer)
-    expect(reloaded.getPageCount()).toBeGreaterThanOrEqual(1)
-  })
-
-  it('inclui número da ordem, cliente, resumo, horas e quem assinou', async () => {
-    const buffer = await generateServiceOrderPdf({ appointment: baseAppointment, unitName: 'Alizo Cleaning', customerName: 'Loja Mawi 12' })
-    const raw = extractStreamText(buffer)
-    expect(raw).toContain('OS-1001')
-    expect(raw).toContain('Loja Mawi 12')
-    expect(raw).toContain('Alizo Cleaning')
+    // Campos dinâmicos do cabeçalho direito.
+    expect(raw).toContain('CPO-77')
+    expect(raw).toContain('Low')
+    expect(raw).toContain('Interior')
+    expect(raw).toContain('Taina Dias')
+    expect(raw).toContain('taina@360serviceprovider.com')
+    // Local + IVR.
+    expect(raw).toContain('SERVICE LOCATION')
+    expect(raw).toContain('PB - Tanger - Loc # 6800')
+    expect(raw).toContain('123 Desert Rd, Phoenix, AZ')
+    expect(raw).toContain('305-555-0101')
+    expect(raw).toContain('IVR Pin #')
+    expect(raw).toContain('19471464')
+    // Descrição.
+    expect(raw).toContain('SERVICE DESCRIPTION')
+    expect(raw).toContain('Scope Of Work')
     expect(raw).toContain('Trocar fechadura da porta principal.')
+    // Bloco de assinatura.
+    expect(raw).toContain("Store Manager's Signature")
     expect(raw).toContain('Maria Gerente')
+    expect(raw).toContain('Print Name')
+    expect(raw).toContain('06/08/2026') // DD/MM/AAAA
+    expect(raw).toContain('Date')
+    // Store stamp.
+    expect(raw).toContain('STORE STAMP')
+    expect(raw).toContain('Mandatory')
+    // Rodapé.
+    expect(raw).toContain('Print Date:')
+    expect(raw).toContain('Page 1 of 1')
+    expect(raw).toContain('Alizo Cleaning')
   })
 
-  it('inclui material necessário e valor quando status é cotação', async () => {
+  it('formata a data do atendimento no padrão do documento de referência (M/D/AA hh:mm AM/PM)', async () => {
+    readFileSyncMock.mockImplementation(() => {
+      throw new Error('ENOENT')
+    })
+    const buffer = await generateServiceOrderPdf({
+      appointment: { ...baseAppointment, starts_at: '2026-08-06T20:30:00.000Z' },
+      unitName: 'Alizo Cleaning',
+    })
+    const raw = extractStreamText(buffer)
+    expect(raw).toContain('8/6/26')
+  })
+
+  it('usa "—" como placeholder pros campos dinâmicos não preenchidos', async () => {
+    readFileSyncMock.mockImplementation(() => {
+      throw new Error('ENOENT')
+    })
     const buffer = await generateServiceOrderPdf({
       appointment: {
         ...baseAppointment,
-        service_order_status: 'quote',
-        service_order_material_description: 'Fechadura modelo X',
-        service_order_material_value: 45.9,
-        service_order_part_purchase_link: 'https://loja.com/peca',
+        service_order_number: null,
+        service_order_client_po: null,
+        service_order_priority: null,
+        service_order_order_type: null,
+        service_order_ivr_pin: null,
+        service_order_issuer_name: null,
+        service_order_issuer_email: null,
       },
       unitName: 'Alizo Cleaning',
-      customerName: null,
     })
     const raw = extractStreamText(buffer)
-    expect(raw).toContain('Fechadura modelo X')
-    expect(raw).toContain('https://loja.com/peca')
+    expect(raw).toContain('Scope Of Work:')
+    expect(raw).toContain('Trocar fechadura da porta principal.')
+    expect(raw).not.toContain('Taina Dias')
+    expect(raw).not.toContain('CPO-77')
   })
 
-  it('não quebra a geração quando a assinatura/fotos não podem ser baixadas (best-effort)', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({ ok: false }) as Response),
-    )
+  it('não desenha nada do bloco de assinatura quando ainda não foi assinada, mas mantém as linhas', async () => {
+    readFileSyncMock.mockImplementation(() => {
+      throw new Error('ENOENT')
+    })
     const buffer = await generateServiceOrderPdf({
-      appointment: {
-        ...baseAppointment,
-        service_order_signature_url: 'https://example.invalid/assinatura.png',
-        service_order_photos: [
-          { url: 'https://example.invalid/foto1.jpg', uploaded_at: '2026-08-06T10:00:00Z', kind: 'service' },
-          { url: 'https://example.invalid/nota1.jpg', uploaded_at: '2026-08-06T10:00:00Z', kind: 'material_invoice' },
-        ],
-      },
+      appointment: { ...baseAppointment, service_order_signed_by: null, service_order_signed_at: null, service_order_signature_url: null },
       unitName: 'Alizo Cleaning',
-      customerName: 'Loja Mawi 12',
     })
-    expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-')
     const raw = extractStreamText(buffer)
-    expect(raw).toContain('Fotos do atendimento (1)')
-    expect(raw).toContain('Notas fiscais de material (1)')
+    expect(raw).toContain("Store Manager's Signature")
+    expect(raw).not.toContain('Maria Gerente')
   })
 
-  it('embute a assinatura e as fotos quando o download funciona', async () => {
+  it('embute a imagem da assinatura quando o download funciona', async () => {
+    readFileSyncMock.mockImplementation(() => {
+      throw new Error('ENOENT')
+    })
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => ({ ok: true, arrayBuffer: async () => TINY_PNG.buffer.slice(TINY_PNG.byteOffset, TINY_PNG.byteOffset + TINY_PNG.byteLength) }) as unknown as Response),
     )
     const buffer = await generateServiceOrderPdf({
-      appointment: {
-        ...baseAppointment,
-        service_order_signature_url: 'https://example.com/assinatura.png',
-        service_order_photos: [{ url: 'https://example.com/foto1.png', uploaded_at: '2026-08-06T10:00:00Z', kind: 'service' }],
-      },
+      appointment: { ...baseAppointment, service_order_signature_url: 'https://example.com/assinatura.png' },
       unitName: 'Alizo Cleaning',
-      customerName: 'Loja Mawi 12',
     })
     expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-')
     const reloaded = await PDFDocument.load(buffer)
-    expect(reloaded.getPageCount()).toBeGreaterThanOrEqual(1)
+    expect(reloaded.getPageCount()).toBe(1)
   })
 
-  it('fotos sem kind (dados antigos) contam como foto de atendimento, não nota fiscal', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({ ok: false }) as Response),
-    )
-    const buffer = await generateServiceOrderPdf({
-      appointment: {
-        ...baseAppointment,
-        service_order_photos: [{ url: 'https://example.invalid/foto-antiga.jpg', uploaded_at: '2026-08-01T10:00:00Z' }],
-      },
-      unitName: 'Alizo Cleaning',
-      customerName: null,
+  it('não quebra a geração quando o download da assinatura falha (best-effort)', async () => {
+    readFileSyncMock.mockImplementation(() => {
+      throw new Error('ENOENT')
     })
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false }) as Response))
+    const buffer = await generateServiceOrderPdf({
+      appointment: { ...baseAppointment, service_order_signature_url: 'https://example.invalid/assinatura.png' },
+      unitName: 'Alizo Cleaning',
+    })
+    expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+  })
+
+  it('usa a imagem da logo quando o asset já foi colocado no caminho fixo', async () => {
+    readFileSyncMock.mockImplementation(() => TINY_PNG)
+    const buffer = await generateServiceOrderPdf({ appointment: baseAppointment, unitName: 'Alizo Cleaning' })
+    expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-')
     const raw = extractStreamText(buffer)
-    expect(raw).toContain('Fotos do atendimento (1)')
-    expect(raw).not.toContain('Notas fiscais de material')
+    // Com a imagem real, o placeholder em texto "360" isolado não é desenhado (mas "360" ainda aparece dentro de outros textos, ex. endereço).
+    expect(raw).not.toContain('SERVICE PROVIDER\n360')
+    expect(raw).toContain('SIGN OFF SHEET')
+  })
+
+  it('pagina o texto de descrição quando ele é longo demais pra uma página, mostrando "Page X of Y" no rodapé', async () => {
+    readFileSyncMock.mockImplementation(() => {
+      throw new Error('ENOENT')
+    })
+    const longText = Array.from({ length: 400 }, (_, i) => `parágrafo item número ${i} descrevendo o trabalho a ser feito em detalhe`).join(' ')
+    const buffer = await generateServiceOrderPdf({
+      appointment: { ...baseAppointment, service_order_summary_pt: longText },
+      unitName: 'Alizo Cleaning',
+    })
+    const reloaded = await PDFDocument.load(buffer)
+    expect(reloaded.getPageCount()).toBeGreaterThan(1)
+    const raw = extractStreamText(buffer)
+    expect(raw).toContain(`Page 1 of ${reloaded.getPageCount()}`)
+    expect(raw).toContain(`Page ${reloaded.getPageCount()} of ${reloaded.getPageCount()}`)
+    expect(raw).toContain('Scope Of Work (cont.)')
+    // O bloco de assinatura ainda aparece (só na última página).
+    expect(raw).toContain("Store Manager's Signature")
+    expect(raw).toContain('Maria Gerente')
   })
 })
