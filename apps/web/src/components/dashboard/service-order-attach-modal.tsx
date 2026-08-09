@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, type ChangeEvent } from 'react'
-import { CheckCircle2, Clock, Download, FileText, Link2, Package, Receipt, Sparkles, UserCheck, X } from 'lucide-react'
+import { CheckCircle2, Clock, Download, FileText, Link2, Package, Receipt, Sparkles, Trash2, UserCheck, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { isExtractableAttachment } from '@/lib/service-orders/extraction'
 import { downloadFile } from '@/lib/download-file'
@@ -227,6 +227,7 @@ export function ServiceOrderAttachModal({
   const [extracting, setExtracting] = useState(false)
   const [extractionFailed, setExtractionFailed] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
 
@@ -357,6 +358,53 @@ export function ServiceOrderAttachModal({
     setSuccess(true)
   }
 
+  /** Apaga a ordem inteira: tanto o que o admin anexou quanto tudo que o técnico preencheu depois (assinatura, fotos, material, horas). Limpa só as referências no banco — os arquivos seguem no bucket `service-orders` (possível melhoria futura: apagar do Storage também). */
+  async function handleDelete() {
+    if (
+      !window.confirm(
+        'Excluir esta ordem de serviço? Isso apaga o arquivo anexado, a assinatura, as fotos e tudo que o técnico preencheu. Essa ação não pode ser desfeita.'
+      )
+    ) {
+      return
+    }
+    setError(null)
+    setDeleting(true)
+    const supabase = createClient()
+    const { error: deleteError } = await supabase
+      .from('appointments')
+      .update({
+        service_order_file_url: null,
+        service_order_file_name: null,
+        service_order_number: null,
+        service_order_summary_pt: null,
+        service_order_client_po: null,
+        service_order_priority: null,
+        service_order_order_type: null,
+        service_order_ivr_pin: null,
+        service_order_location_name: null,
+        service_order_location_phone: null,
+        service_order_issuer_name: null,
+        service_order_issuer_email: null,
+        service_order_status: 'pending',
+        service_order_signed_by: null,
+        service_order_signed_at: null,
+        service_order_signature_url: null,
+        service_order_part_purchase_link: null,
+        service_order_material_description: null,
+        service_order_material_value: null,
+        service_order_hours_needed: null,
+        service_order_photos: [],
+      })
+      .eq('id', appointment.id)
+    setDeleting(false)
+    if (deleteError) {
+      setError('Não foi possível excluir a ordem de serviço.')
+      return
+    }
+    await onSaved()
+    onClose()
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4"
@@ -476,6 +524,19 @@ export function ServiceOrderAttachModal({
 
             <TechnicianReportSection unitId={unitId} appointment={appointment} />
 
+            {fileUrl && !success && (
+              <button
+                type="button"
+                disabled={saving || uploading || extracting || deleting}
+                onClick={handleDelete}
+                className="flex w-fit items-center gap-1.5 self-start rounded-lg px-3 py-1.5 text-xs font-bold text-red-400 transition-colors hover:text-red-300 disabled:opacity-50"
+                style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)' }}
+              >
+                <Trash2 size={13} />
+                {deleting ? 'Excluindo…' : 'Excluir ordem de serviço'}
+              </button>
+            )}
+
             {error && <p className="text-sm text-red-400">{error}</p>}
 
             {success && (
@@ -501,7 +562,7 @@ export function ServiceOrderAttachModal({
               <div className="flex gap-3">
                 <button
                   type="button"
-                  disabled={saving || uploading || extracting}
+                  disabled={saving || uploading || extracting || deleting}
                   onClick={handleSave}
                   className="flex-1 rounded-xl px-4 py-2.5 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
                   style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}

@@ -56,6 +56,7 @@ export function AppointmentFormModal({
   defaultRecurrence,
   onClose,
   onSaved,
+  onCreated,
 }: {
   unitId: string
   orgId: string
@@ -75,6 +76,8 @@ export function AppointmentFormModal({
   defaultRecurrence?: ServiceRecurrence
   onClose: () => void
   onSaved: () => void | Promise<void>
+  /** Quando informado (só faz sentido no mode 'create'), substitui o onClose() automático após salvar — o chamador decide o que abrir a seguir (ex.: anexar ordem de serviço), encadeado sem fechar o fluxo. */
+  onCreated?: (appointmentId: string) => void | Promise<void>
 }) {
   const [serviceId, setServiceId] = useState(appointment?.service_id ?? services[0]?.id ?? '')
   const [employeeId, setEmployeeId] = useState(appointment?.employee_id ?? employees[0]?.id ?? '')
@@ -357,7 +360,11 @@ export function AppointmentFormModal({
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at))[0]?.id
     if (firstId) notifyAppointment(unitId, firstId, 'booked')
     await onSaved()
-    onClose()
+    if (onCreated && firstId) {
+      await onCreated(firstId)
+    } else {
+      onClose()
+    }
   }
 
   function formatSlotTime(iso: string): string {

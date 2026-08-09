@@ -134,7 +134,24 @@ export function CalendarView({
       .gte('starts_at', rangeStartUtc)
       .lt('starts_at', rangeEndUtc)
       .order('starts_at')
-    setAppointments((data ?? []) as unknown as AppointmentWithRelations[])
+    const fresh = (data ?? []) as unknown as AppointmentWithRelations[]
+    setAppointments(fresh)
+    return fresh
+  }
+
+  /** Encadeia a criação do agendamento com o anexo da ordem de serviço: busca o registro recém-criado (com as relações) e abre o modal de ordem na sequência, sem precisar voltar ao calendário. */
+  async function openServiceOrderFor(appointmentId: string) {
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('appointments')
+      .select('*, customer:customers(id,name,phone), service:services(id,name), employee:employees(id,name)')
+      .eq('id', appointmentId)
+      .single()
+    if (data) {
+      setModal({ mode: 'service-order', appointment: data as unknown as AppointmentWithRelations })
+    } else {
+      setModal(null)
+    }
   }
 
   async function handleCancel(appointment: AppointmentWithRelations) {
@@ -413,7 +430,7 @@ export function CalendarView({
                             onClick={() => setModal({ mode: 'service-order', appointment })}
                           >
                             <ClipboardList size={12} />
-                            {appointment.service_order_file_url ? 'Ver ordem de serviço' : 'Anexar ordem de serviço'}
+                            {appointment.service_order_file_url ? 'Editar ordem de serviço' : 'Anexar ordem de serviço'}
                           </button>
                         </div>
                       )}
@@ -439,7 +456,10 @@ export function CalendarView({
           initialDate={modal.mode === 'create' ? modal.date : localDateString(new Date(modal.appointment.starts_at), timezone)}
           appointment={modal.mode === 'reschedule' ? modal.appointment : undefined}
           onClose={() => setModal(null)}
-          onSaved={reload}
+          onSaved={async () => {
+            await reload()
+          }}
+          onCreated={modal.mode === 'create' ? openServiceOrderFor : undefined}
         />
       )}
 
@@ -448,7 +468,9 @@ export function CalendarView({
           unitId={unitId}
           appointment={modal.appointment}
           onClose={() => setModal(null)}
-          onSaved={reload}
+          onSaved={async () => {
+            await reload()
+          }}
         />
       )}
     </div>
