@@ -361,6 +361,12 @@ export function CalendarView({
                               {RECURRENCE_PILL_LABEL[appointment.recurrence]}
                             </span>
                           )}
+                          {appointment.service_order_number && (
+                            <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: 'rgba(217,70,239,0.15)', color: '#f0abfc' }}>
+                              Nº {appointment.service_order_number}
+                              {appointment.service_order_location_name ? ` · ${appointment.service_order_location_name}` : ''}
+                            </span>
+                          )}
                         </div>
                         <p className="text-xs text-slate-400">
                           {appointment.customer?.name ?? 'Cliente removido'}
@@ -368,10 +374,16 @@ export function CalendarView({
                           {appointment.employee?.name ? ` · ${appointment.employee.name}` : ''}
                         </p>
                         {appointment.address && (
-                          <p className="flex items-center gap-1 text-xs text-slate-500">
+                          <a
+                            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(appointment.address)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1 text-xs text-slate-500 hover:text-cyan-400 hover:underline"
+                            title="Abrir no Google Maps"
+                          >
                             <MapPin size={11} />
                             {appointment.address}
-                          </p>
+                          </a>
                         )}
                       </div>
 

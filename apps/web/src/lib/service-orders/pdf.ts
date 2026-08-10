@@ -328,7 +328,7 @@ export async function generateServiceOrderPdf(params: { appointment: ServiceOrde
   // realmente não couber (ensureSpace).
   // ---------------------------------------------------------------
   const sigLineWidth = 270
-  const SIGNATURE_IMAGE_MAX_H = 96
+  const SIGNATURE_IMAGE_MAX_H = 140
   const STAMP_TOP_GAP = 30
   const STAMP_HEIGHT = 78
   const STAMP_LABEL_RESERVE = 15 // espaço acima da caixa pro rótulo "STORE STAMP"
@@ -355,7 +355,8 @@ export async function generateServiceOrderPdf(params: { appointment: ServiceOrde
   const sigLineY = topOfSignatureBlock - aboveLineReserve
 
   if (signatureImage) {
-    page.drawImage(signatureImage, { x: MARGIN, y: sigLineY + 4, width: sigImageW, height: sigImageH })
+    const sigImageX = MARGIN + (sigLineWidth - sigImageW) / 2
+    page.drawImage(signatureImage, { x: sigImageX, y: sigLineY + 4, width: sigImageW, height: sigImageH })
   }
   page.drawLine({ start: { x: MARGIN, y: sigLineY }, end: { x: MARGIN + sigLineWidth, y: sigLineY }, thickness: 1, color: DARK })
   page.drawText("Store Manager's Signature", { x: MARGIN, y: sigLineY - 11, size: 8, font, color: MUTED })

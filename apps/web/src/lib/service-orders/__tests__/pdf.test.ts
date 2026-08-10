@@ -47,6 +47,13 @@ function firstImageScale(rawStream: string): { width: number; height: number } |
   return m ? { width: parseFloat(m[1]!), height: parseFloat(m[2]!) } : null
 }
 
+/** Acha o x,y de translação (primeiro "cm" antes da rotação/escala) aplicado à primeira imagem desenhada — usado pra provar que a assinatura é centralizada horizontalmente na linha, não mais encostada em MARGIN. */
+function firstImagePosition(rawStream: string): { x: number; y: number } | null {
+  const regex = /1 0 0 1 ([\d.]+) ([\d.]+) cm\s*\n1 0 0 1 0 0 cm\s*\n[\d.]+ 0 0 [\d.]+ 0 0 cm\s*\n1 0 0 1 0 0 cm\s*\n\/Image/
+  const m = regex.exec(rawStream)
+  return m ? { x: parseFloat(m[1]!), y: parseFloat(m[2]!) } : null
+}
+
 function crc32(buf: Buffer): number {
   const table = new Uint32Array(256)
   for (let n = 0; n < 256; n++) {
@@ -242,7 +249,7 @@ describe('generateServiceOrderPdf — Sign Off Sheet fixo', () => {
     expect(reloaded.getPageCount()).toBe(1)
   })
 
-  it('desenha a assinatura bem maior que antes (maxH ~96pt, não mais os 44pt de antes)', async () => {
+  it('desenha a assinatura bem maior que antes (largura limitada pela linha, aspecto 3:1)', async () => {
     readFileSyncMock.mockImplementation(() => {
       throw new Error('ENOENT')
     })
@@ -254,10 +261,47 @@ describe('generateServiceOrderPdf — Sign Off Sheet fixo', () => {
     })
     const scale = firstImageScale(extractRawStream(buffer))
     expect(scale).not.toBeNull()
-    // Largura máxima (sigLineWidth - 10 = 260pt) é o fator limitante pro aspecto 3:1 → altura ~86.7pt,
-    // bem acima dos antigos 44pt (mais que o dobro).
+    // Largura máxima (sigLineWidth - 10 = 260pt) é o fator limitante pro aspecto 3:1 → altura ~86.7pt.
     expect(scale!.width).toBeCloseTo(260, 0)
     expect(scale!.height).toBeGreaterThan(80)
+  })
+
+  it('respeita a altura máxima aumentada (~140pt) quando a altura, não a largura, é o fator limitante', async () => {
+    readFileSyncMock.mockImplementation(() => {
+      throw new Error('ENOENT')
+    })
+    // Imagem estreita e alta (60x300, aspecto 1:5) — aqui é a altura que trava a escala, então esse teste
+    // prova diretamente o novo SIGNATURE_IMAGE_MAX_H (140pt), coisa que o teste de aspecto 3:1 acima não cobre
+    // (lá quem trava é a largura da linha, então mudar o maxH ali não muda nada).
+    stubFetchWithPng(makeSolidPng(60, 300))
+    const buffer = await generateServiceOrderPdf({
+      appointment: { ...baseAppointment, service_order_signature_url: 'https://example.com/assinatura.png' },
+    })
+    const scale = firstImageScale(extractRawStream(buffer))
+    expect(scale).not.toBeNull()
+    expect(scale!.height).toBeCloseTo(140, 0)
+    expect(scale!.height).toBeGreaterThan(96) // bem acima do maxH antigo (96pt)
+  })
+
+  it('centraliza a assinatura horizontalmente na linha, não mais encostada em MARGIN', async () => {
+    readFileSyncMock.mockImplementation(() => {
+      throw new Error('ENOENT')
+    })
+    const MARGIN = 40
+    const SIG_LINE_WIDTH = 270
+    // Imagem estreita (60x300) pra deixar uma folga visível na linha e provar que o x não é mais fixo em MARGIN.
+    stubFetchWithPng(makeSolidPng(60, 300))
+    const buffer = await generateServiceOrderPdf({
+      appointment: { ...baseAppointment, service_order_signature_url: 'https://example.com/assinatura.png' },
+    })
+    const raw = extractRawStream(buffer)
+    const scale = firstImageScale(raw)
+    const position = firstImagePosition(raw)
+    expect(scale).not.toBeNull()
+    expect(position).not.toBeNull()
+    const expectedX = MARGIN + (SIG_LINE_WIDTH - scale!.width) / 2
+    expect(position!.x).toBeCloseTo(expectedX, 0)
+    expect(position!.x).toBeGreaterThan(MARGIN) // não mais encostada na margem esquerda
   })
 
   it('não quebra a geração quando o download da assinatura falha (best-effort)', async () => {

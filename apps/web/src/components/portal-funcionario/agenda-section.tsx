@@ -167,10 +167,16 @@ function AppointmentRow({
             <p className="mt-0.5 text-slate-300">{appt.notes || 'Sem observações registradas para este agendamento.'}</p>
           </div>
           {appt.address && (
-            <div className="flex items-center gap-1.5 text-slate-400">
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(appt.address)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-slate-400 hover:text-cyan-400 hover:underline"
+              title="Abrir no Google Maps"
+            >
               <MapPin size={12} />
               <span>{appt.address}</span>
-            </div>
+            </a>
           )}
           <ServiceOrderPanel appt={appt} />
         </div>
