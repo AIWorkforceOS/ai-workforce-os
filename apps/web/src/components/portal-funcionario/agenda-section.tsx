@@ -148,7 +148,15 @@ function AppointmentRow({
           <p className="text-sm font-semibold text-white">
             {appt.customers?.name ?? 'Cliente'} {appt.services?.name ? `· ${appt.services.name}` : ''}
           </p>
-          <p className="mt-0.5 text-[12px] text-slate-400">{formatDateTime(appt.starts_at, locale)}</p>
+          <div className="mt-0.5 flex flex-wrap items-center gap-2">
+            <p className="text-[12px] text-slate-400">{formatDateTime(appt.starts_at, locale)}</p>
+            {appt.service_order_number && (
+              <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: 'rgba(217,70,239,0.15)', color: '#f0abfc' }}>
+                Nº {appt.service_order_number}
+                {appt.service_order_location_name ? ` · ${appt.service_order_location_name}` : ''}
+              </span>
+            )}
+          </div>
           {appt.address && <p className="text-[11px] text-slate-500">{appt.address}</p>}
         </div>
         <Badge variant={STATUS_VARIANT[appt.status] ?? 'slate'}>{STATUS_LABEL[appt.status] ?? appt.status}</Badge>
