@@ -292,6 +292,8 @@ export type Customer = {
   notes: string | null
   /** campos dinâmicos por segmento de negócio (ex.: quartos/banheiros em cleaning) — schema em lib/verticals/catalog.ts (migration 025) */
   custom_fields: Record<string, unknown>
+  /** Preenchido quando este customer representa uma rede com Portal do Cliente próprio (ex.: "360 Service Provider" — Portal 360, migration 061). Ver lib/portal-360/data.ts. */
+  client_company: string | null
   created_at: string
   updated_at: string
 }
@@ -392,8 +394,10 @@ export type Appointment = {
   service_order_material_value: number | null
   /** Estimativa de horas, preenchível independente do status (migration 057). */
   service_order_hours_needed: number | null
-  /** kind ausente = foto do atendimento (fotos salvas antes da Fase B não tinham essa distinção; campo dentro do jsonb, sem migration nova). */
-  service_order_photos: { url: string; uploaded_at: string; kind?: 'service' | 'material_invoice' }[]
+  /** kind ausente/'service' = foto do atendimento sem distinção antes/depois (fotos salvas antes da migration 061); 'before'/'after' = escolhido pelo técnico no Portal do Funcionário (Portal 360 agrupa por isso); 'material_invoice' = nota fiscal de compra de material. Campo dentro do jsonb, sem migration nova. */
+  service_order_photos: { url: string; uploaded_at: string; kind?: 'before' | 'after' | 'service' | 'material_invoice' }[]
+  /** Dia (sem hora) pedido pela 360 ao anexar pelo Portal 360 (migration 061) — null fora desse fluxo. Ver comentário da coluna no banco. */
+  service_order_requested_date: string | null
   /** Campos do "Sign Off Sheet" fixo da 360 (migration 059) — só o admin preenche, pré-preenchidos pela extração por IA. Ver lib/service-orders/pdf.ts. */
   service_order_client_po: string | null
   service_order_priority: string | null

@@ -1,7 +1,7 @@
 import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
 
-export type AppRole = 'super_admin' | 'admin' | 'viewer' | 'employee'
+export type AppRole = 'super_admin' | 'admin' | 'viewer' | 'employee' | 'client'
 
 export type AppUser = {
   /** id em public.users (não é o id do Supabase Auth) */
@@ -16,6 +16,8 @@ export type AppUser = {
   unitId: string | null
   /** Preenchido = a conta é de um funcionário (role='employee'): só vê os próprios dados no Portal do Funcionário. */
   employeeId: string | null
+  /** Preenchido = a conta é de um cliente externo (role='client', ex.: "360 Service Provider"): só vê os dados desse client_company no Portal 360 — ver lib/portal-360/data.ts (migration 061). NULL nas demais roles. */
+  clientCompany: string | null
 }
 
 export const ROLE_LABEL: Record<AppRole, string> = {
@@ -23,6 +25,7 @@ export const ROLE_LABEL: Record<AppRole, string> = {
   admin: 'Admin',
   viewer: 'Visualização',
   employee: 'Funcionário',
+  client: 'Cliente',
 }
 
 type AppUserRow = {
@@ -33,6 +36,7 @@ type AppUserRow = {
   org_id: string | null
   unit_id: string | null
   employee_id: string | null
+  client_company: string | null
   is_active: boolean
   organizations: { name: string } | null
 }
@@ -55,7 +59,7 @@ export const getAppUser = cache(async (): Promise<AppUser | null> => {
 
   const { data } = await supabase
     .from('users')
-    .select('id, email, name, role, org_id, unit_id, employee_id, is_active, organizations(name)')
+    .select('id, email, name, role, org_id, unit_id, employee_id, client_company, is_active, organizations(name)')
     .ilike('email', user.email)
     .maybeSingle()
 
@@ -63,7 +67,7 @@ export const getAppUser = cache(async (): Promise<AppUser | null> => {
   if (!row || !row.is_active) return null
 
   const role: AppRole =
-    row.role === 'super_admin' || row.role === 'viewer' || row.role === 'employee'
+    row.role === 'super_admin' || row.role === 'viewer' || row.role === 'employee' || row.role === 'client'
       ? row.role
       : 'admin'
 
@@ -77,5 +81,6 @@ export const getAppUser = cache(async (): Promise<AppUser | null> => {
     isSuperAdmin: role === 'super_admin',
     unitId: row.unit_id,
     employeeId: row.employee_id,
+    clientCompany: role === 'client' ? row.client_company : null,
   }
 })

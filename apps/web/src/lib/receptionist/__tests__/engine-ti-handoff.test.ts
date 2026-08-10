@@ -121,6 +121,7 @@ function buildCustomer(unit: Unit): Customer {
     source: 'manual',
     notes: null,
     custom_fields: {},
+    client_company: null,
     created_at: '',
     updated_at: '',
   }

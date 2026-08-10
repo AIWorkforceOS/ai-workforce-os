@@ -14,6 +14,7 @@ const ROLE_LABEL_EN: Record<AppRole, string> = {
   admin: 'Admin',
   viewer: 'Viewer',
   employee: 'Employee',
+  client: 'Client',
 }
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
@@ -69,6 +70,12 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   // só o próprio Portal do Funcionário (agenda + financeiro read-only).
   if (appUser.role === 'employee') {
     redirect('/portal-funcionario')
+  }
+
+  // Cliente externo (role='client', ex.: 360 Service Provider) não usa
+  // o dashboard administrativo — só o próprio Portal 360 (migration 061).
+  if (appUser.role === 'client') {
+    redirect('/portal-360')
   }
 
   const email = appUser.email

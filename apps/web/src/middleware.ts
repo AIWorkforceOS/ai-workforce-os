@@ -33,7 +33,8 @@ export async function middleware(request: NextRequest) {
   // Auth só onde é preciso — não paga o custo do Supabase na landing/checkout
   if (
     request.nextUrl.pathname.startsWith('/dashboard') ||
-    request.nextUrl.pathname.startsWith('/portal-funcionario')
+    request.nextUrl.pathname.startsWith('/portal-funcionario') ||
+    request.nextUrl.pathname.startsWith('/portal-360')
   ) {
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,

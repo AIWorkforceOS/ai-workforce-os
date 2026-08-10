@@ -58,26 +58,38 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
   const [hoursNeeded, setHoursNeeded] = useState(
     appt.service_order_hours_needed != null ? String(appt.service_order_hours_needed) : '',
   )
-  const [photos, setPhotos] = useState<File[]>([])
+  const [photosBefore, setPhotosBefore] = useState<File[]>([])
+  const [photosAfter, setPhotosAfter] = useState<File[]>([])
   const [materialPhotos, setMaterialPhotos] = useState<File[]>([])
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null)
   const [showSignaturePad, setShowSignaturePad] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const beforeFileInputRef = useRef<HTMLInputElement>(null)
+  const afterFileInputRef = useRef<HTMLInputElement>(null)
   const materialFileInputRef = useRef<HTMLInputElement>(null)
 
   // capture="environment" abre a câmera nativa que tira 1 foto e fecha o input a cada toque —
   // por isso acumula com o que já foi selecionado em vez de substituir, senão cada foto nova apaga a anterior.
-  function handlePhotosChange(event: ChangeEvent<HTMLInputElement>) {
+  function handleBeforePhotosChange(event: ChangeEvent<HTMLInputElement>) {
     const newFiles = Array.from(event.target.files ?? [])
-    if (newFiles.length > 0) setPhotos((prev) => [...prev, ...newFiles])
+    if (newFiles.length > 0) setPhotosBefore((prev) => [...prev, ...newFiles])
     event.target.value = ''
   }
 
-  function removePhoto(index: number) {
-    setPhotos((prev) => prev.filter((_, i) => i !== index))
+  function removeBeforePhoto(index: number) {
+    setPhotosBefore((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  function handleAfterPhotosChange(event: ChangeEvent<HTMLInputElement>) {
+    const newFiles = Array.from(event.target.files ?? [])
+    if (newFiles.length > 0) setPhotosAfter((prev) => [...prev, ...newFiles])
+    event.target.value = ''
+  }
+
+  function removeAfterPhoto(index: number) {
+    setPhotosAfter((prev) => prev.filter((_, i) => i !== index))
   }
 
   function handleMaterialPhotosChange(event: ChangeEvent<HTMLInputElement>) {
@@ -90,9 +102,13 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
     setMaterialPhotos((prev) => prev.filter((_, i) => i !== index))
   }
 
-  const photoPreviews = useFilePreviews(photos)
+  const beforePhotoPreviews = useFilePreviews(photosBefore)
+  const afterPhotoPreviews = useFilePreviews(photosAfter)
   const materialPhotoPreviews = useFilePreviews(materialPhotos)
-  const savedServicePhotos = appt.service_order_photos.filter((photo) => photo.kind !== 'material_invoice')
+  const savedBeforePhotos = appt.service_order_photos.filter((photo) => photo.kind === 'before')
+  const savedAfterPhotos = appt.service_order_photos.filter((photo) => photo.kind === 'after')
+  // kind ausente/'service' = fotos salvas antes da distinção antes/depois (migration 061) — mostradas à parte pra não sumir do histórico.
+  const savedUnclassifiedPhotos = appt.service_order_photos.filter((photo) => !photo.kind || photo.kind === 'service')
   const savedMaterialInvoicePhotos = appt.service_order_photos.filter((photo) => photo.kind === 'material_invoice')
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -116,7 +132,8 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
     formData.set('materialDescription', status === 'quote' ? materialDescription.trim() : '')
     formData.set('materialValue', status === 'quote' ? materialValue.trim() : '')
     formData.set('hoursNeeded', hoursNeeded.trim())
-    for (const photo of photos) formData.append('photos', photo)
+    for (const photo of photosBefore) formData.append('photosBefore', photo)
+    for (const photo of photosAfter) formData.append('photosAfter', photo)
     for (const photo of materialPhotos) formData.append('materialPhotos', photo)
     if (signatureDataUrl) {
       const signatureBlob = await dataUrlToBlob(signatureDataUrl)
@@ -137,10 +154,12 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
       const patch = data.appointment as ServiceOrderPatch
       setAppt((prev) => ({ ...prev, ...patch }))
       setSuccess(true)
-      setPhotos([])
+      setPhotosBefore([])
+      setPhotosAfter([])
       setMaterialPhotos([])
       setSignatureDataUrl(null)
-      if (fileInputRef.current) fileInputRef.current.value = ''
+      if (beforeFileInputRef.current) beforeFileInputRef.current.value = ''
+      if (afterFileInputRef.current) afterFileInputRef.current.value = ''
       if (materialFileInputRef.current) materialFileInputRef.current.value = ''
     } catch {
       setError('Não foi possível salvar. Verifique sua conexão e tente novamente.')
@@ -294,29 +313,29 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label>Fotos do atendimento</Label>
-        {savedServicePhotos.length > 0 && (
+        <Label>Fotos ANTES do trabalho</Label>
+        {savedBeforePhotos.length > 0 && (
           <div className="flex flex-wrap gap-2">
-            {savedServicePhotos.map((photo, i) => (
+            {savedBeforePhotos.map((photo, i) => (
               <a key={i} href={photo.url} target="_blank" rel="noreferrer">
-                <img src={photo.url} alt="Foto do atendimento" className="h-16 w-16 rounded-lg object-cover" />
+                <img src={photo.url} alt="Foto antes do trabalho" className="h-16 w-16 rounded-lg object-cover" />
               </a>
             ))}
           </div>
         )}
-        {photos.length > 0 && (
+        {photosBefore.length > 0 && (
           <div className="flex flex-wrap gap-2">
-            {photos.map((photo, i) => (
+            {photosBefore.map((photo, i) => (
               <div key={i} className="relative h-16 w-16">
                 <img
-                  src={photoPreviews[i]}
-                  alt="Nova foto"
+                  src={beforePhotoPreviews[i]}
+                  alt="Nova foto antes do trabalho"
                   className="h-16 w-16 rounded-lg object-cover"
                   style={{ border: '2px solid rgba(6,182,212,0.5)' }}
                 />
                 <button
                   type="button"
-                  onClick={() => removePhoto(i)}
+                  onClick={() => removeBeforePhoto(i)}
                   className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full text-white"
                   style={{ background: '#ef4444' }}
                   aria-label="Remover foto"
@@ -328,22 +347,87 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
           </div>
         )}
         <input
-          ref={fileInputRef}
+          ref={beforeFileInputRef}
           type="file"
           accept="image/*"
           capture="environment"
           multiple
-          onChange={handlePhotosChange}
+          onChange={handleBeforePhotosChange}
           className="text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:font-bold file:text-slate-200"
         />
-        {photos.length > 0 && (
+        {photosBefore.length > 0 && (
           <p className="flex items-center gap-1 text-xs text-slate-400">
             <Camera size={12} />
-            {photos.length} nova{photos.length === 1 ? '' : 's'} foto{photos.length === 1 ? '' : 's'} selecionada
-            {photos.length === 1 ? '' : 's'}
+            {photosBefore.length} nova{photosBefore.length === 1 ? '' : 's'} foto{photosBefore.length === 1 ? '' : 's'} selecionada
+            {photosBefore.length === 1 ? '' : 's'}
           </p>
         )}
       </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>Fotos DEPOIS do trabalho</Label>
+        {savedAfterPhotos.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {savedAfterPhotos.map((photo, i) => (
+              <a key={i} href={photo.url} target="_blank" rel="noreferrer">
+                <img src={photo.url} alt="Foto depois do trabalho" className="h-16 w-16 rounded-lg object-cover" />
+              </a>
+            ))}
+          </div>
+        )}
+        {photosAfter.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {photosAfter.map((photo, i) => (
+              <div key={i} className="relative h-16 w-16">
+                <img
+                  src={afterPhotoPreviews[i]}
+                  alt="Nova foto depois do trabalho"
+                  className="h-16 w-16 rounded-lg object-cover"
+                  style={{ border: '2px solid rgba(6,182,212,0.5)' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => removeAfterPhoto(i)}
+                  className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full text-white"
+                  style={{ background: '#ef4444' }}
+                  aria-label="Remover foto"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <input
+          ref={afterFileInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          multiple
+          onChange={handleAfterPhotosChange}
+          className="text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:font-bold file:text-slate-200"
+        />
+        {photosAfter.length > 0 && (
+          <p className="flex items-center gap-1 text-xs text-slate-400">
+            <Camera size={12} />
+            {photosAfter.length} nova{photosAfter.length === 1 ? '' : 's'} foto{photosAfter.length === 1 ? '' : 's'} selecionada
+            {photosAfter.length === 1 ? '' : 's'}
+          </p>
+        )}
+      </div>
+
+      {savedUnclassifiedPhotos.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <Label>Outras fotos (antes da separação antes/depois)</Label>
+          <div className="flex flex-wrap gap-2">
+            {savedUnclassifiedPhotos.map((photo, i) => (
+              <a key={i} href={photo.url} target="_blank" rel="noreferrer">
+                <img src={photo.url} alt="Foto do atendimento" className="h-16 w-16 rounded-lg object-cover" />
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div
         className="flex flex-col gap-2 rounded-2xl p-4"

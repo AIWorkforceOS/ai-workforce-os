@@ -13,8 +13,8 @@ export function isOnOrAfterPortalStart(isoDate: string): boolean {
   return isoDate >= PORTAL_DATA_SINCE
 }
 
-/** kind ausente = foto do atendimento (fotos salvas antes da Fase B não tinham essa distinção; campo dentro do jsonb, sem migration nova). */
-export type PortalServiceOrderPhoto = { url: string; uploaded_at: string; kind?: 'service' | 'material_invoice' }
+/** kind ausente/'service' = foto do atendimento sem distinção antes/depois (fotos salvas antes da migration 061); 'before'/'after' = escolhido pelo técnico ao tirar a foto (Portal 360 agrupa por isso); 'material_invoice' = nota fiscal de compra de material. */
+export type PortalServiceOrderPhoto = { url: string; uploaded_at: string; kind?: 'before' | 'after' | 'service' | 'material_invoice' }
 
 export type PortalAppointment = {
   id: string

@@ -11,6 +11,7 @@ import { ServiceOrderAttachModal } from '@/components/dashboard/service-order-at
 import { BulkServiceOrderImportModal } from '@/components/dashboard/bulk-service-order-import-modal'
 import { Badge, Card, StatusPill, type BadgeVariant } from '@/components/ui/dashboard-ui'
 import { computeSuggestedPay } from '@/lib/service-pay'
+import { CLIENT_PORTAL_SOURCE } from '@/lib/portal-360/constants'
 import type {
   Appointment,
   AppointmentStatus,
@@ -93,6 +94,17 @@ function formatTimeRange(startsAt: string, endsAt: string, timezone: string): st
   const fmt = (iso: string) =>
     new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: timezone })
   return `${fmt(startsAt)}–${fmt(endsAt)}`
+}
+
+/** appointment sem employee_id + source=CLIENT_PORTAL_SOURCE = pedido feito pela 360 pelo Portal 360, ainda sem profissional/horário atribuído pelo admin (migration 061) — starts_at nessas linhas é só placeholder, nunca mostrar como horário real. */
+function isPendingAssignment(appointment: Pick<Appointment, 'employee_id' | 'source'>): boolean {
+  return !appointment.employee_id && appointment.source === CLIENT_PORTAL_SOURCE
+}
+
+function formatRequestedDate(dateStr: string | null): string {
+  if (!dateStr) return '-'
+  const [year, month, day] = dateStr.split('-').map(Number) as [number, number, number]
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' })
 }
 
 export function CalendarView({
@@ -357,20 +369,32 @@ export function CalendarView({
                 {dayAppointments.map((appointment) => {
                   const isActive = ACTIVE_STATUSES.includes(appointment.status)
                   const isPast = new Date(appointment.starts_at).getTime() < now
+                  const pendingAssignment = isPendingAssignment(appointment)
                   return (
                     <div
                       key={appointment.id}
                       className="flex flex-wrap items-center justify-between gap-3 px-5 py-3"
-                      style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}
+                      style={{
+                        borderBottom: '1px solid rgba(255,255,255,0.04)',
+                        ...(pendingAssignment ? { background: 'rgba(245,158,11,0.05)' } : {}),
+                      }}
                     >
                       <div className="flex flex-col gap-0.5">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold text-white">
-                            {formatTimeRange(appointment.starts_at, appointment.ends_at, timezone)}
-                          </span>
-                          <StatusPill variant={STATUS_VARIANT[appointment.status]}>
-                            {STATUS_LABEL[appointment.status]}
-                          </StatusPill>
+                          {pendingAssignment ? (
+                            <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: 'rgba(245,158,11,0.15)', color: '#fbbf24' }}>
+                              360 requested · {formatRequestedDate(appointment.service_order_requested_date)} · No technician assigned yet
+                            </span>
+                          ) : (
+                            <>
+                              <span className="text-sm font-semibold text-white">
+                                {formatTimeRange(appointment.starts_at, appointment.ends_at, timezone)}
+                              </span>
+                              <StatusPill variant={STATUS_VARIANT[appointment.status]}>
+                                {STATUS_LABEL[appointment.status]}
+                              </StatusPill>
+                            </>
+                          )}
                           {appointment.recurrence && (
                             <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: 'rgba(129,140,248,0.15)', color: '#a5b4fc' }}>
                               {RECURRENCE_PILL_LABEL[appointment.recurrence]}
@@ -404,7 +428,7 @@ export function CalendarView({
 
                       {isActive && (
                         <div className="flex flex-wrap gap-3 text-xs font-semibold">
-                          {isToday &&
+                          {!pendingAssignment && isToday &&
                             (appointment.on_my_way_sent_at ? (
                               <span className="text-emerald-400">Mensagem "a caminho" enviada ✓</span>
                             ) : (
@@ -424,9 +448,9 @@ export function CalendarView({
                             className="text-cyan-400 hover:text-cyan-300 disabled:opacity-40"
                             onClick={() => setModal({ mode: 'reschedule', appointment })}
                           >
-                            Reagendar
+                            {pendingAssignment ? 'Atribuir profissional e horário' : 'Reagendar'}
                           </button>
-                          {isPast && (
+                          {!pendingAssignment && isPast && (
                             <>
                               <button
                                 type="button"
@@ -473,7 +497,7 @@ export function CalendarView({
                         Excluir agendamento
                       </button>
 
-                      {appointment.employee_id && (
+                      {(appointment.employee_id || appointment.service_order_file_url) && (
                         <div className="flex items-center gap-2">
                           {appointment.service_order_file_url && (
                             <Badge variant={SERVICE_ORDER_STATUS_VARIANT[appointment.service_order_status] ?? 'slate'}>

@@ -11,6 +11,7 @@ import {
   validateRowsForCreate,
   type BulkOrderRow,
 } from '@/lib/service-orders/bulk-import'
+import { DEFAULT_CLIENT_COMPANY_NAME } from '@/lib/portal-360/constants'
 import { Card, Input, Label, Select } from '@/components/ui/dashboard-ui'
 import type { Employee, Service } from '@/lib/types'
 
@@ -180,6 +181,10 @@ export function BulkServiceOrderImportModal({
           phone: row.locationPhone.trim() || null,
           address: row.address.trim() || null,
           source: 'service_order_bulk_import',
+          // Todo customer criado por este pipeline é, hoje, sempre da 360 — o PDF final (lib/service-orders/pdf.ts)
+          // já é gerado 100% como se fosse emitido por ela. Marca o vínculo pro Portal 360 (migration 061) sem
+          // precisar recadastrar nada manualmente depois.
+          client_company: DEFAULT_CLIENT_COMPANY_NAME,
         })
         .select('id')
         .single()

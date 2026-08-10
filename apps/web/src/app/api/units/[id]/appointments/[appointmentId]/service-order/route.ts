@@ -75,7 +75,12 @@ export async function PATCH(
     return NextResponse.json({ error: 'Agendamento não encontrado.' }, { status: 404 })
   }
 
-  const photoFiles = formData.getAll('photos').filter((entry): entry is File => entry instanceof File && entry.size > 0)
+  const beforePhotoFiles = formData
+    .getAll('photosBefore')
+    .filter((entry): entry is File => entry instanceof File && entry.size > 0)
+  const afterPhotoFiles = formData
+    .getAll('photosAfter')
+    .filter((entry): entry is File => entry instanceof File && entry.size > 0)
   const materialPhotoFiles = formData
     .getAll('materialPhotos')
     .filter((entry): entry is File => entry instanceof File && entry.size > 0)
@@ -102,15 +107,19 @@ export async function PATCH(
     return uploaded
   }
 
-  const uploadedServicePhotos = await uploadPhotos(photoFiles, 'foto', 'service')
-  if ('error' in uploadedServicePhotos) {
-    return NextResponse.json({ error: uploadedServicePhotos.error }, { status: 500 })
+  const uploadedBeforePhotos = await uploadPhotos(beforePhotoFiles, 'antes', 'before')
+  if ('error' in uploadedBeforePhotos) {
+    return NextResponse.json({ error: uploadedBeforePhotos.error }, { status: 500 })
+  }
+  const uploadedAfterPhotos = await uploadPhotos(afterPhotoFiles, 'depois', 'after')
+  if ('error' in uploadedAfterPhotos) {
+    return NextResponse.json({ error: uploadedAfterPhotos.error }, { status: 500 })
   }
   const uploadedMaterialPhotos = await uploadPhotos(materialPhotoFiles, 'nota-fiscal', 'material_invoice')
   if ('error' in uploadedMaterialPhotos) {
     return NextResponse.json({ error: uploadedMaterialPhotos.error }, { status: 500 })
   }
-  const uploadedPhotos: PortalServiceOrderPhoto[] = [...uploadedServicePhotos, ...uploadedMaterialPhotos]
+  const uploadedPhotos: PortalServiceOrderPhoto[] = [...uploadedBeforePhotos, ...uploadedAfterPhotos, ...uploadedMaterialPhotos]
 
   const signatureFile = formData.get('signature')
   let uploadedSignatureUrl: string | null = null
