@@ -213,6 +213,7 @@ export function ServiceOrderAttachModal({
   const [fileName, setFileName] = useState(appointment.service_order_file_name ?? '')
   const [orderNumber, setOrderNumber] = useState(appointment.service_order_number ?? '')
   const [summaryPt, setSummaryPt] = useState(appointment.service_order_summary_pt ?? '')
+  const [scopeEn, setScopeEn] = useState(appointment.service_order_scope_en ?? '')
   const [address, setAddress] = useState(appointment.address ?? '')
   // Campos do "Sign Off Sheet" fixo (migration 059) — só o admin preenche, pré-preenchidos pela extração por IA.
   const [clientPo, setClientPo] = useState(appointment.service_order_client_po ?? '')
@@ -283,6 +284,7 @@ export function ServiceOrderAttachModal({
       if (response.ok) {
         const data = (await response.json()) as {
           summaryPt: string | null
+          scopeEn: string | null
           address: string | null
           orderNumber: string | null
           clientPo: string | null
@@ -296,6 +298,7 @@ export function ServiceOrderAttachModal({
           failed: boolean
         }
         if (data.summaryPt) setSummaryPt(data.summaryPt)
+        if (data.scopeEn) setScopeEn(data.scopeEn)
         if (data.orderNumber) setOrderNumber(data.orderNumber)
         // Só preenche endereço se ainda estiver vazio — nunca sobrescreve o que já foi digitado.
         if (data.address && !address.trim()) setAddress(data.address)
@@ -334,6 +337,7 @@ export function ServiceOrderAttachModal({
         service_order_file_name: fileName || null,
         service_order_number: orderNumber.trim() || null,
         service_order_summary_pt: summaryPt.trim() || null,
+        service_order_scope_en: scopeEn.trim() || null,
         address: address.trim() || null,
         service_order_client_po: clientPo.trim() || null,
         service_order_priority: priority.trim() || null,
@@ -377,6 +381,7 @@ export function ServiceOrderAttachModal({
         service_order_file_name: null,
         service_order_number: null,
         service_order_summary_pt: null,
+        service_order_scope_en: null,
         service_order_client_po: null,
         service_order_priority: null,
         service_order_order_type: null,
@@ -513,12 +518,22 @@ export function ServiceOrderAttachModal({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <Label>Escopo do trabalho (em português)</Label>
+              <Label>Escopo do trabalho (em português — uso interno do técnico)</Label>
               <Textarea
                 rows={6}
                 value={summaryPt}
                 onChange={(e) => setSummaryPt(e.target.value)}
-                placeholder="Texto completo do que precisa ser feito — vai pro PDF da ordem exatamente como escrito aqui."
+                placeholder="Texto completo do que precisa ser feito — aparece pro técnico no Portal do Funcionário, não vai pro PDF."
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label>Scope Of Work (em inglês — vai pro PDF do cliente)</Label>
+              <Textarea
+                rows={6}
+                value={scopeEn}
+                onChange={(e) => setScopeEn(e.target.value)}
+                placeholder="Texto completo do escopo em inglês — vai pro PDF final da ordem exatamente como escrito aqui."
               />
             </div>
 

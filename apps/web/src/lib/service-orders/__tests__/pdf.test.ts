@@ -1,4 +1,4 @@
-import { inflateSync } from 'node:zlib'
+import { deflateSync, inflateSync } from 'node:zlib'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PDFDocument } from 'pdf-lib'
 import { generateServiceOrderPdf } from '../pdf'
@@ -9,7 +9,7 @@ vi.mock('node:fs', () => ({
 }))
 
 /** Mesma técnica de apps/web/src/lib/invoices/__tests__/pdf.test.ts — pdf-lib comprime/hex-codifica o texto, então precisa inflar os streams pra conseguir procurar por conteúdo. */
-function extractStreamText(buffer: Buffer): string {
+function extractRawStream(buffer: Buffer): string {
   const raw = buffer.toString('latin1')
   let out = ''
   const streamRegex = /stream\r?\n/g
@@ -24,10 +24,82 @@ function extractStreamText(buffer: Buffer): string {
       out += raw.slice(start, end)
     }
   }
-  return out.replace(/<([0-9A-Fa-f]+)>/g, (_, hex: string) => Buffer.from(hex, 'hex').toString('latin1'))
+  return out
 }
 
-// PNG 1x1 válido, usado tanto como logo mockada quanto como resposta de fetch da assinatura.
+function extractStreamText(buffer: Buffer): string {
+  return extractRawStream(buffer).replace(/<([0-9A-Fa-f]+)>/g, (_, hex: string) => Buffer.from(hex, 'hex').toString('latin1'))
+}
+
+/** Acha a posição Y (coordenada da página) onde um texto foi desenhado, via o operador "Tm" que antecede o "Tj" — usado pra provar que o bloco de assinatura se move conforme o conteúdo (posição dinâmica), não uma coordenada fixa. */
+function textY(rawStream: string, text: string): number | null {
+  const hex = Buffer.from(text, 'latin1').toString('hex')
+  const escaped = hex.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const regex = new RegExp(`1 0 0 1 [\\d.]+ ([\\d.]+) Tm\\s*\\n<${escaped}>`, 'i')
+  const m = regex.exec(rawStream)
+  return m ? parseFloat(m[1]!) : null
+}
+
+/** Acha a escala width/height (matriz "cm") aplicada à primeira imagem desenhada — usado pra provar o tamanho real da assinatura embutida. */
+function firstImageScale(rawStream: string): { width: number; height: number } | null {
+  const regex = /([\d.]+) 0 0 ([\d.]+) 0 0 cm\s*\n1 0 0 1 0 0 cm\s*\n\/Image/
+  const m = regex.exec(rawStream)
+  return m ? { width: parseFloat(m[1]!), height: parseFloat(m[2]!) } : null
+}
+
+function crc32(buf: Buffer): number {
+  const table = new Uint32Array(256)
+  for (let n = 0; n < 256; n++) {
+    let c = n
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+    table[n] = c >>> 0
+  }
+  let crc = 0xffffffff
+  for (let i = 0; i < buf.length; i++) {
+    crc = table[(crc ^ buf[i]!) & 0xff]! ^ (crc >>> 8)
+  }
+  return (crc ^ 0xffffffff) >>> 0
+}
+
+function pngChunk(type: string, data: Buffer): Buffer {
+  const len = Buffer.alloc(4)
+  len.writeUInt32BE(data.length)
+  const typeBuf = Buffer.from(type, 'ascii')
+  const crcBuf = Buffer.alloc(4)
+  crcBuf.writeUInt32BE(crc32(Buffer.concat([typeBuf, data])))
+  return Buffer.concat([len, typeBuf, data, crcBuf])
+}
+
+/** Gera um PNG RGB de cor sólida válido, com dimensões arbitrárias — usado pra testar o tamanho real (em pt) que a assinatura ocupa no PDF, coisa que o PNG 1x1 fixo (TINY_PNG) não permite provar (fica sempre travado em escala 1:1). */
+function makeSolidPng(width: number, height: number): Buffer {
+  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(width, 0)
+  ihdr.writeUInt32BE(height, 4)
+  ihdr[8] = 8 // bit depth
+  ihdr[9] = 2 // color type: RGB
+  const rowSize = width * 3 + 1
+  const raw = Buffer.alloc(rowSize * height)
+  for (let y = 0; y < height; y++) {
+    raw[y * rowSize] = 0 // filter: none
+    for (let x = 0; x < width; x++) {
+      const idx = y * rowSize + 1 + x * 3
+      raw[idx] = 20
+      raw[idx + 1] = 20
+      raw[idx + 2] = 20
+    }
+  }
+  return Buffer.concat([signature, pngChunk('IHDR', ihdr), pngChunk('IDAT', deflateSync(raw)), pngChunk('IEND', Buffer.alloc(0))])
+}
+
+function stubFetchWithPng(png: Buffer) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => ({ ok: true, arrayBuffer: async () => png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) }) as unknown as Response),
+  )
+}
+
+// PNG 1x1 válido, usado como logo mockada em cenários onde o tamanho da imagem não importa.
 const TINY_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
   'base64',
@@ -43,7 +115,7 @@ const baseAppointment = {
   service_order_location_phone: '305-555-0101',
   service_order_issuer_name: 'Taina Dias',
   service_order_issuer_email: 'taina@360serviceprovider.com',
-  service_order_summary_pt: 'Trocar fechadura da porta principal.',
+  service_order_scope_en: 'Replace the main door lock.',
   service_order_signed_by: 'Maria Gerente',
   service_order_signed_at: '2026-08-06T14:00:00.000Z',
   service_order_signature_url: null as string | null,
@@ -62,7 +134,7 @@ describe('generateServiceOrderPdf — Sign Off Sheet fixo', () => {
       throw new Error('ENOENT')
     })
 
-    const buffer = await generateServiceOrderPdf({ appointment: baseAppointment, unitName: 'Alizo Cleaning' })
+    const buffer = await generateServiceOrderPdf({ appointment: baseAppointment })
 
     expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-')
     const reloaded = await PDFDocument.load(buffer)
@@ -91,10 +163,10 @@ describe('generateServiceOrderPdf — Sign Off Sheet fixo', () => {
     expect(raw).toContain('305-555-0101')
     expect(raw).toContain('IVR Pin #')
     expect(raw).toContain('19471464')
-    // Descrição.
+    // Descrição — em inglês (service_order_scope_en), nunca o resumo em português.
     expect(raw).toContain('SERVICE DESCRIPTION')
     expect(raw).toContain('Scope Of Work')
-    expect(raw).toContain('Trocar fechadura da porta principal.')
+    expect(raw).toContain('Replace the main door lock.')
     // Bloco de assinatura.
     expect(raw).toContain("Store Manager's Signature")
     expect(raw).toContain('Maria Gerente')
@@ -104,10 +176,11 @@ describe('generateServiceOrderPdf — Sign Off Sheet fixo', () => {
     // Store stamp.
     expect(raw).toContain('STORE STAMP')
     expect(raw).toContain('Mandatory')
-    // Rodapé.
+    // Rodapé — sem nome de unidade (Mawi/Alizo), documento parece 100% da 360.
     expect(raw).toContain('Print Date:')
     expect(raw).toContain('Page 1 of 1')
-    expect(raw).toContain('Alizo Cleaning')
+    expect(raw).not.toContain('Mawi')
+    expect(raw).not.toContain('Alizo')
   })
 
   it('formata a data do atendimento no padrão do documento de referência (M/D/AA hh:mm AM/PM)', async () => {
@@ -116,7 +189,6 @@ describe('generateServiceOrderPdf — Sign Off Sheet fixo', () => {
     })
     const buffer = await generateServiceOrderPdf({
       appointment: { ...baseAppointment, starts_at: '2026-08-06T20:30:00.000Z' },
-      unitName: 'Alizo Cleaning',
     })
     const raw = extractStreamText(buffer)
     expect(raw).toContain('8/6/26')
@@ -137,11 +209,10 @@ describe('generateServiceOrderPdf — Sign Off Sheet fixo', () => {
         service_order_issuer_name: null,
         service_order_issuer_email: null,
       },
-      unitName: 'Alizo Cleaning',
     })
     const raw = extractStreamText(buffer)
     expect(raw).toContain('Scope Of Work:')
-    expect(raw).toContain('Trocar fechadura da porta principal.')
+    expect(raw).toContain('Replace the main door lock.')
     expect(raw).not.toContain('Taina Dias')
     expect(raw).not.toContain('CPO-77')
   })
@@ -152,7 +223,6 @@ describe('generateServiceOrderPdf — Sign Off Sheet fixo', () => {
     })
     const buffer = await generateServiceOrderPdf({
       appointment: { ...baseAppointment, service_order_signed_by: null, service_order_signed_at: null, service_order_signature_url: null },
-      unitName: 'Alizo Cleaning',
     })
     const raw = extractStreamText(buffer)
     expect(raw).toContain("Store Manager's Signature")
@@ -163,17 +233,31 @@ describe('generateServiceOrderPdf — Sign Off Sheet fixo', () => {
     readFileSyncMock.mockImplementation(() => {
       throw new Error('ENOENT')
     })
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({ ok: true, arrayBuffer: async () => TINY_PNG.buffer.slice(TINY_PNG.byteOffset, TINY_PNG.byteOffset + TINY_PNG.byteLength) }) as unknown as Response),
-    )
+    stubFetchWithPng(TINY_PNG)
     const buffer = await generateServiceOrderPdf({
       appointment: { ...baseAppointment, service_order_signature_url: 'https://example.com/assinatura.png' },
-      unitName: 'Alizo Cleaning',
     })
     expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-')
     const reloaded = await PDFDocument.load(buffer)
     expect(reloaded.getPageCount()).toBe(1)
+  })
+
+  it('desenha a assinatura bem maior que antes (maxH ~96pt, não mais os 44pt de antes)', async () => {
+    readFileSyncMock.mockImplementation(() => {
+      throw new Error('ENOENT')
+    })
+    // Imagem 300x100 (aspecto 3:1, parecido com um traço de assinatura real) — o PNG 1x1 fixo (TINY_PNG) sempre
+    // fica travado em escala 1:1 e não prova nada sobre o tamanho máximo configurado.
+    stubFetchWithPng(makeSolidPng(300, 100))
+    const buffer = await generateServiceOrderPdf({
+      appointment: { ...baseAppointment, service_order_signature_url: 'https://example.com/assinatura.png' },
+    })
+    const scale = firstImageScale(extractRawStream(buffer))
+    expect(scale).not.toBeNull()
+    // Largura máxima (sigLineWidth - 10 = 260pt) é o fator limitante pro aspecto 3:1 → altura ~86.7pt,
+    // bem acima dos antigos 44pt (mais que o dobro).
+    expect(scale!.width).toBeCloseTo(260, 0)
+    expect(scale!.height).toBeGreaterThan(80)
   })
 
   it('não quebra a geração quando o download da assinatura falha (best-effort)', async () => {
@@ -183,14 +267,13 @@ describe('generateServiceOrderPdf — Sign Off Sheet fixo', () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false }) as Response))
     const buffer = await generateServiceOrderPdf({
       appointment: { ...baseAppointment, service_order_signature_url: 'https://example.invalid/assinatura.png' },
-      unitName: 'Alizo Cleaning',
     })
     expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-')
   })
 
   it('usa a imagem da logo quando o asset já foi colocado no caminho fixo', async () => {
     readFileSyncMock.mockImplementation(() => TINY_PNG)
-    const buffer = await generateServiceOrderPdf({ appointment: baseAppointment, unitName: 'Alizo Cleaning' })
+    const buffer = await generateServiceOrderPdf({ appointment: baseAppointment })
     expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-')
     const raw = extractStreamText(buffer)
     // Com a imagem real, o placeholder em texto "360" isolado não é desenhado (mas "360" ainda aparece dentro de outros textos, ex. endereço).
@@ -198,14 +281,37 @@ describe('generateServiceOrderPdf — Sign Off Sheet fixo', () => {
     expect(raw).toContain('SIGN OFF SHEET')
   })
 
+  it('posiciona o bloco de assinatura logo após o fim do Scope Of Work (dinâmico, não mais uma coordenada fixa e baixa)', async () => {
+    readFileSyncMock.mockImplementation(() => {
+      throw new Error('ENOENT')
+    })
+    const shortBuffer = await generateServiceOrderPdf({
+      appointment: { ...baseAppointment, service_order_scope_en: 'Short scope of work.' },
+    })
+    const longerText = Array.from({ length: 45 }, (_, i) => `item-${i}-of-the-scope`).join(' ')
+    const longerBuffer = await generateServiceOrderPdf({
+      appointment: { ...baseAppointment, service_order_scope_en: longerText },
+    })
+
+    // Ambos ainda cabem numa página só — a diferença de posição vem só do texto ser mais longo, não de paginação.
+    expect((await PDFDocument.load(shortBuffer)).getPageCount()).toBe(1)
+    expect((await PDFDocument.load(longerBuffer)).getPageCount()).toBe(1)
+
+    const shortY = textY(extractRawStream(shortBuffer), "Store Manager's Signature")
+    const longerY = textY(extractRawStream(longerBuffer), "Store Manager's Signature")
+    expect(shortY).not.toBeNull()
+    expect(longerY).not.toBeNull()
+    // Descrição mais curta → bloco de assinatura fica mais alto na página (Y maior, mais perto do topo/da descrição).
+    expect(shortY!).toBeGreaterThan(longerY!)
+  })
+
   it('pagina o texto de descrição quando ele é longo demais pra uma página, mostrando "Page X of Y" no rodapé', async () => {
     readFileSyncMock.mockImplementation(() => {
       throw new Error('ENOENT')
     })
-    const longText = Array.from({ length: 400 }, (_, i) => `parágrafo item número ${i} descrevendo o trabalho a ser feito em detalhe`).join(' ')
+    const longText = Array.from({ length: 400 }, (_, i) => `paragraph item number ${i} describing the work to be done in detail`).join(' ')
     const buffer = await generateServiceOrderPdf({
-      appointment: { ...baseAppointment, service_order_summary_pt: longText },
-      unitName: 'Alizo Cleaning',
+      appointment: { ...baseAppointment, service_order_scope_en: longText },
     })
     const reloaded = await PDFDocument.load(buffer)
     expect(reloaded.getPageCount()).toBeGreaterThan(1)

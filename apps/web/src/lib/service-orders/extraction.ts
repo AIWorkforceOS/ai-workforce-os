@@ -30,6 +30,7 @@ export function isExtractableAttachment(fileName: string): boolean {
 
 export type ServiceOrderExtraction = {
   summaryPt: string | null
+  scopeEn: string | null
   address: string | null
   orderNumber: string | null
   clientPo: string | null
@@ -47,6 +48,7 @@ const SYSTEM_PROMPT = `Você recebe o documento (foto, print ou PDF) de uma orde
 Leia o documento e responda em JSON com exatamente estas chaves:
 {
   "summary_pt": "o texto COMPLETO do escopo do trabalho (\\"Scope Of Work\\"), em PORTUGUÊS, fiel ao que está escrito no documento — NÃO é um resumo de 2-4 frases, é o texto integral que o técnico vai ler como a descrição oficial da tarefa, preservando parágrafos quando existirem. Se o documento já estiver em português, ainda assim organize o texto de forma legível, sem cortar conteúdo. null se não conseguir identificar.",
+  "scope_en": "o texto COMPLETO do escopo do trabalho (\\"Scope Of Work\\"), em INGLÊS — geralmente é o texto original do documento (a maioria dessas ordens já chega em inglês da contratante), então PRESERVE-O fielmente, sem traduzir nem resumir, sem cortar conteúdo, preservando parágrafos quando existirem. Se o documento estiver em português, traduza pro inglês de forma fiel e completa (nunca deixe em português). Este texto vai direto pro PDF final que o cliente recebe. null se não conseguir identificar.",
   "address": "endereço completo do local do atendimento, como aparece no documento (rua, número, cidade, estado). null se não conseguir identificar com confiança.",
   "order_number": "número ou código da ordem de serviço (Vendor PO #), como aparece no documento. null se não conseguir identificar com confiança.",
   "client_po": "número do Client PO #, quando existir e for distinto do Vendor PO #. null se não conseguir identificar.",
@@ -63,6 +65,7 @@ Nunca invente informação que não está no documento — prefira null a um pal
 
 type RawExtraction = {
   summary_pt?: unknown
+  scope_en?: unknown
   address?: unknown
   order_number?: unknown
   client_po?: unknown
@@ -85,6 +88,7 @@ function cleanString(value: unknown): string | null {
 function toExtraction(raw: RawExtraction): ServiceOrderExtraction {
   return {
     summaryPt: cleanString(raw.summary_pt),
+    scopeEn: cleanString(raw.scope_en),
     address: cleanString(raw.address),
     orderNumber: cleanString(raw.order_number),
     clientPo: cleanString(raw.client_po),

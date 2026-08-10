@@ -3,17 +3,15 @@ import { getAppUser } from '@/lib/app-user'
 import { extractServiceOrderFromAttachment, isExtractableAttachment } from '@/lib/service-orders/extraction'
 
 /**
- * Extração por IA (visão/documento) da ordem de serviço recém-anexada
- * — chamada pelo admin logo depois do upload (imagem OU PDF) no
- * Storage (ver service-order-attach-modal.tsx), antes de salvar. Só
- * sugere: o admin sempre revisa/edita os campos antes de confirmar,
- * nunca salva automático. Não escreve nada no banco; se a extração
- * falhar (sem OPENAI_API_KEY, documento ilegível, erro da OpenAI),
- * devolve os três campos como null e `failed: true` — o modal usa isso
- * pra avisar o admin que precisa preencher manualmente, mas o fluxo
- * principal (anexo + visualização) nunca trava por causa disso.
+ * Mesma extração de /api/units/[id]/appointments/[appointmentId]/service-order/extract,
+ * mas sem depender de um agendamento já existente — usada pelo anexo
+ * inline de ordem de serviço dentro do formulário de "novo
+ * agendamento" (AppointmentFormModal, mode create), onde o admin
+ * anexa e extrai ANTES de o agendamento existir. O handler original
+ * nunca usava appointmentId de fato (só id da unidade, pra
+ * autorização); esta rota é a versão limpa disso.
  */
-export async function POST(request: Request, { params }: { params: Promise<{ id: string; appointmentId: string }> }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
 
   const appUser = await getAppUser()

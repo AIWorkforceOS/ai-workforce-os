@@ -6,12 +6,16 @@ import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFP
  * Gerador do PDF baixável da ordem de serviço — reproduz um MODELO
  * FIXO ÚNICO (o "Sign Off Sheet" real da 360 Service Provider), com
  * layout e marca fixos; só os dados da ordem mudam. Assinatura, nome
- * e data sempre vão pra coordenada fixa desenhada aqui, nunca
- * dependendo de IA adivinhar onde ficam esses campos num documento de
- * terceiros — abordagens anteriores (carimbar em cima do arquivo
- * original da contratante, com ou sem detecção de campo por IA) nunca
- * acertavam a posição de forma confiável pra qualquer ordem. Ver
- * migration 059 pros campos novos que alimentam este template.
+ * e data sempre vão pro bloco desenhado aqui (posição vertical
+ * dinâmica, logo após o Scope Of Work — ver "BLOCO DE ASSINATURA"
+ * abaixo), nunca dependendo de IA adivinhar onde ficam esses campos
+ * num documento de terceiros — abordagens anteriores (carimbar em
+ * cima do arquivo original da contratante, com ou sem detecção de
+ * campo por IA) nunca acertavam a posição de forma confiável pra
+ * qualquer ordem. Documento inteiro em INGLÊS e sem qualquer menção à
+ * unidade Alizo (Mawi) — vai direto pro cliente (360) como se fosse
+ * 100% emitido por ela. Ver migration 059/060 pros campos que
+ * alimentam este template.
  */
 
 const PAGE_WIDTH = 612 // Letter (pt)
@@ -132,7 +136,8 @@ type ServiceOrderPdfAppointment = {
   service_order_location_phone: string | null
   service_order_issuer_name: string | null
   service_order_issuer_email: string | null
-  service_order_summary_pt: string | null
+  /** Texto do Scope Of Work em INGLÊS (migration 060) — o único usado no PDF final, que vai pro cliente. service_order_summary_pt (português) é uso interno do técnico, nunca aparece aqui. */
+  service_order_scope_en: string | null
   service_order_signed_by: string | null
   service_order_signed_at: string | null
   service_order_signature_url: string | null
@@ -153,11 +158,8 @@ function addPage(doc: PDFDocument): { page: PDFPage; y: number } {
   return { page, y: PAGE_HEIGHT - MARGIN }
 }
 
-export async function generateServiceOrderPdf(params: {
-  appointment: ServiceOrderPdfAppointment
-  unitName: string
-}): Promise<Buffer> {
-  const { appointment: a, unitName } = params
+export async function generateServiceOrderPdf(params: { appointment: ServiceOrderPdfAppointment }): Promise<Buffer> {
+  const { appointment: a } = params
 
   const doc = await PDFDocument.create()
   const font = await doc.embedFont(StandardFonts.Helvetica)
@@ -287,7 +289,7 @@ export async function generateServiceOrderPdf(params: {
   y -= 16
 
   const scopeLabel = 'Scope Of Work: '
-  const scopeText = a.service_order_summary_pt ?? ''
+  const scopeText = a.service_order_scope_en ?? ''
   if (scopeText) {
     const labelWidth = bold.widthOfTextAtSize(scopeLabel, 10)
     const words = scopeText.split(/\s+/).filter(Boolean)
@@ -320,27 +322,40 @@ export async function generateServiceOrderPdf(params: {
   }
 
   // ---------------------------------------------------------------
-  // BLOCO DE ASSINATURA — coordenada fixa (alvo baixo na página, com
-  // espaço em branco acima se a descrição for curta; se a descrição
-  // já ocupar até perto do rodapé, pula pra nova página).
+  // BLOCO DE ASSINATURA — posição DINÂMICA: logo abaixo do fim do
+  // texto do Scope Of Work (com um respiro fixo), não mais uma
+  // coordenada baixa e fixa na página; só pula pra nova página se
+  // realmente não couber (ensureSpace).
   // ---------------------------------------------------------------
-  const SIGNATURE_BLOCK_HEIGHT = 130
-  const SIGNATURE_TARGET_Y = OUTER_MARGIN + FOOTER_RESERVE + SIGNATURE_BLOCK_HEIGHT
-  if (y - 20 <= SIGNATURE_TARGET_Y) {
-    ensureSpace(SIGNATURE_BLOCK_HEIGHT + 20)
-  }
-  y = SIGNATURE_TARGET_Y
-  y -= 20
-
   const sigLineWidth = 270
-  const sigLineY = y
+  const SIGNATURE_IMAGE_MAX_H = 96
+  const STAMP_TOP_GAP = 30
+  const STAMP_HEIGHT = 78
+  const STAMP_LABEL_RESERVE = 15 // espaço acima da caixa pro rótulo "STORE STAMP"
+  const BELOW_LINE_RESERVE = 55 // linha + "Print Name"/"Date" + rótulos, com folga
+  const GAP_AFTER_SCOPE = 34
+
+  let sigImageW = 0
+  let sigImageH = 0
   if (signatureImage) {
     const maxW = sigLineWidth - 10
-    const maxH = 44
-    const scale = Math.min(maxW / signatureImage.width, maxH / signatureImage.height, 1)
-    const w = signatureImage.width * scale
-    const h = signatureImage.height * scale
-    page.drawImage(signatureImage, { x: MARGIN, y: sigLineY + 4, width: w, height: h })
+    const scale = Math.min(maxW / signatureImage.width, SIGNATURE_IMAGE_MAX_H / signatureImage.height, 1)
+    sigImageW = signatureImage.width * scale
+    sigImageH = signatureImage.height * scale
+  }
+
+  // Extensão acima da linha de assinatura: a maior entre o espaço pra
+  // caixa "STORE STAMP" (sempre desenhada) e a altura da imagem da
+  // assinatura (quando existe, agora bem maior que antes).
+  const aboveLineReserve = Math.max(STAMP_TOP_GAP + STAMP_LABEL_RESERVE, signatureImage ? sigImageH + 4 : 0)
+  const signatureBlockHeight = aboveLineReserve + BELOW_LINE_RESERVE
+
+  ensureSpace(GAP_AFTER_SCOPE + signatureBlockHeight)
+  const topOfSignatureBlock = y - GAP_AFTER_SCOPE
+  const sigLineY = topOfSignatureBlock - aboveLineReserve
+
+  if (signatureImage) {
+    page.drawImage(signatureImage, { x: MARGIN, y: sigLineY + 4, width: sigImageW, height: sigImageH })
   }
   page.drawLine({ start: { x: MARGIN, y: sigLineY }, end: { x: MARGIN + sigLineWidth, y: sigLineY }, thickness: 1, color: DARK })
   page.drawText("Store Manager's Signature", { x: MARGIN, y: sigLineY - 11, size: 8, font, color: MUTED })
@@ -364,24 +379,24 @@ export async function generateServiceOrderPdf(params: {
   // STORE STAMP — só visual/fixo, caixa tracejada com "Mandatory" em cinza claro.
   const stampX = MARGIN + sigLineWidth + 40
   const stampWidth = CONTENT_RIGHT - stampX
-  const stampTop = sigLineY + 30
-  const stampHeight = 78
+  const stampTop = sigLineY + STAMP_TOP_GAP
   page.drawText('STORE STAMP', { x: stampX, y: stampTop + 6, size: 9, font: bold, color: MUTED })
   page.drawRectangle({
     x: stampX,
-    y: stampTop - stampHeight,
+    y: stampTop - STAMP_HEIGHT,
     width: stampWidth,
-    height: stampHeight,
+    height: STAMP_HEIGHT,
     borderColor: LINE,
     borderWidth: 1,
     borderDashArray: [4, 3],
   })
-  drawCenter(page, 'Mandatory', bold, 16, STAMP_GRAY, stampX + stampWidth / 2, stampTop - stampHeight / 2 - 6)
+  drawCenter(page, 'Mandatory', bold, 16, STAMP_GRAY, stampX + stampWidth / 2, stampTop - STAMP_HEIGHT / 2 - 6)
 
   // ---------------------------------------------------------------
-  // RODAPÉ — em todas as páginas geradas.
+  // RODAPÉ — em todas as páginas geradas. Sem menção à unidade
+  // (Mawi): o documento inteiro é emitido como se fosse 100% da 360.
   // ---------------------------------------------------------------
-  const printDateLabel = `Print Date: ${formatPrintDate(new Date())} ${unitName}`.trim()
+  const printDateLabel = `Print Date: ${formatPrintDate(new Date())}`
   pages.forEach((p, i) => {
     p.drawText(printDateLabel, { x: MARGIN, y: OUTER_MARGIN + 14, size: 7.5, font, color: MUTED })
     drawRight(p, `Page ${i + 1} of ${pages.length}`, font, 7.5, MUTED, CONTENT_RIGHT, OUTER_MARGIN + 14)

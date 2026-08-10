@@ -375,8 +375,10 @@ export type Appointment = {
   /** URL pública (bucket service-orders) do arquivo original da ordem, PDF ou foto. */
   service_order_file_url: string | null
   service_order_file_name: string | null
-  /** Resumo em português gerado por IA (visão) a partir do anexo — bônus, pode ficar null. */
+  /** Resumo em português gerado por IA (visão) a partir do anexo — uso interno do técnico (Portal do Funcionário), bônus, pode ficar null. */
   service_order_summary_pt: string | null
+  /** Texto do "Scope Of Work" em INGLÊS (migration 060) — usado no PDF final (Sign Off Sheet) que vai pro cliente, nunca em português. Distinto de service_order_summary_pt. */
+  service_order_scope_en: string | null
   /** Status da ORDEM (distinto de `status`, que é o do agendamento): pending = nada registrado; completed = executado e assinado; quote = visita de orçamento. */
   service_order_status: 'pending' | 'completed' | 'quote'
   service_order_signed_by: string | null

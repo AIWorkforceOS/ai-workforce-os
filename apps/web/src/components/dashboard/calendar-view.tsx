@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { CalendarPlus, ClipboardList, MapPin } from 'lucide-react'
+import { CalendarPlus, ClipboardList, MapPin, Trash2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { localDateString, zonedTimeToUtc } from '@/lib/slot-engine'
 import { addDays } from '@/lib/calendar-dates'
@@ -139,19 +139,32 @@ export function CalendarView({
     return fresh
   }
 
-  /** Encadeia a criação do agendamento com o anexo da ordem de serviço: busca o registro recém-criado (com as relações) e abre o modal de ordem na sequência, sem precisar voltar ao calendário. */
-  async function openServiceOrderFor(appointmentId: string) {
-    const supabase = createClient()
-    const { data } = await supabase
-      .from('appointments')
-      .select('*, customer:customers(id,name,phone), service:services(id,name), employee:employees(id,name)')
-      .eq('id', appointmentId)
-      .single()
-    if (data) {
-      setModal({ mode: 'service-order', appointment: data as unknown as AppointmentWithRelations })
-    } else {
-      setModal(null)
+  /**
+   * Hard-delete de verdade: apaga o agendamento inteiro (não só limpa
+   * os campos service_order_*, ver ServiceOrderAttachModal.handleDelete
+   * pra isso) — pedido explícito do dono do produto pra "sumir com
+   * tudo do sistema", principalmente pra agendamento+ordem cancelados.
+   * RLS de appointments_write já é "for all" pra org_admin, cobre
+   * DELETE sem migration nova.
+   */
+  async function handleDeleteAppointment(appointment: AppointmentWithRelations) {
+    if (
+      !window.confirm(
+        `Excluir definitivamente o agendamento${appointment.customer?.name ? ` de ${appointment.customer.name}` : ''}? Isso apaga o agendamento e a ordem de serviço anexada (se houver) do sistema. Essa ação não pode ser desfeita.`
+      )
+    ) {
+      return
     }
+    setRowError(null)
+    setBusyId(appointment.id)
+    const supabase = createClient()
+    const { error } = await supabase.from('appointments').delete().eq('id', appointment.id)
+    setBusyId(null)
+    if (error) {
+      setRowError('Não foi possível excluir o agendamento.')
+      return
+    }
+    await reload()
   }
 
   async function handleCancel(appointment: AppointmentWithRelations) {
@@ -417,6 +430,22 @@ export function CalendarView({
                         </div>
                       )}
 
+                      <button
+                        type="button"
+                        disabled={busyId === appointment.id}
+                        onClick={() => handleDeleteAppointment(appointment)}
+                        title="Exclui o agendamento e a ordem de serviço anexada por completo, sem deixar rastro no sistema."
+                        className={
+                          appointment.status === 'cancelled'
+                            ? 'flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold text-red-300 transition-colors hover:text-red-200 disabled:opacity-40'
+                            : 'flex items-center gap-1.5 text-xs font-semibold text-slate-500 transition-colors hover:text-red-400 disabled:opacity-40'
+                        }
+                        style={appointment.status === 'cancelled' ? { background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)' } : undefined}
+                      >
+                        <Trash2 size={12} />
+                        Excluir agendamento
+                      </button>
+
                       {appointment.employee_id && (
                         <div className="flex items-center gap-2">
                           {appointment.service_order_file_url && (
@@ -459,7 +488,6 @@ export function CalendarView({
           onSaved={async () => {
             await reload()
           }}
-          onCreated={modal.mode === 'create' ? openServiceOrderFor : undefined}
         />
       )}
 

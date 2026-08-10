@@ -1,15 +1,19 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { X } from 'lucide-react'
+import { useEffect, useState, type ChangeEvent } from 'react'
+import { ClipboardList, FileText, Sparkles, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { getAvailableSlots, zonedTimeToUtc, type AvailableSlot, type SlotEngineAppointment } from '@/lib/slot-engine'
 import { addDays } from '@/lib/calendar-dates'
 import { buildRecurringOccurrences, WEEKDAY_ORDER, type RecurrenceType } from '@/lib/scheduling/recurrence'
 import type { ServiceRecurrence } from '@/lib/scheduling/service-recurrence'
+import { isExtractableAttachment } from '@/lib/service-orders/extraction'
 import { Card, Input, Label, Select, Textarea } from '@/components/ui/dashboard-ui'
 import type { SchedulingSettings, Service, Employee, Weekday, WeeklySchedule } from '@/lib/types'
 import type { AppointmentWithRelations } from '@/components/dashboard/calendar-view'
+
+const SERVICE_ORDER_FILE_MAX_BYTES = 15 * 1024 * 1024
+const SERVICE_ORDER_ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
 
 const RECURRENCE_OPTIONS: { value: 'none' | RecurrenceType; label: string }[] = [
   { value: 'none', label: 'Não se repete' },
@@ -56,7 +60,6 @@ export function AppointmentFormModal({
   defaultRecurrence,
   onClose,
   onSaved,
-  onCreated,
 }: {
   unitId: string
   orgId: string
@@ -76,8 +79,6 @@ export function AppointmentFormModal({
   defaultRecurrence?: ServiceRecurrence
   onClose: () => void
   onSaved: () => void | Promise<void>
-  /** Quando informado (só faz sentido no mode 'create'), substitui o onClose() automático após salvar — o chamador decide o que abrir a seguir (ex.: anexar ordem de serviço), encadeado sem fechar o fluxo. */
-  onCreated?: (appointmentId: string) => void | Promise<void>
 }) {
   const [serviceId, setServiceId] = useState(appointment?.service_id ?? services[0]?.id ?? '')
   const [employeeId, setEmployeeId] = useState(appointment?.employee_id ?? employees[0]?.id ?? '')
@@ -118,6 +119,30 @@ export function AppointmentFormModal({
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Ordem de serviço anexável já na criação (não precisa mais esperar o
+  // agendamento existir) — seção opcional/pulável, reaproveita a mesma
+  // lógica de upload+extração do ServiceOrderAttachModal (edição de uma
+  // ordem já anexada a um agendamento existente continua por lá).
+  const [showServiceOrder, setShowServiceOrder] = useState(false)
+  const [soFile, setSoFile] = useState<File | null>(null)
+  const [soFileUrl, setSoFileUrl] = useState('')
+  const [soFileName, setSoFileName] = useState('')
+  const [soOrderNumber, setSoOrderNumber] = useState('')
+  const [soSummaryPt, setSoSummaryPt] = useState('')
+  const [soScopeEn, setSoScopeEn] = useState('')
+  const [soClientPo, setSoClientPo] = useState('')
+  const [soPriority, setSoPriority] = useState('')
+  const [soOrderType, setSoOrderType] = useState('')
+  const [soIvrPin, setSoIvrPin] = useState('')
+  const [soLocationName, setSoLocationName] = useState('')
+  const [soLocationPhone, setSoLocationPhone] = useState('')
+  const [soIssuerName, setSoIssuerName] = useState('')
+  const [soIssuerEmail, setSoIssuerEmail] = useState('')
+  const [soUploading, setSoUploading] = useState(false)
+  const [soExtracting, setSoExtracting] = useState(false)
+  const [soExtractionFailed, setSoExtractionFailed] = useState(false)
+  const [soError, setSoError] = useState<string | null>(null)
 
   const [addingToWaitlist, setAddingToWaitlist] = useState(false)
   const [waitlistAdded, setWaitlistAdded] = useState(false)
@@ -260,6 +285,102 @@ export function AppointmentFormModal({
     setWaitlistAdded(true)
   }
 
+  function handleServiceOrderFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const selected = event.target.files?.[0]
+    setSoError(null)
+    if (!selected) {
+      setSoFile(null)
+      return
+    }
+    if (!SERVICE_ORDER_ACCEPTED_TYPES.includes(selected.type)) {
+      setSoError('Envie um PDF ou uma imagem (JPG, PNG, WEBP).')
+      return
+    }
+    if (selected.size > SERVICE_ORDER_FILE_MAX_BYTES) {
+      setSoError('O arquivo deve ter no máximo 15MB.')
+      return
+    }
+    setSoFile(selected)
+  }
+
+  /**
+   * Sobe o arquivo pra um path "pending" (o agendamento ainda não
+   * existe) e extrai os campos por IA — mesmo padrão do
+   * ServiceOrderAttachModal, mas via rota de extração que não depende
+   * de appointmentId. O arquivo permanece nesse path pra sempre; só a
+   * URL pública é salva no agendamento quando o formulário é
+   * submetido.
+   */
+  async function handleServiceOrderUploadAndExtract() {
+    if (!soFile) return
+    setSoError(null)
+    setSoExtractionFailed(false)
+    setSoUploading(true)
+    const supabase = createClient()
+    const path = `${unitId}/pending-${crypto.randomUUID()}/${soFile.name}`
+    const { error: uploadError } = await supabase.storage
+      .from('service-orders')
+      .upload(path, soFile, { contentType: soFile.type, upsert: true })
+    setSoUploading(false)
+    if (uploadError) {
+      setSoError('Não foi possível enviar o arquivo.')
+      return
+    }
+    const { data: publicUrlData } = supabase.storage.from('service-orders').getPublicUrl(path)
+    setSoFileUrl(publicUrlData.publicUrl)
+    setSoFileName(soFile.name)
+
+    if (!isExtractableAttachment(soFile.name)) {
+      return
+    }
+
+    setSoExtracting(true)
+    try {
+      const response = await fetch(`/api/units/${unitId}/service-order/extract`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileUrl: publicUrlData.publicUrl, fileName: soFile.name }),
+      })
+      if (response.ok) {
+        const data = (await response.json()) as {
+          summaryPt: string | null
+          scopeEn: string | null
+          address: string | null
+          orderNumber: string | null
+          clientPo: string | null
+          priority: string | null
+          orderType: string | null
+          ivrPin: string | null
+          locationName: string | null
+          locationPhone: string | null
+          issuerName: string | null
+          issuerEmail: string | null
+          failed: boolean
+        }
+        if (data.summaryPt) setSoSummaryPt(data.summaryPt)
+        if (data.scopeEn) setSoScopeEn(data.scopeEn)
+        if (data.orderNumber) setSoOrderNumber(data.orderNumber)
+        // Só preenche endereço do atendimento se ainda estiver vazio — nunca sobrescreve o que já foi digitado.
+        if (data.address && !address.trim()) setAddress(data.address)
+        if (data.clientPo) setSoClientPo(data.clientPo)
+        if (data.priority) setSoPriority(data.priority)
+        if (data.orderType) setSoOrderType(data.orderType)
+        if (data.ivrPin) setSoIvrPin(data.ivrPin)
+        if (data.locationName) setSoLocationName(data.locationName)
+        if (data.locationPhone) setSoLocationPhone(data.locationPhone)
+        if (data.issuerName) setSoIssuerName(data.issuerName)
+        if (data.issuerEmail) setSoIssuerEmail(data.issuerEmail)
+        setSoExtractionFailed(data.failed)
+      } else {
+        setSoExtractionFailed(true)
+      }
+    } catch {
+      setSoExtractionFailed(true)
+    } finally {
+      setSoExtracting(false)
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
@@ -326,6 +447,28 @@ export function AppointmentFormModal({
       custom_fields: priceCustomFields,
     }
 
+    // Ordem de serviço anexada nesta tela (opcional): pertence só ao
+    // PRIMEIRO atendimento da série, nunca a todas as ocorrências
+    // recorrentes — é uma ordem específica de uma visita, não um
+    // template repetido toda semana.
+    const soFields = soFileUrl
+      ? {
+          service_order_file_url: soFileUrl,
+          service_order_file_name: soFileName || null,
+          service_order_number: soOrderNumber.trim() || null,
+          service_order_summary_pt: soSummaryPt.trim() || null,
+          service_order_scope_en: soScopeEn.trim() || null,
+          service_order_client_po: soClientPo.trim() || null,
+          service_order_priority: soPriority.trim() || null,
+          service_order_order_type: soOrderType.trim() || null,
+          service_order_ivr_pin: soIvrPin.trim() || null,
+          service_order_location_name: soLocationName.trim() || null,
+          service_order_location_phone: soLocationPhone.trim() || null,
+          service_order_issuer_name: soIssuerName.trim() || null,
+          service_order_issuer_email: soIssuerEmail.trim() || null,
+        }
+      : {}
+
     // Recorrência: gera o horizonte da série como agendamentos reais, todos
     // no mesmo grupo — agenda e financeiro são alimentados sem passo manual
     // (lembrete, "a caminho" e Concluir → service_records já valem pra cada
@@ -347,7 +490,7 @@ export function AppointmentFormModal({
 
     const { data: insertedAppointments, error: insertError } = await supabase
       .from('appointments')
-      .insert(occurrences.map((occ) => ({ ...baseRow, ...recurrenceFields, ...occ })))
+      .insert(occurrences.map((occ, i) => ({ ...baseRow, ...recurrenceFields, ...occ, ...(i === 0 ? soFields : {}) })))
       .select('id, starts_at')
     setSaving(false)
     if (insertError) {
@@ -360,11 +503,7 @@ export function AppointmentFormModal({
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at))[0]?.id
     if (firstId) notifyAppointment(unitId, firstId, 'booked')
     await onSaved()
-    if (onCreated && firstId) {
-      await onCreated(firstId)
-    } else {
-      onClose()
-    }
+    onClose()
   }
 
   function formatSlotTime(iso: string): string {
@@ -622,6 +761,146 @@ export function AppointmentFormModal({
                     serviço concluído. Cancele quando quiser.
                   </p>
                 )}
+              </div>
+            )}
+
+            {mode === 'create' && !showServiceOrder && (
+              <button
+                type="button"
+                onClick={() => setShowServiceOrder(true)}
+                className="flex w-fit items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-indigo-300 transition-colors hover:text-indigo-200"
+                style={{ background: 'rgba(129,140,248,0.08)', border: '1px solid rgba(129,140,248,0.25)' }}
+              >
+                <ClipboardList size={13} />
+                Anexar ordem de serviço
+              </button>
+            )}
+
+            {mode === 'create' && showServiceOrder && (
+              <div
+                className="flex flex-col gap-3 rounded-xl px-3.5 py-3"
+                style={{ background: 'rgba(129,140,248,0.06)', border: '1px solid rgba(129,140,248,0.2)' }}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-indigo-300">Ordem de serviço (opcional)</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowServiceOrder(false)}
+                    className="text-xs font-bold text-slate-400 hover:text-slate-300"
+                  >
+                    Ocultar
+                  </button>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <Label>Arquivo da ordem (PDF ou foto)</Label>
+                  {soFileUrl && !soFile && (
+                    <div className="flex items-center gap-2">
+                      <a
+                        href={soFileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1.5 text-xs font-bold text-cyan-400 hover:text-cyan-300"
+                      >
+                        <FileText size={13} />
+                        {soFileName || 'Arquivo enviado'}
+                      </a>
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    accept="application/pdf,image/jpeg,image/png,image/webp"
+                    onChange={handleServiceOrderFileChange}
+                    className="text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-slate-200"
+                  />
+                  {soFile && (
+                    <button
+                      type="button"
+                      disabled={soUploading || soExtracting}
+                      onClick={handleServiceOrderUploadAndExtract}
+                      className="flex w-fit items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+                      style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)' }}
+                    >
+                      <Sparkles size={13} />
+                      {soUploading ? 'Enviando…' : soExtracting ? 'Lendo o documento…' : 'Enviar e preencher com IA'}
+                    </button>
+                  )}
+                  {soExtractionFailed && (
+                    <p className="text-xs font-semibold text-amber-400">
+                      Não consegui ler o documento automaticamente. Preencha os campos abaixo manualmente.
+                    </p>
+                  )}
+                  {soError && <p className="text-xs text-red-400">{soError}</p>}
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <Label>Número da ordem (Vendor PO #)</Label>
+                  <Input value={soOrderNumber} onChange={(e) => setSoOrderNumber(e.target.value)} placeholder="Ex: 132617" />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <Label>Client PO #</Label>
+                    <Input value={soClientPo} onChange={(e) => setSoClientPo(e.target.value)} placeholder="Opcional" />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label>Prioridade</Label>
+                    <Input value={soPriority} onChange={(e) => setSoPriority(e.target.value)} placeholder="Ex: Low" />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label>Tipo da ordem</Label>
+                    <Input value={soOrderType} onChange={(e) => setSoOrderType(e.target.value)} placeholder="Ex: Interior" />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label>IVR Pin #</Label>
+                    <Input value={soIvrPin} onChange={(e) => setSoIvrPin(e.target.value)} placeholder="Opcional" />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <Label>Nome/código do local</Label>
+                  <Input
+                    value={soLocationName}
+                    onChange={(e) => setSoLocationName(e.target.value)}
+                    placeholder="Ex: PB - Tanger - Loc # 6800"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <Label>Telefone do local</Label>
+                  <Input value={soLocationPhone} onChange={(e) => setSoLocationPhone(e.target.value)} placeholder="Opcional" />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <Label>Nome de quem emitiu a ordem</Label>
+                    <Input value={soIssuerName} onChange={(e) => setSoIssuerName(e.target.value)} placeholder="Ex: Taina Dias" />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label>E-mail de quem emitiu</Label>
+                    <Input value={soIssuerEmail} onChange={(e) => setSoIssuerEmail(e.target.value)} placeholder="nome@empresa.com" />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <Label>Escopo do trabalho (em português — uso interno do técnico)</Label>
+                  <Textarea
+                    rows={4}
+                    value={soSummaryPt}
+                    onChange={(e) => setSoSummaryPt(e.target.value)}
+                    placeholder="Texto completo do que precisa ser feito — aparece pro técnico no Portal do Funcionário, não vai pro PDF."
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <Label>Scope Of Work (em inglês — vai pro PDF do cliente)</Label>
+                  <Textarea
+                    rows={4}
+                    value={soScopeEn}
+                    onChange={(e) => setSoScopeEn(e.target.value)}
+                    placeholder="Texto completo do escopo em inglês — vai pro PDF final da ordem exatamente como escrito aqui."
+                  />
+                </div>
               </div>
             )}
 

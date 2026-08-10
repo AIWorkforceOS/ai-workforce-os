@@ -76,6 +76,7 @@ describe('extractServiceOrderFromImage', () => {
 
     expect(result).toEqual({
       summaryPt: 'Trocar a fechadura da porta dos fundos e verificar o batente.',
+      scopeEn: null,
       address: '123 Main St, Phoenix, AZ',
       orderNumber: '132617',
       clientPo: null,
@@ -94,6 +95,7 @@ describe('extractServiceOrderFromImage', () => {
     mockFetchOnce(
       chatCompletionBody({
         summary_pt: 'Texto completo do escopo do trabalho, conforme impresso no documento.',
+        scope_en: 'Full scope of work text, as printed on the document.',
         address: '123 Main St, Phoenix, AZ',
         order_number: '132617',
         client_po: 'CPO-77',
@@ -111,6 +113,7 @@ describe('extractServiceOrderFromImage', () => {
 
     expect(result).toEqual({
       summaryPt: 'Texto completo do escopo do trabalho, conforme impresso no documento.',
+      scopeEn: 'Full scope of work text, as printed on the document.',
       address: '123 Main St, Phoenix, AZ',
       orderNumber: '132617',
       clientPo: 'CPO-77',
@@ -132,6 +135,7 @@ describe('extractServiceOrderFromImage', () => {
 
     expect(result).toEqual({
       summaryPt: 'Serviço de pintura no corredor.',
+      scopeEn: null,
       address: null,
       orderNumber: null,
       clientPo: null,
@@ -193,6 +197,7 @@ describe('extractServiceOrderFromPdf', () => {
 
     expect(result).toEqual({
       summaryPt: 'Trocar a fechadura da porta dos fundos.',
+      scopeEn: null,
       address: '123 Main St, Phoenix, AZ',
       orderNumber: '132617',
       clientPo: null,

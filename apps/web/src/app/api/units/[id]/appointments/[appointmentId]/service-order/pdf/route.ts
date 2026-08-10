@@ -12,7 +12,7 @@ type ServiceOrderPdfRow = {
   service_order_location_phone: string | null
   service_order_issuer_name: string | null
   service_order_issuer_email: string | null
-  service_order_summary_pt: string | null
+  service_order_scope_en: string | null
   service_order_signed_by: string | null
   service_order_signed_at: string | null
   service_order_signature_url: string | null
@@ -47,7 +47,7 @@ export async function GET(
   const { data } = await supabase
     .from('appointments')
     .select(
-      'service_order_number, service_order_client_po, service_order_priority, service_order_order_type, service_order_ivr_pin, service_order_location_name, service_order_location_phone, service_order_issuer_name, service_order_issuer_email, service_order_summary_pt, service_order_signed_by, service_order_signed_at, service_order_signature_url, address, starts_at',
+      'service_order_number, service_order_client_po, service_order_priority, service_order_order_type, service_order_ivr_pin, service_order_location_name, service_order_location_phone, service_order_issuer_name, service_order_issuer_email, service_order_scope_en, service_order_signed_by, service_order_signed_at, service_order_signature_url, address, starts_at',
     )
     .eq('id', appointmentId)
     .eq('unit_id', unitId)
@@ -58,12 +58,7 @@ export async function GET(
     return NextResponse.json({ error: 'Agendamento não encontrado.' }, { status: 404 })
   }
 
-  const { data: unit } = await supabase.from('units').select('name').eq('id', unitId).maybeSingle()
-
-  const pdfBuffer = await generateServiceOrderPdf({
-    appointment,
-    unitName: (unit as { name: string } | null)?.name ?? '',
-  })
+  const pdfBuffer = await generateServiceOrderPdf({ appointment })
 
   const safeNumber = (appointment.service_order_number ?? appointmentId).replace(/[^a-zA-Z0-9.\-_]/g, '_')
 
