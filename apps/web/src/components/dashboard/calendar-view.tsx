@@ -1,13 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import { CalendarPlus, ClipboardList, MapPin, Trash2 } from 'lucide-react'
+import { CalendarPlus, ClipboardList, MapPin, Trash2, Upload } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { localDateString, zonedTimeToUtc } from '@/lib/slot-engine'
 import { addDays } from '@/lib/calendar-dates'
 import { nextOccurrenceAfter, RECURRENCE_PILL_LABEL, type RecurrenceType } from '@/lib/scheduling/recurrence'
 import { AppointmentFormModal } from '@/components/dashboard/appointment-form-modal'
 import { ServiceOrderAttachModal } from '@/components/dashboard/service-order-attach-modal'
+import { BulkServiceOrderImportModal } from '@/components/dashboard/bulk-service-order-import-modal'
 import { Badge, Card, StatusPill, type BadgeVariant } from '@/components/ui/dashboard-ui'
 import { computeSuggestedPay } from '@/lib/service-pay'
 import type {
@@ -30,6 +31,7 @@ type ModalState =
   | { mode: 'create'; date: string }
   | { mode: 'reschedule'; appointment: AppointmentWithRelations }
   | { mode: 'service-order'; appointment: AppointmentWithRelations }
+  | { mode: 'bulk-import' }
 
 const STATUS_VARIANT: Record<AppointmentStatus, BadgeVariant> = {
   scheduled: 'cyan',
@@ -307,6 +309,19 @@ export function CalendarView({
     <div className="flex flex-col gap-4">
       {rowError && <p className="text-sm text-red-400">{rowError}</p>}
 
+      <div className="flex justify-end">
+        <button
+          type="button"
+          disabled={!canBook}
+          onClick={() => setModal({ mode: 'bulk-import' })}
+          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-indigo-300 transition-colors hover:text-indigo-200 disabled:opacity-40"
+          style={{ background: 'rgba(129,140,248,0.08)', border: '1px solid rgba(129,140,248,0.25)' }}
+        >
+          <Upload size={13} />
+          Anexar ordens do dia
+        </button>
+      </div>
+
       {weekDates.map((date) => {
         const dayAppointments = appointments
           .filter((a) => localDateString(new Date(a.starts_at), timezone) === date)
@@ -507,6 +522,21 @@ export function CalendarView({
         <ServiceOrderAttachModal
           unitId={unitId}
           appointment={modal.appointment}
+          onClose={() => setModal(null)}
+          onSaved={async () => {
+            await reload()
+          }}
+        />
+      )}
+
+      {modal && modal.mode === 'bulk-import' && orgId && (
+        <BulkServiceOrderImportModal
+          unitId={unitId}
+          orgId={orgId}
+          timezone={timezone}
+          services={services}
+          employees={employees}
+          initialDate={todayLocal}
           onClose={() => setModal(null)}
           onSaved={async () => {
             await reload()
