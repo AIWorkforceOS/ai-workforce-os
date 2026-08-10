@@ -199,7 +199,6 @@ export async function generateServiceOrderPdf(params: { appointment: ServiceOrde
     page.drawCircle({ x: logoCenterX, y: logoCenterY, size: 18, borderColor: BORDER, borderWidth: 1 })
     drawCenter(page, '360', bold, 11, DARK, logoCenterX, logoCenterY - 4)
   }
-  drawCenter(page, 'SERVICE PROVIDER', font, 5.5, MUTED, logoCenterX, logoCenterY - 30)
 
   // Bloco fixo da contratante, abaixo da logo.
   let leftY = headerTopY - 54
@@ -356,7 +355,7 @@ export async function generateServiceOrderPdf(params: { appointment: ServiceOrde
 
   if (signatureImage) {
     const sigImageX = MARGIN + (sigLineWidth - sigImageW) / 2
-    page.drawImage(signatureImage, { x: sigImageX, y: sigLineY + 4, width: sigImageW, height: sigImageH })
+    page.drawImage(signatureImage, { x: sigImageX, y: sigLineY, width: sigImageW, height: sigImageH })
   }
   page.drawLine({ start: { x: MARGIN, y: sigLineY }, end: { x: MARGIN + sigLineWidth, y: sigLineY }, thickness: 1, color: DARK })
   page.drawText("Store Manager's Signature", { x: MARGIN, y: sigLineY - 11, size: 8, font, color: MUTED })

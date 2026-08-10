@@ -150,6 +150,9 @@ describe('generateServiceOrderPdf — Sign Off Sheet fixo', () => {
     const raw = extractStreamText(buffer)
     // Bloco fixo da contratante (não muda por ordem).
     expect(raw).toContain('360 Service Provider')
+    // O rótulo "SERVICE PROVIDER" (caixa alta) abaixo da logo foi removido a pedido do Vinicius —
+    // só "360 Service Provider" (caixa mista, dentro do endereço) deve sobrar.
+    expect(raw).not.toContain('SERVICE PROVIDER')
     expect(raw).toContain('11098 Biscayne Boulevard, Suite 305')
     expect(raw).toContain('Miami, FL 33161')
     expect(raw).toContain('Phone # 786-281-3413')
@@ -281,6 +284,25 @@ describe('generateServiceOrderPdf — Sign Off Sheet fixo', () => {
     expect(scale).not.toBeNull()
     expect(scale!.height).toBeCloseTo(140, 0)
     expect(scale!.height).toBeGreaterThan(96) // bem acima do maxH antigo (96pt)
+  })
+
+  it('apoia a base da assinatura na linha, não mais flutuando acima dela', async () => {
+    readFileSyncMock.mockImplementation(() => {
+      throw new Error('ENOENT')
+    })
+    stubFetchWithPng(makeSolidPng(300, 100))
+    const buffer = await generateServiceOrderPdf({
+      appointment: { ...baseAppointment, service_order_signature_url: 'https://example.com/assinatura.png' },
+    })
+    const raw = extractRawStream(buffer)
+    const position = firstImagePosition(raw)
+    // "Store Manager's Signature" é desenhado em sigLineY - 11 — deriva sigLineY (a coordenada Y
+    // da própria linha) a partir dele, sem repetir números mágicos do pdf.ts no teste.
+    const labelY = textY(raw, "Store Manager's Signature")
+    expect(position).not.toBeNull()
+    expect(labelY).not.toBeNull()
+    const sigLineY = labelY! + 11
+    expect(position!.y).toBeCloseTo(sigLineY, 0)
   })
 
   it('centraliza a assinatura horizontalmente na linha, não mais encostada em MARGIN', async () => {
