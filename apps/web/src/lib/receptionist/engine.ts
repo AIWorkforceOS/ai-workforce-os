@@ -20,6 +20,9 @@ import { buildReceptionistSystemPrompt } from './prompt'
 import { notifyReceptionistHandoff, handoffToSales, type HandoffTarget } from './handoff'
 import { provisionCustomerFromLead } from './customers'
 import { answerTechSupportQuestion } from '@/lib/ti/engine'
+import { jobApplicationUrl } from '@/lib/recruiter/reporting'
+import { CLOSED_FOR_APPLICATION_STATUSES } from '@/lib/recruiter/candidate-intake'
+import type { JobOpening } from '@/lib/recruiter/types'
 import {
   loadUpcomingAppointments,
   loadActiveServices,
@@ -124,15 +127,27 @@ function buildIntentExtractorPrompt(params: {
   ].join(' ')
 }
 
+/**
+ * Busca as ÚLTIMAS `limit` mensagens (não as primeiras): ordena por
+ * mais recente e reverte pra ordem cronológica depois. Bug real
+ * corrigido aqui (confirmado em produção, unidade Smarter Matriz,
+ * 2026-08-11): a versão anterior ordenava ascending e aplicava limit
+ * direto, o que devolve as `limit` mensagens MAIS ANTIGAS da conversa,
+ * não as mais recentes — numa conversa com mais de `limit` mensagens
+ * no total, a pergunta atual do cliente ficava de fora da janela
+ * inteira, e o modelo respondia com base em um assunto antigo porque
+ * era só isso que ele conseguia ver.
+ */
 async function fetchCustomerHistory(supabase: SupabaseClient, customerId: string, limit = 20): Promise<ChatMessage[]> {
   const { data } = await supabase
     .from('customer_messages')
     .select('*')
     .eq('customer_id', customerId)
-    .order('sent_at', { ascending: true })
+    .order('sent_at', { ascending: false })
     .limit(limit)
 
-  return ((data as CustomerMessage[] | null) ?? []).map((row) => ({
+  const rows = ((data as CustomerMessage[] | null) ?? []).reverse()
+  return rows.map((row) => ({
     role: row.direction === 'inbound' ? 'user' : 'assistant',
     content: row.content,
   }))
@@ -285,6 +300,42 @@ async function isInboundMessageStale(
   return Boolean(latestId) && latestId !== inboundMessageId
 }
 
+/**
+ * Vagas abertas (aceitando candidatura) desta unidade — reaproveita o
+ * mesmo link público sem login que o Recruiter já manda pra candidatos
+ * (app/vaga/[token], jobApplicationUrl, migration 046). Existe pra
+ * corrigir um bug real (candidato perguntou sobre vaga na Recepcionista
+ * e ela começou a coletar nome/e-mail/telefone manualmente em vez de
+ * mandar o link — confirmado em produção, unidade Smarter Matriz,
+ * 2026-08-11): quando já existe uma vaga aberta com candidatura
+ * self-service, a Recepcionista deve mandar o link direto, nunca
+ * reabrir uma coleta manual que ela não tem como levar adiante sozinha.
+ * Genérico — vale pra qualquer organização que use o Recruiter, não é
+ * específico de nenhum cliente.
+ */
+async function fetchOpenJobOpenings(supabase: SupabaseClient, unit: Unit): Promise<Pick<JobOpening, 'id' | 'title' | 'public_application_token'>[]> {
+  const { data } = await supabase
+    .from('job_openings')
+    .select('id, title, public_application_token')
+    .eq('unit_id', unit.id)
+    .not('status', 'in', `(${CLOSED_FOR_APPLICATION_STATUSES.join(',')})`)
+    .order('created_at', { ascending: false })
+    .limit(5)
+
+  return (data as Pick<JobOpening, 'id' | 'title' | 'public_application_token'>[] | null) ?? []
+}
+
+function buildJobOpeningsContext(jobs: Pick<JobOpening, 'id' | 'title' | 'public_application_token'>[]): string {
+  if (jobs.length === 0) return ''
+
+  const list = jobs.map((job) => `"${job.title}": ${jobApplicationUrl(job.public_application_token)}`).join('; ')
+
+  return [
+    `VAGAS ABERTAS PARA CANDIDATURA (candidatura é self-service, direto no link — você NUNCA precisa coletar nome, e-mail, telefone ou currículo manualmente pra registrar o interesse de alguém, a própria página faz isso): ${list}.`,
+    'Quando alguém perguntar sobre vaga/estágio/oportunidade de trabalho, envie o(s) link(s) acima que fizerem sentido pro perfil dela (com a URL completa na resposta) em vez de começar a fazer perguntas de cadastro. Se nenhuma vaga da lista bater com o que a pessoa procura, diga com clareza que não há vaga aberta nesse perfil agora — nunca prometa "vou buscar e te aviso" ou "vou verificar as vagas disponíveis", porque isso não é algo que você consiga de fato fazer sozinha depois; nesse caso, sinalize para o time de recrutamento (handoff) e diga que alguém do time vai retornar.',
+  ].join(' ')
+}
+
 export type ProcessReceptionistResult = { handled: boolean }
 
 export async function processReceptionistInbound(params: {
@@ -432,8 +483,12 @@ export async function processReceptionistInbound(params: {
     .join(' ')
 
   // Fase C: geração da resposta (com decisão de anexo, quando há biblioteca configurada).
-  const attachments = await fetchActiveAttachments(supabase, unit.id, 'receptionist')
+  const [attachments, openJobs] = await Promise.all([
+    fetchActiveAttachments(supabase, unit.id, 'receptionist'),
+    fetchOpenJobOpenings(supabase, unit),
+  ])
   const attachmentsContext = buildAttachmentsContext(attachments)
+  const jobOpeningsContext = buildJobOpeningsContext(openJobs)
   const basePrompt = buildReceptionistSystemPrompt(config, unit, organizationProfile)
 
   let reply: string
@@ -446,6 +501,7 @@ export async function processReceptionistInbound(params: {
           basePrompt,
           extraContext,
           attachmentsContext,
+          jobOpeningsContext,
           'Responda SOMENTE um JSON válido: {"reply": string, "attachment_id": string|null}. O campo "reply" é a mensagem normal que você mandaria ao cliente, seguindo à risca as regras de tom, tamanho e idioma já combinadas acima. O campo "attachment_id" é o id do material a enviar agora (ver MATERIAIS DISPONÍVEIS PARA ENVIAR acima), ou null se nenhum se aplica a esta mensagem.',
         ]
           .filter(Boolean)
@@ -459,7 +515,7 @@ export async function processReceptionistInbound(params: {
     } else {
       reply = await generateChatReply({
         apiKey,
-        systemPrompt: [basePrompt, extraContext].filter(Boolean).join(' '),
+        systemPrompt: [basePrompt, extraContext, jobOpeningsContext].filter(Boolean).join(' '),
         history,
       })
     }
@@ -645,15 +701,17 @@ async function resolveProspectAppointmentAction(params: {
   return outcome.context
 }
 
+/** Mesma correção de fetchCustomerHistory acima (últimas `limit` mensagens, não as primeiras) — ver comentário lá. */
 async function fetchLeadConversationHistory(supabase: SupabaseClient, leadId: string, limit = 20): Promise<ChatMessage[]> {
   const { data } = await supabase
     .from('conversations')
     .select('*')
     .eq('lead_id', leadId)
-    .order('sent_at', { ascending: true })
+    .order('sent_at', { ascending: false })
     .limit(limit)
 
-  return ((data as { direction: string; content: string }[] | null) ?? []).map((row) => ({
+  const rows = ((data as { direction: string; content: string }[] | null) ?? []).reverse()
+  return rows.map((row) => ({
     role: row.direction === 'inbound' ? 'user' : 'assistant',
     content: row.content,
   }))
@@ -786,8 +844,8 @@ export async function processReceptionistProspectInbound(params: {
   }
 
   const extraContext = [
-    'Esta pessoa NÃO é uma cliente cadastrada ainda — pode ser uma cliente nova falando pela primeira vez, um franqueado com dúvida operacional, um lead interessado em comprar franquia, um estudante perguntando sobre estágio ou qualquer outro contato. Ajude como puder; tente resolver de verdade primeiro, e só se não conseguir diga claramente que vai verificar e volta com a resposta — nunca deixe a pessoa sem resposta e nunca diga que outra pessoa vai entrar em contato.',
-    'NUNCA peça para a pessoa "se cadastrar", "fazer um cadastro" ou enviar dados para virar cliente formalmente — isso não é uma ação que você peça pra ela fazer: se ela quiser marcar um serviço, você mesma agenda na conversa (ver instrução abaixo), sem burocracia nenhuma da parte dela.',
+    'Esta pessoa NÃO é uma cliente cadastrada ainda — pode ser uma cliente nova falando pela primeira vez, um franqueado com dúvida operacional, um lead interessado em comprar franquia, um estudante perguntando sobre estágio ou qualquer outro contato. Ajude como puder; tente resolver de verdade primeiro usando o que já está disponível (materiais/links, vagas abertas, agenda). Se não conseguir resolver sozinha, NÃO prometa que você mesma vai "verificar", "buscar" ou "trazer novidades depois" — isso não é algo que você controla; em vez disso, sinalize para o time responsável (handoff) e diga que alguém do time vai retornar. Nunca deixe a pessoa sem resposta nenhuma.',
+    'NUNCA peça para a pessoa "se cadastrar", "fazer um cadastro" ou enviar dados pessoais (nome, e-mail, telefone) para virar cliente formalmente ou pra "registrar o interesse dela" — isso não é uma ação que você peça pra ela fazer. Antes de pedir qualquer dado pessoal, verifique se já existe um link/material pronto (ver MATERIAIS DISPONÍVEIS PARA ENVIAR e VAGAS ABERTAS PARA CANDIDATURA abaixo, quando existirem) que resolve o pedido dela diretamente — se existir, envie-o em vez de coletar dado nenhum. Se ela quiser marcar um serviço, você mesma agenda na conversa (ver instrução abaixo), sem burocracia nenhuma da parte dela.',
     appointmentContext
       ? `CONTEXTO DESTA RESPOSTA (ação de agenda já verificada/executada — baseie-se estritamente nisso, nunca contradiga nem invente outro resultado): ${appointmentContext}`
       : '',
@@ -799,8 +857,12 @@ export async function processReceptionistProspectInbound(params: {
     .filter(Boolean)
     .join(' ')
 
-  const attachments = await fetchActiveAttachments(supabase, unit.id, 'receptionist')
+  const [attachments, openJobs] = await Promise.all([
+    fetchActiveAttachments(supabase, unit.id, 'receptionist'),
+    fetchOpenJobOpenings(supabase, unit),
+  ])
   const attachmentsContext = buildAttachmentsContext(attachments)
+  const jobOpeningsContext = buildJobOpeningsContext(openJobs)
   const basePrompt = buildReceptionistSystemPrompt(config, unit, organizationProfile)
 
   let reply: string
@@ -813,6 +875,7 @@ export async function processReceptionistProspectInbound(params: {
           basePrompt,
           extraContext,
           attachmentsContext,
+          jobOpeningsContext,
           'Responda SOMENTE um JSON válido: {"reply": string, "attachment_id": string|null}. O campo "reply" é a mensagem normal que você mandaria, seguindo à risca as regras de tom, tamanho e idioma já combinadas acima. O campo "attachment_id" é o id do material a enviar agora (ver MATERIAIS DISPONÍVEIS PARA ENVIAR acima), ou null se nenhum se aplica a esta mensagem.',
         ]
           .filter(Boolean)
@@ -826,7 +889,7 @@ export async function processReceptionistProspectInbound(params: {
     } else {
       reply = await generateChatReply({
         apiKey,
-        systemPrompt: [basePrompt, extraContext].filter(Boolean).join(' '),
+        systemPrompt: [basePrompt, extraContext, jobOpeningsContext].filter(Boolean).join(' '),
         history,
       })
     }
