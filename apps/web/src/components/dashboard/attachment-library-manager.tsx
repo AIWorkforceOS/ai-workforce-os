@@ -16,42 +16,86 @@ import {
   Tr,
 } from '@/components/ui/dashboard-ui'
 
-const PDF_MAX_BYTES = 15 * 1024 * 1024
+const FILE_MAX_BYTES = 15 * 1024 * 1024
+
+const ORG_WIDE_VALUE = ''
+
+/** Funcionários que hoje sabem ler a biblioteca de materiais na conversa (ver relatório da migration 062) — os demais ficam disponíveis para seleção desde já, sem exigir nova migration quando forem conectados. */
+export const EMPLOYEE_OPTIONS: { value: string; label: string }[] = [
+  { value: 'receptionist', label: 'Recepcionista' },
+  { value: 'sdr', label: 'SDR / Vendas' },
+  { value: 'recruiter', label: 'Recrutador' },
+  { value: 'traffic_specialist', label: 'Tráfego Pago' },
+  { value: 'content_specialist', label: 'Conteúdo/Social' },
+  { value: 'seo_specialist', label: 'SEO' },
+]
+
+function employeeLabel(value: string): string {
+  return EMPLOYEE_OPTIONS.find((o) => o.value === value)?.label ?? value
+}
+
+function kindLabel(kind: AttachmentKind): string {
+  if (kind === 'pdf') return 'PDF'
+  if (kind === 'image') return 'Imagem'
+  return 'Link'
+}
+
+function fileAccept(kind: AttachmentKind): string {
+  return kind === 'image' ? 'image/*' : 'application/pdf'
+}
 
 type FormState = {
   kind: AttachmentKind
   title: string
   usageInstructions: string
   linkUrl: string
+  unitId: string
+  employees: string[]
 }
 
-const EMPTY_FORM: FormState = { kind: 'pdf', title: '', usageInstructions: '', linkUrl: '' }
+function emptyForm(defaultUnitId: string, defaultEmployee: string | null): FormState {
+  return {
+    kind: 'pdf',
+    title: '',
+    usageInstructions: '',
+    linkUrl: '',
+    unitId: defaultUnitId,
+    employees: defaultEmployee ? [defaultEmployee] : [],
+  }
+}
 
 export function AttachmentLibraryManager({
-  unitId,
   orgId,
-  agentType,
-  personaName,
+  units,
   initialAttachments,
+  defaultUnitId = ORG_WIDE_VALUE,
+  defaultEmployee = null,
 }: {
-  unitId: string
   orgId: string
-  agentType: string
-  personaName: string
+  units: { id: string; name: string }[]
   initialAttachments: EmployeeAttachment[]
+  /** Unidade pré-selecionada no formulário de criação (ex.: veio do card de um funcionário específico) — vazio = toda a organização. */
+  defaultUnitId?: string
+  /** Funcionário pré-marcado no formulário de criação. */
+  defaultEmployee?: string | null
 }) {
   const [attachments, setAttachments] = useState<EmployeeAttachment[]>(initialAttachments)
-  const [form, setForm] = useState<FormState>(EMPTY_FORM)
+  const [form, setForm] = useState<FormState>(emptyForm(defaultUnitId, defaultEmployee))
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [pdfFile, setPdfFile] = useState<File | null>(null)
+  const [file, setFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  function unitName(unitId: string | null): string {
+    if (!unitId) return 'Toda a organização'
+    return units.find((u) => u.id === unitId)?.name ?? 'Unidade removida'
+  }
+
   function resetForm() {
-    setForm(EMPTY_FORM)
+    setForm(emptyForm(defaultUnitId, defaultEmployee))
     setEditingId(null)
-    setPdfFile(null)
+    setFile(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -62,26 +106,38 @@ export function AttachmentLibraryManager({
       title: attachment.title,
       usageInstructions: attachment.usage_instructions,
       linkUrl: attachment.kind === 'link' ? attachment.file_url : '',
+      unitId: attachment.unit_id ?? ORG_WIDE_VALUE,
+      employees: attachment.applicable_employees,
     })
-    setPdfFile(null)
+    setFile(null)
+    setError(null)
+  }
+
+  function toggleEmployee(value: string) {
+    setForm((f) => ({
+      ...f,
+      employees: f.employees.includes(value) ? f.employees.filter((e) => e !== value) : [...f.employees, value],
+    }))
   }
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
+    const selected = event.target.files?.[0]
     setError(null)
-    if (!file) {
-      setPdfFile(null)
+    if (!selected) {
+      setFile(null)
       return
     }
-    if (file.type !== 'application/pdf') {
-      setError('Envie um arquivo PDF.')
+    const expectsImage = form.kind === 'image'
+    const validType = expectsImage ? selected.type.startsWith('image/') : selected.type === 'application/pdf'
+    if (!validType) {
+      setError(expectsImage ? 'Envie um arquivo de imagem.' : 'Envie um arquivo PDF.')
       return
     }
-    if (file.size > PDF_MAX_BYTES) {
-      setError('O PDF deve ter no máximo 15MB.')
+    if (selected.size > FILE_MAX_BYTES) {
+      setError('O arquivo deve ter no máximo 15MB.')
       return
     }
-    setPdfFile(file)
+    setFile(selected)
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -94,31 +150,36 @@ export function AttachmentLibraryManager({
       setError('Preencha o título e a instrução de quando usar.')
       return
     }
+    if (form.employees.length === 0) {
+      setError('Selecione ao menos um funcionário com acesso a este material.')
+      return
+    }
 
     const supabase = createClient()
-    let fileUrl = form.kind === 'link' ? form.linkUrl.trim() : editingId ? attachments.find((a) => a.id === editingId)?.file_url ?? '' : ''
-    let fileName: string | null = editingId ? attachments.find((a) => a.id === editingId)?.file_name ?? null : null
+    const editing = editingId ? attachments.find((a) => a.id === editingId) : null
+    let fileUrl = form.kind === 'link' ? form.linkUrl.trim() : editing?.file_url ?? ''
+    let fileName: string | null = editing?.file_name ?? null
 
-    if (form.kind === 'pdf') {
-      if (pdfFile) {
+    if (form.kind !== 'link') {
+      if (file) {
         setUploading(true)
-        const path = `${unitId}/${Date.now()}-${pdfFile.name}`
+        const path = `${orgId}/${Date.now()}-${file.name}`
         const { error: uploadError } = await supabase.storage
           .from('employee-attachments')
-          .upload(path, pdfFile, { upsert: true, contentType: 'application/pdf' })
+          .upload(path, file, { upsert: true, contentType: file.type })
         setUploading(false)
 
         if (uploadError) {
-          setError('Não foi possível enviar o PDF.')
+          setError('Não foi possível enviar o arquivo.')
           return
         }
 
         const { data } = supabase.storage.from('employee-attachments').getPublicUrl(path)
         fileUrl = data.publicUrl
-        fileName = pdfFile.name
+        fileName = file.name
       }
       if (!fileUrl) {
-        setError('Envie um arquivo PDF.')
+        setError(form.kind === 'image' ? 'Envie um arquivo de imagem.' : 'Envie um arquivo PDF.')
         return
       }
     } else {
@@ -135,6 +196,8 @@ export function AttachmentLibraryManager({
       usage_instructions: usageInstructions,
       file_url: fileUrl,
       file_name: fileName,
+      unit_id: form.unitId || null,
+      applicable_employees: form.employees,
     }
 
     if (editingId) {
@@ -145,7 +208,7 @@ export function AttachmentLibraryManager({
         .select()
         .single()
       if (saveError || !data) {
-        setError('Não foi possível salvar o anexo.')
+        setError('Não foi possível salvar o material.')
         return
       }
       setAttachments((prev) => prev.map((a) => (a.id === editingId ? (data as EmployeeAttachment) : a)))
@@ -155,12 +218,12 @@ export function AttachmentLibraryManager({
 
     const { data, error: insertError } = await supabase
       .from('employee_attachments')
-      .insert({ ...payload, org_id: orgId, unit_id: unitId, agent_type: agentType })
+      .insert({ ...payload, org_id: orgId })
       .select()
       .single()
 
     if (insertError || !data) {
-      setError('Não foi possível criar o anexo.')
+      setError('Não foi possível criar o material.')
       return
     }
 
@@ -193,17 +256,22 @@ export function AttachmentLibraryManager({
   return (
     <div className="flex flex-col gap-4">
       <form onSubmit={handleSubmit}>
-        <FormSection title={editingId ? 'Editar anexo' : 'Novo anexo'}>
+        <FormSection title={editingId ? 'Editar material' : 'Novo material'}>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="attachmentKind">Tipo</Label>
               <Select
                 id="attachmentKind"
                 value={form.kind}
-                onChange={(e) => setForm((f) => ({ ...f, kind: e.target.value as AttachmentKind }))}
+                onChange={(e) => {
+                  setFile(null)
+                  if (fileInputRef.current) fileInputRef.current.value = ''
+                  setForm((f) => ({ ...f, kind: e.target.value as AttachmentKind }))
+                }}
                 disabled={!!editingId}
               >
                 <option value="pdf">PDF (upload)</option>
+                <option value="image">Imagem (upload)</option>
                 <option value="link">Link</option>
               </Select>
             </div>
@@ -219,20 +287,7 @@ export function AttachmentLibraryManager({
             </div>
           </div>
 
-          {form.kind === 'pdf' ? (
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="attachmentFile">Arquivo PDF {editingId ? '(deixe em branco para manter o atual)' : '*'}</Label>
-              <input
-                id="attachmentFile"
-                ref={fileInputRef}
-                type="file"
-                accept="application/pdf"
-                onChange={handleFileChange}
-                className="text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-slate-200"
-              />
-              {pdfFile && <p className="text-xs text-slate-400">{pdfFile.name}</p>}
-            </div>
-          ) : (
+          {form.kind === 'link' ? (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="attachmentLink">URL do link *</Label>
               <Input
@@ -244,7 +299,57 @@ export function AttachmentLibraryManager({
                 placeholder="https://..."
               />
             </div>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="attachmentFile">
+                Arquivo {form.kind === 'image' ? 'de imagem' : 'PDF'} {editingId ? '(deixe em branco para manter o atual)' : '*'}
+              </Label>
+              <input
+                id="attachmentFile"
+                ref={fileInputRef}
+                type="file"
+                accept={fileAccept(form.kind)}
+                onChange={handleFileChange}
+                className="text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-slate-200"
+              />
+              {file && <p className="text-xs text-slate-400">{file.name}</p>}
+            </div>
           )}
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="attachmentUnit">Vale para</Label>
+              <Select
+                id="attachmentUnit"
+                value={form.unitId}
+                onChange={(e) => setForm((f) => ({ ...f, unitId: e.target.value }))}
+              >
+                <option value={ORG_WIDE_VALUE}>Toda a organização</option>
+                {units.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    Só a unidade {u.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>Funcionários com acesso *</Label>
+            <div className="flex flex-wrap gap-x-4 gap-y-2">
+              {EMPLOYEE_OPTIONS.map((option) => (
+                <label key={option.value} className="flex items-center gap-1.5 text-sm text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={form.employees.includes(option.value)}
+                    onChange={() => toggleEmployee(option.value)}
+                    className="h-3.5 w-3.5 rounded border-white/20 bg-white/10"
+                  />
+                  {option.label}
+                </label>
+              ))}
+            </div>
+          </div>
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="attachmentInstructions">Quando usar (isto é o treinamento) *</Label>
@@ -257,7 +362,8 @@ export function AttachmentLibraryManager({
               placeholder="Ex: envie este PDF quando o cliente perguntar sobre preços"
             />
             <p className="text-[11px] leading-snug text-slate-500">
-              {personaName} lê esta instrução para decidir sozinho(a), durante a conversa, se e quando enviar este material — sem enviar por padrão nem repetir sem necessidade.
+              Cada funcionário selecionado acima lê esta instrução para decidir sozinho, durante a conversa, se e
+              quando enviar este material — nunca envia por padrão nem repete sem necessidade.
             </p>
           </div>
 
@@ -270,7 +376,7 @@ export function AttachmentLibraryManager({
               className="self-start rounded-xl px-4 py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
               style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
             >
-              {uploading ? 'Enviando...' : editingId ? 'Salvar alterações' : 'Adicionar anexo'}
+              {uploading ? 'Enviando...' : editingId ? 'Salvar alterações' : 'Adicionar material'}
             </button>
             {editingId && (
               <button
@@ -293,6 +399,8 @@ export function AttachmentLibraryManager({
               <TableShell>
                 <Th>Título</Th>
                 <Th>Tipo</Th>
+                <Th>Vale para</Th>
+                <Th>Funcionários</Th>
                 <Th>Quando usar</Th>
                 <Th>Status</Th>
                 <Th>Ações</Th>
@@ -301,7 +409,11 @@ export function AttachmentLibraryManager({
                 {attachments.map((attachment) => (
                   <Tr key={attachment.id}>
                     <Td className="font-semibold text-white">{attachment.title}</Td>
-                    <Td className="text-slate-400">{attachment.kind === 'pdf' ? 'PDF' : 'Link'}</Td>
+                    <Td className="text-slate-400">{kindLabel(attachment.kind)}</Td>
+                    <Td className="text-slate-400">{unitName(attachment.unit_id)}</Td>
+                    <Td className="max-w-[14rem] text-slate-400">
+                      {attachment.applicable_employees.map(employeeLabel).join(', ')}
+                    </Td>
                     <Td className="max-w-xs text-slate-400">
                       <span className="line-clamp-2">{attachment.usage_instructions}</span>
                     </Td>

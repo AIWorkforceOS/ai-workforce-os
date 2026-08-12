@@ -540,19 +540,23 @@ export type Conversation = {
   created_at: string
 }
 
-export type AttachmentKind = 'pdf' | 'link'
+export type AttachmentKind = 'pdf' | 'link' | 'image'
 
 /**
- * Biblioteca de anexos do funcionário (migration 036): PDFs (upload no
- * Storage) ou links que o cliente cadastra, cada um com uma instrução de
- * quando usar — o funcionário de IA decide sozinho na conversa se manda
- * (ver lib/attachments.ts e lib/conversation-engine.ts).
+ * Biblioteca de materiais da organização (migration 036, generalizada na
+ * migration 062): PDFs/imagens (upload no Storage) ou links que o cliente
+ * cadastra, cada um com uma instrução de quando usar e a lista de
+ * funcionários que podem enviá-lo — o funcionário de IA decide sozinho na
+ * conversa se manda (ver lib/attachments.ts, lib/conversation-engine.ts,
+ * lib/receptionist/engine.ts, lib/recruiter/screening-engine.ts).
  */
 export type EmployeeAttachment = {
   id: string
   org_id: string
-  unit_id: string
-  agent_type: string
+  /** null = vale para toda a organização, não só uma unidade (migration 062). */
+  unit_id: string | null
+  /** agent_configs.agent_type dos funcionários com acesso a este material (ex.: ['sdr', 'receptionist']). */
+  applicable_employees: string[]
   kind: AttachmentKind
   title: string
   usage_instructions: string

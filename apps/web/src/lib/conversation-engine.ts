@@ -811,7 +811,7 @@ export async function processInboundMessage(params: {
   // pelo menos um material ativo é que a resposta passa a sair em JSON
   // (schema com attachment_id) — sem nenhum configurado, mantém o caminho
   // de texto puro de sempre (generateChatReply), sem custo/risco extra.
-  const attachments = await fetchActiveAttachments(supabase, unit.id, 'sdr')
+  const attachments = await fetchActiveAttachments(supabase, unit, 'sdr')
   const attachmentsContext = buildAttachmentsContext(attachments)
 
   let reply: string

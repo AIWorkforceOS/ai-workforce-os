@@ -497,7 +497,7 @@ export async function handleCandidateInbound(
   // Representative (ver lib/conversation-engine.ts). Não aplicado aos
   // outros envios deste arquivo (outreach, nudge, despedida, encerramento)
   // — são mensagens transacionais de ponto único, não a conversa orgânica.
-  const attachments = await fetchActiveAttachments(supabase, unit.id, 'recruiter')
+  const attachments = await fetchActiveAttachments(supabase, unit, 'recruiter')
   let reply: string
   let chosenAttachment: EmployeeAttachment | null = null
 

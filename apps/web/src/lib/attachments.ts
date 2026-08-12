@@ -1,21 +1,27 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { EmployeeAttachment } from '@/lib/types'
+import type { EmployeeAttachment, Unit } from '@/lib/types'
 
 /**
- * Anexos ativos da biblioteca de um funcionário (migration 036). Cada
- * agent_type tem sua própria lista dentro da unidade — ver comentário da
- * migration para o porquê de não ser compartilhada entre funcionários.
+ * Materiais ativos da biblioteca da organização visíveis para um
+ * funcionário nesta unidade (migration 036, generalizada na 062): inclui
+ * tanto materiais cadastrados especificamente para `unit` quanto os
+ * cadastrados para a organização inteira (unit_id null), filtrados pelos
+ * que têm `agentType` em `applicable_employees` — um mesmo material pode
+ * valer para vários funcionários ao mesmo tempo.
  */
 export async function fetchActiveAttachments(
   supabase: SupabaseClient,
-  unitId: string,
+  unit: Pick<Unit, 'id' | 'org_id'>,
   agentType: string,
 ): Promise<EmployeeAttachment[]> {
+  if (!unit.org_id) return []
+
   const { data } = await supabase
     .from('employee_attachments')
     .select('*')
-    .eq('unit_id', unitId)
-    .eq('agent_type', agentType)
+    .eq('org_id', unit.org_id)
+    .or(`unit_id.eq.${unit.id},unit_id.is.null`)
+    .overlaps('applicable_employees', [agentType])
     .eq('is_active', true)
     .order('created_at', { ascending: true })
 
@@ -33,11 +39,11 @@ export async function fetchActiveAttachments(
 export function buildAttachmentsContext(attachments: EmployeeAttachment[]): string {
   if (attachments.length === 0) return ''
 
+  const kindLabel = (kind: EmployeeAttachment['kind']) =>
+    kind === 'pdf' ? 'PDF' : kind === 'image' ? 'imagem' : 'link'
+
   const list = attachments
-    .map(
-      (a) =>
-        `id "${a.id}": "${a.title}" (${a.kind === 'pdf' ? 'PDF' : 'link'}) — quando usar: ${a.usage_instructions}`,
-    )
+    .map((a) => `id "${a.id}": "${a.title}" (${kindLabel(a.kind)}) — quando usar: ${a.usage_instructions}`)
     .join('; ')
 
   return [

@@ -19,6 +19,8 @@ function compare(a: unknown, b: unknown): number {
 
 class FakeQuery implements PromiseLike<{ data: unknown; error: null; count?: number }> {
   private filters: [string, unknown][] = []
+  /** String bruta de .or('col.eq.x,col.is.null') — só suporta os operadores eq/is, os únicos usados hoje pelo produto. */
+  private orFilter: string | null = null
   private orderBy: { key: string; ascending: boolean }[] = []
   private limitN: number | null = null
   private mode: 'select' | 'insert' | 'update' = 'select'
@@ -60,6 +62,14 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null; count?: num
     this.filters.push([key, { __gte: value } as unknown])
     return this
   }
+  overlaps(key: string, values: unknown[]) {
+    this.filters.push([key, { __overlaps: values } as unknown])
+    return this
+  }
+  or(filterString: string) {
+    this.orFilter = filterString
+    return this
+  }
   lt(key: string, value: unknown) {
     this.filters.push([key, { __lt: value } as unknown])
     return this
@@ -94,7 +104,12 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null; count?: num
   }
 
   private matches(row: Row): boolean {
-    return this.filters.every(([key, value]) => {
+    const andOk = this.filters.every(([key, value]) => {
+      if (value && typeof value === 'object' && '__overlaps' in (value as Record<string, unknown>)) {
+        const target = (value as { __overlaps: unknown[] }).__overlaps
+        const cell = row[key]
+        return Array.isArray(cell) && cell.some((v) => target.includes(v))
+      }
       if (value && typeof value === 'object' && '__in' in (value as Record<string, unknown>)) {
         return (value as { __in: Set<unknown> }).__in.has(row[key])
       }
@@ -117,6 +132,18 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null; count?: num
       }
       return row[key] === value
     })
+    if (!andOk) return false
+    if (!this.orFilter) return true
+    return this.orFilter.split(',').some((clause) => this.matchesOrClause(row, clause))
+  }
+
+  // Só cobre column.eq.value e column.is.null — os únicos operadores que o
+  // produto usa em .or() hoje (ver fetchActiveAttachments em lib/attachments.ts).
+  private matchesOrClause(row: Row, clause: string): boolean {
+    const [key, op, rawValue] = clause.split('.')
+    if (op === 'is') return rawValue === 'null' ? row[key] === null || row[key] === undefined : false
+    if (op === 'eq') return String(row[key]) === rawValue
+    return false
   }
 
   private resolve(): { data: unknown; error: null; count?: number } {

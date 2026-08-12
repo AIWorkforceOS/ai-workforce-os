@@ -7,7 +7,7 @@ function makeAttachment(overrides: Partial<EmployeeAttachment> = {}): EmployeeAt
     id: 'attachment-1',
     org_id: 'org-1',
     unit_id: 'unit-1',
-    agent_type: 'sdr',
+    applicable_employees: ['sdr'],
     kind: 'pdf',
     title: 'Tabela de preços',
     usage_instructions: 'Envie quando o cliente perguntar sobre preços.',
@@ -33,12 +33,14 @@ describe('buildAttachmentsContext', () => {
     expect(context).toContain('attachment_id')
   })
 
-  it('diferencia PDF de link no rótulo do material', () => {
+  it('diferencia PDF, imagem e link no rótulo do material', () => {
     const context = buildAttachmentsContext([
       makeAttachment({ id: 'a', kind: 'pdf', title: 'PDF X' }),
       makeAttachment({ id: 'b', kind: 'link', title: 'Link Y', file_url: 'https://example.com' }),
+      makeAttachment({ id: 'c', kind: 'image', title: 'Imagem Z' }),
     ])
     expect(context).toContain('"PDF X" (PDF)')
     expect(context).toContain('"Link Y" (link)')
+    expect(context).toContain('"Imagem Z" (imagem)')
   })
 })

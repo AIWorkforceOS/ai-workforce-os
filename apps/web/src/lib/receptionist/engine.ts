@@ -484,7 +484,7 @@ export async function processReceptionistInbound(params: {
 
   // Fase C: geração da resposta (com decisão de anexo, quando há biblioteca configurada).
   const [attachments, openJobs] = await Promise.all([
-    fetchActiveAttachments(supabase, unit.id, 'receptionist'),
+    fetchActiveAttachments(supabase, unit, 'receptionist'),
     fetchOpenJobOpenings(supabase, unit),
   ])
   const attachmentsContext = buildAttachmentsContext(attachments)
@@ -858,7 +858,7 @@ export async function processReceptionistProspectInbound(params: {
     .join(' ')
 
   const [attachments, openJobs] = await Promise.all([
-    fetchActiveAttachments(supabase, unit.id, 'receptionist'),
+    fetchActiveAttachments(supabase, unit, 'receptionist'),
     fetchOpenJobOpenings(supabase, unit),
   ])
   const attachmentsContext = buildAttachmentsContext(attachments)
