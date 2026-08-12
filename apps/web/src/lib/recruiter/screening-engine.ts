@@ -50,6 +50,11 @@ function relevantSkills(candidate: Candidate, job: JobOpening): string[] {
   )
 }
 
+// Busca as ÚLTIMAS 20 mensagens (não as primeiras): ordena por mais
+// recente e reverte pra ordem cronológica depois — mesmo bug corrigido
+// em fetchCustomerHistory (lib/receptionist/engine.ts): ascending+limit
+// direto devolve as mensagens MAIS ANTIGAS, deixando a pergunta atual
+// do candidato fora da janela em conversas longas.
 async function getCandidateHistory(
   supabase: SupabaseClient,
   candidateId: string,
@@ -60,10 +65,11 @@ async function getCandidateHistory(
     .select('*')
     .eq('candidate_id', candidateId)
     .eq('job_id', jobId)
-    .order('sent_at', { ascending: true })
+    .order('sent_at', { ascending: false })
     .limit(20)
 
-  return (((data as CandidateMessage[] | null) ?? []) as CandidateMessage[]).map((row) => ({
+  const rows = ((data as CandidateMessage[] | null) ?? []).reverse()
+  return rows.map((row) => ({
     role: row.direction === 'inbound' ? 'user' : 'assistant',
     content: row.content,
   }))

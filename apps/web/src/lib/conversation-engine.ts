@@ -616,14 +616,19 @@ export async function processInboundMessage(params: {
   // quantas mensagens forem necessárias para fechar o negócio. A
   // escalação só ocorre por palavra-chave configurada.
 
+  // Busca as ÚLTIMAS 20 mensagens (não as primeiras): ordena por mais
+  // recente e reverte pra ordem cronológica depois — mesmo bug corrigido
+  // em fetchCustomerHistory (lib/receptionist/engine.ts): ascending+limit
+  // direto devolve as mensagens MAIS ANTIGAS, deixando a pergunta atual
+  // do lead fora da janela em conversas longas.
   const { data: history } = await supabase
     .from('conversations')
     .select('*')
     .eq('lead_id', lead.id)
-    .order('sent_at', { ascending: true })
+    .order('sent_at', { ascending: false })
     .limit(20)
 
-  const historyRows = (history as Conversation[] | null) ?? []
+  const historyRows = ((history as Conversation[] | null) ?? []).reverse()
 
   const escalationReason = await findEscalationReason(
     incomingText,

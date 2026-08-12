@@ -126,14 +126,19 @@ export async function GET(request: Request) {
     for (const lead of (staleLeads as Lead[] | null) ?? []) {
       if (sentToday >= config.daily_limit) break
 
+      // Busca as ÚLTIMAS 20 mensagens (não as primeiras): ordena por mais
+      // recente e reverte pra ordem cronológica depois — mesmo bug corrigido
+      // em fetchCustomerHistory (lib/receptionist/engine.ts): ascending+limit
+      // direto devolve as mensagens MAIS ANTIGAS, deixando o histórico real
+      // recente fora da janela em conversas longas.
       const { data: history } = await supabase
         .from('conversations')
         .select('*')
         .eq('lead_id', lead.id)
-        .order('sent_at', { ascending: true })
+        .order('sent_at', { ascending: false })
         .limit(20)
 
-      const historyRows = (history as Conversation[] | null) ?? []
+      const historyRows = ((history as Conversation[] | null) ?? []).reverse()
       const followUpsSent = historyRows.filter(
         (row) => row.direction === 'outbound' && row.template_key === FOLLOW_UP_TEMPLATE_KEY,
       ).length

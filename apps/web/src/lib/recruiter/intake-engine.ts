@@ -32,7 +32,14 @@ export function computeMissingFields(profile: JobProfile): string[] {
   }).map(({ key }) => key as string)
 }
 
-/** Histórico da conversa com a empresa desde a criação da vaga. */
+/**
+ * Histórico da conversa com a empresa desde a criação da vaga. Busca as
+ * ÚLTIMAS 20 mensagens (não as primeiras): ordena por mais recente e
+ * reverte pra ordem cronológica depois — mesmo bug corrigido em
+ * fetchCustomerHistory (lib/receptionist/engine.ts): ascending+limit
+ * direto devolve as mensagens MAIS ANTIGAS, deixando a resposta atual
+ * da empresa fora da janela em intakes longos.
+ */
 async function getCompanyHistory(
   supabase: SupabaseClient,
   leadId: string,
@@ -43,10 +50,11 @@ async function getCompanyHistory(
     .select('*')
     .eq('lead_id', leadId)
     .gte('sent_at', since)
-    .order('sent_at', { ascending: true })
+    .order('sent_at', { ascending: false })
     .limit(20)
 
-  return (((data as Conversation[] | null) ?? []) as Conversation[]).map((row) => ({
+  const rows = ((data as Conversation[] | null) ?? []).reverse()
+  return rows.map((row) => ({
     role: row.direction === 'inbound' ? 'user' : 'assistant',
     content: row.content,
   }))
