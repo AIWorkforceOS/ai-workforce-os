@@ -17,15 +17,36 @@ function compare(a: unknown, b: unknown): number {
   return 0
 }
 
+/** Singularização ingênua (só cobre plurais em -s/-ies, os únicos usados nos nomes de tabela do produto). */
+function singularize(table: string): string {
+  if (table.endsWith('ies')) return `${table.slice(0, -3)}y`
+  if (table.endsWith('s')) return table.slice(0, -1)
+  return table
+}
+
+type Embed = { alias: string; table: string }
+
+/** Extrai relações embutidas de um select do tipo '*, candidates(*)' ou '*, unit:units(name)'. */
+function parseEmbeds(columns: string): Embed[] {
+  const embeds: Embed[] = []
+  for (const match of columns.matchAll(/(?:(\w+):)?(\w+)\([^)]*\)/g)) {
+    const [, alias, table] = match
+    if (table) embeds.push({ alias: alias ?? table, table })
+  }
+  return embeds
+}
+
 class FakeQuery implements PromiseLike<{ data: unknown; error: null; count?: number }> {
   private filters: [string, unknown][] = []
   /** String bruta de .or('col.eq.x,col.is.null') — só suporta os operadores eq/is, os únicos usados hoje pelo produto. */
   private orFilter: string | null = null
   private orderBy: { key: string; ascending: boolean }[] = []
   private limitN: number | null = null
-  private mode: 'select' | 'insert' | 'update' = 'select'
+  private mode: 'select' | 'insert' | 'update' | 'upsert' = 'select'
   private payload: Row | Row[] | null = null
   private singleMode: 'none' | 'maybeSingle' | 'single' = 'none'
+  private onConflictKeys: string[] = []
+  private embeds: Embed[] = []
 
   constructor(
     private table: string,
@@ -34,7 +55,12 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null; count?: num
     this.db[table] = this.db[table] ?? []
   }
 
-  select() {
+  // Suporta o padrão de relação embutida usado pelo produto:
+  // '*, candidates(*)' ou '*, unit:units(name)' — casa pelo id da tabela
+  // relacionada com a coluna <singular(table)>_id da linha atual (mesma
+  // convenção de FK usada em todo o schema).
+  select(columns?: string) {
+    if (typeof columns === 'string') this.embeds = parseEmbeds(columns)
     return this
   }
   eq(key: string, value: unknown) {
@@ -102,6 +128,12 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null; count?: num
     this.payload = payload
     return this
   }
+  upsert(payload: Row | Row[], opts?: { onConflict?: string }) {
+    this.mode = 'upsert'
+    this.payload = payload
+    this.onConflictKeys = opts?.onConflict?.split(',') ?? []
+    return this
+  }
 
   private matches(row: Row): boolean {
     const andOk = this.filters.every(([key, value]) => {
@@ -137,11 +169,18 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null; count?: num
     return this.orFilter.split(',').some((clause) => this.matchesOrClause(row, clause))
   }
 
-  // Só cobre column.eq.value e column.is.null — os únicos operadores que o
-  // produto usa em .or() hoje (ver fetchActiveAttachments em lib/attachments.ts).
+  // Só cobre column.eq.value, column.is.null e column.not.is.null — os
+  // únicos operadores que o produto usa em .or() hoje (ver
+  // fetchActiveAttachments em lib/attachments.ts e a busca de leads
+  // prontos para contato em lib/prospecting/engine.ts).
   private matchesOrClause(row: Row, clause: string): boolean {
-    const [key, op, rawValue] = clause.split('.')
+    const parts = clause.split('.')
+    const key = parts[0]
     if (!key) return false
+    if (parts.length === 4 && parts[1] === 'not' && parts[2] === 'is' && parts[3] === 'null') {
+      return row[key] !== null && row[key] !== undefined
+    }
+    const [, op, rawValue] = parts
     if (op === 'is') return rawValue === 'null' ? row[key] === null || row[key] === undefined : false
     if (op === 'eq') return String(row[key]) === rawValue
     return false
@@ -170,6 +209,32 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null; count?: num
       return { data, error: null, count: matched.length }
     }
 
+    if (this.mode === 'upsert') {
+      const arr = Array.isArray(this.payload) ? this.payload : [this.payload as Row]
+      const result: Row[] = []
+      for (const p of arr) {
+        const existing =
+          this.onConflictKeys.length > 0
+            ? table.find((row) => this.onConflictKeys.every((key) => row[key] === p[key]))
+            : undefined
+        if (existing) {
+          Object.assign(existing, p, { updated_at: new Date().toISOString() })
+          result.push(existing)
+        } else {
+          const inserted = {
+            id: `${this.table}-${table.length + 1}-${Math.random().toString(36).slice(2, 8)}`,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            ...p,
+          }
+          table.push(inserted)
+          result.push(inserted)
+        }
+      }
+      const data = this.singleMode !== 'none' ? (result[0] ?? null) : result
+      return { data, error: null }
+    }
+
     let rows = table.filter((row) => this.matches(row))
     if (this.orderBy.length > 0) {
       rows = [...rows].sort((a, b) => {
@@ -186,6 +251,17 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null; count?: num
       })
     }
     if (this.limitN !== null) rows = rows.slice(0, this.limitN)
+    if (this.embeds.length > 0) {
+      rows = rows.map((row) => {
+        const embedded: Row = { ...row }
+        for (const { alias, table } of this.embeds) {
+          const fkKey = `${singularize(table)}_id`
+          const related = (this.db[table] ?? []).find((r) => r.id === row[fkKey]) ?? null
+          embedded[alias] = related
+        }
+        return embedded
+      })
+    }
     if (this.singleMode === 'maybeSingle' || this.singleMode === 'single') {
       return { data: rows[0] ?? null, error: null, count: rows.length }
     }
