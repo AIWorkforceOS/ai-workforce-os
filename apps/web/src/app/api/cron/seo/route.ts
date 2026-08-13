@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { isWithinActiveHours } from '@/lib/conversation-engine'
 import { logSystemEvent } from '@/lib/system-events'
 import { getOpenAIApiKey } from '@/lib/openai'
 import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
@@ -61,13 +60,15 @@ export async function GET(request: Request) {
     .eq('agent_type', 'seo_specialist')
     .eq('is_active', true)
 
+  // Não filtra por active_hours: esse campo controla disponibilidade para
+  // RESPONDER conversas (SDR/Recepcionista/Recrutador), um conceito que não
+  // se aplica a auditoria técnica / geração de conteúdo / rank-tracking —
+  // trabalho assíncrono e agendado, não resposta de chat em tempo real.
   type ConfigWithUnit = AgentConfig & { units: Unit | null }
-  const activeConfigs = ((configs ?? []) as ConfigWithUnit[]).filter(
-    (row) => row.units && row.units.is_active && isWithinActiveHours(row.active_hours),
-  )
+  const activeConfigs = ((configs ?? []) as ConfigWithUnit[]).filter((row) => row.units && row.units.is_active)
 
   if (activeConfigs.length === 0) {
-    return NextResponse.json({ ok: true, message: 'Nenhum agente de SEO ativo dentro do horário.' })
+    return NextResponse.json({ ok: true, message: 'Nenhum agente de SEO ativo.' })
   }
 
   const apiKey = getOpenAIApiKey()
