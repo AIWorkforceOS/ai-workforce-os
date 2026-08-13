@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { isWithinActiveHours } from '@/lib/conversation-engine'
 import { logSystemEvent } from '@/lib/system-events'
 import { getOpenAIApiKey } from '@/lib/openai'
 import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
@@ -26,11 +25,14 @@ export const maxDuration = 300
  *
  * Para cada unidade com agente 'content_specialist' ativo, e para cada
  * Página conectada e ativa, gera um post (legenda + imagem) quando a
- * frequência semanal configurada permitir — respeitando active_hours e
- * daily_limit de agent_configs (mesmo princípio dos crons conversacionais,
- * ver isWithinActiveHours em lib/conversation-engine.ts). Contas em modo
- * 'autonomous' publicam direto; contas em 'suggestion' (padrão) só
- * enfileiram para aprovação humana no dashboard.
+ * frequência semanal configurada permitir — respeitando daily_limit de
+ * agent_configs. Não filtra por active_hours: esse campo controla
+ * disponibilidade para RESPONDER conversas (SDR/Recepcionista/Recrutador),
+ * um conceito que não se aplica a publicação de post agendado — postar é
+ * assíncrono e a cadência real já é governada por shouldGenerateToday
+ * (frequência semanal) e daily_limit. Contas em modo 'autonomous' publicam
+ * direto; contas em 'suggestion' (padrão) só enfileiram para aprovação
+ * humana no dashboard.
  *
  * Env vars:
  *   CRON_SECRET — obrigatório (Vercel envia como Bearer token)
@@ -71,12 +73,10 @@ export async function GET(request: Request) {
     .eq('is_active', true)
 
   type ConfigWithUnit = AgentConfig & { units: Unit | null }
-  const activeConfigs = ((configs ?? []) as ConfigWithUnit[]).filter(
-    (row) => row.units && row.units.is_active && isWithinActiveHours(row.active_hours),
-  )
+  const activeConfigs = ((configs ?? []) as ConfigWithUnit[]).filter((row) => row.units && row.units.is_active)
 
   if (activeConfigs.length === 0) {
-    return NextResponse.json({ ok: true, generated: 0, message: 'Nenhum agente de conteúdo ativo dentro do horário.' })
+    return NextResponse.json({ ok: true, generated: 0, message: 'Nenhum agente de conteúdo ativo.' })
   }
 
   const startOfDay = new Date()

@@ -141,6 +141,7 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null; count?: num
   // produto usa em .or() hoje (ver fetchActiveAttachments em lib/attachments.ts).
   private matchesOrClause(row: Row, clause: string): boolean {
     const [key, op, rawValue] = clause.split('.')
+    if (!key) return false
     if (op === 'is') return rawValue === 'null' ? row[key] === null || row[key] === undefined : false
     if (op === 'eq') return String(row[key]) === rawValue
     return false
