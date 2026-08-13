@@ -104,7 +104,7 @@ const PROMISE_PATTERNS: RegExp[] = [
   /voc[êe] (est[áa]|foi|ser[áa]) (contratad|aprovad|selecionad)/i,
   /a vaga (j[áa] )?[ée] (toda )?sua/i,
   /vaga garantida/i,
-  /garant(o|imos|ia de) (a |sua |uma )?(vaga|contrata[çc][ãa]o|aprova[çc][ãa]o)/i,
+  /garant(o|imos|ia de) (toda |todo )?(a |o )?(sua |nossa |minha |seu |uma )?(vaga|contrata[çc][ãa]o|aprova[çc][ãa]o)/i,
   /pode considerar (a vaga|que foi|contratad)/i,
   /com certeza (voc[êe] )?(vai ser|ser[áa]) (contratad|aprovad|selecionad)/i,
 ]
@@ -118,7 +118,7 @@ export function containsHiringPromise(text: string): boolean {
 const OPT_OUT_PATTERNS: RegExp[] = [
   /n[ãa]o (quero|desejo) (mais )?(receber|ser contatad)/i,
   /para(r| de)? me (mandar|enviar) mensage/i,
-  /me (tire|tirem|remova|removam|exclua|excluam) (da lista|do banco|dos contatos)/i,
+  /me (tire|tirem|tirar|remova|removam|remover|exclua|excluam|excluir) (da lista|do banco|dos contatos)/i,
   /descadastr/i,
   /\bopt.?out\b/i,
 ]

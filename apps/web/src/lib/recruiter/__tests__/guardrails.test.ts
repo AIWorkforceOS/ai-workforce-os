@@ -24,6 +24,7 @@ describe('containsHiringPromise', () => {
     expect(containsHiringPromise('Você tem vaga garantida com a gente.')).toBe(true)
     expect(containsHiringPromise('Garantimos sua contratação assim que possível.')).toBe(true)
     expect(containsHiringPromise('Com certeza você vai ser selecionado, fica tranquilo.')).toBe(true)
+    expect(containsHiringPromise('Garantimos a sua contratação.')).toBe(true)
   })
 
   it('não bloqueia mensagens neutras sobre o andamento do processo', () => {
@@ -39,6 +40,7 @@ describe('detectsOptOut', () => {
   it('detecta pedidos de descadastro em variações comuns', () => {
     expect(detectsOptOut('Não quero mais receber mensagens, por favor')).toBe(true)
     expect(detectsOptOut('Pode me tirem da lista de vocês')).toBe(true)
+    expect(detectsOptOut('Pode me tirar da lista de vocês')).toBe(true)
     expect(detectsOptOut('quero descadastrar meu contato')).toBe(true)
   })
 
