@@ -103,6 +103,19 @@ export async function findCustomerContext(
   return ((data as Customer[] | null) ?? []).find((row) => identifierMatches(row, incomingPhone, incomingEmail)) ?? null
 }
 
+/** Acha um candidato existente pelo mesmo telefone/e-mail nesta org, sem exigir vaga em processo ativo — usado pelo webhook (route.ts) para resolver o contato de uma mensagem `fromMe` digitada manualmente por um humano da equipe (diferente de findCandidateContext acima, que só serve pra Rota 1 do roteamento e exige job_candidates com stage ativo). */
+export async function findCandidateByIdentifier(
+  supabase: SupabaseClient,
+  unit: Unit,
+  incomingPhone: string | null,
+  incomingEmail: string | null,
+): Promise<Candidate | null> {
+  if (!unit.org_id || (!incomingPhone && !incomingEmail)) return null
+
+  const { data } = await supabase.from('candidates').select('*').eq('org_id', unit.org_id)
+  return ((data as Candidate[] | null) ?? []).find((row) => identifierMatches(row, incomingPhone, incomingEmail)) ?? null
+}
+
 /** Rota 2 (§7.0): telefone bate com lead que tem vaga ativa com o Recruiter. */
 async function findRecruiterJobForLead(
   supabase: SupabaseClient,

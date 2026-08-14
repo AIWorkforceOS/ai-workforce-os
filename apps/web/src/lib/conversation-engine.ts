@@ -10,6 +10,7 @@ import { conversationLanguageDirective, unitDefaultLocale } from '@/lib/i18n/con
 import { generateChatReply, generateStructuredReply, getOpenAIApiKey, type ChatMessage } from '@/lib/openai'
 import { sendEscalationEmail, sendTechnicalAlertEmail } from '@/lib/email'
 import { logSystemEvent, shouldNotifyForEvent, type SystemEventSource } from '@/lib/system-events'
+import { isHumanInterventionActive } from '@/lib/human-intervention'
 import { syncLeadToSmarterCrm } from '@/lib/sales/smarter-crm'
 import { IDENTITY_AND_HANDOFF_RULES } from '@/lib/agent-identity'
 import { buildTrainingCorrectionsContext } from '@/lib/agent-training'
@@ -657,6 +658,11 @@ export async function processInboundMessage(params: {
       unitId: unit.id,
       leadId: lead.id,
     })
+    return noHandoff
+  }
+
+  if (await isHumanInterventionActive(supabase, { unitId: unit.id, contactId: lead.id })) {
+    console.log(`[conversation_engine] intervenção humana ativa para o lead "${lead.contact_name || lead.company_name}" na unidade "${unit.name}" — resposta automática suprimida.`)
     return noHandoff
   }
 

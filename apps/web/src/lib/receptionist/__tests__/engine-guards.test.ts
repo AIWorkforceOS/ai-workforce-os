@@ -351,3 +351,121 @@ describe('processReceptionistInbound — staleness check (debounce de resposta d
     expect(sendMessageMock).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('processReceptionistInbound — trava de 40min por intervenção humana', () => {
+  beforeEach(() => {
+    sendMessageMock.mockClear()
+    extractionHandoff = 'none'
+  })
+
+  it('não responde quando um humano interveio manualmente pra este contato há menos de 40min', async () => {
+    const unit = buildUnit()
+    const customer = buildCustomer(unit)
+    const config = buildAgentConfig(unit)
+
+    const { supabase } = createFakeSupabase({
+      agent_configs: [config as unknown as Record<string, unknown>],
+      system_events: [
+        {
+          id: 'evt-human-intervention',
+          unit_id: unit.id,
+          org_id: unit.org_id,
+          event_type: 'human_operator_message',
+          level: 'info',
+          source: 'system',
+          message: 'Intervenção humana manual detectada.',
+          metadata: { contact_id: customer.id },
+          created_at: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+        },
+      ],
+    })
+
+    const { processReceptionistInbound } = await import('@/lib/receptionist/engine')
+
+    const result = await processReceptionistInbound({
+      supabase,
+      unit,
+      customer,
+      incomingText: 'oi, tudo bem?',
+      channel: 'whatsapp',
+      recipient: customer.phone!,
+    })
+
+    expect(result.handled).toBe(false)
+    expect(sendMessageMock).not.toHaveBeenCalled()
+  })
+
+  it('volta a responder normalmente depois que a janela de 40min da intervenção humana passa', async () => {
+    const unit = buildUnit()
+    const customer = buildCustomer(unit)
+    const config = buildAgentConfig(unit)
+
+    const { supabase } = createFakeSupabase({
+      agent_configs: [config as unknown as Record<string, unknown>],
+      system_events: [
+        {
+          id: 'evt-human-intervention-old',
+          unit_id: unit.id,
+          org_id: unit.org_id,
+          event_type: 'human_operator_message',
+          level: 'info',
+          source: 'system',
+          message: 'Intervenção humana manual detectada.',
+          metadata: { contact_id: customer.id },
+          created_at: new Date(Date.now() - 41 * 60 * 1000).toISOString(),
+        },
+      ],
+    })
+
+    const { processReceptionistInbound } = await import('@/lib/receptionist/engine')
+
+    const result = await processReceptionistInbound({
+      supabase,
+      unit,
+      customer,
+      incomingText: 'oi, tudo bem?',
+      channel: 'whatsapp',
+      recipient: customer.phone!,
+    })
+
+    expect(result.handled).toBe(true)
+    expect(sendMessageMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('intervenção humana pra OUTRO contato não trava a resposta deste', async () => {
+    const unit = buildUnit()
+    const customer = buildCustomer(unit)
+    const config = buildAgentConfig(unit)
+
+    const { supabase } = createFakeSupabase({
+      agent_configs: [config as unknown as Record<string, unknown>],
+      system_events: [
+        {
+          id: 'evt-human-intervention-other-contact',
+          unit_id: unit.id,
+          org_id: unit.org_id,
+          event_type: 'human_operator_message',
+          level: 'info',
+          source: 'system',
+          message: 'Intervenção humana manual detectada.',
+          metadata: { contact_id: 'customer-outro' },
+          created_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+        },
+      ],
+    })
+
+    const { processReceptionistInbound } = await import('@/lib/receptionist/engine')
+
+    const result = await processReceptionistInbound({
+      supabase,
+      unit,
+      customer,
+      incomingText: 'oi, tudo bem?',
+      channel: 'whatsapp',
+      recipient: customer.phone!,
+    })
+
+    expect(result.handled).toBe(true)
+    expect(sendMessageMock).toHaveBeenCalledTimes(1)
+  })
+})

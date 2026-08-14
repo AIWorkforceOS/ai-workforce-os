@@ -11,6 +11,7 @@ import {
   buildScreeningPrompt,
 } from './prompts'
 import { detectsNegotiationRequest, detectsOptOut, getRecruiterLimits } from './guardrails'
+import { isHumanInterventionActive } from '@/lib/human-intervention'
 import { sendToCandidate } from './messaging'
 import { logDecision, logRecruiterEvent } from './log'
 import { computeWeightedScore } from './scoring-engine'
@@ -287,6 +288,12 @@ export async function handleCandidateInbound(
   },
 ): Promise<void> {
   const { job, jc, candidate, unit, config, text, wasAudioMessage } = params
+
+  if (await isHumanInterventionActive(supabase, { unitId: unit.id, contactId: candidate.id })) {
+    console.log(`[screening_engine] intervenção humana ativa para o candidato "${candidate.name}" na unidade "${unit.name}" — resposta automática suprimida.`)
+    return
+  }
+
   const apiKey = getOpenAIApiKey()
   if (!apiKey) throw new Error('OPENAI_API_KEY não está configurada.')
 

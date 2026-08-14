@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { generateChatReply, generateStructuredReply, getOpenAIApiKey } from '@/lib/openai'
 import { sendRecruiterEmail } from '@/lib/email'
 import { logSystemEvent, shouldNotifyForEvent } from '@/lib/system-events'
+import { isHumanInterventionActive } from '@/lib/human-intervention'
 import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
 import type { AgentConfig, Lead, Unit } from '@/lib/types'
 import { buildCompanyReviewClassifierPrompt, buildRecruiterBasePrompt, buildProfileExtractorPrompt } from './prompts'
@@ -379,6 +380,12 @@ export async function handleCompanyReviewInbound(
   },
 ): Promise<void> {
   const { job, unit, config, lead, text, wasAudioMessage } = params
+
+  if (await isHumanInterventionActive(supabase, { unitId: unit.id, contactId: lead.id })) {
+    console.log(`[orchestrator] intervenção humana ativa para o contato "${lead.contact_name || lead.company_name}" na unidade "${unit.name}" — resposta automática suprimida.`)
+    return
+  }
+
   const apiKey = getOpenAIApiKey()
   if (!apiKey) throw new Error('OPENAI_API_KEY não está configurada.')
 

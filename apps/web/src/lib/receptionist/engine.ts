@@ -10,6 +10,7 @@ import {
 import { resolveWhatsappChannel } from '@/lib/evolution'
 import { sendTechnicalAlertEmail } from '@/lib/email'
 import { logSystemEvent, shouldNotifyForEvent, hasRecentEventForContact, type SystemEventSource } from '@/lib/system-events'
+import { isHumanInterventionActive } from '@/lib/human-intervention'
 import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
 import { fetchActiveAttachments, buildAttachmentsContext } from '@/lib/attachments'
 import { fmtMoment } from '@/lib/scheduling/appointment-notifications'
@@ -371,6 +372,11 @@ export async function processReceptionistInbound(params: {
       orgId: unit.org_id,
       unitId: unit.id,
     })
+    return failed
+  }
+
+  if (await isHumanInterventionActive(supabase, { unitId: unit.id, contactId: customer.id })) {
+    console.log(`[receptionist_engine] intervenção humana ativa para o cliente "${customer.name}" na unidade "${unit.name}" — resposta automática suprimida.`)
     return failed
   }
 
@@ -787,6 +793,11 @@ export async function processReceptionistProspectInbound(params: {
       unitId: unit.id,
       leadId: lead.id,
     })
+    return failed
+  }
+
+  if (await isHumanInterventionActive(supabase, { unitId: unit.id, contactId: lead.id })) {
+    console.log(`[receptionist_engine] intervenção humana ativa para o contato "${contactName}" na unidade "${unit.name}" — resposta automática suprimida.`)
     return failed
   }
 

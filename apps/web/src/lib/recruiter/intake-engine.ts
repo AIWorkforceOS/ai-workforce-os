@@ -10,6 +10,7 @@ import {
   missingFieldLabels,
 } from './prompts'
 import { sendToCompany } from './messaging'
+import { isHumanInterventionActive } from '@/lib/human-intervention'
 import { logDecision, logRecruiterEvent } from './log'
 import { runSourcing } from './sourcing-engine'
 import { PROFILE_FIELDS, type JobOpening, type JobProfile } from './types'
@@ -148,6 +149,12 @@ export async function handleCompanyIntakeInbound(
   },
 ): Promise<void> {
   const { job, unit, config, lead, text, wasAudioMessage } = params
+
+  if (await isHumanInterventionActive(supabase, { unitId: unit.id, contactId: lead.id })) {
+    console.log(`[intake_engine] intervenção humana ativa para o contato "${lead.contact_name || lead.company_name}" na unidade "${unit.name}" — resposta automática suprimida.`)
+    return
+  }
+
   const apiKey = getOpenAIApiKey()
   if (!apiKey) throw new Error('OPENAI_API_KEY não está configurada.')
 

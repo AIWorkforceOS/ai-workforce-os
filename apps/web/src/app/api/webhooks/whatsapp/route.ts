@@ -7,6 +7,7 @@ import {
   routeReceptionistChannelMessage,
   isRecentOutboundEcho,
   findCustomerContext,
+  findCandidateByIdentifier,
   findLeadByIdentifier,
 } from '@/lib/inbound-router'
 import { getBase64FromMediaMessage, resolveWhatsappChannelByInstanceName, syncWhatsappPhoneIfConnected, type EvolutionUnitConfig } from '@/lib/evolution'
@@ -14,6 +15,7 @@ import { getMessagingChannel } from '@/lib/channels/messaging-channel'
 import { getOpenAIApiKey, transcribeAudio } from '@/lib/openai'
 import { logOpenAIAudioUsage } from '@/lib/api-usage'
 import { logSystemEvent } from '@/lib/system-events'
+import { recordHumanIntervention } from '@/lib/human-intervention'
 import { unitDefaultLocale } from '@/lib/i18n/config'
 import type { Unit } from '@/lib/types'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -139,23 +141,30 @@ function resolveSentAt(messageTimestamp: unknown): string {
 }
 
 /**
- * Mensagem `key.fromMe=true` chegando pela instância dedicada da
- * Recepcionista (migration 051): normalmente é eco do próprio envio
- * automático dela (fecha a mesma corrida descrita em engine.ts) — mas pode
- * ser alguém da equipe digitando manualmente no WhatsApp conectado pra
- * intervir na conversa (dar a solução que a IA não achou, responder algo
- * que ela não sabia). Sem isso, essa intervenção nunca aparecia no
- * histórico que a IA lê (fetchCustomerHistory/fetchLeadConversationHistory,
- * lib/receptionist/engine.ts) e a Recepcionista continuava "achando" que
- * ainda estava resolvendo um assunto que o humano já tinha resolvido
- * (pedido do Vinicius, 2026-08-06). Nunca dispara sendMessage (a pessoa já
- * mandou pelo WhatsApp de verdade) nem roda o pipeline de IA — só grava a
- * mensagem como uma linha outbound normal, pra aparecer no histórico da
- * próxima vez que o cliente escrever. Se o número não bate com nenhum
- * customer/lead cadastrado, ignora (nunca cria lead a partir de mensagem da
- * própria equipe).
+ * Mensagem `key.fromMe=true` chegando por QUALQUER instância dedicada
+ * (Recepcionista, SDR, Recrutador — migration 051): normalmente é eco do
+ * próprio envio automático (fecha a mesma corrida descrita em engine.ts)
+ * — mas pode ser alguém da equipe digitando manualmente no WhatsApp
+ * conectado pra intervir na conversa (dar a solução que a IA não achou,
+ * responder algo que ela não sabia). Antes, isso só era tratado pra
+ * instância da Recepcionista — SDR/Recrutador descartavam a mensagem em
+ * silêncio (bug real, corrigido de graça por esta generalização).
+ *
+ * Nunca dispara sendMessage (a pessoa já mandou pelo WhatsApp de verdade)
+ * nem roda o pipeline de IA. Duas responsabilidades:
+ * (1) grava a mensagem como linha outbound normal (customer_messages ou
+ *     conversations), pra aparecer no histórico da próxima vez que o
+ *     contato escrever (pedido do Vinicius, 2026-08-06) — só cobre
+ *     customer/lead, já que candidato usa candidate_messages com job_id
+ *     obrigatório (fora do escopo aqui, não é crítico pra travar a IA);
+ * (2) registra o evento `human_operator_message` (lib/human-intervention)
+ *     pra travar qualquer resposta automática nesta conversa por 40min
+ *     (pedido novo do dono, 2026-08-14) — cobre customer, candidato e lead.
+ *
+ * Se o número não bate com nenhum customer/candidate/lead cadastrado,
+ * ignora (nunca cria lead a partir de mensagem da própria equipe).
  */
-async function captureReceptionistOperatorMessage(params: {
+async function captureOperatorMessage(params: {
   supabase: SupabaseClient
   unit: Unit
   remoteJid: string
@@ -185,6 +194,13 @@ async function captureReceptionistOperatorMessage(params: {
       status: 'sent',
       sent_at: sentAt,
     })
+    await recordHumanIntervention(supabase, { unit, contactId: customer.id })
+    return
+  }
+
+  const candidate = await findCandidateByIdentifier(supabase, unit, incomingPhone, null)
+  if (candidate) {
+    await recordHumanIntervention(supabase, { unit, contactId: candidate.id })
     return
   }
 
@@ -200,6 +216,7 @@ async function captureReceptionistOperatorMessage(params: {
     status: 'sent',
     sent_at: sentAt,
   })
+  await recordHumanIntervention(supabase, { unit, contactId: lead.id })
 }
 
 export async function POST(request: Request) {
@@ -225,18 +242,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true })
   }
 
-  // Mensagens `fromMe` (enviadas pela própria unidade) deixam de ser
-  // descartadas incondicionalmente: só pra instâncias da Recepcionista, uma
-  // mensagem `fromMe` que não é eco do envio automático é alguém da equipe
-  // intervindo manualmente na conversa (ver captureReceptionistOperatorMessage).
-  // Qualquer outro agente/canal mantém o comportamento de sempre (descarta).
+  // Mensagens `fromMe` (enviadas pela própria unidade) não são mais
+  // descartadas incondicionalmente pra nenhum agente: uma mensagem `fromMe`
+  // que não é eco do envio automático é alguém da equipe intervindo
+  // manualmente na conversa (ver captureOperatorMessage) — vale pra
+  // Recepcionista, SDR e Recrutador por igual.
   if (key.fromMe) {
     const resolution = await resolveWhatsappChannelByInstanceName(supabase, instanceName)
-    if (!resolution || resolution.agentType !== 'receptionist') {
+    if (!resolution) {
       return NextResponse.json({ ok: true })
     }
     try {
-      await captureReceptionistOperatorMessage({
+      await captureOperatorMessage({
         supabase,
         unit: resolution.unit,
         remoteJid,
