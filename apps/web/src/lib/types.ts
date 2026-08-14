@@ -562,6 +562,8 @@ export type EmployeeAttachment = {
   usage_instructions: string
   file_url: string
   file_name: string | null
+  /** Texto extraído do PDF por IA no upload (migration 063, lib/attachments.ts) — null para kind != pdf ou quando a extração falhou/nunca rodou. */
+  extracted_text: string | null
   is_active: boolean
   created_at: string
   updated_at: string

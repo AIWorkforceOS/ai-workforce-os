@@ -437,6 +437,9 @@ export async function processReceptionistInbound(params: {
     handoffTarget = rawHandoff
   }
 
+  let pendingSalesHandoff = false
+  let sdrPersonaName: string | null = null
+
   if (handoffTarget) {
     const contact = { name: customer.name, phone: customer.phone, email: customer.email }
     const alreadyEscalated = await hasRecentEventForContact(supabase, {
@@ -445,19 +448,50 @@ export async function processReceptionistInbound(params: {
       contactId: customer.id,
       windowMinutes: HANDOFF_COOLDOWN_MINUTES,
     })
+    const reasonText =
+      extraction.handoff_reason?.trim() ||
+      (rawHandoff === 'ti' ? 'TI interno falhou ao responder a dúvida sobre a plataforma' : 'assunto fora do escopo da recepcionista')
     if (!alreadyEscalated) {
       await notifyReceptionistHandoff(supabase, {
         unit,
         contact,
         contactId: customer.id,
         target: handoffTarget,
-        reason: extraction.handoff_reason?.trim() || (rawHandoff === 'ti' ? 'TI interno falhou ao responder a dúvida sobre a plataforma' : 'assunto fora do escopo da recepcionista'),
+        reason: reasonText,
         lastMessage: incomingText,
       })
       if (handoffTarget === 'sales') {
-        await handoffToSales(supabase, { unit, contact })
+        await handoffToSales(supabase, { unit, contact, history, reason: reasonText, fromPersonaName: config.persona_name })
       }
     }
+    if (handoffTarget === 'sales') pendingSalesHandoff = true
+  }
+
+  // Continuidade pós-handoff pro Sales (item 3 do pedido de 2026-08-14):
+  // mesmo quando ESTE turno não classificou handoff de novo (ex.: cliente só
+  // confirmou/repetiu o mesmo assunto e o extrator corretamente reconheceu
+  // que já foi escalado, ver instrução IMPORTANTE no prompt acima), se
+  // existe um handoff pra sales recente pro MESMO contato, a Recepcionista
+  // não deve tentar resolver/verificar isso sozinha de novo — bug real
+  // confirmado em produção: ela repetia "vou verificar com o time" mesmo
+  // depois de já ter passado a dúvida pro SDR, porque nada avisava a fase
+  // de geração da resposta sobre o handoff de turnos anteriores.
+  if (!pendingSalesHandoff) {
+    pendingSalesHandoff = await hasRecentEventForContact(supabase, {
+      eventType: 'receptionist_handoff_sales',
+      unitId: unit.id,
+      contactId: customer.id,
+      windowMinutes: HANDOFF_COOLDOWN_MINUTES,
+    })
+  }
+  if (pendingSalesHandoff) {
+    const { data: sdrConfigRow } = await supabase
+      .from('agent_configs')
+      .select('persona_name')
+      .eq('unit_id', unit.id)
+      .eq('agent_type', 'sdr')
+      .maybeSingle()
+    sdrPersonaName = (sdrConfigRow as { persona_name: string } | null)?.persona_name ?? null
   }
 
   const appointmentContext = await resolveAppointmentAction({ supabase, unit, customer, extraction, upcoming, services, locale })
@@ -475,8 +509,11 @@ export async function processReceptionistInbound(params: {
       ? `CONTEXTO DESTA RESPOSTA (ação de agenda já verificada/executada — baseie-se estritamente nisso, nunca contradiga nem invente outro resultado): ${appointmentContext}`
       : '',
     tiAnswerContext,
-    handoffTarget
+    handoffTarget && handoffTarget !== 'sales'
       ? 'Você já registrou a verificação deste assunto com o time responsável — diga ao cliente, com naturalidade, que vai confirmar isso e volta com a resposta assim que tiver; você continua sendo quem fala com ele, nunca diga que outra pessoa vai entrar em contato. Se essa MESMA frase ("vou verificar com o time"/equivalente) já apareceu antes no histórico desta conversa sobre este mesmo assunto, NÃO repita — o cliente já ouviu isso, repetir soa como disco riscado. Reconheça em poucas palavras (ex.: "ainda estou verificando isso") ou, se a mensagem dele for só um "ok"/agradecimento/confirmação, responda a ela normalmente sem reabrir a escalação.'
+      : '',
+    pendingSalesHandoff
+      ? `Você já encaminhou esta dúvida para ${sdrPersonaName ?? 'o time comercial'}, que assume a conversa a partir daqui — NÃO tente resolver, verificar ou responder esse assunto você mesma, e NÃO diga "vou verificar com o time" (a pessoa já foi encaminhada, prometer verificação de novo é reprometer algo que não é mais seu). Se o cliente voltar a falar sobre o mesmo assunto, diga com naturalidade que já encaminhou para ${sdrPersonaName ?? 'o time comercial'} e que ele(a) vai falar em breve. Se a mensagem dele for só um "ok"/agradecimento/confirmação, responda normalmente sem reabrir o assunto.`
       : '',
   ]
     .filter(Boolean)
@@ -813,6 +850,9 @@ export async function processReceptionistProspectInbound(params: {
     handoffTarget = rawHandoff
   }
 
+  let pendingSalesHandoff = false
+  let sdrPersonaName: string | null = null
+
   if (handoffTarget) {
     const contact = { name: contactName, phone: lead.phone, email: lead.email }
     const alreadyEscalated = await hasRecentEventForContact(supabase, {
@@ -821,19 +861,42 @@ export async function processReceptionistProspectInbound(params: {
       contactId: lead.id,
       windowMinutes: HANDOFF_COOLDOWN_MINUTES,
     })
+    const reasonText =
+      extraction.handoff_reason?.trim() ||
+      (rawHandoff === 'ti' ? 'TI interno falhou ao responder a dúvida sobre a plataforma' : 'assunto fora do escopo da recepcionista')
     if (!alreadyEscalated) {
       await notifyReceptionistHandoff(supabase, {
         unit,
         contact,
         contactId: lead.id,
         target: handoffTarget,
-        reason: extraction.handoff_reason?.trim() || (rawHandoff === 'ti' ? 'TI interno falhou ao responder a dúvida sobre a plataforma' : 'assunto fora do escopo da recepcionista'),
+        reason: reasonText,
         lastMessage: incomingText,
       })
       if (handoffTarget === 'sales') {
-        await handoffToSales(supabase, { unit, contact })
+        await handoffToSales(supabase, { unit, contact, history, reason: reasonText, fromPersonaName: config.persona_name })
       }
     }
+    if (handoffTarget === 'sales') pendingSalesHandoff = true
+  }
+
+  // Continuidade pós-handoff pro Sales — mesma razão de processReceptionistInbound acima.
+  if (!pendingSalesHandoff) {
+    pendingSalesHandoff = await hasRecentEventForContact(supabase, {
+      eventType: 'receptionist_handoff_sales',
+      unitId: unit.id,
+      contactId: lead.id,
+      windowMinutes: HANDOFF_COOLDOWN_MINUTES,
+    })
+  }
+  if (pendingSalesHandoff) {
+    const { data: sdrConfigRow } = await supabase
+      .from('agent_configs')
+      .select('persona_name')
+      .eq('unit_id', unit.id)
+      .eq('agent_type', 'sdr')
+      .maybeSingle()
+    sdrPersonaName = (sdrConfigRow as { persona_name: string } | null)?.persona_name ?? null
   }
 
   const appointmentContext = await resolveProspectAppointmentAction({ supabase, unit, lead, contactName, extraction, services, locale })
@@ -850,8 +913,11 @@ export async function processReceptionistProspectInbound(params: {
       ? `CONTEXTO DESTA RESPOSTA (ação de agenda já verificada/executada — baseie-se estritamente nisso, nunca contradiga nem invente outro resultado): ${appointmentContext}`
       : '',
     tiAnswerContext,
-    handoffTarget
+    handoffTarget && handoffTarget !== 'sales'
       ? 'Você já registrou a verificação deste assunto com o time responsável — diga à pessoa, com naturalidade, que vai confirmar isso e volta com a resposta assim que tiver; você continua sendo quem fala com ela, nunca diga que outra pessoa vai entrar em contato. Se essa MESMA frase ("vou verificar com o time"/equivalente) já apareceu antes no histórico desta conversa sobre este mesmo assunto, NÃO repita — a pessoa já ouviu isso, repetir soa como disco riscado. Reconheça em poucas palavras (ex.: "ainda estou verificando isso") ou, se a mensagem dela for só um "ok"/agradecimento/confirmação, responda a ela normalmente sem reabrir a escalação.'
+      : '',
+    pendingSalesHandoff
+      ? `Você já encaminhou esta dúvida para ${sdrPersonaName ?? 'o time comercial'}, que assume a conversa a partir daqui — NÃO tente resolver, verificar ou responder esse assunto você mesma, e NÃO diga "vou verificar com o time" (a pessoa já foi encaminhada). Se ela voltar a falar sobre o mesmo assunto, diga com naturalidade que já encaminhou para ${sdrPersonaName ?? 'o time comercial'} e que ele(a) vai falar em breve. Se a mensagem dela for só um "ok"/agradecimento/confirmação, responda normalmente sem reabrir o assunto.`
       : '',
   ]
     .filter(Boolean)

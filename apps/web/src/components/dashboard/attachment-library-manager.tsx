@@ -159,6 +159,11 @@ export function AttachmentLibraryManager({
     const editing = editingId ? attachments.find((a) => a.id === editingId) : null
     let fileUrl = form.kind === 'link' ? form.linkUrl.trim() : editing?.file_url ?? ''
     let fileName: string | null = editing?.file_name ?? null
+    // Texto extraído do PDF (item 5 do pedido de 2026-08-14) — mantém o
+    // que já existia na edição sem trocar o arquivo; null pra link/imagem
+    // (extração cobre só PDF) ou quando um novo PDF é enviado (extraído
+    // abaixo).
+    let extractedText: string | null = form.kind === 'pdf' ? (editing?.extracted_text ?? null) : null
 
     if (form.kind !== 'link') {
       if (file) {
@@ -177,6 +182,24 @@ export function AttachmentLibraryManager({
         const { data } = supabase.storage.from('employee-attachments').getPublicUrl(path)
         fileUrl = data.publicUrl
         fileName = file.name
+
+        // Extração de texto roda server-side (precisa da OPENAI_API_KEY,
+        // secreta) — best-effort: falha aqui nunca bloqueia o cadastro do
+        // material, só significa "sem conteúdo extraído desta vez" (ver
+        // extractAttachmentPdfText em lib/attachments.ts).
+        if (form.kind === 'pdf') {
+          try {
+            const extractRes = await fetch('/api/employee-attachments/extract-text', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ fileUrl, fileName: file.name }),
+            })
+            const extractJson = await extractRes.json().catch(() => null)
+            extractedText = typeof extractJson?.text === 'string' ? extractJson.text : null
+          } catch {
+            extractedText = null
+          }
+        }
       }
       if (!fileUrl) {
         setError(form.kind === 'image' ? 'Envie um arquivo de imagem.' : 'Envie um arquivo PDF.')
@@ -196,6 +219,7 @@ export function AttachmentLibraryManager({
       usage_instructions: usageInstructions,
       file_url: fileUrl,
       file_name: fileName,
+      extracted_text: extractedText,
       unit_id: form.unitId || null,
       applicable_employees: form.employees,
     }

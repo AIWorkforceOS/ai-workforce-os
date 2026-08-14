@@ -462,6 +462,57 @@ export async function generateFirstContactMessage(
   })
 }
 
+/**
+ * Contexto real do handoff Recepcionista → Sales (item 3 do pedido de
+ * 2026-08-14): o histórico da conversa que já rolou com a Recepcionista e
+ * o motivo extraído da escalação, para o SDR assumir SABENDO do que se
+ * trata, em vez de mandar a abertura fria genérica de
+ * generateFirstContactMessage (feita pra lead novo sem histórico nenhum).
+ */
+export type HandoffContext = {
+  /** Últimas mensagens da conversa com a Recepcionista (mesma janela de fetchCustomerHistory/fetchLeadConversationHistory em lib/receptionist/engine.ts). */
+  history: ChatMessage[]
+  /** Motivo do handoff já extraído pela Recepcionista (extraction.handoff_reason). */
+  reason: string
+  /** persona_name da Recepcionista, pra o SDR se referir a quem passou a dúvida. */
+  fromPersonaName: string
+}
+
+/**
+ * Igual a generateFirstContactMessage, mas para quando o lead já vem de
+ * um handoff da Recepcionista (não é um lead novo sem contexto): usa o
+ * HISTÓRICO REAL da conversa como `history` do modelo (em vez do
+ * placeholder "Inicie a conversa com este lead") para que a mensagem gerada
+ * responda de fato à dúvida que travou a Recepcionista, e instrui o modelo
+ * a se apresentar brevemente como alguém do time comercial assumindo o
+ * assunto — nunca fingir ser a mesma pessoa que já conversou (o número já é
+ * outro, então a troca é perceptível de qualquer forma).
+ */
+export async function generateHandoffMessage(
+  agentConfig: AgentConfig,
+  unit: Unit,
+  lead: Lead,
+  handoff: HandoffContext,
+): Promise<string> {
+  const apiKey = getOpenAIApiKey()
+  if (!apiKey) throw new Error('OPENAI_API_KEY não está configurada.')
+
+  const systemPrompt = [
+    buildSystemPrompt(agentConfig, unit, undefined, undefined, undefined, lead.enrichment_data),
+    `Você está assumindo esta conversa: ${handoff.fromPersonaName}, da recepção, encaminhou para o time comercial. Motivo do encaminhamento: ${handoff.reason}.`,
+    'Escreva a sua PRIMEIRA mensagem nesta conversa: apresente-se em poucas palavras como alguém do time comercial que está assumindo essa dúvida específica (nunca finja ser a mesma pessoa que já conversou) e, na mesma mensagem, responda de fato ao que a pessoa perguntou/precisa, usando o HISTÓRICO da conversa abaixo — nunca invente informação que não esteja nesse histórico ou na ficha da empresa.',
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  const chatHistory: ChatMessage[] = [
+    ...handoff.history,
+    { role: 'user', content: 'Assuma esta conversa agora e responda a esta pessoa.' },
+  ]
+
+  return generateChatReply({ apiKey, systemPrompt, history: chatHistory })
+}
+
 export async function generateFollowUpMessage(
   agentConfig: AgentConfig,
   unit: Unit,

@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { sendEscalationEmail } from '@/lib/email'
 import { logSystemEvent, shouldNotifyForEvent } from '@/lib/system-events'
 import { triggerFirstContact } from '@/lib/leads/lead-intake'
+import type { ChatMessage } from '@/lib/openai'
 import type { Lead, Unit } from '@/lib/types'
 
 // Handoff Receptionist → time humano (item 4 do pedido): mecanismo
@@ -142,16 +143,21 @@ async function findOrCreateHandoffLead(
  * registrada por notifyReceptionistHandoff (chamado antes) e por
  * triggerFirstContact internamente — o cliente já recebeu a resposta da
  * Recepcionista independente do resultado deste acionamento.
+ *
+ * `history`/`reason`/`fromPersonaName` (item 3 do pedido de 2026-08-14):
+ * repassados como HandoffContext pro triggerFirstContact, pra que o SDR
+ * assuma a conversa sabendo o que já rolou com a Recepcionista, em vez de
+ * mandar uma abertura fria genérica.
  */
 export async function handoffToSales(
   supabase: SupabaseClient,
-  params: { unit: Unit; contact: HandoffContact },
+  params: { unit: Unit; contact: HandoffContact; history: ChatMessage[]; reason: string; fromPersonaName: string },
 ): Promise<void> {
-  const { unit, contact } = params
+  const { unit, contact, history, reason, fromPersonaName } = params
   try {
     const lead = await findOrCreateHandoffLead(supabase, unit, contact)
     if (!lead) return
-    await triggerFirstContact(supabase, unit, lead)
+    await triggerFirstContact(supabase, unit, lead, { history, reason, fromPersonaName })
   } catch (error) {
     await logSystemEvent(supabase, {
       level: 'error',

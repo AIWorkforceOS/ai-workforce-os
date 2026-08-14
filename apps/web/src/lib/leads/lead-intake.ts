@@ -1,6 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getMessagingChannel, getEmailChannel, getUnitChannelType, channelLabel } from '@/lib/channels/messaging-channel'
-import { generateFirstContactMessage, isWithinActiveHours, countSentToday, sendAcrossChannels } from '@/lib/conversation-engine'
+import {
+  generateFirstContactMessage,
+  generateHandoffMessage,
+  isWithinActiveHours,
+  countSentToday,
+  sendAcrossChannels,
+  type HandoffContext,
+} from '@/lib/conversation-engine'
 import { ensureLeadEnrichment } from '@/lib/leads/enrichment'
 import { logSystemEvent } from '@/lib/system-events'
 import { syncLeadToSmarterCrm } from '@/lib/sales/smarter-crm'
@@ -51,8 +58,21 @@ function buildWhatsappCta(unit: Unit): { phone: string; text: string } | null {
  * + website, ver lib/leads/enrichment.ts) para personalizar a abordagem —
  * na prospecção fria é essa mesma pesquisa que costuma achar o e-mail de
  * contato (leads do Google Maps só vêm com telefone).
+ *
+ * `handoffContext` (item 3 do pedido de 2026-08-14): quando presente (lead
+ * veio de um handoff da Recepcionista, ver handoffToSales em
+ * lib/receptionist/handoff.ts), a mensagem gerada usa generateHandoffMessage
+ * (histórico real da conversa) em vez do cold-open genérico de
+ * generateFirstContactMessage — reaproveita os MESMOS guard-rails
+ * (agente ativo, horário, limite diário, claim atômico) e o mesmo envio
+ * multi-canal, só troca como a mensagem é gerada.
  */
-export async function triggerFirstContact(supabase: SupabaseClient, unit: Unit, lead: Lead): Promise<boolean> {
+export async function triggerFirstContact(
+  supabase: SupabaseClient,
+  unit: Unit,
+  lead: Lead,
+  handoffContext?: HandoffContext,
+): Promise<boolean> {
   const coldLead = isColdProspectingLead(lead)
   const emailChannelConfigured = Boolean(getEmailChannel(unit))
   const hasPhoneChannel = Boolean(lead.phone && getMessagingChannel(unit))
@@ -115,7 +135,9 @@ export async function triggerFirstContact(supabase: SupabaseClient, unit: Unit, 
       return false
     }
 
-    const message = await generateFirstContactMessage(config, unit, enrichedLead)
+    const message = handoffContext
+      ? await generateHandoffMessage(config, unit, enrichedLead, handoffContext)
+      : await generateFirstContactMessage(config, unit, enrichedLead)
     if (!message) {
       await releaseClaim()
       return false
@@ -131,7 +153,7 @@ export async function triggerFirstContact(supabase: SupabaseClient, unit: Unit, 
       text: message,
       subject: `${config.persona_name} · ${unit.name}`,
       personaName: config.persona_name,
-      templateKey: 'primeiro_contato',
+      templateKey: handoffContext ? 'handoff_recepcionista' : 'primeiro_contato',
       whatsappCta: coldLead ? buildWhatsappCta(unit) : null,
     })
     if (!anySent) {
