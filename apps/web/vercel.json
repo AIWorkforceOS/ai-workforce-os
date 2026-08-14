@@ -40,6 +40,10 @@
     {
       "path": "/api/cron/prospecting-afternoon",
       "schedule": "0 20 * * *"
+    },
+    {
+      "path": "/api/cron/smarter-franquia-crm-sync",
+      "schedule": "0 14 * * *"
     }
   ]
 }

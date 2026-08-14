@@ -98,6 +98,129 @@ export async function updateSmarterCrmLead(
   return smarterCrmRequest('PATCH', `/${smarterLeadId}`, token, input)
 }
 
+// ── CRM de Franquias (leads de quem quer abrir uma franquia Smarter) ──────
+//
+// Endpoint DIFERENTE do CRM acima: /api/partners/franquia-leads, não
+// /api/partners/leads. Escopo de token "franquia_crm", nível REDE — não
+// pertence a nenhuma franquia/unidade da Smarter (FranquiaLead é da
+// franqueadora como um todo), autorizado por SMARTER_FRANQUIA_CRM_TOKEN
+// (env var global, não units.smarter_crm_partner_token). Ver diagnóstico
+// de 2026-08-14: até então só existia o caminho Alizo→Smarter (acima);
+// este é o primeiro caminho de leitura (Smarter→Alizo).
+
+const SMARTER_FRANQUIA_CRM_API_BASE =
+  process.env.SMARTER_FRANQUIA_CRM_API_URL ?? 'https://sistema.smarterestagios.com.br/api/partners/franquia-leads'
+
+export type FranquiaCrmEtapa =
+  | 'novo_lead'
+  | 'primeiro_contato'
+  | 'apresentacao'
+  | 'due_diligence'
+  | 'proposta'
+  | 'fechado'
+export type FranquiaCrmSituacao = 'ativo' | 'vendido' | 'perdido'
+
+export type FranquiaCrmLead = {
+  id: string
+  nomeCompleto: string
+  email: string | null
+  telefone: string | null
+  cidade: string | null
+  estado: string | null
+  etapa: FranquiaCrmEtapa
+  situacao: FranquiaCrmSituacao
+  origem: string | null
+  leadFrio: boolean
+  optIn: boolean
+  ultimoContato: string | null
+  proximaAcao: string | null
+  createdAt: string
+  ultimaNota: { texto: string; tipo: string; createdAt: string } | null
+}
+
+export type ListFranquiaCrmLeadsResult = {
+  leads: FranquiaCrmLead[]
+  pagination: { hasMore: boolean; nextCursor: string | null }
+}
+
+/**
+ * GET /api/partners/franquia-leads — lista leads do CRM de Franquias.
+ * `stale: true` filtra só situacao=ativo com ultimoContato nulo/antigo —
+ * é o caso de uso real (376 leads parados, 375 nunca contatados).
+ */
+export async function listFranquiaCrmLeads(
+  token: string,
+  opts: { stale?: boolean; cursor?: string; limit?: number } = {},
+): Promise<ListFranquiaCrmLeadsResult> {
+  const params = new URLSearchParams()
+  if (opts.stale) params.set('stale', 'true')
+  if (opts.cursor) params.set('cursor', opts.cursor)
+  if (opts.limit) params.set('limit', String(opts.limit))
+  const qs = params.toString()
+
+  const response = await fetch(`${SMARTER_FRANQUIA_CRM_API_BASE}${qs ? `?${qs}` : ''}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    cache: 'no-store',
+  })
+
+  const data = await response.json().catch(() => null)
+  if (!response.ok) {
+    const message = data?.message ?? `API de CRM de Franquias da Smarter retornou status ${response.status}`
+    throw new Error(String(message))
+  }
+  if (!data?.success || !Array.isArray(data?.data?.leads)) {
+    throw new Error('API de CRM de Franquias da Smarter retornou um formato inesperado.')
+  }
+  return data.data as ListFranquiaCrmLeadsResult
+}
+
+export type UpdateFranquiaCrmLeadInput = Partial<{
+  etapa: FranquiaCrmEtapa
+  situacao: FranquiaCrmSituacao
+  proximaAcao: string | null
+  anotacao: string | null
+  contatoRealizado: boolean
+}>
+
+/**
+ * PATCH /api/partners/franquia-leads/[id] — registra contato/atualização
+ * de volta no CRM de Franquias, pra não confundir o time humano da Smarter
+ * que também pode estar trabalhando o mesmo lead.
+ */
+export async function updateFranquiaCrmLead(
+  token: string,
+  franquiaLeadId: string,
+  input: UpdateFranquiaCrmLeadInput,
+): Promise<FranquiaCrmLead> {
+  const response = await fetch(`${SMARTER_FRANQUIA_CRM_API_BASE}/${franquiaLeadId}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(input),
+    cache: 'no-store',
+  })
+
+  const data = await response.json().catch(() => null)
+  if (!response.ok) {
+    const message = data?.message ?? `API de CRM de Franquias da Smarter retornou status ${response.status}`
+    throw new Error(String(message))
+  }
+  if (!data?.lead?.id) throw new Error('API de CRM de Franquias da Smarter não retornou o lead atualizado.')
+  return data.lead as FranquiaCrmLead
+}
+
+export function getSmarterFranquiaCrmToken(): string | null {
+  return process.env.SMARTER_FRANQUIA_CRM_TOKEN || null
+}
+
+export function getSmarterFranquiaCrmUnitId(): string | null {
+  return process.env.SMARTER_FRANQUIA_CRM_UNIT_ID || null
+}
+
 /** Tradução do status fixo do Alizo (leads.status) para o par etapa/situação fixo do CRM da Smarter. */
 const LEAD_STATUS_TO_SMARTER: Record<LeadStatus, { etapa: SmarterCrmEtapa | null; situacao: SmarterCrmSituacao }> = {
   new: { etapa: 'novo_lead', situacao: 'ativo' },
@@ -111,6 +234,10 @@ const LEAD_STATUS_TO_SMARTER: Record<LeadStatus, { etapa: SmarterCrmEtapa | null
   won: { etapa: 'fechado', situacao: 'vendido' },
   lost: { etapa: null, situacao: 'perdido' },
   paused: { etapa: null, situacao: 'pausado' },
+  // Nunca deveria sincronizar pro CRM de Vendas (CrmLead) — leads com esse
+  // status vieram DO outro CRM (Franquias), não vão pra ele. Mapeamento só
+  // por exaustividade do Record<LeadStatus, ...>.
+  imported_pending_review: { etapa: 'novo_lead', situacao: 'ativo' },
 }
 
 /**

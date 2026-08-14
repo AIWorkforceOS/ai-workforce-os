@@ -235,6 +235,8 @@ export type LeadStatus =
   | 'won'
   | 'lost'
   | 'paused'
+  /** importado do CRM de Franquias da Smarter (lib/sales/franquia-crm-sync.ts), aguardando decisão de pitch antes de entrar no fluxo de contato automático — deliberadamente diferente de 'new' pra não ser pego por triggerFirstContact/follow-up (ambos filtram por status='new'). Ver [[project_alizo_franquia_crm_bridge]]. */
+  | 'imported_pending_review'
 
 /** Pesquisa automática da empresa do lead antes do 1º contato (migration 037, lib/leads/enrichment.ts). Campos são melhor esforço: qualquer um pode faltar. */
 export type LeadEnrichmentData = {

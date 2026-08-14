@@ -14,6 +14,7 @@ const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: 'won', label: 'Convertido' },
   { value: 'lost', label: 'Perdido' },
   { value: 'paused', label: 'Pausado' },
+  { value: 'imported_pending_review', label: 'Importado — aguardando revisão' },
 ]
 
 const STATUS_VARIANT: Record<string, BadgeVariant> = {
@@ -24,6 +25,7 @@ const STATUS_VARIANT: Record<string, BadgeVariant> = {
   won: 'green',
   lost: 'red',
   paused: 'slate',
+  imported_pending_review: 'amber',
 }
 
 // Setores agora são texto livre (perfil de segmentação, migration 049) —

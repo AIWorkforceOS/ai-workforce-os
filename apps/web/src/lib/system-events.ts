@@ -16,6 +16,7 @@ export type SystemEventSource =
   | 'job_board'
   | 'sales'
   | 'smarter_crm'
+  | 'smarter_franquia_crm'
   | 'receptionist'
   | 'scheduling'
   | 'invoices'
