@@ -297,6 +297,10 @@ export async function transcribeAudio(params: {
  * `transcribeAudio` no sentido contrário. Devolve já em Ogg/Opus, o
  * formato que o WhatsApp espera para nota de voz (ptt), evitando
  * depender de ffmpeg (indisponível no runtime serverless da Vercel).
+ *
+ * Voz padrão 'shimmer' (trocada de 'alloy' — reportada como robótica em
+ * atendimento real) e `instructions` de tom, ambos suportados pelo
+ * gpt-4o-mini-tts (diferente do tts-1/tts-1-hd, que ignoram `instructions`).
  */
 export async function synthesizeSpeech(params: {
   apiKey: string
@@ -312,7 +316,9 @@ export async function synthesizeSpeech(params: {
     body: JSON.stringify({
       model: 'gpt-4o-mini-tts',
       input: params.text,
-      voice: params.voice ?? 'alloy',
+      voice: params.voice ?? 'shimmer',
+      instructions:
+        'Fale em tom natural, caloroso e humano, como uma pessoa de verdade numa nota de voz do WhatsApp — nem robótico nem apressado, com entonação e ritmo variados.',
       response_format: 'opus',
     }),
   })
