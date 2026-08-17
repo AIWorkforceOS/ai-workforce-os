@@ -16,7 +16,7 @@ function makeUnit(overrides: Partial<Unit> = {}): Unit {
   return {
     id: 'unit-1', org_id: 'org-1', name: 'Unidade Teste', slug: 'unidade-teste',
     whatsapp_instance_id: null, whatsapp_phone: null, email_from: null, email_reply_to: null,
-    logo_url: null, region_city: 'São Paulo', region_state: 'SP',
+    logo_url: null, email_accent_color: null, email_footer_note: null, region_city: 'São Paulo', region_state: 'SP',
     evolution_api_url: null, evolution_api_key: null, evolution_instance_name: null,
     messaging_channel: null, twilio_account_sid: null, twilio_auth_token: null, twilio_phone_number: null,
     default_conversation_language: null, intake_token: null,

@@ -52,6 +52,8 @@ const baseUnit = {
   billing_phone: '+1 480 555 0199',
   billing_payment_instructions: 'Zelle to pay@alizocleaning.com',
   logo_url: null,
+  email_accent_color: null,
+  email_footer_note: null,
 }
 
 describe('generateInvoicePdf', () => {

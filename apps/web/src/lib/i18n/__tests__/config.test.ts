@@ -66,6 +66,8 @@ describe('buildSystemPrompt injeta a diretriz de idioma certa por unidade', () =
       email_from: null,
       email_reply_to: null,
       logo_url: null,
+      email_accent_color: null,
+      email_footer_note: null,
       region_city: null,
       region_state: null,
       evolution_api_url: null,

@@ -46,6 +46,10 @@ export type Unit = {
   email_reply_to: string | null
   /** URL pública da logo da unidade (Supabase Storage, bucket unit-logos), usada no template de e-mail do Sales Rep. */
   logo_url: string | null
+  /** Cor de destaque (hex) do e-mail de prospecção — null usa o padrão da plataforma (migration 064). */
+  email_accent_color: string | null
+  /** Linha extra no rodapé do e-mail de prospecção (ex. razão social, endereço) — migration 064. */
+  email_footer_note: string | null
   region_city: string | null
   region_state: string | null
   evolution_api_url: string | null

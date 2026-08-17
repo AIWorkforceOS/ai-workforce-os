@@ -304,7 +304,15 @@ export function buildWhatsappCtaHtml(cta: { phone: string; text: string }): stri
   `
 }
 
-function buildBrandedEmailHtml(params: {
+const DEFAULT_EMAIL_ACCENT = '#0f172a'
+const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i
+
+/** Só aceita hex de 6 dígitos (#rrggbb) — qualquer outra coisa (vazio, texto, CSS injection) cai no padrão. */
+function sanitizeAccentColor(raw: string | null | undefined): string {
+  return raw && HEX_COLOR_RE.test(raw.trim()) ? raw.trim() : DEFAULT_EMAIL_ACCENT
+}
+
+export type BrandedEmailParams = {
   unitName: string
   logoUrl: string | null
   bodyText: string
@@ -312,7 +320,22 @@ function buildBrandedEmailHtml(params: {
   attachmentTitle?: string | null
   /** Presente só na prospecção fria (Google Maps) — ver SendContext.whatsappCta. */
   whatsappCta?: { phone: string; text: string } | null
-}): string {
+  /** Cor de destaque (hex) — usada no nome da unidade sem logo e no botão de WhatsApp. Inválida/ausente = padrão da plataforma (migration 064). */
+  accentColor?: string | null
+  /** Linha extra no rodapé (ex. razão social, endereço) — migration 064. */
+  footerNote?: string | null
+}
+
+/**
+ * Layout fixo (wrapper) do e-mail de prospecção do Sales Rep — exportada
+ * para a tela de preview (dashboard/units/[id]/email-preview) renderizar
+ * exatamente o mesmo HTML que sai de verdade pelo Resend, sem duplicar o
+ * template em dois lugares. `bodyText` é sempre gerado pela IA por lead
+ * (lib/conversation-engine.ts); só o wrapper ao redor é fixo/editável.
+ */
+export function buildBrandedEmailHtml(params: BrandedEmailParams): string {
+  const accent = sanitizeAccentColor(params.accentColor)
+
   const paragraphs = params.bodyText
     .split(/\n+/)
     .map((line) => line.trim())
@@ -322,7 +345,7 @@ function buildBrandedEmailHtml(params: {
 
   const logoBlock = params.logoUrl
     ? `<img src="${escapeHtml(params.logoUrl)}" alt="${escapeHtml(params.unitName)}" style="max-height:40px;max-width:220px;height:auto;width:auto;" />`
-    : `<span style="font-size:16px;font-weight:700;color:#0f172a;">${escapeHtml(params.unitName)}</span>`
+    : `<span style="font-size:16px;font-weight:700;color:${accent};">${escapeHtml(params.unitName)}</span>`
 
   const attachmentBlock = params.attachmentTitle
     ? `<div style="margin-top:8px;padding:12px 16px;border-radius:10px;background:#f8fafc;border:1px solid #e2e8f0;">
@@ -340,9 +363,13 @@ function buildBrandedEmailHtml(params: {
     ? 'Este e-mail não recebe respostas — para continuar a conversa, clique no botão acima e fale com a gente pelo WhatsApp.'
     : `Mensagem enviada por ${escapeHtml(params.unitName)}. Basta responder este e-mail para continuar a conversa.`
 
+  const footerNoteBlock = params.footerNote?.trim()
+    ? `<p style="margin:6px 0 0;font-size:11px;color:#94a3b8;">${escapeHtml(params.footerNote.trim())}</p>`
+    : ''
+
   return `
     <div style="background:#f1f5f9;padding:32px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-      <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;">
+      <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;border-top:3px solid ${accent};">
         <div style="padding:24px 32px;border-bottom:1px solid #e2e8f0;">
           ${logoBlock}
         </div>
@@ -353,6 +380,7 @@ function buildBrandedEmailHtml(params: {
         </div>
         <div style="padding:16px 32px;background:#f8fafc;border-top:1px solid #e2e8f0;">
           <p style="margin:0;font-size:12px;color:#94a3b8;">${footerText}</p>
+          ${footerNoteBlock}
         </div>
       </div>
     </div>
@@ -620,6 +648,9 @@ export async function sendLeadEmail(params: {
   attachment?: { title: string; url: string; fileName?: string | null } | null
   /** Botão "Falar agora no WhatsApp" — só na prospecção fria (Google Maps), ver SendContext.whatsappCta. */
   whatsappCta?: { phone: string; text: string } | null
+  /** units.email_accent_color / units.email_footer_note (migration 064) — ver buildBrandedEmailHtml. */
+  accentColor?: string | null
+  footerNote?: string | null
 }): Promise<SendResult> {
   const from = salesFrom(`${params.personaName} · ${params.unitName}`)
   if (!from) return { ok: false, error: 'EMAIL_FROM_DOMAIN não está configurada.' }
@@ -640,6 +671,8 @@ export async function sendLeadEmail(params: {
       bodyText: params.bodyText,
       attachmentTitle: params.attachment?.title ?? null,
       whatsappCta: params.whatsappCta ?? null,
+      accentColor: params.accentColor ?? null,
+      footerNote: params.footerNote ?? null,
     }),
     replyTo: params.replyTo,
     attachments,

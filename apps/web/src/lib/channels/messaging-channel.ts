@@ -209,6 +209,8 @@ class ResendEmailChannel implements MessagingChannel {
       replyTo: getEmailReplyTo(this.unit),
       attachment: context?.attachment ?? null,
       whatsappCta: context?.whatsappCta ?? null,
+      accentColor: this.unit.email_accent_color,
+      footerNote: this.unit.email_footer_note,
     })
     if (!result.ok) throw new Error(result.error || 'Falha ao enviar e-mail.')
   }

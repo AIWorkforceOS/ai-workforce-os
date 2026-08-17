@@ -158,6 +158,24 @@ export default async function UnitDetailPage({
       <Card className="p-6">
         <div className="flex items-center justify-between">
           <div>
+            <h2 className="text-sm font-bold text-white">E-mail de prospecção</h2>
+            <p className="mt-1 text-sm text-slate-400">
+              Veja como o lead recebe o e-mail de verdade e ajuste cor/rodapé do layout.
+            </p>
+          </div>
+          <Link
+            href={`/dashboard/units/${unitRow.id}/email-preview`}
+            className="rounded-xl px-4 py-2 text-sm font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
+            style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
+          >
+            Ver e-mail
+          </Link>
+        </div>
+      </Card>
+
+      <Card className="p-6">
+        <div className="flex items-center justify-between">
+          <div>
             <h2 className="text-sm font-bold text-white">Agenda inteligente</h2>
             <p className="mt-1 text-sm text-slate-400">
               Horário de funcionamento, serviços, salas/equipamentos e profissionais que atendem agenda.

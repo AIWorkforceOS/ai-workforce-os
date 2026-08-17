@@ -7,6 +7,7 @@ export type IntegrationKey =
   | 'evolution'
   | 'google_maps'
   | 'resend'
+  | 'resend_inbound'
   | 'intake'
   | 'cron'
   | 'meta_ads'
@@ -72,6 +73,14 @@ export function getIntegrationsConfigStatus(): IntegrationConfigStatus[] {
       configured: has('RESEND_API_KEY') && has('EMAIL_FROM_DOMAIN'),
       detail: 'Escalação para humano e alertas técnicos. Env: RESEND_API_KEY + EMAIL_FROM_DOMAIN',
       testable: true,
+    },
+    {
+      key: 'resend_inbound',
+      label: 'Resend Receiving (resposta do lead por e-mail)',
+      configured: has('EMAIL_INBOUND_DOMAIN') && has('RESEND_WEBHOOK_SECRET'),
+      detail:
+        'Sem isso, quando um lead responde o e-mail de prospecção, a resposta NÃO chega no Sales Rep nem em ninguém (a menos que a unidade tenha um e-mail de resposta configurado manualmente). Exige MX de Receiving configurado no domínio no Resend + o webhook assinado. Env: EMAIL_INBOUND_DOMAIN + RESEND_WEBHOOK_SECRET',
+      testable: false,
     },
     {
       key: 'intake',

@@ -22,6 +22,8 @@ function makeUnitRow(overrides: Record<string, unknown> = {}) {
     timezone: 'America/Sao_Paulo',
     default_conversation_language: 'pt',
     logo_url: null,
+    email_accent_color: null,
+    email_footer_note: null,
     email_reply_to: null,
     ...overrides,
   }
