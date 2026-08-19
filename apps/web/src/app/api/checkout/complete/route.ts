@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { PLAN_PRICING, isLocale, type Locale, type PaidPlanSlug } from '@/lib/i18n/config'
 import { sendWelcomeEmail, sendPaymentGateBlockedEmail } from '@/lib/email'
-import { isPaymentPlatformConfigured, type PaymentRegion } from '@/lib/payments/gateway-status'
+import { getPaymentProviderForRegion, type PaymentRegion } from '@/lib/payments/gateway-status'
 import { logSystemEvent } from '@/lib/system-events'
 
 export const dynamic = 'force-dynamic'
@@ -26,8 +26,6 @@ const ERRORS: Record<Locale, Record<string, string>> = {
     accessFailed: 'Não foi possível liberar seu acesso. Tente novamente.',
     authFailed: 'Não foi possível criar sua conta de acesso. Tente novamente.',
     enterprise: 'O plano Enterprise é sob consulta — fale com a gente: suporte@alizo.com.br',
-    paymentUnavailable:
-      'Nossa plataforma de pagamentos para o Brasil ainda está em configuração. Para garantir seu acesso agora, fale com a gente: suporte@alizo.com.br — ativamos sua conta manualmente enquanto isso.',
   },
   en: {
     unavailable: 'Automatic signup is unavailable right now. Contact us: suporte@alizo.com.br',
@@ -39,8 +37,6 @@ const ERRORS: Record<Locale, Record<string, string>> = {
     accessFailed: 'We could not grant your access. Please try again.',
     authFailed: 'We could not create your login account. Please try again.',
     enterprise: 'The Enterprise plan is priced on request — contact us: suporte@alizo.com.br',
-    paymentUnavailable:
-      'Our payment platform for the US is still being set up. To lock in your access now, contact us: suporte@alizo.com.br — we will activate your account manually in the meantime.',
   },
 }
 
@@ -60,8 +56,18 @@ function slugify(str: string): string {
  * (public.users) + conta de login (Supabase Auth) com a senha escolhida
  * pelo cliente no checkout. A cobrança do plano fica registrada como
  * pendente em financial_records — em R$ (Brasil) ou US$ (EUA), conforme
- * a localidade detectada — e a integração com a processadora escolhida
- * entra depois; o acesso é liberado imediatamente (garantia de 7 dias).
+ * a localidade detectada — e o acesso é liberado imediatamente (garantia
+ * de 7 dias).
+ *
+ * Importante (corrigido em 19/08/2026 — auditoria P0): a criação de conta
+ * NUNCA é bloqueada por falta de processadora de pagamento ativa. Trial e
+ * beta autorizado não podem ficar de fora só porque não existe cobrança
+ * imediata — organizations.billing_status nasce 'trialing' e só muda via
+ * webhook de pagamento (lib/payments/*), depois que a conta já existe.
+ * Se houver uma processadora ativa pra região (Asaas no BR, Stripe no
+ * US — lib/payments/gateway-status.ts), tentamos cobrar de verdade
+ * DEPOIS de provisionar a conta, best-effort: falha na cobrança nunca
+ * desfaz o cadastro, só fica registrada pra acompanhamento manual.
  */
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null)
@@ -101,32 +107,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: err.emailTaken }, { status: 409 })
   }
 
-  // Trava de compra: sem processadora ativa pra essa região, não cria conta —
-  // orienta a falar com o suporte e notifica a Alizo na hora (ver
-  // lib/payments/gateway-status.ts). Some sozinha assim que o super admin
-  // marcar uma processadora como ativa em Dashboard → Vendas → Pagamentos.
   const region: PaymentRegion = locale === 'en' ? 'US' : 'BR'
-  if (!(await isPaymentPlatformConfigured(service, region))) {
-    const { data: admins } = await service
-      .from('users')
-      .select('email')
-      .eq('role', 'super_admin')
-      .eq('is_active', true)
-    const adminEmails = (admins ?? []).map((a) => a.email).filter((e): e is string => !!e)
-
-    await Promise.all([
-      logSystemEvent(service, {
-        level: 'warning',
-        source: 'checkout',
-        eventType: 'payment_gate_blocked',
-        message: `Tentativa de compra bloqueada: nenhuma processadora ativa para a região ${region}.`,
-        metadata: { name, email, phone, plan, region },
-      }),
-      ...adminEmails.map((to) => sendPaymentGateBlockedEmail({ to, region, plan, name, email, phone })),
-    ])
-
-    return NextResponse.json({ error: err.paymentUnavailable }, { status: 503 })
-  }
 
   // Slug único para a org
   const baseSlug = slugify(company) || 'empresa'
@@ -210,10 +191,71 @@ export async function POST(request: Request) {
     await service.from('financial_records').insert(billingRow)
   }
 
+  // Tentativa de cobrança real, best-effort — a conta já existe e está
+  // ativa independente do resultado daqui pra baixo. Sem processadora
+  // configurada pra região, a org fica em billing_status='trialing'
+  // (padrão da coluna) e a Alizo é notificada pra configurar/ativar
+  // manualmente; nunca é o cliente que fica bloqueado por isso.
+  let paymentUrl: string | null = null
+  const paymentProvider = await getPaymentProviderForRegion(service, region)
+  if (paymentProvider) {
+    const chargeResult = await paymentProvider.createCustomerAndCharge({
+      name,
+      email,
+      phone,
+      plan,
+      amount,
+      currency,
+      paymentMethod,
+      description: `Assinatura Alizo — plano ${plan} (1º mês)`,
+    })
+    if (chargeResult.ok) {
+      paymentUrl = chargeResult.paymentUrl
+      await service
+        .from('organizations')
+        .update({
+          billing_provider: paymentProvider.id,
+          billing_provider_customer_ref: chargeResult.providerCustomerRef,
+          billing_provider_subscription_ref: chargeResult.providerChargeRef,
+        })
+        .eq('id', org.id)
+    } else {
+      await logSystemEvent(service, {
+        level: 'error',
+        source: 'checkout',
+        eventType: 'payment_charge_failed',
+        message: `Conta criada normalmente, mas a cobrança automática (${paymentProvider.id}) falhou: ${chargeResult.error}`,
+        orgId: org.id,
+        metadata: { name, email, phone, plan, region, provider: paymentProvider.id },
+      })
+    }
+  } else {
+    // Informativo, não bloqueante — mantém o admin ciente de que essa
+    // conta precisa de cobrança manual até uma processadora ser ativada
+    // (ou continuar em trial/beta deliberadamente).
+    const { data: admins } = await service
+      .from('users')
+      .select('email')
+      .eq('role', 'super_admin')
+      .eq('is_active', true)
+    const adminEmails = (admins ?? []).map((a) => a.email).filter((e): e is string => !!e)
+    await Promise.all([
+      logSystemEvent(service, {
+        level: 'info',
+        source: 'checkout',
+        eventType: 'payment_provider_missing',
+        message: `Conta criada sem processadora ativa para a região ${region} — cobrança fica pendente manualmente (org em billing_status='trialing').`,
+        orgId: org.id,
+        metadata: { name, email, phone, plan, region },
+      }),
+      ...adminEmails.map((to) => sendPaymentGateBlockedEmail({ to, region, plan, name, email, phone })),
+    ])
+  }
+
   // E-mail de boas-vindas — sem link de senha aqui: a pessoa já escolheu a
   // própria senha no checkout, então só confirmamos o cadastro. Falha no
   // envio não deve travar o checkout (acesso já foi liberado acima).
   await sendWelcomeEmail({ to: email, name, companyName: company, setPasswordUrl: null })
 
-  return NextResponse.json({ ok: true, orgId: org.id, authAlreadyExisted: !!authError })
+  return NextResponse.json({ ok: true, orgId: org.id, authAlreadyExisted: !!authError, paymentUrl })
 }

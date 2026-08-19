@@ -618,6 +618,11 @@ export type Organization = {
   management_mode: ManagementMode | null
   /** Ficha da empresa COMPARTILHADA entre todos os AI Employees da organização (migration 025). Distinta de agent_configs.business_profile. */
   business_profile: Record<string, unknown>
+  /** Ciclo de vida de cobrança (migration 065) — independente da criação de conta, que nunca é bloqueada por isso. Atualizado pelos webhooks de pagamento (lib/payments/*). */
+  billing_status: 'trialing' | 'active' | 'past_due' | 'canceled' | 'grace_period'
+  billing_provider: string | null
+  billing_provider_customer_ref: string | null
+  billing_provider_subscription_ref: string | null
   created_at: string
   updated_at: string
 }

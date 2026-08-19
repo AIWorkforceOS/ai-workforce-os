@@ -1,0 +1,147 @@
+import { createHmac, timingSafeEqual } from 'node:crypto'
+import type { ChargeInput, ChargeResult, PaymentProvider, PaymentWebhookEvent, PaymentWebhookEventType } from './provider'
+
+/**
+ * Stripe (US) — Checkout Session em modo assinatura (subscription). O
+ * cliente é redirecionado pra uma página hospedada da Stripe pra
+ * inserir o cartão — nunca coletamos nem tocamos dado de cartão no
+ * nosso frontend/backend (fora do escopo de PCI compliance).
+ *
+ * Sem SDK oficial (evita nova dependência): chamadas via fetch direto
+ * na API REST da Stripe (application/x-www-form-urlencoded, como a
+ * própria API exige) e verificação de assinatura de webhook via
+ * crypto nativo do Node (mesmo algoritmo do stripe-node: HMAC-SHA256
+ * sobre "{timestamp}.{body}").
+ *
+ * Docs: https://stripe.com/docs/api
+ */
+
+const STRIPE_BASE = 'https://api.stripe.com/v1'
+
+const EVENT_MAP: Record<string, PaymentWebhookEventType> = {
+  'checkout.session.completed': 'payment_success',
+  'invoice.payment_succeeded': 'payment_success',
+  'invoice.payment_failed': 'payment_failed',
+  'customer.subscription.deleted': 'subscription_canceled',
+  'customer.subscription.trial_will_end': 'grace_period',
+  'charge.refunded': 'refunded',
+}
+
+function toFormBody(params: Record<string, string | undefined>): string {
+  const usp = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined) usp.append(key, value)
+  }
+  return usp.toString()
+}
+
+export function createStripeProvider(secretKey: string): PaymentProvider {
+  async function stripeFetch(path: string, params: Record<string, string | undefined>) {
+    const res = await fetch(`${STRIPE_BASE}${path}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${secretKey}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: toFormBody(params),
+    })
+    const data = await res.json().catch(() => null)
+    return { ok: res.ok, status: res.status, data: data as Record<string, unknown> | null }
+  }
+
+  return {
+    id: 'stripe',
+
+    async createCustomerAndCharge(input: ChargeInput): Promise<ChargeResult> {
+      const customerRes = await stripeFetch('/customers', {
+        email: input.email,
+        name: input.name,
+        phone: input.phone ?? undefined,
+      })
+      const customerId = customerRes.data?.id as string | undefined
+      if (!customerRes.ok || !customerId) {
+        const err = customerRes.data?.error as { message?: string } | undefined
+        return { ok: false, error: `Stripe (cliente): ${err?.message ?? `HTTP ${customerRes.status}`}` }
+      }
+
+      const priceId = input.plan === 'pro' ? process.env.STRIPE_PRICE_PRO : process.env.STRIPE_PRICE_STARTER
+      if (!priceId) {
+        return {
+          ok: false,
+          error: `Stripe: price ID não configurado para o plano ${input.plan} (env STRIPE_PRICE_${input.plan.toUpperCase()})`,
+        }
+      }
+
+      const sessionRes = await stripeFetch('/checkout/sessions', {
+        customer: customerId,
+        mode: 'subscription',
+        'line_items[0][price]': priceId,
+        'line_items[0][quantity]': '1',
+        success_url: input.successUrl ?? 'https://app.alizoai.com/dashboard?billing=success',
+        cancel_url: input.cancelUrl ?? 'https://app.alizoai.com/checkout?billing=canceled',
+      })
+      const sessionId = sessionRes.data?.id as string | undefined
+      if (!sessionRes.ok || !sessionId) {
+        const err = sessionRes.data?.error as { message?: string } | undefined
+        return { ok: false, error: `Stripe (checkout session): ${err?.message ?? `HTTP ${sessionRes.status}`}` }
+      }
+
+      return {
+        ok: true,
+        providerCustomerRef: customerId,
+        providerChargeRef: sessionId,
+        paymentUrl: (sessionRes.data?.url as string | undefined) ?? null,
+        status: 'pending',
+      }
+    },
+
+    verifyWebhookSignature(rawBody: string, headers: Headers): boolean {
+      const sigHeader = headers.get('stripe-signature')
+      const secret = process.env.STRIPE_WEBHOOK_SECRET
+      if (!sigHeader || !secret) return false
+
+      const parts = Object.fromEntries(
+        sigHeader.split(',').map((p) => {
+          const [k, v] = p.split('=')
+          return [k, v]
+        }),
+      )
+      const timestamp = parts.t
+      const signature = parts.v1
+      if (!timestamp || !signature) return false
+
+      const signedPayload = `${timestamp}.${rawBody}`
+      const expected = createHmac('sha256', secret).update(signedPayload).digest('hex')
+      try {
+        return timingSafeEqual(Buffer.from(expected), Buffer.from(signature))
+      } catch {
+        return false
+      }
+    },
+
+    parseWebhookEvent(rawBody: string): PaymentWebhookEvent | null {
+      let payload: Record<string, unknown>
+      try {
+        payload = JSON.parse(rawBody)
+      } catch {
+        return null
+      }
+      const eventType = payload.type as string | undefined
+      const type = eventType ? EVENT_MAP[eventType] : undefined
+      if (!type) return null
+
+      const data = payload.data as { object?: Record<string, unknown> } | undefined
+      const obj = data?.object
+      const eventId = payload.id as string | undefined
+      if (!eventId) return null
+
+      return {
+        externalEventId: eventId,
+        type,
+        providerChargeRef: (obj?.id as string | undefined) ?? null,
+        providerCustomerRef: (obj?.customer as string | undefined) ?? null,
+        raw: payload,
+      }
+    },
+  }
+}

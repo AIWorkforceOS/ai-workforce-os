@@ -1,4 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { createAsaasProvider } from './asaas-provider'
+import { createStripeProvider } from './stripe-provider'
+import type { PaymentProvider } from './provider'
 
 export type PaymentRegion = 'BR' | 'US'
 
@@ -28,4 +31,39 @@ export async function isPaymentPlatformConfigured(
     const credentials = row.credentials as Record<string, string> | null
     return !!credentials && Object.values(credentials).some((v) => typeof v === 'string' && v.trim() !== '')
   })
+}
+
+const PROVIDER_FACTORIES: Record<string, (credentials: Record<string, string>) => PaymentProvider | null> = {
+  asaas: (c) => (c.api_key ? createAsaasProvider(c.api_key) : null),
+  stripe: (c) => (c.secret_key ? createStripeProvider(c.secret_key) : null),
+}
+
+/**
+ * Instancia o PaymentProvider real (Asaas/Stripe) pra região, lendo a
+ * linha ativa com credenciais preenchidas em payment_gateway_settings.
+ * Retorna null quando não há processadora pronta pra cobrar de verdade
+ * (nunca lança) — quem chama trata isso como "cobrar depois", nunca
+ * como motivo de bloquear o cadastro (ver app/api/checkout/complete).
+ */
+export async function getPaymentProviderForRegion(
+  service: SupabaseClient,
+  region: PaymentRegion,
+): Promise<PaymentProvider | null> {
+  const { data, error } = await service
+    .from('payment_gateway_settings')
+    .select('provider, credentials')
+    .eq('region', region)
+    .eq('is_active', true)
+
+  if (error || !data) return null
+
+  for (const row of data) {
+    const provider = row.provider as string
+    const credentials = (row.credentials as Record<string, string> | null) ?? {}
+    const factory = PROVIDER_FACTORIES[provider]
+    if (!factory) continue
+    const instance = factory(credentials)
+    if (instance) return instance
+  }
+  return null
 }
