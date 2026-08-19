@@ -250,6 +250,15 @@ export type LeadEnrichmentData = {
   place_id: string | null
 }
 
+/** Máquina de estados do enrichment (migration 067) — ver lib/leads/enrichment.ts. */
+export type LeadEnrichmentStatus =
+  | 'enrichment_pending'
+  | 'enrichment_processing'
+  | 'email_found'
+  | 'email_not_found'
+  | 'retry_scheduled'
+  | 'enrichment_failed'
+
 export type Lead = {
   id: string
   unit_id: string
@@ -268,6 +277,18 @@ export type Lead = {
   /** Pesquisa automática (Maps + site) antes do primeiro contato (migration 037). Null = ainda não pesquisado ou pesquisa não achou nada. */
   enrichment_data: LeadEnrichmentData | null
   enriched_at: string | null
+  /**
+   * Estado do enrichment (migration 067) — controla o retry automático.
+   * Opcional no tipo (mesmo tendo default no banco) pra não quebrar
+   * fixtures de teste pré-existentes que constroem Lead manualmente sem
+   * esses campos; todo código que lê usa `?? valor-padrão` (ver
+   * lib/leads/enrichment.ts e dashboard/leads/page.tsx).
+   */
+  enrichment_status?: LeadEnrichmentStatus
+  enrichment_attempts?: number
+  next_enrichment_retry_at?: string | null
+  enrichment_source?: string | null
+  enrichment_error?: string | null
   notes: string | null
   last_contacted_at: string | null
   /** dados de vaga levantados pelo Sales Rep na própria conversa ao fechar negócio (migration 013) */

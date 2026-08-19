@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getGoogleMapsApiKey, placeDetails, textSearch } from '@/lib/google-places'
 import { generateStructuredReply, getOpenAIApiKey } from '@/lib/openai'
-import type { Lead, LeadEnrichmentData } from '@/lib/types'
+import type { Lead, LeadEnrichmentData, LeadEnrichmentStatus } from '@/lib/types'
 
 // Pesquisa da empresa do lead ANTES do primeiro contato (item 1/2 do
 // pedido): Google Places para achar o website + telefone, e o próprio
@@ -180,38 +180,99 @@ export async function researchLeadCompany(
   return { website, summary, contact_email: contactEmail, place_id: placeId }
 }
 
+const MAX_ENRICHMENT_ATTEMPTS = intFromEnv('ENRICHMENT_MAX_ATTEMPTS', 3)
+const RETRY_INTERVAL_DAYS = intFromEnv('ENRICHMENT_RETRY_INTERVAL_DAYS', 3)
+
+function intFromEnv(name: string, fallback: number): number {
+  const value = Number(process.env[name])
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback
+}
+
+function addDays(date: Date, days: number): string {
+  const d = new Date(date)
+  d.setDate(d.getDate() + days)
+  return d.toISOString()
+}
+
+/** Um lead pronto pra (re)tentar enrichment agora — nunca tentado, ou retry cuja data já chegou. */
+export function isEnrichmentDue(lead: Pick<Lead, 'enrichment_status' | 'next_enrichment_retry_at'>): boolean {
+  const status = lead.enrichment_status ?? 'enrichment_pending'
+  if (status === 'email_found' || status === 'email_not_found' || status === 'enrichment_failed') return false
+  if (status === 'retry_scheduled') {
+    if (!lead.next_enrichment_retry_at) return true
+    return new Date(lead.next_enrichment_retry_at) <= new Date()
+  }
+  return true // enrichment_pending / enrichment_processing (nunca escrito hoje, tratado como pendente)
+}
+
 /**
  * Garante que o lead tem pesquisa feita ANTES do primeiro contato,
- * persistindo o resultado em leads.enrichment_data/enriched_at (migration
- * 037) para não pesquisar de novo a cada mensagem. Quando a pesquisa acha
- * um e-mail de contato e o lead ainda não tinha e-mail cadastrado (ex.:
- * leads prospectados via Google Maps, que só têm telefone), preenche
- * leads.email — é isso que destrava o canal de e-mail em
- * sendAcrossChannels para este lead. Devolve o lead já com os campos
- * atualizados; nunca lança (persistência é best-effort).
+ * persistindo o resultado em leads.enrichment_data/enrichment_status
+ * (migrations 037 e 067). Ao contrário do comportamento antigo ("tenta
+ * uma vez, nunca mais"), agora reagenda retry automático quando não acha
+ * e-mail (ENRICHMENT_RETRY_INTERVAL_DAYS, padrão 3 dias) até um limite de
+ * tentativas (ENRICHMENT_MAX_ATTEMPTS, padrão 3), quando então desiste de
+ * vez (email_not_found). Quando a pesquisa acha um e-mail de contato e o
+ * lead ainda não tinha e-mail cadastrado (ex.: leads prospectados via
+ * Google Maps, que só têm telefone), preenche leads.email — é isso que
+ * destrava o canal de e-mail em sendAcrossChannels para este lead.
+ * Devolve o lead já com os campos atualizados; nunca lança (persistência
+ * é best-effort). Idempotente: leads fora da janela de retry (ver
+ * isEnrichmentDue) voltam sem nenhuma pesquisa nova nem escrita no banco.
  */
-export async function ensureLeadEnrichment(supabase: SupabaseClient, lead: Lead): Promise<Lead> {
-  if (lead.enriched_at) return lead
+export async function ensureLeadEnrichment(
+  supabase: SupabaseClient,
+  lead: Lead,
+  options?: { force?: boolean },
+): Promise<Lead> {
+  if (!options?.force && !isEnrichmentDue(lead)) return lead
+
+  const attempts = (lead.enrichment_attempts ?? 0) + 1
+  const nowIso = new Date().toISOString()
 
   let enrichment: LeadEnrichmentData | null = null
+  let errorMessage: string | null = null
   try {
     enrichment = await researchLeadCompany(lead)
-  } catch {
+  } catch (error) {
     enrichment = null
+    errorMessage = error instanceof Error ? error.message : 'Erro desconhecido na pesquisa.'
+  }
+
+  const foundEmail = !lead.email && enrichment?.contact_email ? enrichment.contact_email : null
+  const resolvedEmail = Boolean(lead.email || foundEmail)
+
+  let newStatus: LeadEnrichmentStatus
+  let nextRetryAt: string | null = null
+  if (resolvedEmail) {
+    newStatus = 'email_found'
+  } else if (errorMessage && attempts < MAX_ENRICHMENT_ATTEMPTS) {
+    // Erro de execução (não "pesquisou e não achou") — mesma política de
+    // retry, mas guardamos o motivo pra diagnóstico (enrichment_error).
+    newStatus = 'retry_scheduled'
+    nextRetryAt = addDays(new Date(), RETRY_INTERVAL_DAYS)
+  } else if (attempts >= MAX_ENRICHMENT_ATTEMPTS) {
+    newStatus = errorMessage ? 'enrichment_failed' : 'email_not_found'
+  } else {
+    newStatus = 'retry_scheduled'
+    nextRetryAt = addDays(new Date(), RETRY_INTERVAL_DAYS)
   }
 
   const update: Record<string, unknown> = {
     enrichment_data: enrichment,
-    enriched_at: new Date().toISOString(),
+    enriched_at: nowIso,
+    enrichment_status: newStatus,
+    enrichment_attempts: attempts,
+    next_enrichment_retry_at: nextRetryAt,
+    enrichment_source: enrichment?.contact_email ? 'website' : enrichment?.place_id ? 'google_places' : null,
+    enrichment_error: errorMessage,
   }
-  if (!lead.email && enrichment?.contact_email) {
-    update.email = enrichment.contact_email
-  }
+  if (foundEmail) update.email = foundEmail
 
   try {
     await supabase.from('leads').update(update).eq('id', lead.id)
   } catch {
-    // Persistir é best-effort: se falhar, a próxima tentativa de contato pesquisa de novo.
+    // Persistir é best-effort: se falhar, a próxima tentativa de contato tenta de novo.
   }
 
   return { ...lead, ...update } as Lead

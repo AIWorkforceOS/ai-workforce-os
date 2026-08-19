@@ -1,8 +1,9 @@
 import Link from 'next/link'
 import { Users } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
-import type { Lead, Unit } from '@/lib/types'
+import type { Lead, LeadEnrichmentStatus, Unit } from '@/lib/types'
 import { Badge, type BadgeVariant, Card, EmptyState, Label, PageHeader, Select, TableShell, Td, Th, Tr } from '@/components/ui/dashboard-ui'
+import { LeadRetryEnrichmentButton } from '@/components/dashboard/lead-retry-enrichment-button'
 
 const PAGE_SIZE = 20
 
@@ -51,6 +52,34 @@ function DaysBadge({ days }: { days: number | null }) {
   if (days === null) return <span className="text-slate-500">—</span>
   const variant: BadgeVariant = days > 7 ? 'red' : days > 3 ? 'amber' : 'green'
   return <Badge variant={variant}>{days === 0 ? 'hoje' : `${days}d`}</Badge>
+}
+
+// Achado P1.1 da auditoria (18-19/08/2026): antes, um lead sem e-mail
+// encontrado ficava travado pra sempre sem qualquer sinal na UI. Agora o
+// estado de enrichment fica visível, com retry automático (cron de
+// prospecção, que já reprocessa leads 'new' periodicamente) e um botão
+// manual pra forçar agora.
+const ENRICHMENT_LABEL: Record<LeadEnrichmentStatus, string> = {
+  enrichment_pending: 'Ainda não pesquisado',
+  enrichment_processing: 'Pesquisando…',
+  email_found: 'E-mail encontrado',
+  email_not_found: 'Sem e-mail (esgotou tentativas)',
+  retry_scheduled: 'Sem e-mail — retry agendado',
+  enrichment_failed: 'Erro na pesquisa',
+}
+
+function EnrichmentCell({ lead }: { lead: Lead }) {
+  if (lead.email) {
+    return <span className="text-slate-300">{lead.email}</span>
+  }
+  const status = lead.enrichment_status ?? 'enrichment_pending'
+  const showRetry = status === 'email_not_found' || status === 'retry_scheduled' || status === 'enrichment_failed'
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <span className="text-xs text-slate-500">{ENRICHMENT_LABEL[status]}</span>
+      {showRetry && <LeadRetryEnrichmentButton leadId={lead.id} />}
+    </div>
+  )
 }
 
 export default async function LeadsPage({
@@ -171,6 +200,7 @@ export default async function LeadsPage({
             <TableShell>
               <Th>Empresa</Th>
               <Th>Telefone</Th>
+              <Th>E-mail</Th>
               <Th>Cidade</Th>
               <Th>Unidade</Th>
               <Th>Status</Th>
@@ -188,6 +218,9 @@ export default async function LeadsPage({
                       </Link>
                     </Td>
                     <Td className="text-slate-400">{lead.phone ?? '—'}</Td>
+                    <Td>
+                      <EnrichmentCell lead={lead} />
+                    </Td>
                     <Td className="text-slate-400">
                       {lead.city ?? '—'}
                       {lead.state ? `, ${lead.state}` : ''}
