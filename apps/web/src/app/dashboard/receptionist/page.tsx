@@ -63,6 +63,39 @@ function computeVerticalKpis(
     computed.jobs_completed_this_month = appointmentsThisMonth.completed
   }
 
+  // "emergency_visits_this_month" (dental_clinic) e "open_positions_total"/
+  // "positions_filled_this_month" (hr_company) etc. ficam de fora — exigem
+  // campo de tipo de visita no agendamento ou dados do Recrutador, que este
+  // painel não tem hoje. Mesmo padrão já usado para "avg_ticket" nos
+  // verticais existentes: cai na seção genérica em vez de mostrar número
+  // inventado.
+  if (verticalKey === 'dental_clinic' || verticalKey === 'medical_clinic') {
+    computed.active_patients = rows.filter((c) => c.status === 'active').length
+    computed.appointments_this_month = appointmentsThisMonth.total
+    if (verticalKey === 'medical_clinic') {
+      computed.waitlist_size = rows.filter(
+        (c) => (c.custom_fields as Record<string, unknown> | null)?.on_waitlist === true,
+      ).length
+    }
+  }
+
+  if (verticalKey === 'vocational_education') {
+    computed.active_students = rows.filter((c) => c.status === 'active').length
+  }
+
+  if (verticalKey === 'hr_company') {
+    computed.active_client_companies = rows.filter((c) => c.status === 'active').length
+  }
+
+  if (verticalKey === 'internship_agency') {
+    computed.active_companies = rows.filter((c) => c.status === 'active').length
+  }
+
+  if (verticalKey === 'restaurant_food_service') {
+    computed.active_customers = rows.filter((c) => c.status === 'active').length
+    computed.orders_this_month = appointmentsThisMonth.total
+  }
+
   return template.dashboardKpis
     .filter((kpi) => kpi.key in computed)
     .map((kpi) => ({ key: kpi.key, label: kpi.labelPt, value: computed[kpi.key]! }))

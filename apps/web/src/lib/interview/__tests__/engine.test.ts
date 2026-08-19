@@ -275,9 +275,11 @@ describe('runInterviewTurn — gate da Ficha da Empresa compartilhada', () => {
     expect(prompt).toContain('org_vertical_confirmed')
   })
 
-  it('o schema do org_vertical_key inclui todos os segmentos do catálogo, inclusive general_maintenance', () => {
+  it('o schema do org_vertical_key inclui todos os segmentos do catálogo (verticais originais + os 6 novos de 19/08)', () => {
     const prompt = buildInterviewerPrompt({ config, unit, profile: {}, finalAlreadyAsked: false, includeOrgIntake: true })
-    expect(prompt).toContain('"org_vertical_key": "cleaning_services"|"therapy_clinic"|"general_maintenance"|"other"')
+    expect(prompt).toContain(
+      '"org_vertical_key": "cleaning_services"|"therapy_clinic"|"general_maintenance"|"dental_clinic"|"medical_clinic"|"vocational_education"|"hr_company"|"internship_agency"|"restaurant_food_service"|"other"',
+    )
   })
 })
 
