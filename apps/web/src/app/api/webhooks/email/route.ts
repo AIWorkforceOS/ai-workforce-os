@@ -25,11 +25,16 @@ function extractEmailAddress(raw: string): string {
   return (match ? match[1]! : raw).trim().toLowerCase()
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 function findUnitIdFromRecipients(to: string[], inboundDomain: string): string | null {
   for (const raw of to) {
     const address = extractEmailAddress(raw)
     const match = address.match(/^reply\+(.+)@(.+)$/i)
-    if (match && match[2]!.toLowerCase() === inboundDomain.toLowerCase()) {
+    // Valida o formato antes de usar em `.eq('id', unitId)` — camada extra
+    // de defesa (achado da auditoria P0.2): sem isso, qualquer string após
+    // "reply+" e antes do "@" era aceita sem checagem de forma.
+    if (match && match[2]!.toLowerCase() === inboundDomain.toLowerCase() && UUID_RE.test(match[1]!)) {
       return match[1]!
     }
   }
@@ -111,6 +116,30 @@ export async function POST(request: Request) {
   }
 
   const body = JSON.parse(rawBody) as { type?: string; created_at?: string; data?: Record<string, unknown> }
+
+  // Bounce/reclamação de spam (achado da auditoria P0.2): antes, esses
+  // eventos eram descartados em silêncio — só o fluxo de campanhas de
+  // marketing tratava isso (lib/marketing-email), nunca a prospecção fria
+  // do Sales. Não mexemos em envio/opt-out automaticamente aqui (é uma
+  // decisão de produto que envolve marketing_opt_out vs. consentimento de
+  // prospecção, fora do escopo desta correção) — só deixamos de ser
+  // invisível: fica registrado em system_events, visível no painel.
+  if (body.type === 'email.bounced' || body.type === 'email.complained') {
+    const bounceData = (body.data ?? {}) as Record<string, unknown>
+    const toList = (bounceData.to as string[] | undefined) ?? []
+    await logSystemEvent(supabase, {
+      level: 'warning',
+      source: 'resend',
+      eventType: body.type === 'email.bounced' ? 'email_bounced' : 'email_complained',
+      message:
+        body.type === 'email.bounced'
+          ? `E-mail de prospecção não entregue (bounce) para ${toList.join(', ') || 'destinatário desconhecido'}.`
+          : `Destinatário marcou como spam/reclamação: ${toList.join(', ') || 'destinatário desconhecido'}.`,
+      metadata: { to: toList, emailId: bounceData.email_id ?? null },
+    })
+    return NextResponse.json({ ok: true, logged: body.type })
+  }
+
   if (body.type !== 'email.received') {
     return NextResponse.json({ ok: true, skipped: 'ignored_event_type' })
   }
