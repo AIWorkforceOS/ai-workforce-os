@@ -248,6 +248,7 @@ export function EmployeeCatalog({
           personaName={null}
           activation={{ agentType: 'traffic_specialist', config: traffic ?? null, unitId: selectedUnitId, askName: false, defaultName: 'Gestor de Tráfego', cloneSources: cloneSourcesFor('traffic_specialist'), regionHint: selectedUnit?.region_city ?? null }}
           trainingScore={traffic ? computeTrainingCompleteness(traffic, verticalKey) : null}
+          testConfigId={traffic?.id ?? null}
           trainConfigId={traffic?.id ?? null}
           lastTrainedAt={traffic?.last_trained_at ?? null}
           resourcesHref={`/dashboard/equipe-digital/recursos?unit=${selectedUnitId}&employee=traffic_specialist`}
@@ -287,6 +288,7 @@ export function EmployeeCatalog({
           personaName={null}
           activation={{ agentType: 'content_specialist', config: content ?? null, unitId: selectedUnitId, askName: false, defaultName: 'Gestor de Conteúdo', cloneSources: cloneSourcesFor('content_specialist'), regionHint: selectedUnit?.region_city ?? null }}
           trainingScore={content ? computeTrainingCompleteness(content, verticalKey) : null}
+          testConfigId={content?.id ?? null}
           trainConfigId={content?.id ?? null}
           lastTrainedAt={content?.last_trained_at ?? null}
           resourcesHref={`/dashboard/equipe-digital/recursos?unit=${selectedUnitId}&employee=content_specialist`}
@@ -306,6 +308,7 @@ export function EmployeeCatalog({
           personaName={null}
           activation={{ agentType: 'seo_specialist', config: seo ?? null, unitId: selectedUnitId, askName: false, defaultName: 'Especialista em SEO', cloneSources: cloneSourcesFor('seo_specialist'), regionHint: selectedUnit?.region_city ?? null }}
           trainingScore={seo ? computeTrainingCompleteness(seo, verticalKey) : null}
+          testConfigId={seo?.id ?? null}
           trainConfigId={seo?.id ?? null}
           lastTrainedAt={seo?.last_trained_at ?? null}
           resourcesHref={`/dashboard/equipe-digital/recursos?unit=${selectedUnitId}&employee=seo_specialist`}
