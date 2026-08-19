@@ -4,6 +4,7 @@ import { PLAN_PRICING, isLocale, type Locale, type PaidPlanSlug } from '@/lib/i1
 import { sendWelcomeEmail, sendPaymentGateBlockedEmail } from '@/lib/email'
 import { getPaymentProviderForRegion, type PaymentRegion } from '@/lib/payments/gateway-status'
 import { logSystemEvent } from '@/lib/system-events'
+import { TERMS_VERSION, PRIVACY_VERSION } from '@/lib/legal'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,6 +22,7 @@ const ERRORS: Record<Locale, Record<string, string>> = {
     invalidFields: 'Preencha empresa, nome e um e-mail válido.',
     shortPassword: 'A senha precisa ter pelo menos 8 caracteres.',
     emailTaken: 'Esse e-mail já tem acesso à plataforma. Entre em alizo — ou fale com suporte@alizo.com.br se esqueceu a senha.',
+    termsRequired: 'Você precisa aceitar os Termos de Uso e a Política de Privacidade para continuar.',
     orgFailed: 'Não foi possível criar sua empresa. Tente novamente.',
     unitFailed: 'Não foi possível criar sua unidade. Tente novamente.',
     accessFailed: 'Não foi possível liberar seu acesso. Tente novamente.',
@@ -32,6 +34,7 @@ const ERRORS: Record<Locale, Record<string, string>> = {
     invalidFields: 'Fill in company, name and a valid email.',
     shortPassword: 'The password must be at least 8 characters long.',
     emailTaken: 'This email already has platform access. Sign in — or contact suporte@alizo.com.br if you forgot your password.',
+    termsRequired: 'You need to accept the Terms of Service and Privacy Policy to continue.',
     orgFailed: 'We could not create your company. Please try again.',
     unitFailed: 'We could not create your unit. Please try again.',
     accessFailed: 'We could not grant your access. Please try again.',
@@ -100,6 +103,9 @@ export async function POST(request: Request) {
   if (!password || password.length < 8) {
     return NextResponse.json({ error: err.shortPassword }, { status: 400 })
   }
+  if (body?.termsAccepted !== true) {
+    return NextResponse.json({ error: err.termsRequired }, { status: 400 })
+  }
 
   // E-mail já provisionado → orienta a entrar em vez de duplicar empresa
   const { data: existingUser } = await service.from('users').select('id').ilike('email', email).maybeSingle()
@@ -143,16 +149,46 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: err.unitFailed }, { status: 500 })
   }
 
-  const { error: userError } = await service.from('users').insert({
-    email,
-    name,
-    org_id: org.id,
-    role: 'admin',
-    is_active: true,
-  })
-  if (userError) {
+  const { data: newUser, error: userError } = await service
+    .from('users')
+    .insert({
+      email,
+      name,
+      org_id: org.id,
+      role: 'admin',
+      is_active: true,
+    })
+    .select('id')
+    .single()
+  if (userError || !newUser) {
     await rollback()
     return NextResponse.json({ error: err.accessFailed }, { status: 500 })
+  }
+
+  // Aceite auditável de Termos/Privacidade (migration 066) — gravado junto
+  // do provisionamento, não é uma etapa que pode falhar silenciosamente:
+  // se não gravar, a conta já existe mas registramos o problema pra
+  // acompanhamento (nunca desfazemos o cadastro por causa disso).
+  const forwardedFor = request.headers.get('x-forwarded-for')
+  const clientIp = forwardedFor ? forwardedFor.split(',')[0]!.trim() : null
+  const { error: legalError } = await service.from('legal_acceptances').insert({
+    user_id: newUser.id,
+    org_id: org.id,
+    terms_version: TERMS_VERSION,
+    privacy_version: PRIVACY_VERSION,
+    ip: clientIp,
+    region,
+    source: 'checkout',
+  })
+  if (legalError) {
+    await logSystemEvent(service, {
+      level: 'error',
+      source: 'checkout',
+      eventType: 'legal_acceptance_not_recorded',
+      message: `Conta criada normalmente, mas o registro de aceite de Termos/Privacidade falhou: ${legalError.message}`,
+      orgId: org.id,
+      metadata: { email },
+    })
   }
 
   const { error: authError } = await service.auth.admin.createUser({

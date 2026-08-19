@@ -71,6 +71,11 @@ const COPY = {
       back: 'Voltar',
       submit: 'Criar conta e começar',
       submitting: 'Criando sua conta...',
+      agreePrefix: 'Li e concordo com os ',
+      agreeTerms: 'Termos de Uso',
+      agreeMiddle: ' e a ',
+      agreePrivacy: 'Política de Privacidade',
+      agreeSuffix: '.',
     },
     done: {
       title: 'Conta criada! 🎉',
@@ -143,6 +148,11 @@ const COPY = {
       back: 'Back',
       submit: 'Create account and start',
       submitting: 'Creating your account...',
+      agreePrefix: 'I have read and agree to the ',
+      agreeTerms: 'Terms of Service',
+      agreeMiddle: ' and the ',
+      agreePrivacy: 'Privacy Policy',
+      agreeSuffix: '.',
     },
     done: {
       title: 'Account created! 🎉',
@@ -219,6 +229,7 @@ function CheckoutForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
+  const [termsAccepted, setTermsAccepted] = useState(false)
 
   const [form, setForm] = useState({
     company: '',
@@ -246,6 +257,7 @@ function CheckoutForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (!termsAccepted) return
     setLoading(true)
     setError(null)
 
@@ -260,6 +272,7 @@ function CheckoutForm() {
           locale,
           currency: currencyForLocale(locale),
           paymentMethod: payMethod,
+          termsAccepted,
         }),
       })
       const data = await res.json()
@@ -437,6 +450,26 @@ function CheckoutForm() {
 
               <p className="text-xs text-slate-600">{t.confirm.trust}</p>
 
+              <label className="flex items-start gap-2.5 text-xs text-slate-400">
+                <input
+                  type="checkbox"
+                  checked={termsAccepted}
+                  onChange={(e) => setTermsAccepted(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 flex-shrink-0 accent-cyan-500"
+                />
+                <span>
+                  {t.confirm.agreePrefix}
+                  <Link href="/terms" target="_blank" className="text-cyan-400 underline hover:text-cyan-300">
+                    {t.confirm.agreeTerms}
+                  </Link>
+                  {t.confirm.agreeMiddle}
+                  <Link href="/privacy" target="_blank" className="text-cyan-400 underline hover:text-cyan-300">
+                    {t.confirm.agreePrivacy}
+                  </Link>
+                  {t.confirm.agreeSuffix}
+                </span>
+              </label>
+
               {error && (
                 <div className="rounded-xl px-4 py-3" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
                   <p className="text-sm text-red-400">{error}</p>
@@ -450,8 +483,8 @@ function CheckoutForm() {
                 </button>
                 <button
                   type="submit"
-                  disabled={loading}
-                  className="flex flex-[2] items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-black text-white"
+                  disabled={loading || !termsAccepted}
+                  className="flex flex-[2] items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
                   style={{ background: brandGradient, boxShadow: '0 6px 20px rgba(6,182,212,0.3)' }}
                 >
                   {loading ? <Loader2 size={16} className="animate-spin" /> : <Lock size={14} />}

@@ -22,6 +22,7 @@ function requestBody(overrides: Record<string, unknown> = {}) {
     plan: 'starter',
     locale: 'pt',
     paymentMethod: 'pix',
+    termsAccepted: true,
     ...overrides,
   }
 }
@@ -83,7 +84,34 @@ describe('POST /api/checkout/complete — nunca bloqueia por falta de processado
     expect(db.financial_records).toHaveLength(1)
     expect((db.financial_records as Array<{ status: string }>)[0]!.status).toBe('pending')
 
+    // Aceite de Termos/Privacidade gravado de forma auditável (migration 066)
+    expect(db.legal_acceptances).toHaveLength(1)
+    const acceptance = (db.legal_acceptances as Array<Record<string, unknown>>)[0]!
+    expect(acceptance).toMatchObject({ org_id: db.organizations![0]!.id, region: 'BR', source: 'checkout' })
+    expect(acceptance.terms_version).toBeTruthy()
+    expect(acceptance.privacy_version).toBeTruthy()
+
     expect(sendWelcomeEmail).toHaveBeenCalledTimes(1)
+  })
+
+  it('recusa o cadastro quando termsAccepted não é enviado como true', async () => {
+    const { supabase, db } = createFakeSupabase({
+      users: [{ id: 'admin-1', email: 'dono@alizo.com.br', role: 'super_admin', is_active: true }],
+      payment_gateway_settings: [],
+    })
+    seedAuth(supabase)
+
+    vi.doMock('@/lib/supabase/service', () => ({ createServiceClient: () => supabase }))
+    vi.doMock('@/lib/email', () => ({ sendWelcomeEmail, sendPaymentGateBlockedEmail }))
+
+    const { POST } = await import('../route')
+
+    const response = await POST(makeRequest(requestBody({ termsAccepted: false })))
+    const body = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(body.error).toBeTruthy()
+    expect(db.organizations ?? []).toHaveLength(0)
   })
 
   it('cada região é independente: gateway ativo só no BR não afeta o cadastro dos EUA (segue criando, sem provider)', async () => {
