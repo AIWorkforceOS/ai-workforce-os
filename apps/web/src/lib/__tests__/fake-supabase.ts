@@ -100,6 +100,10 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null; count?: num
     this.filters.push([key, { __lt: value } as unknown])
     return this
   }
+  lte(key: string, value: unknown) {
+    this.filters.push([key, { __lte: value } as unknown])
+    return this
+  }
   // Suporta múltiplos .order() encadeados (desempate), igual ao Postgres:
   // o primeiro .order() é o critério principal, os seguintes só desempatam.
   order(key: string, opts?: { ascending?: boolean }) {
@@ -161,6 +165,11 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null; count?: num
         const target = (value as { __lt: unknown }).__lt
         const cell = row[key]
         return cell !== null && cell !== undefined && compare(cell, target) < 0
+      }
+      if (value && typeof value === 'object' && '__lte' in (value as Record<string, unknown>)) {
+        const target = (value as { __lte: unknown }).__lte
+        const cell = row[key]
+        return cell !== null && cell !== undefined && compare(cell, target) <= 0
       }
       return row[key] === value
     })

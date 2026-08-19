@@ -9,7 +9,7 @@ import { createFakeSupabase } from '@/lib/__tests__/fake-supabase'
 // processadora ativa, tentamos cobrar de verdade depois de já ter
 // provisionado a conta — falha na cobrança nunca desfaz o cadastro.
 
-const sendWelcomeEmail = vi.fn(async () => ({ ok: true }))
+const sendWelcomeEmail = vi.fn(async (): Promise<{ ok: boolean; error?: string }> => ({ ok: true }))
 const sendPaymentGateBlockedEmail = vi.fn(async () => ({ ok: true }))
 
 function requestBody(overrides: Record<string, unknown> = {}) {
@@ -92,6 +92,34 @@ describe('POST /api/checkout/complete — nunca bloqueia por falta de processado
     expect(acceptance.privacy_version).toBeTruthy()
 
     expect(sendWelcomeEmail).toHaveBeenCalledTimes(1)
+  })
+
+  it('P1.3: falha no e-mail de boas-vindas não derruba o checkout, mas fica registrada', async () => {
+    const { supabase, db } = createFakeSupabase({
+      users: [{ id: 'admin-1', email: 'dono@alizo.com.br', role: 'super_admin', is_active: true }],
+      payment_gateway_settings: [],
+    })
+    seedAuth(supabase)
+
+    sendWelcomeEmail.mockResolvedValueOnce({ ok: false, error: 'EMAIL_FROM_DOMAIN não está configurada.' })
+
+    vi.doMock('@/lib/supabase/service', () => ({ createServiceClient: () => supabase }))
+    vi.doMock('@/lib/email', () => ({ sendWelcomeEmail, sendPaymentGateBlockedEmail }))
+
+    const { POST } = await import('../route')
+    const response = await POST(makeRequest(requestBody()))
+    const body = await response.json()
+
+    // Conta criada normalmente — a falha do e-mail de boas-vindas nunca pode derrubar o checkout
+    expect(response.status).toBe(200)
+    expect(body.ok).toBe(true)
+    expect(db.organizations ?? []).toHaveLength(1)
+
+    const events = (db.system_events ?? []) as Array<{ event_type: string; level: string; message: string }>
+    const welcomeFailure = events.find((e) => e.event_type === 'welcome_email_failed')
+    expect(welcomeFailure).toBeDefined()
+    expect(welcomeFailure?.level).toBe('warning')
+    expect(welcomeFailure?.message).toContain('EMAIL_FROM_DOMAIN')
   })
 
   it('recusa o cadastro quando termsAccepted não é enviado como true', async () => {

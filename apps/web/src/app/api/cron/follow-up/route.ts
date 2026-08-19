@@ -149,7 +149,7 @@ export async function GET(request: Request) {
         const message = await generateFollowUpMessage(config, unit, lead, historyRows)
         if (!message) continue
 
-        const { anySent } = await sendAcrossChannels({
+        const { anySent, attempts } = await sendAcrossChannels({
           supabase,
           unit,
           lead,
@@ -158,7 +158,25 @@ export async function GET(request: Request) {
           personaName: config.persona_name,
           templateKey: FOLLOW_UP_TEMPLATE_KEY,
         })
-        if (!anySent) continue
+        if (!anySent) {
+          // Achado P1.3 da auditoria: sendAcrossChannels não lança em falha
+          // de canal — este `continue` silencioso escondia follow-ups que
+          // nunca saíram (mesma classe de gap corrigida em
+          // lib/leads/lead-intake.ts triggerFirstContact).
+          const errors = attempts.map((a) => a.error).filter(Boolean).join(' | ')
+          totalErrors += 1
+          await logSystemEvent(supabase, {
+            level: 'warning',
+            source: 'cron',
+            eventType: 'follow_up_channel_failed',
+            message: `Follow-up automático do lead "${lead.company_name}": todos os canais tentados falharam (${errors || 'sem detalhe'}).`,
+            orgId: unit.org_id,
+            unitId: unit.id,
+            leadId: lead.id,
+            metadata: { attempts },
+          })
+          continue
+        }
 
         const sentAt = new Date().toISOString()
         await supabase.from('leads').update({ last_contacted_at: sentAt }).eq('id', lead.id)

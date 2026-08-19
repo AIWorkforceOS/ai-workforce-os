@@ -143,7 +143,7 @@ export async function triggerFirstContact(
       return false
     }
 
-    const { anySent } = await sendAcrossChannels({
+    const { anySent, attempts } = await sendAcrossChannels({
       supabase,
       unit,
       // Prospecção fria: zera o telefone só nesta chamada de envio, para
@@ -157,6 +157,22 @@ export async function triggerFirstContact(
       whatsappCta: coldLead ? buildWhatsappCta(unit) : null,
     })
     if (!anySent) {
+      // Achado P1.3 da auditoria: sendAcrossChannels não lança em falha de
+      // canal (ex.: Evolution API recusou o número) — antes esse caminho
+      // ficava completamente silencioso (só releaseClaim + false), sem
+      // nenhum rastro pra operação ver. O lead volta pra 'new' e o próximo
+      // ciclo do cron de prospecção tenta de novo.
+      const errors = attempts.map((a) => a.error).filter(Boolean).join(' | ')
+      await logSystemEvent(supabase, {
+        level: 'warning',
+        source: channelType === 'sms' ? 'twilio' : 'evolution',
+        eventType: 'lead_first_contact_channel_failed',
+        message: `Lead "${lead.company_name}" na unidade "${unit.name}": todos os canais tentados para o primeiro contato falharam (${errors || 'sem detalhe'}). Lead volta para 'new' e será retentado.`,
+        orgId: unit.org_id,
+        unitId: unit.id,
+        leadId: lead.id,
+        metadata: { attempts },
+      })
       await releaseClaim()
       return false
     }

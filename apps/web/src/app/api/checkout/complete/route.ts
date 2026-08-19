@@ -290,8 +290,20 @@ export async function POST(request: Request) {
 
   // E-mail de boas-vindas — sem link de senha aqui: a pessoa já escolheu a
   // própria senha no checkout, então só confirmamos o cadastro. Falha no
-  // envio não deve travar o checkout (acesso já foi liberado acima).
-  await sendWelcomeEmail({ to: email, name, companyName: company, setPasswordUrl: null })
+  // envio não deve travar o checkout (acesso já foi liberado acima), mas
+  // precisa ficar visível (achado P1.3 da auditoria: antes o resultado
+  // nem era checado — uma falha desaparecia sem deixar rastro nenhum).
+  const welcomeEmailResult = await sendWelcomeEmail({ to: email, name, companyName: company, setPasswordUrl: null })
+  if (!welcomeEmailResult.ok) {
+    await logSystemEvent(service, {
+      level: 'warning',
+      source: 'checkout',
+      eventType: 'welcome_email_failed',
+      message: `Conta de "${company}" criada com sucesso, mas o e-mail de boas-vindas falhou: ${welcomeEmailResult.error ?? 'erro desconhecido'}.`,
+      orgId: org.id,
+      metadata: { email },
+    })
+  }
 
   return NextResponse.json({ ok: true, orgId: org.id, authAlreadyExisted: !!authError, paymentUrl })
 }
