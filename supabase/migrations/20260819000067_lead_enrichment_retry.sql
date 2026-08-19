@@ -33,7 +33,7 @@ create index if not exists leads_enrichment_retry_idx
 comment on column leads.enrichment_status is
   'Estado do enrichment (lib/leads/enrichment.ts) — substitui o antigo "só tenta uma vez" (enriched_at). Ver check constraint para os valores válidos.';
 comment on column leads.next_enrichment_retry_at is
-  'Quando o cron de retry (api/cron/lead-enrichment-retry) deve tentar de novo — só relevante quando enrichment_status=retry_scheduled.';
+  'Quando a próxima tentativa automática pode acontecer — só relevante quando enrichment_status=retry_scheduled. Não há cron dedicado: o cron de prospecção existente (api/cron/prospecting*) já re-varre leads status=new e chama ensureLeadEnrichment, que respeita esta data; POST /api/leads/[id]/retry-enrichment força uma tentativa imediata (force:true), ignorando-a.';
 
 -- Backfill: leads que já foram pesquisados antes desta migration (todo
 -- enrichment histórico era "uma tentativa só, sem estado"). Quem já achou
