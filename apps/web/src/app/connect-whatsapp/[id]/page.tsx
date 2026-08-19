@@ -1,12 +1,14 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
 
 type Status = 'idle' | 'loading' | 'connecting' | 'open' | 'error'
 
 export default function ConnectWhatsAppPage() {
   const { id } = useParams<{ id: string }>()
+  const searchParams = useSearchParams()
+  const token = searchParams.get('token')
   const [status, setStatus] = useState<Status>('idle')
   const [qrCode, setQrCode] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -21,7 +23,7 @@ export default function ConnectWhatsAppPage() {
 
   async function checkStatus(): Promise<'open' | 'other'> {
     try {
-      const res = await fetch(`/api/public/units/${id}/whatsapp/status`)
+      const res = await fetch(`/api/public/units/${id}/whatsapp/status?token=${encodeURIComponent(token ?? '')}`)
       const data = await res.json()
       if (data.status === 'open') {
         setStatus('open')
@@ -36,12 +38,22 @@ export default function ConnectWhatsAppPage() {
   }
 
   async function startConnect() {
+    // Achado P1.2 (19/08/2026): este link é público (sem login, pensado
+    // pra abrir no celular do chip) — sem token na URL, a unidade nunca
+    // consegue ser conectada. Evita cair pra um erro genérico só depois
+    // do fetch falhar.
+    if (!token) {
+      setError('Link inválido ou incompleto. Peça um novo link ao administrador da unidade.')
+      setStatus('error')
+      return
+    }
+
     setStatus('loading')
     setError(null)
     stopPolling()
 
     try {
-      const res = await fetch(`/api/public/units/${id}/whatsapp/connect`, { method: 'POST' })
+      const res = await fetch(`/api/public/units/${id}/whatsapp/connect?token=${encodeURIComponent(token)}`, { method: 'POST' })
       const data = await res.json()
       if (!res.ok) {
         setError(data.error ?? 'Erro ao gerar QR Code.')
@@ -60,7 +72,7 @@ export default function ConnectWhatsAppPage() {
   useEffect(() => {
     startConnect()
     return stopPolling
-  }, [id])
+  }, [id, token])
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-6">

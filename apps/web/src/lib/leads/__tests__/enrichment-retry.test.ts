@@ -134,7 +134,7 @@ describe('ensureLeadEnrichment', () => {
     expect(result.next_enrichment_retry_at).not.toBeNull()
     expect(result.email).toBeNull()
     // persistiu no banco (não é só best-effort em memória)
-    expect(db.leads[0]?.enrichment_status).toBe('retry_scheduled')
+    expect(db.leads?.[0]?.enrichment_status).toBe('retry_scheduled')
   })
 
   it('esgota as tentativas (padrão 3) e desiste com email_not_found, sem erro', async () => {

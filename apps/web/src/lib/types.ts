@@ -77,6 +77,14 @@ export type Unit = {
   smarter_marketing_partner_token: string | null
   /** Token público de baixo risco para POST /api/public/lead-intake (migration 022) — cria lead simples e dispara o primeiro contato, sem login de usuário. Não confundir com os tokens de parceiro acima (direção oposta: aqui é fonte externa escrevendo no Alizo). */
   public_lead_intake_token: string | null
+  /**
+   * Token público de baixo risco para /connect-whatsapp/[id] e as rotas
+   * /api/public/units/[id]/whatsapp/* (migration 068, achado P1.2) — sem
+   * ele, qualquer um com o unit_id conseguia re-parear o WhatsApp da
+   * unidade. Opcional no tipo (tem default/not-null no banco) pra não
+   * quebrar fixtures de teste pré-existentes que constroem Unit sem ele.
+   */
+  whatsapp_connect_token?: string | null
   /** Fuso IANA da unidade (migration 026). Todos os horários de agenda são interpretados neste fuso. */
   timezone: string
   /** Grade semanal de funcionamento (migration 026). Vazio = default de getBusinessHours(). */

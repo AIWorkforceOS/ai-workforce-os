@@ -132,7 +132,7 @@ export default async function UnitDetailPage({
         <span className="text-sm text-slate-400">
           Prefere que outra pessoa conecte o WhatsApp? Mande esse link pra ela:
         </span>
-        <CopyWhatsAppLink unitId={unitRow.id} />
+        <CopyWhatsAppLink unitId={unitRow.id} token={unitRow.whatsapp_connect_token ?? null} />
       </Card>
 
       <Card className="p-6">

@@ -3,17 +3,30 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { ensureWebhookConfigured, getInstanceStatus, legacyWhatsappChannel, resolveWhatsappChannel, syncWhatsappPhoneIfConnected } from '@/lib/evolution'
 import type { Unit } from '@/lib/types'
 
-/** `?agentType=` (opcional): ver apps/web/src/app/api/units/[id]/whatsapp/connect/route.ts. */
+/**
+ * `?agentType=` (opcional): ver apps/web/src/app/api/units/[id]/whatsapp/connect/route.ts.
+ * `?token=` (obrigatório, achado P1.2 — mesma justificativa da rota connect/route.ts irmã).
+ */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
+  const token = new URL(request.url).searchParams.get('token')
   const supabase = createServiceClient()
   if (!supabase) {
     return NextResponse.json({ error: 'Serviço indisponível.' }, { status: 503 })
   }
 
-  const { data: unit } = await supabase.from('units').select('*').eq('id', id).single()
+  if (!token) {
+    return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 })
+  }
+
+  const { data: unit } = await supabase
+    .from('units')
+    .select('*')
+    .eq('id', id)
+    .eq('whatsapp_connect_token', token)
+    .maybeSingle()
   if (!unit) {
-    return NextResponse.json({ error: 'Unidade não encontrada.' }, { status: 404 })
+    return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 })
   }
   const unitRow = unit as Unit
 

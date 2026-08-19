@@ -74,7 +74,7 @@ export default async function UnitsPage() {
                     <Badge variant={unit.is_active ? 'green' : 'slate'}>{unit.is_active ? 'Ativa' : 'Inativa'}</Badge>
                   </Td>
                   <Td>
-                    <CopyWhatsAppLink unitId={unit.id} />
+                    <CopyWhatsAppLink unitId={unit.id} token={unit.whatsapp_connect_token ?? null} />
                   </Td>
                 </Tr>
               ))}

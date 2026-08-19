@@ -3,17 +3,37 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { connectInstance, ensureDedicatedWhatsappChannel, getEvolutionConfig } from '@/lib/evolution'
 import type { Unit } from '@/lib/types'
 
-/** `agentType` no corpo (opcional): ver apps/web/src/app/api/units/[id]/whatsapp/connect/route.ts. */
+/**
+ * `agentType` no corpo (opcional): ver apps/web/src/app/api/units/[id]/whatsapp/connect/route.ts.
+ *
+ * `?token=` (obrigatório, achado P1.2 da auditoria de 19/08/2026): sem
+ * autenticação de sessão (é a rota por trás do link público
+ * /connect-whatsapp/[id], escaneado no celular do chip, sem login) —
+ * antes bastava saber o unit_id para gerar QR Code e re-parear o
+ * WhatsApp de QUALQUER unidade. Agora exige o token de baixo risco
+ * escopado à unidade (units.whatsapp_connect_token, migration 068),
+ * validado direto no banco (não é um "segredo" comparado em memória).
+ */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
+  const token = new URL(request.url).searchParams.get('token')
   const supabase = createServiceClient()
   if (!supabase) {
     return NextResponse.json({ error: 'Serviço indisponível.' }, { status: 503 })
   }
 
-  const { data: unit } = await supabase.from('units').select('*').eq('id', id).single()
+  if (!token) {
+    return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 })
+  }
+
+  const { data: unit } = await supabase
+    .from('units')
+    .select('*')
+    .eq('id', id)
+    .eq('whatsapp_connect_token', token)
+    .maybeSingle()
   if (!unit) {
-    return NextResponse.json({ error: 'Unidade não encontrada.' }, { status: 404 })
+    return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 })
   }
   const unitRow = unit as Unit
 

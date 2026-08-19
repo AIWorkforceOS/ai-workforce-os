@@ -7,7 +7,7 @@ import { createFakeSupabase } from '@/lib/__tests__/fake-supabase'
 // inteiramente da sessão (RLS de `leads`), não de checagem manual aqui.
 
 const ensureLeadEnrichment = vi.fn(
-  async (_supabase: unknown, lead: Record<string, unknown>) =>
+  async (_supabase: unknown, lead: Record<string, unknown>, _options?: { force?: boolean }) =>
     ({ ...lead, enrichment_status: 'email_found', email: 'novo@padaria.com', enrichment_attempts: 2 }) as never,
 )
 

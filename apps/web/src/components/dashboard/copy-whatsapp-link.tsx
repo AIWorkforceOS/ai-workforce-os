@@ -2,11 +2,20 @@
 
 import { useState } from 'react'
 
-export function CopyWhatsAppLink({ unitId }: { unitId: string }) {
+export function CopyWhatsAppLink({ unitId, token }: { unitId: string; token: string | null }) {
   const [copied, setCopied] = useState(false)
 
   async function handleCopy() {
-    const url = `${window.location.origin}/connect-whatsapp/${unitId}`
+    // Achado P1.2 (19/08/2026): o token é obrigatório na URL — sem ele
+    // ninguém, nem o próprio dono da unidade, consegue conectar (ver
+    // /api/public/units/[id]/whatsapp/connect). Unidades muito antigas
+    // sem token (não deveria acontecer após a migration 068, que faz
+    // backfill) caem no aviso abaixo em vez de copiar um link quebrado.
+    if (!token) {
+      window.alert('Esta unidade ainda não tem um token de conexão. Contate o suporte.')
+      return
+    }
+    const url = `${window.location.origin}/connect-whatsapp/${unitId}?token=${encodeURIComponent(token)}`
     try {
       await navigator.clipboard.writeText(url)
       setCopied(true)
