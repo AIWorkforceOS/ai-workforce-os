@@ -1,8 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { hasRecentEventForContact, logSystemEvent } from '@/lib/system-events'
+import { logSystemEvent } from '@/lib/system-events'
 import type { Unit } from '@/lib/types'
 
 export const HUMAN_OPERATOR_MESSAGE_EVENT_TYPE = 'human_operator_message'
+export const HUMAN_INTERVENTION_RELEASED_EVENT_TYPE = 'human_intervention_released'
 
 /**
  * Janela de trava: quando um humano de verdade intervém manualmente numa
@@ -30,15 +31,71 @@ export async function recordHumanIntervention(
   })
 }
 
-/** True se um humano interveio manualmente nesta conversa nos últimos HUMAN_INTERVENTION_LOCK_MINUTES — todo motor reativo deve checar isto antes de gerar/enviar qualquer resposta automática. */
+/**
+ * Devolve a conversa pra automação antes dos 40min expirarem — ação
+ * explícita do operador na Caixa de Entrada ("Devolver à automação").
+ * system_events é append-only (é a trilha de auditoria do produto): não
+ * apaga o evento de trava anterior, grava um evento mais recente que
+ * isHumanInterventionActive passa a considerar como destrava.
+ */
+export async function releaseHumanIntervention(
+  supabase: SupabaseClient,
+  params: { unit: Unit; contactId: string },
+): Promise<void> {
+  await logSystemEvent(supabase, {
+    level: 'info',
+    source: 'system',
+    eventType: HUMAN_INTERVENTION_RELEASED_EVENT_TYPE,
+    message: `Atendimento devolvido à automação manualmente na unidade "${params.unit.name}".`,
+    orgId: params.unit.org_id,
+    unitId: params.unit.id,
+    metadata: { contact_id: params.contactId },
+  })
+}
+
+/** True se um humano interveio manualmente nesta conversa nos últimos HUMAN_INTERVENTION_LOCK_MINUTES (e ninguém devolveu à automação depois) — todo motor reativo deve checar isto antes de gerar/enviar qualquer resposta automática. */
 export async function isHumanInterventionActive(
   supabase: SupabaseClient,
   params: { unitId: string; contactId: string },
 ): Promise<boolean> {
-  return hasRecentEventForContact(supabase, {
-    eventType: HUMAN_OPERATOR_MESSAGE_EVENT_TYPE,
-    unitId: params.unitId,
-    contactId: params.contactId,
-    windowMinutes: HUMAN_INTERVENTION_LOCK_MINUTES,
-  })
+  const latest = await latestInterventionEventType(supabase, params)
+  return latest === HUMAN_OPERATOR_MESSAGE_EVENT_TYPE
+}
+
+/**
+ * Evento mais recente (trava ou destrava) pra este contato dentro da
+ * janela — usado por isHumanInterventionActive e pela Caixa de Entrada pra
+ * decidir se mostra "Assumir" ou "Devolver à automação". Filtra contact_id
+ * em memória (mesmo motivo do hasRecentEventForContact em
+ * system-events.ts: volume baixo por unidade/janela, não vale a
+ * complexidade de um filtro JSON no Postgres pra isso). Em erro, retorna
+ * null (= não trava) — mesma postura fail-open do resto do módulo.
+ * Desempate: ordena por created_at; system_events não tem coluna
+ * sequencial, então dois eventos no mesmíssimo timestamp (praticamente
+ * impossível em produção — inserts separados por round-trip de rede) têm
+ * ordem indefinida.
+ */
+export async function latestInterventionEventType(
+  supabase: SupabaseClient,
+  params: { unitId: string; contactId: string },
+): Promise<typeof HUMAN_OPERATOR_MESSAGE_EVENT_TYPE | typeof HUMAN_INTERVENTION_RELEASED_EVENT_TYPE | null> {
+  const windowStart = new Date(Date.now() - HUMAN_INTERVENTION_LOCK_MINUTES * 60 * 1000).toISOString()
+
+  try {
+    const { data, error } = await supabase
+      .from('system_events')
+      .select('event_type, metadata, created_at')
+      .in('event_type', [HUMAN_OPERATOR_MESSAGE_EVENT_TYPE, HUMAN_INTERVENTION_RELEASED_EVENT_TYPE])
+      .eq('unit_id', params.unitId)
+      .gte('created_at', windowStart)
+      .order('created_at', { ascending: false })
+      .limit(30)
+
+    if (error) return null
+    const rows = (data as { event_type: string; metadata: Record<string, unknown> | null }[] | null) ?? []
+    const match = rows.find((row) => (row.metadata as Record<string, unknown> | null)?.contact_id === params.contactId)
+    return (match?.event_type as typeof HUMAN_OPERATOR_MESSAGE_EVENT_TYPE | typeof HUMAN_INTERVENTION_RELEASED_EVENT_TYPE | undefined) ?? null
+  } catch {
+    return null
+  }
 }

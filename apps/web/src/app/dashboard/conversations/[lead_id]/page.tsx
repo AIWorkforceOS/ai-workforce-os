@@ -3,6 +3,28 @@ import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import type { Conversation, Lead } from '@/lib/types'
 import { Badge, type BadgeVariant, Card } from '@/components/ui/dashboard-ui'
+import { isHumanInterventionActive } from '@/lib/human-intervention'
+import { listEventsForContact } from '@/lib/system-events'
+import { toActivityItems, type ActivityKind } from '@/components/dashboard/conversation-activity-timeline'
+import { ConversationInterventionControls } from '@/components/dashboard/conversation-intervention-controls'
+import { ConversationSummaryButton } from '@/components/dashboard/conversation-summary-button'
+import { ArrowRightLeft, AlertTriangle, CheckCircle2, UserCheck } from 'lucide-react'
+
+const ACTIVITY_ICON: Record<ActivityKind, typeof ArrowRightLeft> = {
+  handoff: ArrowRightLeft,
+  escalation: AlertTriangle,
+  human: UserCheck,
+  failure: AlertTriangle,
+  action: CheckCircle2,
+}
+
+const ACTIVITY_COLOR: Record<ActivityKind, string> = {
+  handoff: '#60a5fa',
+  escalation: '#fbbf24',
+  human: '#fbbf24',
+  failure: '#f87171',
+  action: '#34d399',
+}
 
 const STATUS_VARIANT: Record<string, BadgeVariant> = {
   new: 'slate',
@@ -59,6 +81,12 @@ export default async function ConversationDetailPage({
   const lead = leadResult.data as LeadWithUnit
   const messages = (conversationsResult.data ?? []) as Conversation[]
 
+  const [interventionActive, activityEvents] = await Promise.all([
+    isHumanInterventionActive(supabase, { unitId: lead.unit_id, contactId: lead_id }),
+    listEventsForContact(supabase, { unitId: lead.unit_id, contactId: lead_id }),
+  ])
+  const activity = toActivityItems(activityEvents)
+
   const inboundCount = messages.filter((m) => m.direction === 'inbound').length
   const outboundCount = messages.filter((m) => m.direction === 'outbound').length
 
@@ -103,6 +131,41 @@ export default async function ConversationDetailPage({
           )}
         </div>
       </div>
+
+      <ConversationInterventionControls leadId={lead_id} initialActive={interventionActive} />
+
+      {messages.length > 0 && <ConversationSummaryButton leadId={lead_id} />}
+
+      {/* Handoffs, escalações e ações executadas pelos funcionários digitais para este contato */}
+      {activity.length > 0 && (
+        <Card className="p-4">
+          <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Atividade dos funcionários digitais</p>
+          <div className="flex flex-col gap-3">
+            {activity.map((item) => {
+              const Icon = ACTIVITY_ICON[item.kind]
+              return (
+                <div key={item.id} className="flex items-start gap-2.5">
+                  <div
+                    className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full"
+                    style={{ background: `${ACTIVITY_COLOR[item.kind]}22` }}
+                  >
+                    <Icon size={12} style={{ color: ACTIVITY_COLOR[item.kind] }} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline gap-2">
+                      <p className="text-xs font-semibold text-slate-200">{item.label}</p>
+                      <p className="text-[11px] text-slate-500">
+                        {new Date(item.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                    <p className="text-xs text-slate-400">{item.message}</p>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </Card>
+      )}
 
       {/* Message thread */}
       <Card className="overflow-hidden">
