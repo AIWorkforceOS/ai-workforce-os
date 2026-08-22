@@ -228,11 +228,20 @@ export function buildInterviewerPrompt(params: {
   finalAlreadyAsked: boolean
   /** true só na(s) entrevista(s) que ainda vão perguntar a Ficha da Empresa compartilhada (ver runInterviewTurn) */
   includeOrgIntake?: boolean
+  /** organizations.vertical_key já confirmado — soma os tópicos/campos extras do segmento (verticals/catalog.ts) ao roteiro do cargo. Ausente/null = comportamento idêntico ao de antes desta função existir. */
+  verticalKey?: VerticalKey | null
 }): string {
-  const { config, unit, profile, finalAlreadyAsked, includeOrgIntake = false } = params
+  const { config, unit, profile, finalAlreadyAsked, includeOrgIntake = false, verticalKey = null } = params
   const playbook = INTERVIEW_PLAYBOOKS[config.agent_type as InterviewAgentType]
   const locale = unitDefaultLocale(unit)
-  const allTopics = includeOrgIntake ? [...orgIntakeTopics(locale), ...playbook.requiredTopics] : playbook.requiredTopics
+  const verticalExtra = verticalKey
+    ? VERTICAL_TEMPLATES[verticalKey]?.interviewExtra?.[config.agent_type as InterviewAgentType]
+    : undefined
+  const allTopics = [
+    ...(includeOrgIntake ? orgIntakeTopics(locale) : []),
+    ...playbook.requiredTopics,
+    ...(verticalExtra?.extraTopics ?? []),
+  ]
   const topics = allTopics.map((topic, i) => `${i + 1}) ${topic}`).join(' ')
   return [
     `Você é ${config.persona_name}, ${playbook.roleLabel} digital recém-contratado(a) pela unidade ${unit.name}${unit.region_city ? ` (${unit.region_city})` : ''}. Quando começar a trabalhar, sua função será ${playbook.mission}.`,
@@ -256,6 +265,9 @@ export function buildInterviewerPrompt(params: {
     `Schema do perfil (preencha nesses nomes de campo): ${playbook.profileSchema}.`,
     includeOrgIntake
       ? `Além desse schema, quando cobrir os tópicos 1 e 2 (e SOMENTE depois de o chefe confirmar o segmento), inclua também estes campos no profile_updates: ${ORG_INTAKE_PROFILE_SCHEMA_FRAGMENT}.`
+      : '',
+    verticalExtra
+      ? `Esta empresa é do segmento "${VERTICAL_TEMPLATES[verticalKey!].labelPt}" — além do schema acima, quando cobrir os tópicos específicos do segmento, inclua também estes campos no profile_updates: ${verticalExtra.profileSchemaFragment}.`
       : '',
     'Em "observacoes" acumule instruções extras que não cabem nos outros campos — sempre envie o array COMPLETO atualizado. Em campos de lista (ex.: "produtos"), envie a lista completa atualizada quando ela mudar. Não invente valores: registre apenas o que o chefe disse.',
     playbook.extraGuidance?.(locale) ?? '',
@@ -394,6 +406,8 @@ export async function runInterviewTurn(params: {
     profile.org_vertical_confirmed !== true &&
     ((config.interview_status ?? 'pending') === 'pending' || profile.org_intake_started === true)
 
+  const verticalKey = isVerticalKey(organization?.vertical_key) ? organization!.vertical_key : null
+
   const output = await generateStructuredReply<InterviewerOutput>({
     apiKey,
     systemPrompt: buildInterviewerPrompt({
@@ -402,6 +416,7 @@ export async function runInterviewTurn(params: {
       profile,
       finalAlreadyAsked: lastAssistantAskedFinal(transcript),
       includeOrgIntake,
+      verticalKey,
     }),
     history,
     maxTokens: 900,

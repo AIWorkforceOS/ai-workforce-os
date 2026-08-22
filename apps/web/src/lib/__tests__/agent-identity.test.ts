@@ -89,6 +89,20 @@ describe('prompts dos funcionários carregam as regras de identidade', () => {
     // Tenta resolver antes de escalar, não pula direto pra "vou verificar com alguém"
     expect(HANDOFF_RULES).toContain('tente resolver de verdade')
   })
+
+  // Fase 7 do redesign (docs/ux-audit-fase1-2026-08-19.md): política
+  // compartilhada contra invenção — cobre os dois itens do briefing que
+  // nenhuma regra existente cobria (diagnóstico médico e credenciamento
+  // tipo MEC), como regra universal em vez de mecanismo por vertical (a
+  // vertical odontologia/clínica médica não precisa de um caminho de
+  // código à parte pra herdar isto — todo funcionário já carrega
+  // HANDOFF_RULES).
+  it('nunca dá diagnóstico/recomendação médica nem inventa credenciamento oficial (MEC etc.)', () => {
+    expect(HANDOFF_RULES).toContain('Nunca dê diagnóstico')
+    expect(HANDOFF_RULES).toContain('recomendação de medicamento')
+    expect(HANDOFF_RULES).toContain('reconhecimento oficial')
+    expect(HANDOFF_RULES).toContain('MEC')
+  })
 })
 
 // ─── Cenário ao vivo: "você é um robô?" ─────────────────────────────────────

@@ -1,4 +1,5 @@
 import { INTERVIEW_PLAYBOOKS, isInterviewAgentType } from '@/lib/interview/engine'
+import { humanizeFieldLabel } from '@/lib/interview/profile-format'
 import { VERTICAL_TEMPLATES, type VerticalKey } from '@/lib/verticals/catalog'
 
 // Training Completeness Score: heurística simples de o quanto um funcionário
@@ -28,27 +29,32 @@ function hasValue(value: unknown): boolean {
   return true
 }
 
-/**
- * Score 0-100 de completude do treinamento de um agent_configs. Funciona
- * para os 4 agent_type (sdr, recruiter, traffic_specialist, receptionist).
- * Retorna 0 quando o agente ainda não existe, o agent_type não tem
- * entrevista, ou business_profile está vazio/nulo.
- */
-export function computeTrainingCompleteness(
-  config: { agent_type: string; business_profile?: Record<string, unknown> | null } | null | undefined,
-  verticalKey?: VerticalKey | null,
-): number {
-  if (!config || !isInterviewAgentType(config.agent_type)) return 0
-  const playbook = INTERVIEW_PLAYBOOKS[config.agent_type]
+type CompletenessConfig = { agent_type: string; business_profile?: Record<string, unknown> | null }
 
+/** Campos esperados no schema deste cargo (+ da vertical, quando houver) — compartilhado entre o score e a lista de pendências. */
+function expectedFieldKeys(agentType: string, verticalKey?: VerticalKey | null): Set<string> {
+  if (!isInterviewAgentType(agentType)) return new Set()
+  const playbook = INTERVIEW_PLAYBOOKS[agentType]
   const schemas = [playbook.profileSchema]
-  const extra = verticalKey ? VERTICAL_TEMPLATES[verticalKey]?.interviewExtra?.[config.agent_type] : undefined
+  const extra = verticalKey ? VERTICAL_TEMPLATES[verticalKey]?.interviewExtra?.[agentType] : undefined
   if (extra) schemas.push(extra.profileSchemaFragment)
 
   const fieldKeys = new Set<string>()
   for (const schema of schemas) {
     for (const key of extractFieldKeys(schema)) fieldKeys.add(key)
   }
+  return fieldKeys
+}
+
+/**
+ * Score 0-100 de completude do treinamento de um agent_configs. Funciona
+ * para os 4 agent_type (sdr, recruiter, traffic_specialist, receptionist).
+ * Retorna 0 quando o agente ainda não existe, o agent_type não tem
+ * entrevista, ou business_profile está vazio/nulo.
+ */
+export function computeTrainingCompleteness(config: CompletenessConfig | null | undefined, verticalKey?: VerticalKey | null): number {
+  if (!config) return 0
+  const fieldKeys = expectedFieldKeys(config.agent_type, verticalKey)
   if (fieldKeys.size === 0) return 0
 
   const profile = config.business_profile ?? {}
@@ -57,4 +63,19 @@ export function computeTrainingCompleteness(
     if (hasValue(profile[key])) filled++
   }
   return Math.round((filled / fieldKeys.size) * 100)
+}
+
+/**
+ * Campos esperados que AINDA não têm valor em business_profile — a versão
+ * acionável do score acima, para a tela "Manual de Trabalho" (Fase 6)
+ * mostrar exatamente o que falta ensinar, não só uma porcentagem.
+ */
+export function missingProfileFields(config: CompletenessConfig | null | undefined, verticalKey?: VerticalKey | null): string[] {
+  if (!config) return []
+  const fieldKeys = expectedFieldKeys(config.agent_type, verticalKey)
+  const profile = config.business_profile ?? {}
+  return [...fieldKeys]
+    .filter((key) => !hasValue(profile[key]))
+    .map(humanizeFieldLabel)
+    .sort((a, b) => a.localeCompare(b, 'pt-BR'))
 }

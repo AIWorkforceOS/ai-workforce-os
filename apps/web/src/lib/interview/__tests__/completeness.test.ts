@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { computeTrainingCompleteness } from '../completeness'
+import { computeTrainingCompleteness, missingProfileFields } from '../completeness'
 
 describe('computeTrainingCompleteness', () => {
   it('retorna 0 quando não há agent_configs', () => {
@@ -71,5 +71,52 @@ describe('computeTrainingCompleteness', () => {
     })
     expect(score).toBeGreaterThanOrEqual(0)
     expect(score).toBeLessThanOrEqual(100)
+  })
+})
+
+describe('missingProfileFields — versão acionável do score, pro Manual de Trabalho (Fase 6)', () => {
+  it('retorna lista vazia quando não há agent_configs ou agent_type sem entrevista', () => {
+    expect(missingProfileFields(null)).toEqual([])
+    expect(missingProfileFields({ agent_type: 'unknown_type', business_profile: {} })).toEqual([])
+  })
+
+  it('lista todos os campos humanizados quando o perfil está vazio', () => {
+    const missing = missingProfileFields({ agent_type: 'traffic_specialist', business_profile: {} })
+    expect(missing).toContain('Tipo negocio')
+    expect(missing).toContain('Orcamento mensal brl')
+    expect(missing).toHaveLength(8)
+  })
+
+  it('some da lista assim que o campo é preenchido — nunca mostra o que já foi ensinado como pendência', () => {
+    const missing = missingProfileFields({
+      agent_type: 'traffic_specialist',
+      business_profile: { tipo_negocio: 'clínica', orcamento_mensal_brl: 5000 },
+    })
+    expect(missing).not.toContain('Tipo negocio')
+    expect(missing).not.toContain('Orcamento mensal brl')
+    expect(missing).toContain('Publico alvo')
+  })
+
+  it('lista vazia quando 100% preenchido — é o complemento exato de computeTrainingCompleteness', () => {
+    const profile = {
+      tipo_negocio: 'clínica',
+      orcamento_mensal_brl: 5000,
+      publico_alvo: 'adultos 25-45',
+      regiao: 'São Paulo',
+      objetivo_campanha: 'leads',
+      cpa_alvo_brl: 50,
+      roas_alvo: 3,
+      observacoes: ['nenhuma'],
+    }
+    expect(computeTrainingCompleteness({ agent_type: 'traffic_specialist', business_profile: profile })).toBe(100)
+    expect(missingProfileFields({ agent_type: 'traffic_specialist', business_profile: profile })).toEqual([])
+  })
+
+  it('soma os campos pendentes da vertical quando verticalKey é passado', () => {
+    const config = { agent_type: 'receptionist' as const, business_profile: { tipo_negocio: 'limpeza residencial' } }
+    const withoutVertical = missingProfileFields(config, null)
+    const withVertical = missingProfileFields(config, 'cleaning_services')
+    expect(withVertical.length).toBeGreaterThan(withoutVertical.length)
+    expect(withVertical).toContain('Pet policy')
   })
 })

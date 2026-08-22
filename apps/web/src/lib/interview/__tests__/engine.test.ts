@@ -10,6 +10,7 @@ import {
   reduceInterview,
 } from '../engine'
 import type { AgentConfig, InterviewTranscriptEntry, Unit } from '@/lib/types'
+import { VERTICAL_TEMPLATES } from '@/lib/verticals/catalog'
 
 // A regra verbatim do produto: "a última pergunta precisa ser sempre se
 // tem algo mais para passar". reduceInterview garante isso em código,
@@ -280,6 +281,76 @@ describe('runInterviewTurn — gate da Ficha da Empresa compartilhada', () => {
     expect(prompt).toContain(
       '"org_vertical_key": "cleaning_services"|"therapy_clinic"|"general_maintenance"|"dental_clinic"|"medical_clinic"|"vocational_education"|"hr_company"|"internship_agency"|"restaurant_food_service"|"other"',
     )
+  })
+})
+
+describe('buildInterviewerPrompt — tópicos extras por vertical (Fase 5, interviewExtra)', () => {
+  const unit = { name: 'Casa Limpa', region_city: 'Sorocaba' } as Unit
+  const receptionistConfig = {
+    id: 'cfg-2',
+    unit_id: 'unit-1',
+    agent_type: 'receptionist',
+    persona_name: 'Bia',
+    persona_tone: 'friendly',
+    daily_limit: 15,
+    active_hours: { start: '08:00', end: '18:00', days: [1, 2, 3, 4, 5] },
+    escalation_rules: { after_messages: 5, keywords: [] },
+    sectors: [],
+    is_active: false,
+    created_at: '',
+    updated_at: '',
+  } as AgentConfig
+
+  it('sem verticalKey (padrão), o prompt é idêntico ao comportamento anterior — sem menção a segmento', () => {
+    const withDefault = buildInterviewerPrompt({ config: receptionistConfig, unit, profile: {}, finalAlreadyAsked: false })
+    const withExplicitNull = buildInterviewerPrompt({
+      config: receptionistConfig,
+      unit,
+      profile: {},
+      finalAlreadyAsked: false,
+      verticalKey: null,
+    })
+    expect(withDefault).toBe(withExplicitNull)
+    expect(withDefault).not.toContain('Esta empresa é do segmento')
+  })
+
+  it('verticalKey="other" (sem interviewExtra no catálogo) não adiciona nada — mesmo texto de sem verticalKey', () => {
+    const withOther = buildInterviewerPrompt({
+      config: receptionistConfig,
+      unit,
+      profile: {},
+      finalAlreadyAsked: false,
+      verticalKey: 'other',
+    })
+    const withoutVertical = buildInterviewerPrompt({ config: receptionistConfig, unit, profile: {}, finalAlreadyAsked: false })
+    expect(withOther).toBe(withoutVertical)
+  })
+
+  it('verticalKey="cleaning_services" soma os tópicos e o schema extra do receptionist ao roteiro', () => {
+    const prompt = buildInterviewerPrompt({
+      config: receptionistConfig,
+      unit,
+      profile: {},
+      finalAlreadyAsked: false,
+      verticalKey: 'cleaning_services',
+    })
+    const extra = VERTICAL_TEMPLATES.cleaning_services.interviewExtra!.receptionist!
+    expect(prompt).toContain(extra.extraTopics[0])
+    expect(prompt).toContain(extra.profileSchemaFragment)
+    expect(prompt).toContain('Esta empresa é do segmento "Serviços de Limpeza"')
+  })
+
+  it('verticalKey definido mas sem interviewExtra para ESTE agent_type não adiciona nada (ex.: recruiter em cleaning_services)', () => {
+    expect(VERTICAL_TEMPLATES.cleaning_services.interviewExtra?.recruiter).toBeUndefined()
+    const recruiterConfig = { ...receptionistConfig, agent_type: 'recruiter' } as AgentConfig
+    const prompt = buildInterviewerPrompt({
+      config: recruiterConfig,
+      unit,
+      profile: {},
+      finalAlreadyAsked: false,
+      verticalKey: 'cleaning_services',
+    })
+    expect(prompt).not.toContain('Esta empresa é do segmento')
   })
 })
 
