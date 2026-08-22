@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { resolveServiceByName, findSlotAtTime, listSlotsText } from '@/lib/receptionist/scheduling'
+import {
+  resolveServiceByName,
+  findSlotAtTime,
+  listSlotsText,
+  executeBooking,
+  executeCancelAppointment,
+  executeReschedule,
+} from '@/lib/receptionist/scheduling'
+import { createFakeSupabase } from '@/lib/__tests__/fake-supabase'
 import type { Service, Unit } from '@/lib/types'
 import type { AvailableSlot } from '@/lib/slot-engine'
+import type { UpcomingAppointment } from '@/lib/receptionist/types'
 
 // Motor da Recepcionista (engine.ts/scheduling.ts/handoff.ts) não tinha
 // NENHUM teste automatizado até agora — cobre aqui a parte determinística
@@ -145,5 +154,118 @@ describe('listSlotsText', () => {
     }))
     const text = listSlotsText(slots, unit, 'pt')
     expect(text.split(', ')).toHaveLength(6)
+  })
+})
+
+// Fase 7 (guarda contra invenção, docs/ux-audit-fase1-2026-08-19.md):
+// nunca confirmar cancelamento/reagendamento sem persistência
+// bem-sucedida. Achado ao auditar os 3 irmãos de escrita em
+// scheduling.ts — executeBooking já checava o erro do insert;
+// executeCancelAppointment e executeReschedule não checavam o do update
+// e sempre devolviam "sucesso", incondicionalmente. Corrigido pra seguir
+// o mesmo padrão do booking.
+describe('executeCancelAppointment / executeReschedule — persistência real antes de confirmar', () => {
+  const appointment: UpcomingAppointment = {
+    id: 'appt-1',
+    starts_at: '2026-08-10T13:00:00.000Z',
+    ends_at: '2026-08-10T13:30:00.000Z',
+    service_id: 'svc-1',
+    service_name: 'Corte de cabelo',
+    employee_id: null,
+    address: null,
+  }
+  const slot: AvailableSlot = { starts_at: '2026-08-11T13:00:00.000Z', ends_at: '2026-08-11T13:30:00.000Z' }
+
+  it('cancelamento: quando o UPDATE falha, NÃO diz que cancelou (status "failed", nunca "success")', async () => {
+    const { supabase } = createFakeSupabase(
+      { appointments: [{ id: 'appt-1', status: 'scheduled' }] },
+      { appointments: { update: 'connection reset' } },
+    )
+    const result = await executeCancelAppointment(supabase, unit, appointment, 'pt')
+    expect(result.status).toBe('failed')
+    expect(result.context).not.toMatch(/cancelado com sucesso/i)
+    expect(result.context).toMatch(/não consegui cancelar/i)
+  })
+
+  it('cancelamento: falha grava em system_events (antes não deixava rastro nenhum pro operador)', async () => {
+    const { supabase, db } = createFakeSupabase(
+      { appointments: [{ id: 'appt-1', status: 'scheduled' }] },
+      { appointments: { update: 'connection reset' } },
+    )
+    await executeCancelAppointment(supabase, unit, appointment, 'pt')
+    const events = (db.system_events ?? []) as { event_type: string; level: string; unit_id: string }[]
+    expect(events).toHaveLength(1)
+    expect(events[0]!.event_type).toBe('scheduling_cancel_failed')
+    expect(events[0]!.level).toBe('error')
+    expect(events[0]!.unit_id).toBe(unit.id)
+  })
+
+  it('cancelamento: quando o UPDATE funciona, confirma normalmente (status "success")', async () => {
+    const { supabase, db } = createFakeSupabase({ appointments: [{ id: 'appt-1', status: 'scheduled' }] })
+    const result = await executeCancelAppointment(supabase, unit, appointment, 'pt')
+    expect(result.status).toBe('success')
+    expect(result.context).toMatch(/cancelado com sucesso/i)
+    expect((db.appointments?.[0] as { status: string }).status).toBe('cancelled')
+    expect(db.system_events ?? []).toHaveLength(0)
+  })
+
+  it('reagendamento: quando o UPDATE falha, NÃO diz que remarcou (status "failed")', async () => {
+    const { supabase } = createFakeSupabase(
+      { appointments: [{ id: 'appt-1', status: 'scheduled' }] },
+      { appointments: { update: 'connection reset' } },
+    )
+    const result = await executeReschedule(supabase, unit, appointment, slot, 'pt')
+    expect(result.status).toBe('failed')
+    expect(result.context).not.toMatch(/remarcado com sucesso/i)
+    expect(result.context).toMatch(/não consegui remarcar/i)
+  })
+
+  it('reagendamento: falha grava em system_events', async () => {
+    const { supabase, db } = createFakeSupabase(
+      { appointments: [{ id: 'appt-1', status: 'scheduled' }] },
+      { appointments: { update: 'connection reset' } },
+    )
+    await executeReschedule(supabase, unit, appointment, slot, 'pt')
+    const events = (db.system_events ?? []) as { event_type: string }[]
+    expect(events.map((e) => e.event_type)).toEqual(['scheduling_reschedule_failed'])
+  })
+
+  it('reagendamento: quando o UPDATE funciona, confirma normalmente (status "success")', async () => {
+    const { supabase } = createFakeSupabase({ appointments: [{ id: 'appt-1', status: 'scheduled' }] })
+    const result = await executeReschedule(supabase, unit, appointment, slot, 'pt')
+    expect(result.status).toBe('success')
+    expect(result.context).toMatch(/remarcado com sucesso/i)
+  })
+})
+
+// Fase 10 (agenda confiável, migration 069): banco ganhou uma trigger que
+// barra reserva além da capacidade do serviço (nada impedia isso antes —
+// achado ao auditar o agendamento conversacional). A trigger se manifesta
+// pro código como um erro no INSERT — este teste confirma que o lado da
+// aplicação já reage a esse erro do jeito certo (nunca confirma sem
+// persistir), simulando a rejeição sem precisar de Postgres real.
+describe('executeBooking — reage certo quando o INSERT falha (ex.: trigger de capacidade do slot)', () => {
+  const service = makeService({})
+  const slot: AvailableSlot = { starts_at: '2026-08-11T13:00:00.000Z', ends_at: '2026-08-11T13:30:00.000Z' }
+
+  it('quando o INSERT falha (slot já na capacidade máxima), NÃO diz que agendou (status "failed", loga em system_events)', async () => {
+    const { supabase, db } = createFakeSupabase(
+      {},
+      { appointments: { insert: 'appointment_slot_full: este horário já está na capacidade máxima (1) para este serviço' } },
+    )
+    const result = await executeBooking(supabase, unit, 'cust-1', service, slot, 'pt')
+    expect(result.status).toBe('failed')
+    expect(result.context).not.toMatch(/agendamento confirmado/i)
+    expect(result.context).toMatch(/não consegui concluir/i)
+    const events = (db.system_events ?? []) as { event_type: string }[]
+    expect(events.map((e) => e.event_type)).toEqual(['scheduling_booking_failed'])
+  })
+
+  it('quando o INSERT funciona, confirma normalmente (status "success", nada em system_events)', async () => {
+    const { supabase, db } = createFakeSupabase({})
+    const result = await executeBooking(supabase, unit, 'cust-1', service, slot, 'pt')
+    expect(result.status).toBe('success')
+    expect(result.context).toMatch(/agendamento confirmado/i)
+    expect(db.system_events ?? []).toHaveLength(0)
   })
 })

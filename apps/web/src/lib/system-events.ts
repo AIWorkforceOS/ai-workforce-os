@@ -132,6 +132,41 @@ export async function hasRecentEventForContact(
 }
 
 /**
+ * Linha do tempo de atividade (handoffs, escalações, ações executadas,
+ * falhas) pra um contato — usada pela Caixa de Entrada (Fase 4). A
+ * correlação com o contato não é consistente no código hoje: alguns
+ * call sites gravam `leadId` (a coluna dedicada), outros só
+ * `metadata.contact_id` (ex.: lib/receptionist/handoff.ts) — então
+ * casamos os dois. Busca as últimas `scanLimit` linhas da unidade (não só
+ * do contato, porque não dá pra filtrar por metadata->>contact_id
+ * eficientemente sem índice JSON) e filtra em memória, igual
+ * hasRecentEventForContact.
+ */
+export async function listEventsForContact(
+  supabase: SupabaseClient,
+  params: { unitId: string; contactId: string; limit?: number; scanLimit?: number },
+): Promise<SystemEvent[]> {
+  const { unitId, contactId, limit = 20, scanLimit = 200 } = params
+
+  try {
+    const { data, error } = await supabase
+      .from('system_events')
+      .select('*')
+      .eq('unit_id', unitId)
+      .order('created_at', { ascending: false })
+      .limit(scanLimit)
+
+    if (error) return []
+    const rows = (data as SystemEvent[] | null) ?? []
+    return rows
+      .filter((row) => row.lead_id === contactId || (row.metadata as Record<string, unknown> | null)?.contact_id === contactId)
+      .slice(0, limit)
+  } catch {
+    return []
+  }
+}
+
+/**
  * Evita spam de notificação: retorna true se NÃO houve evento igual
  * (mesmo event_type + unidade) nas últimas `windowHours` horas.
  * Em caso de erro na consulta, retorna false (não notifica) para não

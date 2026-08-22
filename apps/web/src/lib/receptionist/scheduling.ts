@@ -3,6 +3,7 @@ import { getAvailableSlots, zonedTimeToUtc, type AvailableSlot, type SlotEngineA
 import { getBusinessHours, getSchedulingSettings } from '@/lib/scheduling'
 import { addDays } from '@/lib/calendar-dates'
 import { fmtMoment } from '@/lib/scheduling/appointment-notifications'
+import { logSystemEvent } from '@/lib/system-events'
 import type { Locale } from '@/lib/i18n/config'
 import type { AppointmentStatus, Service, Unit } from '@/lib/types'
 import type { UpcomingAppointment } from './types'
@@ -137,7 +138,37 @@ export function listSlotsText(slots: AvailableSlot[], unit: Unit, locale: Locale
   return times.join(', ')
 }
 
-export type ActionOutcome = { context: string }
+// Fase 7 (guardas contra invenção, docs/ux-audit-fase1-2026-08-19.md):
+// "toda ação operacional deve produzir um resultado estruturado" — antes
+// disso, ActionOutcome só tinha `context` (texto livre injetado no prompt),
+// sem nenhum campo que o código pudesse checar sem reinterpretar o texto.
+// `status` é aditivo: quem já consumia só `.context` (lib/receptionist/
+// engine.ts) continua igual; agora dá pra reagir ao resultado sem parsear
+// string. Nomenclatura segue exatamente a do briefing (success/failed/
+// needs_human/unavailable/needs_confirmation) — as 3 funções abaixo hoje só
+// produzem 'success' ou 'failed' (persistência síncrona, sabe na hora se
+// deu certo); os outros 3 valores ficam reservados pra fluxos que ainda não
+// existem (ex.: uma ação que dependa de confirmação assíncrona).
+export type ActionOutcomeStatus = 'success' | 'failed' | 'needs_human' | 'unavailable' | 'needs_confirmation'
+export type ActionOutcome = { status: ActionOutcomeStatus; context: string }
+
+/** Loga a falha no mesmo padrão do resto do produto (system_events) — antes desta correção (Fase 7/14) uma falha de agendar/cancelar/remarcar não deixava nenhum rastro visível pro operador, só a mensagem ao cliente. */
+async function logSchedulingFailure(
+  supabase: SupabaseClient,
+  unit: Unit,
+  action: 'booking' | 'cancel' | 'reschedule',
+  error: unknown,
+): Promise<void> {
+  await logSystemEvent(supabase, {
+    level: 'error',
+    source: 'receptionist',
+    eventType: `scheduling_${action}_failed`,
+    message: `Falha ao ${action === 'booking' ? 'criar agendamento' : action === 'cancel' ? 'cancelar agendamento' : 'remarcar agendamento'} pela conversa na unidade "${unit.name}".`,
+    orgId: unit.org_id,
+    unitId: unit.id,
+    metadata: { error: error instanceof Error ? error.message : String(error) },
+  })
+}
 
 /** Cancela um agendamento a pedido do cliente na própria conversa. Marca cancelled_notified_at já preenchido: a resposta da IA nesta mensagem já é o aviso, evita duplicar com o aviso automático (lib/scheduling/appointment-notifications.ts). */
 export async function executeCancelAppointment(
@@ -147,7 +178,7 @@ export async function executeCancelAppointment(
   locale: Locale,
 ): Promise<ActionOutcome> {
   const now = new Date().toISOString()
-  await supabase
+  const { error } = await supabase
     .from('appointments')
     .update({
       status: 'cancelled',
@@ -157,8 +188,24 @@ export async function executeCancelAppointment(
     })
     .eq('id', appointment.id)
 
+  // Guarda contra invenção (Fase 7): nunca confirmar cancelamento sem
+  // persistência bem-sucedida — antes desta correção, o "sucesso" era
+  // devolvido incondicionalmente, igual ao bug já achado e corrigido no
+  // fechamento de negócio do Sales (conversation-engine.ts).
+  if (error) {
+    await logSchedulingFailure(supabase, unit, 'cancel', error)
+    return {
+      status: 'failed',
+      context:
+        locale === 'en'
+          ? 'Could not cancel just now — say you will double-check and confirm shortly, never say it was cancelled.'
+          : 'Não consegui cancelar agora — diga que vai confirmar em seguida, nunca diga que já foi cancelado.',
+    }
+  }
+
   const when = fmtMoment(appointment.starts_at, unit.timezone, locale)
   return {
+    status: 'success',
     context:
       locale === 'en'
         ? `Cancelled successfully: ${appointment.service_name ?? 'the appointment'} on ${when}.`
@@ -175,13 +222,27 @@ export async function executeReschedule(
   locale: Locale,
 ): Promise<ActionOutcome> {
   const now = new Date().toISOString()
-  await supabase
+  const { error } = await supabase
     .from('appointments')
     .update({ starts_at: slot.starts_at, ends_at: slot.ends_at, rescheduled_notified_at: now })
     .eq('id', appointment.id)
 
+  // Mesma guarda contra invenção do cancelamento acima: nunca confirmar
+  // reagendamento sem persistência bem-sucedida.
+  if (error) {
+    await logSchedulingFailure(supabase, unit, 'reschedule', error)
+    return {
+      status: 'failed',
+      context:
+        locale === 'en'
+          ? 'Could not reschedule just now — say you will double-check and confirm shortly, never say it was moved.'
+          : 'Não consegui remarcar agora — diga que vai confirmar em seguida, nunca diga que já foi remarcado.',
+    }
+  }
+
   const when = fmtMoment(slot.starts_at, unit.timezone, locale)
   return {
+    status: 'success',
     context:
       locale === 'en'
         ? `Rescheduled successfully: ${appointment.service_name ?? 'the appointment'} is now on ${when}.`
@@ -199,7 +260,10 @@ export async function executeBooking(
   locale: Locale,
 ): Promise<ActionOutcome> {
   if (!unit.org_id) {
-    return { context: locale === 'en' ? 'booking failed: unit without organization' : 'agendamento falhou: unidade sem organização' }
+    return {
+      status: 'failed',
+      context: locale === 'en' ? 'booking failed: unit without organization' : 'agendamento falhou: unidade sem organização',
+    }
   }
 
   const now = new Date().toISOString()
@@ -215,7 +279,9 @@ export async function executeBooking(
   })
 
   if (error) {
+    await logSchedulingFailure(supabase, unit, 'booking', error)
     return {
+      status: 'failed',
       context:
         locale === 'en'
           ? 'Could not complete the booking (the time may have just been taken) — say you will double-check and confirm shortly.'
@@ -225,6 +291,7 @@ export async function executeBooking(
 
   const when = fmtMoment(slot.starts_at, unit.timezone, locale)
   return {
+    status: 'success',
     context:
       locale === 'en'
         ? `Booking confirmed: ${service.name} on ${when}.`

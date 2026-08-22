@@ -7,6 +7,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 type Row = Record<string, unknown>
 type Db = Record<string, Row[]>
+/** Injeção mínima de erro pra testar caminhos de "o write falhou" (ex.: guarda contra invenção da Fase 7 — nunca tratar uma ação como concluída sem persistência bem-sucedida). Chave = tabela, valor = mensagem de erro a devolver na próxima escrita (insert/update/upsert) contra ela. */
+type ErrorConfig = Record<string, { insert?: string; update?: string; upsert?: string }>
 
 /** Comparação ordenável genérica (string/number) — datas ISO comparam lexicalmente igual a uma coluna date/timestamptz real. */
 function compare(a: unknown, b: unknown): number {
@@ -36,7 +38,7 @@ function parseEmbeds(columns: string): Embed[] {
   return embeds
 }
 
-class FakeQuery implements PromiseLike<{ data: unknown; error: null; count?: number }> {
+class FakeQuery implements PromiseLike<{ data: unknown; error: { message: string } | null; count?: number }> {
   private filters: [string, unknown][] = []
   /** String bruta de .or('col.eq.x,col.is.null') — só suporta os operadores eq/is, os únicos usados hoje pelo produto. */
   private orFilter: string | null = null
@@ -51,6 +53,7 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null; count?: num
   constructor(
     private table: string,
     private db: Db,
+    private errors: ErrorConfig = {},
   ) {
     this.db[table] = this.db[table] ?? []
   }
@@ -195,8 +198,13 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null; count?: num
     return false
   }
 
-  private resolve(): { data: unknown; error: null; count?: number } {
+  private resolve(): { data: unknown; error: { message: string } | null; count?: number } {
     const table = this.db[this.table]!
+
+    if (this.mode !== 'select') {
+      const forcedMessage = this.errors[this.table]?.[this.mode]
+      if (forcedMessage) return { data: null, error: { message: forcedMessage } }
+    }
 
     if (this.mode === 'insert') {
       const arr = Array.isArray(this.payload) ? this.payload : [this.payload as Row]
@@ -277,9 +285,9 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null; count?: num
     return { data: rows, error: null, count: rows.length }
   }
 
-  then<TResult1 = { data: unknown; error: null; count?: number }, TResult2 = never>(
+  then<TResult1 = { data: unknown; error: { message: string } | null; count?: number }, TResult2 = never>(
     onfulfilled?:
-      | ((value: { data: unknown; error: null; count?: number }) => TResult1 | PromiseLike<TResult1>)
+      | ((value: { data: unknown; error: { message: string } | null; count?: number }) => TResult1 | PromiseLike<TResult1>)
       | null,
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
   ): Promise<TResult1 | TResult2> {
@@ -287,12 +295,22 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: null; count?: num
   }
 }
 
-export function createFakeSupabase(seed: Db = {}): { supabase: SupabaseClient; db: Db } {
+/**
+ * `errors` força a próxima escrita (insert/update/upsert) contra uma
+ * tabela a devolver `{data: null, error: {message}}` em vez de gravar —
+ * pra testar o caminho "o write falhou" (ex.: guarda contra invenção da
+ * Fase 7). É lido a cada chamada, então mutar o objeto retornado entre
+ * duas chamadas na mesma seed muda o comportamento da próxima.
+ */
+export function createFakeSupabase(
+  seed: Db = {},
+  errors: ErrorConfig = {},
+): { supabase: SupabaseClient; db: Db; errors: ErrorConfig } {
   const db: Db = seed
   const supabase = {
     from(table: string) {
-      return new FakeQuery(table, db)
+      return new FakeQuery(table, db, errors)
     },
   } as unknown as SupabaseClient
-  return { supabase, db }
+  return { supabase, db, errors }
 }

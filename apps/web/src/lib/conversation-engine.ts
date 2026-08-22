@@ -1011,7 +1011,30 @@ export async function processInboundMessage(params: {
       leadUpdate.deal_closed_at = sentAt
     }
   }
-  await supabase.from('leads').update(leadUpdate).eq('id', lead.id)
+  const { error: updateError } = await supabase.from('leads').update(leadUpdate).eq('id', lead.id)
+
+  // Guarda contra invenção (Fase 7): o handoff Sales→Recrutador e o sync
+  // pro CRM da Smarter tratam isto como "negócio fechado de verdade" —
+  // NUNCA disparar isso se o UPDATE que devia marcar status='won' falhou
+  // (a réplica só falava em "vou finalizar isso internamente", mas o
+  // resto do sistema até agora não checava se esse "internamente"
+  // realmente aconteceu).
+  if (updateError) {
+    // Não usa reportAgentFailure aqui de propósito: aquele helper manda um
+    // e-mail de alerta pro dono com o texto fixo "não recebeu resposta
+    // automática", que seria enganoso — a resposta FOI enviada, só o
+    // registro de fechamento no banco falhou.
+    await logSystemEvent(supabase, {
+      level: 'error',
+      source: 'system',
+      eventType: 'deal_close_persist_failed',
+      message: `Falha ao gravar fechamento de negócio do lead "${lead.company_name}": ${updateError.message}`,
+      orgId: unit.org_id,
+      unitId: unit.id,
+      leadId: lead.id,
+    })
+    return { dealHandoffReady: false }
+  }
 
   if ('status' in leadUpdate) {
     await syncLeadToSmarterCrm(supabase, unit, { ...lead, ...leadUpdate } as Lead, { statusChanged: true })
