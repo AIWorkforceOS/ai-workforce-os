@@ -2,7 +2,7 @@
 
 **Período:** 2026-08-20 a 2026-08-21
 **Base:** `docs/ux-audit-fase1-2026-08-19.md` (diagnóstico da Fase 1)
-**Status:** nada commitado — tudo em working tree/staged, aguardando revisão do Vinicius.
+**Status:** **DEPLOYADO EM PRODUÇÃO** (`www.alizoai.com`), autorizado explicitamente pelo Vinicius. 7 commits em `main`, push feito, migration 069 NÃO aplicada (só arquivo, aguardando revisão em staging).
 
 ---
 
@@ -103,6 +103,23 @@ O Vinicius forneceu login real (`contato@smarterestagios.com.br`) já autenticad
 2. **Documentado, não corrigido:** i18n é parcial — só o menu (`Sidebar`/`MobileSidebar`) troca de idioma de verdade; o resto do app é português fixo no código. A detecção de idioma pode divergir do que o usuário vê (ex.: brasileiro com navegador em inglês). Mudar isso afeta o app inteiro — não é decisão de rotina pra eu tomar sozinha.
 
 Dados reais de cliente foram só visualizados durante o teste, nunca modificados ou enviados.
+
+## 4.2 Deploy real e verificação pós-deploy
+
+O Vinicius autorizou explicitamente ("Pode subir o Deploy") e pediu pra manter todos os dados de clientes/financeiro intactos. Commitei tudo em 7 commits organizados por fase e fiz `git push origin main` — o projeto Vercel é git-conectado e auto-deploya em produção a cada push. **Só código de aplicação foi deployado; a migration 069 (trigger de capacidade da agenda) não foi aplicada em nenhum banco** — deploy de código no Vercel não roda migration sozinho (confirmado antes de agir). Nenhum dado real foi tocado, só visualizado.
+
+Os 10 commits de prontidão P0/P1/P2 de uma sessão anterior foram junto no push (branch linear) — avisei antes de agir.
+
+**Verificação ao vivo pós-deploy, com screenshots reais:**
+- Central do Dia renderiza certo em desktop e mobile, com o estado vazio enriquecido.
+- Nova sidebar com os 9 grupos está no ar.
+- Aviso "Deslize a tabela para o lado →" aparece na tela de Conversas no mobile.
+- Manual de Trabalho renderiza a ficha aprendida, o score de treino e os campos numerados.
+- Zero erro de runtime (checado via Vercel), zero erro de console da própria aplicação.
+
+**Achado novo ao vivo, corrigido com hotfix + redeploy:** o campo "Produtos"/"Fechamento campos" (array de objetos) no Manual de Trabalho virava um parágrafo corrido ilegível — sem indicação visual de onde um item terminava e o outro começava. Corrigido (numeração "1) ... 2) ..."), testado, commitado e redeployado — confirmado ao vivo funcionando.
+
+**Reconfirmado ao vivo:** a inconsistência de i18n (sidebar em inglês, conteúdo em português) é real, não só artifact de teste — apareceu de novo após o deploy, em telas diferentes. Continua não corrigida, mesmo motivo de antes (risco/escopo grande demais pra decisão de rotina).
 
 0 regressões em nenhuma etapa. `lint`, `typecheck` e `build` limpos em toda fase (só 4 warnings pré-existentes em scripts de debug fora do produto, `.e2e-tmp/`).
 
