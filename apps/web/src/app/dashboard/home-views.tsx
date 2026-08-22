@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { computeSetupStatus, unitHasWhatsapp, type UnitWhatsappChannelRow } from '@/lib/setup-status'
 import { daysAgo, startOfMonth } from '@/lib/admin-metrics'
+import { loadTodayPendencies } from '@/lib/dashboard/load-pendencies'
+import { relativeTimeFromNow, type Pendency } from '@/lib/dashboard/pendencies'
 import { LeadsByDayChart } from '@/components/dashboard/leads-by-day-chart'
 import { IntegrationsStatusCard } from '@/components/dashboard/integrations-status'
 import {
@@ -29,6 +31,7 @@ import {
   Building2,
   Check,
   CheckCircle2,
+  Clock,
   FileText,
   Headset,
   Megaphone,
@@ -86,6 +89,7 @@ export async function ClientHome({ firstName, unitId }: { firstName: string; uni
   const sevenDaysAgo = startOfDay(new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000))
 
   const [
+    pendencies,
     { data: units },
     { data: agentConfigs },
     { data: whatsappChannels },
@@ -99,6 +103,7 @@ export async function ClientHome({ firstName, unitId }: { firstName: string; uni
     { count: customersCount },
     { data: summary },
   ] = await Promise.all([
+    loadTodayPendencies(supabase, unitId, now),
     supabase.from('units').select('*').order('created_at', { ascending: true }),
     supabase.from('agent_configs').select('*'),
     supabase.from('unit_whatsapp_channels').select('unit_id, agent_type, whatsapp_phone'),
@@ -230,6 +235,28 @@ export async function ClientHome({ firstName, unitId }: { firstName: string; uni
           </div>
         </AlertBanner>
       )}
+
+      {/* Central do Dia (Fase 3) — pendências acionáveis, sempre antes dos KPIs: o dono decide primeiro, mede depois. */}
+      <div>
+        <SectionLabel className="mb-1">Central do Dia</SectionLabel>
+        {/* Fase 12 (ajuda contextual): explica o conceito em 1 linha na primeira vez que a pessoa vê a tela — sem isso "Central do Dia" é só um nome bonito sem contexto. */}
+        <p className="mb-3 text-xs text-slate-500">O que precisa da sua decisão agora, por ordem de urgência.</p>
+        {pendencies.length === 0 ? (
+          <Card className="flex items-center gap-3 p-4">
+            <CheckCircle2 size={18} className="flex-shrink-0 text-emerald-400" />
+            <p className="text-sm text-slate-300">
+              Nenhuma pendência agora — tudo em dia. Assim que algo precisar de você (conversa aguardando resposta,
+              candidato pra decidir, conteúdo pra aprovar), aparece aqui primeiro.
+            </p>
+          </Card>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {pendencies.map((pendency) => (
+              <PendencyRow key={pendency.id} pendency={pendency} now={now} />
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* KPIs — linguagem de dono de negócio */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -417,6 +444,41 @@ export async function ClientHome({ firstName, unitId }: { firstName: string; uni
       {/* Saúde das integrações (com linguagem simples no componente) */}
       <IntegrationsStatusCard isSuperAdmin={false} />
     </div>
+  )
+}
+
+const PENDENCY_PRIORITY_STYLE: Record<Pendency['priority'], { background: string; border: string; color: string; label: string }> = {
+  urgente: { background: 'rgba(239,68,68,0.06)', border: 'rgba(239,68,68,0.2)', color: '#f87171', label: 'Urgente' },
+  decisao: { background: 'rgba(245,158,11,0.06)', border: 'rgba(245,158,11,0.2)', color: '#fbbf24', label: 'Precisa de decisão' },
+  atencao: { background: 'rgba(255,255,255,0.03)', border: 'rgba(255,255,255,0.08)', color: '#94a3b8', label: 'Atenção' },
+}
+
+function PendencyRow({ pendency, now }: { pendency: Pendency; now: Date }) {
+  const style = PENDENCY_PRIORITY_STYLE[pendency.priority]
+  return (
+    <Link
+      href={pendency.href}
+      className="flex items-start justify-between gap-4 rounded-xl px-4 py-3 transition-colors hover:bg-white/[0.03]"
+      style={{ background: style.background, border: `1px solid ${style.border}` }}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wide" style={{ background: style.background, color: style.color }}>
+            {style.label}
+          </span>
+          <span className="flex items-center gap-1 text-[11px] text-slate-500">
+            <Clock size={10} /> {relativeTimeFromNow(pendency.since, now)}
+          </span>
+        </div>
+        <p className="mt-1 truncate text-sm font-semibold text-white">{pendency.title}</p>
+        {/* Fase 11 (mobile): line-clamp em vez de truncate de 1 linha — a descrição é o que ajuda a decidir sem clicar, não pode sumir numa tela estreita. */}
+        <p className="mt-0.5 line-clamp-2 text-xs text-slate-400">{pendency.description}</p>
+      </div>
+      <span className="flex flex-shrink-0 items-center gap-1 self-center text-xs font-bold" style={{ color: style.color }}>
+        {pendency.ctaLabel}
+        <ArrowRight size={12} />
+      </span>
+    </Link>
   )
 }
 

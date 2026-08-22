@@ -2,99 +2,11 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import {
-  LayoutDashboard,
-  Building2,
-  MapPin,
-  Users,
-  MessageSquare,
-  UserCircle,
-  Wallet,
-  TrendingUp,
-  Settings,
-  LogOut,
-  ShoppingCart,
-  Rocket,
-  Kanban,
-  Bot,
-  Megaphone,
-  Briefcase,
-  Headset,
-  Sparkles,
-  CreditCard,
-  Smartphone,
-  ClipboardList,
-  CalendarDays,
-  Mail,
-} from 'lucide-react'
+import { LogOut } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useLocale } from '@/lib/i18n/client'
-import type { Locale } from '@/lib/i18n/config'
 import type { ManagementMode } from '@/lib/types'
-
-type NavItem = {
-  href: string
-  label: Record<Locale, string>
-  icon: typeof LayoutDashboard
-  exact?: boolean
-  /** visível apenas para super_admin (equipe Alizo) */
-  superOnly?: boolean
-}
-
-// Grupo extra que aparece NO TOPO quando a org escolheu gestão completa
-// (organizations.management_mode = 'full_management'): Clientes, Agenda e
-// Operação viram o centro da navegação. No modo só-funcionários nada muda.
-const managementGroup: { label: Record<Locale, string>; items: NavItem[] } = {
-  label: { pt: 'Gestão do dia a dia', en: 'Day-to-day management' },
-  items: [
-    { href: '/dashboard/receptionist/customers', label: { pt: 'Clientes', en: 'Customers' }, icon: Users },
-    { href: '/dashboard/agenda', label: { pt: 'Agenda', en: 'Schedule' }, icon: CalendarDays },
-    { href: '/dashboard/operacao', label: { pt: 'Operação & financeiro', en: 'Operations & finances' }, icon: ClipboardList },
-  ],
-}
-
-const navGroups: { label: Record<Locale, string>; items: NavItem[] }[] = [
-  {
-    label: { pt: 'Principal', en: 'Main' },
-    items: [
-      { href: '/dashboard', label: { pt: 'Visão geral', en: 'Overview' }, icon: LayoutDashboard, exact: true },
-      { href: '/dashboard/onboarding', label: { pt: 'Primeiros passos', en: 'Getting started' }, icon: Rocket },
-      { href: '/dashboard/organizations', label: { pt: 'Clientes (empresas)', en: 'Clients (companies)' }, icon: Building2, superOnly: true },
-    ],
-  },
-  {
-    label: { pt: 'Funcionários digitais', en: 'Digital employees' },
-    items: [
-      { href: '/dashboard/equipe-digital', label: { pt: 'Contratar & ativar', en: 'Hire & activate' }, icon: Sparkles },
-      { href: '/dashboard/agents', label: { pt: 'AI Sales Representative', en: 'AI Sales Representative' }, icon: Bot },
-      { href: '/dashboard/recruiter', label: { pt: 'Recrutador (RH)', en: 'Recruiter (HR)' }, icon: Briefcase },
-      { href: '/dashboard/traffic', label: { pt: 'Tráfego pago', en: 'Paid ads' }, icon: Megaphone },
-      { href: '/dashboard/receptionist', label: { pt: 'AI Receptionist', en: 'AI Receptionist' }, icon: Headset },
-    ],
-  },
-  {
-    label: { pt: 'Seus clientes', en: 'Your customers' },
-    items: [
-      { href: '/dashboard/conversations', label: { pt: 'Conversas', en: 'Conversations' }, icon: MessageSquare },
-      { href: '/dashboard/crm', label: { pt: 'Funil de vendas', en: 'Sales pipeline' }, icon: Kanban },
-      { href: '/dashboard/leads', label: { pt: 'Contatos (leads)', en: 'Contacts (leads)' }, icon: UserCircle },
-      { href: '/dashboard/email-marketing', label: { pt: 'E-mail marketing', en: 'Email marketing' }, icon: Mail },
-    ],
-  },
-  {
-    label: { pt: 'Sua empresa', en: 'Your company' },
-    items: [
-      { href: '/dashboard/units', label: { pt: 'Unidades', en: 'Units' }, icon: MapPin },
-      { href: '/dashboard/operacao', label: { pt: 'Operação de serviços', en: 'Service operations' }, icon: ClipboardList },
-      { href: '/dashboard/messaging/connect', label: { pt: 'Canal de mensagens (SMS)', en: 'Messaging channel (SMS)' }, icon: Smartphone },
-      { href: '/dashboard/employees', label: { pt: 'Equipe (pessoas)', en: 'Team (people)' }, icon: Users },
-      { href: '/dashboard/results', label: { pt: 'Resultados', en: 'Results' }, icon: TrendingUp },
-      { href: '/dashboard/financial', label: { pt: 'Cobranças', en: 'Billing' }, icon: Wallet, superOnly: true },
-      { href: '/dashboard/sales', label: { pt: 'Vendas Alizo', en: 'Alizo sales' }, icon: ShoppingCart, exact: true, superOnly: true },
-      { href: '/dashboard/sales/payments', label: { pt: 'Pagamentos (setup)', en: 'Payments (setup)' }, icon: CreditCard, superOnly: true },
-    ],
-  },
-]
+import { getVisibleNavGroups } from './nav-groups'
 
 function getInitials(email: string): string {
   const parts = email.split('@')[0]?.split(/[._-]/) ?? []
@@ -113,7 +25,7 @@ export function Sidebar({
   role?: string
   /** users.unit_id — preenchido = dono de unidade (só acessa a própria unidade) */
   unitId?: string | null
-  /** organizations.management_mode efetivo — full_management adiciona o grupo de gestão no topo */
+  /** organizations.management_mode efetivo — full_management libera Clientes/Agenda além do que todo modo já tem */
   managementMode?: ManagementMode
   /** chamado ao clicar num link — usado pelo drawer mobile pra fechar */
   onNavigate?: () => void
@@ -121,38 +33,8 @@ export function Sidebar({
   const pathname = usePathname()
   const router = useRouter()
   const locale = useLocale()
-  const isSuperAdmin = role === 'super_admin'
-  const fullManagement = managementMode === 'full_management' && !isSuperAdmin
 
-  const allGroups = fullManagement
-    ? [
-        managementGroup,
-        // Operação já está no grupo de gestão — sai do "Sua empresa" pra não duplicar
-        ...navGroups.map((g) => ({ ...g, items: g.items.filter((i) => i.href !== '/dashboard/operacao') })),
-      ]
-    : navGroups
-
-  const visibleGroups = allGroups
-    .map((group) => ({
-      ...group,
-      items: group.items
-        .filter((item) => isSuperAdmin || !item.superOnly)
-        .map((item) => {
-          // Dono de unidade não gerencia a lista de unidades — vai direto pra sua
-          if (item.href === '/dashboard/units' && unitId) {
-            return { ...item, href: `/dashboard/units/${unitId}`, label: { pt: 'Minha unidade', en: 'My unit' } as Record<Locale, string> }
-          }
-          // ...e a Operação e a Agenda dele são as da própria unidade, sem passar pelo hub
-          if (item.href === '/dashboard/operacao' && unitId) {
-            return { ...item, href: `/dashboard/units/${unitId}/operacao` }
-          }
-          if (item.href === '/dashboard/agenda' && unitId) {
-            return { ...item, href: `/dashboard/units/${unitId}/agenda/calendario` }
-          }
-          return item
-        }),
-    }))
-    .filter((group) => group.items.length > 0)
+  const visibleGroups = getVisibleNavGroups({ role, unitId, managementMode })
 
   async function handleSignOut() {
     const supabase = createClient()
@@ -219,30 +101,10 @@ export function Sidebar({
       {/* Bottom divider */}
       <div className="mx-4 h-px" style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent)' }} />
 
-      {/* Footer */}
+      {/* Footer — Configurações agora mora só no grupo de nav (evita 2 links pra mesma tela) */}
       <div className="px-3 py-3 space-y-0.5">
-        <Link
-          href="/dashboard/settings"
-          onClick={onNavigate}
-          className={`group flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-medium transition-all ${
-            pathname.startsWith('/dashboard/settings')
-              ? 'text-white'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-          style={pathname.startsWith('/dashboard/settings') ? {
-            background: 'linear-gradient(135deg, rgba(6,182,212,0.18) 0%, rgba(67,97,238,0.1) 100%)',
-            boxShadow: 'inset 0 0 0 1px rgba(6,182,212,0.2)',
-          } : undefined}
-        >
-          <div className={`flex h-6 w-6 items-center justify-center rounded-lg ${pathname.startsWith('/dashboard/settings') ? '' : 'group-hover:bg-white/5'}`}
-            style={pathname.startsWith('/dashboard/settings') ? { background: 'rgba(6,182,212,0.2)' } : undefined}>
-            <Settings size={13} className={pathname.startsWith('/dashboard/settings') ? 'text-cyan-400' : 'text-slate-500 group-hover:text-slate-300'} />
-          </div>
-          {locale === 'en' ? 'Settings' : 'Configurações'}
-        </Link>
-
         {/* User row */}
-        <div className="mt-2 flex items-center gap-2.5 rounded-xl px-2 py-2">
+        <div className="flex items-center gap-2.5 rounded-xl px-2 py-2">
           <div className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-[11px] font-black text-white"
             style={{ background: 'linear-gradient(135deg, #06b6d4, #4361ee)', boxShadow: '0 2px 8px rgba(6,182,212,0.3)' }}>
             {getInitials(userEmail)}
