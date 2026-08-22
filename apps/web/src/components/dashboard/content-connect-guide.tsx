@@ -32,7 +32,11 @@ function pageSteps(businessManagerId: string | null): Step[] {
 export function ContentConnectGuide({ businessManagerId }: { businessManagerId: string | null }) {
   return (
     <Card className="p-5">
-      <p className="text-xs font-black uppercase tracking-widest text-slate-500">Passo a passo</p>
+      <p className="text-xs font-black uppercase tracking-widest text-slate-500">Método manual (alternativa)</p>
+      <p className="mt-1 text-[11px] text-slate-500">
+        Normalmente basta clicar em &quot;Conectar com Facebook&quot; e fazer login — este passo a passo é só pra
+        quem prefere compartilhar a Página manualmente em vez de logar.
+      </p>
       <div className="mt-4 flex flex-col gap-3">
         {pageSteps(businessManagerId).map((step) => (
           <div key={step.title} className="rounded-xl p-3.5" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>

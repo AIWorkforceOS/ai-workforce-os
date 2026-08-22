@@ -12,6 +12,7 @@ export type IntegrationKey =
   | 'cron'
   | 'meta_ads'
   | 'meta_business_manager'
+  | 'meta_app_oauth'
   | 'google_ads'
   | 'smarter_candidates'
 
@@ -108,6 +109,13 @@ export function getIntegrationsConfigStatus(): IntegrationConfigStatus[] {
       label: 'Business Manager da Alizo (parceria sem token do cliente)',
       configured: has('META_BUSINESS_MANAGER_ID'),
       detail: 'ID do Business Manager da Alizo, mostrado ao cliente para compartilhar conta de anúncio/Página como Parceiro (sem gerar token). Env: META_BUSINESS_MANAGER_ID — ver docs/setup/traffic-apis-setup.md',
+      testable: false,
+    },
+    {
+      key: 'meta_app_oauth',
+      label: 'Login com Facebook (Gestor de Conteúdo)',
+      configured: has('META_APP_ID') && has('META_APP_SECRET'),
+      detail: 'App da Meta com o produto Facebook Login habilitado — sem isso, "Conectar com Facebook" na tela de Conteúdo não funciona (o método manual continua disponível). Env: META_APP_ID + META_APP_SECRET — ver docs/setup/content-oauth-setup.md',
       testable: false,
     },
     {

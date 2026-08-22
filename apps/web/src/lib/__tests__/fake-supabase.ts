@@ -8,7 +8,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 type Row = Record<string, unknown>
 type Db = Record<string, Row[]>
 /** Injeção mínima de erro pra testar caminhos de "o write falhou" (ex.: guarda contra invenção da Fase 7 — nunca tratar uma ação como concluída sem persistência bem-sucedida). Chave = tabela, valor = mensagem de erro a devolver na próxima escrita (insert/update/upsert) contra ela. */
-type ErrorConfig = Record<string, { insert?: string; update?: string; upsert?: string }>
+type ErrorConfig = Record<string, { insert?: string; update?: string; upsert?: string; delete?: string }>
 
 /** Comparação ordenável genérica (string/number) — datas ISO comparam lexicalmente igual a uma coluna date/timestamptz real. */
 function compare(a: unknown, b: unknown): number {
@@ -44,7 +44,7 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: { message: string
   private orFilter: string | null = null
   private orderBy: { key: string; ascending: boolean }[] = []
   private limitN: number | null = null
-  private mode: 'select' | 'insert' | 'update' | 'upsert' = 'select'
+  private mode: 'select' | 'insert' | 'update' | 'upsert' | 'delete' = 'select'
   private payload: Row | Row[] | null = null
   private singleMode: 'none' | 'maybeSingle' | 'single' = 'none'
   private onConflictKeys: string[] = []
@@ -139,6 +139,10 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: { message: string
     this.mode = 'upsert'
     this.payload = payload
     this.onConflictKeys = opts?.onConflict?.split(',') ?? []
+    return this
+  }
+  delete() {
+    this.mode = 'delete'
     return this
   }
 
@@ -250,6 +254,16 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: { message: string
       }
       const data = this.singleMode !== 'none' ? (result[0] ?? null) : result
       return { data, error: null }
+    }
+
+    if (this.mode === 'delete') {
+      const matched = table.filter((row) => this.matches(row))
+      for (const row of matched) {
+        const idx = table.indexOf(row)
+        if (idx !== -1) table.splice(idx, 1)
+      }
+      const data = this.singleMode !== 'none' ? (matched[0] ?? null) : matched
+      return { data, error: null, count: matched.length }
     }
 
     let rows = table.filter((row) => this.matches(row))

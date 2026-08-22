@@ -23,6 +23,25 @@ export type SocialAccount = {
   updated_at: string
 }
 
+/** Uma Página candidata trazida por GET /me/accounts durante o login com Facebook (Fase OAuth, 2026-08-22). */
+export type OAuthCandidatePage = {
+  id: string
+  name: string
+  access_token: string
+  instagram_business_account_id: string | null
+  instagram_username: string | null
+}
+
+/** content_oauth_sessions — só existe entre o callback do OAuth e a escolha da Página, quando o cliente administra mais de uma. */
+export type ContentOAuthSession = {
+  id: string
+  org_id: string
+  unit_id: string
+  pages: OAuthCandidatePage[]
+  expires_at: string
+  created_at: string
+}
+
 export type ContentPostStatus =
   | 'draft'
   | 'pending_approval'

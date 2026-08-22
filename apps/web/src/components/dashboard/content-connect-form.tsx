@@ -1,10 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { ChevronDown, ChevronUp, Eye, EyeOff, Loader2, CheckCircle2 } from 'lucide-react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { ChevronDown, ChevronUp, Eye, EyeOff, Loader2, CheckCircle2, LogIn } from 'lucide-react'
 import { Badge, Card, CardHeader, Input, Label, Select, brandGradient } from '@/components/ui/dashboard-ui'
 import { MetaPartnerGuide } from '@/components/dashboard/meta-partner-guide'
+import { ContentOAuthBanner } from '@/components/dashboard/content-oauth-page-picker'
 import type { SocialAccount } from '@/lib/content/types'
 import type { Unit } from '@/lib/types'
 
@@ -51,19 +52,27 @@ export function ContentConnectForm({
   units,
   accounts,
   businessManagerId,
+  oauthEnabled,
 }: {
   units: Unit[]
   accounts: SocialAccount[]
   businessManagerId: string | null
+  /** true quando META_APP_ID + META_APP_SECRET estão configurados — sem isso o login com Facebook não funciona. */
+  oauthEnabled: boolean
 }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [unitId, setUnitId] = useState(units[0]?.id ?? '')
   const [pageId, setPageId] = useState('')
   const [pageAccessToken, setPageAccessToken] = useState('')
+  const [manualOpen, setManualOpen] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+
+  const oauthError = searchParams.get('oauth_error')
+  const oauthSuccess = searchParams.get('oauth_success')
 
   async function handleSubmit() {
     if (!unitId) {
@@ -107,8 +116,10 @@ export function ContentConnectForm({
 
   return (
     <div className="flex flex-col gap-5">
+      <ContentOAuthBanner success={oauthSuccess} error={oauthError} />
+
       <Card className="p-6">
-        <CardHeader eyebrow="conectar conta" title="Nova Página do Facebook" />
+        <CardHeader eyebrow="conectar conta" title="Conectar Instagram e Facebook" />
 
         <div className="flex flex-col gap-4">
           {units.length > 1 && (
@@ -122,68 +133,104 @@ export function ContentConnectForm({
             </div>
           )}
 
-          <MetaPartnerGuide
-            businessManagerId={businessManagerId}
-            assetLabel="a Página"
-            steps={META_PAGE_PARTNER_STEPS}
-            openUrl="https://business.facebook.com/settings/pages"
-            openLabel="Abrir Páginas no Facebook"
-          />
+          <p className="text-xs text-slate-400">
+            Clique no botão, faça login com a conta do Facebook da sua empresa e escolha a Página — pronto, o Gestor
+            de Conteúdo já consegue publicar. Nada de token pra copiar ou colar.
+          </p>
 
-          <div className="rounded-xl p-3.5" style={{ border: '1px solid rgba(6,182,212,0.25)', background: 'rgba(6,182,212,0.05)' }}>
-            <Label htmlFor="page-id">Passo 2 de 2 — cole aqui o ID da SUA Página</Label>
-            <Input id="page-id" className="mt-1" value={pageId} onChange={(e) => setPageId(e.target.value)} placeholder="1234567890" />
-            <p className="mt-1 text-[11px] text-slate-500">
-              Não é o mesmo número do passo 1 (aquele é da Alizo). Pra achar o ID da sua Página: na tela que abriu
-              acima, clique nela → o ID aparece em Configurações → Sobre, ou na própria URL da Página. Se ela tem
-              uma conta do Instagram Business vinculada, ela é detectada automaticamente no teste de conexão.
+          <a
+            href={unitId ? `/api/content/accounts/oauth/start?unit_id=${unitId}` : undefined}
+            aria-disabled={!unitId || !oauthEnabled}
+            onClick={(e) => {
+              if (!unitId || !oauthEnabled) e.preventDefault()
+            }}
+            className="flex items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-black text-white transition-all hover:scale-[1.01] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:scale-100"
+            style={{ background: 'linear-gradient(135deg, #1877F2, #0C63D4)', boxShadow: '0 4px 14px rgba(24,119,242,0.35)' }}
+          >
+            <LogIn size={16} />
+            Conectar com Facebook
+          </a>
+          {!oauthEnabled && (
+            <p className="text-[11px] text-amber-400">
+              O login com Facebook ainda está sendo liberado pra sua conta — enquanto isso, use o método manual abaixo.
             </p>
-          </div>
+          )}
 
           <button
             type="button"
-            onClick={() => setAdvancedOpen((v) => !v)}
+            onClick={() => setManualOpen((v) => !v)}
             className="flex items-center gap-1.5 self-start text-xs font-semibold text-slate-400 hover:text-slate-200"
           >
-            {advancedOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-            Avançado: tenho meu próprio token de acesso da Página
+            {manualOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+            Prefiro o método manual (compartilhar a Página como Parceira)
           </button>
 
-          {advancedOpen && (
-            <div className="flex flex-col gap-3 rounded-xl p-3.5" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
-              <p className="text-[11px] text-slate-500">
-                Só preencha se você já tiver seu próprio token de Página de longa duração —
-                do contrário deixe em branco que usamos a conta técnica da Alizo (passo do compartilhamento acima).
-              </p>
-              <div>
-                <Label htmlFor="page-token">Token de acesso da Página (longa duração)</Label>
-                <div className="mt-1">
-                  <SecretInput value={pageAccessToken} onChange={setPageAccessToken} placeholder="EAAG..." />
-                </div>
+          {manualOpen && (
+            <div className="flex flex-col gap-4 rounded-xl p-4" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
+              <MetaPartnerGuide
+                businessManagerId={businessManagerId}
+                assetLabel="a Página"
+                steps={META_PAGE_PARTNER_STEPS}
+                openUrl="https://business.facebook.com/settings/pages"
+                openLabel="Abrir Páginas no Facebook"
+              />
+
+              <div className="rounded-xl p-3.5" style={{ border: '1px solid rgba(6,182,212,0.25)', background: 'rgba(6,182,212,0.05)' }}>
+                <Label htmlFor="page-id">Passo 2 de 2 — cole aqui o ID da SUA Página</Label>
+                <Input id="page-id" className="mt-1" value={pageId} onChange={(e) => setPageId(e.target.value)} placeholder="1234567890" />
                 <p className="mt-1 text-[11px] text-slate-500">
-                  Gerado no Meta Business Suite / Graph API Explorer, com os escopos pages_manage_posts,
-                  pages_read_engagement, instagram_basic e instagram_content_publish.
+                  Não é o mesmo número do passo 1 (aquele é da Alizo). Pra achar o ID da sua Página: na tela que abriu
+                  acima, clique nela → o ID aparece em Configurações → Sobre, ou na própria URL da Página. Se ela tem
+                  uma conta do Instagram Business vinculada, ela é detectada automaticamente no teste de conexão.
                 </p>
               </div>
+
+              <button
+                type="button"
+                onClick={() => setAdvancedOpen((v) => !v)}
+                className="flex items-center gap-1.5 self-start text-xs font-semibold text-slate-400 hover:text-slate-200"
+              >
+                {advancedOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                Avançado: tenho meu próprio token de acesso da Página
+              </button>
+
+              {advancedOpen && (
+                <div className="flex flex-col gap-3 rounded-xl p-3.5" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
+                  <p className="text-[11px] text-slate-500">
+                    Só preencha se você já tiver seu próprio token de Página de longa duração —
+                    do contrário deixe em branco que usamos a conta técnica da Alizo (passo do compartilhamento acima).
+                  </p>
+                  <div>
+                    <Label htmlFor="page-token">Token de acesso da Página (longa duração)</Label>
+                    <div className="mt-1">
+                      <SecretInput value={pageAccessToken} onChange={setPageAccessToken} placeholder="EAAG..." />
+                    </div>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Gerado no Meta Business Suite / Graph API Explorer, com os escopos pages_manage_posts,
+                      pages_read_engagement, instagram_basic e instagram_content_publish.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {error && <p className="text-xs text-red-400">{error}</p>}
+              {success && (
+                <p className="flex items-center gap-1.5 text-xs text-emerald-400">
+                  <CheckCircle2 size={13} /> {success}
+                </p>
+              )}
+
+              <button
+                onClick={handleSubmit}
+                disabled={busy}
+                className="flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-black text-white disabled:opacity-60"
+                style={{ background: brandGradient, boxShadow: '0 4px 12px rgba(6,182,212,0.3)' }}
+              >
+                {busy && <Loader2 size={14} className="animate-spin" />}
+                {busy ? 'Testando conexão...' : 'Testar e conectar'}
+              </button>
             </div>
           )}
-
-          {error && <p className="text-xs text-red-400">{error}</p>}
-          {success && (
-            <p className="flex items-center gap-1.5 text-xs text-emerald-400">
-              <CheckCircle2 size={13} /> {success}
-            </p>
-          )}
-
-          <button
-            onClick={handleSubmit}
-            disabled={busy}
-            className="flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-black text-white disabled:opacity-60"
-            style={{ background: brandGradient, boxShadow: '0 4px 12px rgba(6,182,212,0.3)' }}
-          >
-            {busy && <Loader2 size={14} className="animate-spin" />}
-            {busy ? 'Testando conexão...' : 'Testar e conectar'}
-          </button>
         </div>
       </Card>
 
