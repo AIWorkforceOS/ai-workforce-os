@@ -36,6 +36,18 @@ describe('humanizeProfileValue', () => {
     expect(out).toContain('Preco: R$ 99')
   })
 
+  it('array de VÁRIOS objetos numera cada item — achado ao vivo em produção: sem isso virava um parágrafo corrido sem indicar onde um produto termina e o outro começa', () => {
+    const value = [
+      { nome: 'Plano Básico', preco: 'R$ 99' },
+      { nome: 'Plano Pro', preco: 'R$ 199' },
+      { nome: 'Plano Enterprise', preco: 'sob consulta' },
+    ]
+    const out = humanizeProfileValue(value)
+    expect(out).toContain('1) Nome: Plano Básico, Preco: R$ 99')
+    expect(out).toContain('2) Nome: Plano Pro, Preco: R$ 199')
+    expect(out).toContain('3) Nome: Plano Enterprise, Preco: sob consulta')
+  })
+
   it('números e strings simples viram String() direto', () => {
     expect(humanizeProfileValue(42)).toBe('42')
     expect(humanizeProfileValue('São Paulo')).toBe('São Paulo')

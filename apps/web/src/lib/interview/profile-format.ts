@@ -12,18 +12,30 @@ export function humanizeFieldLabel(key: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1)
 }
 
-/** Converte qualquer valor do perfil (string, número, boolean, array, objeto) num texto legível. */
+/**
+ * Converte qualquer valor do perfil (string, número, boolean, array, objeto) num texto legível.
+ *
+ * Achado ao vivo em produção (não só leitura de código, Fase 6): um array de objetos (ex.: lista de
+ * produtos com nome/preço/detalhes) virava um parágrafo corrido só com vírgulas/ponto-e-vírgula
+ * separando tudo — sem nenhuma pista visual de onde um item termina e o outro começa. Numerar os
+ * itens do array ("1) ... 2) ...") resolve isso sem precisar reestruturar profileEntries pra
+ * suportar valor não-string (o <dl> que consome isso hoje espera string simples).
+ */
 export function humanizeProfileValue(value: unknown): string {
   if (value === null || value === undefined) return '—'
   if (typeof value === 'boolean') return value ? 'Sim' : 'Não'
   if (Array.isArray(value)) {
     if (value.length === 0) return '—'
+    const hasObjectItems = value.some(isPlainObject)
+    if (hasObjectItems && value.length > 1) {
+      return value.map((item, i) => `${i + 1}) ${isPlainObject(item) ? humanizeProfileValue(item) : String(item)}`).join('  ')
+    }
     return value.map((item) => (isPlainObject(item) ? humanizeProfileValue(item) : String(item))).join(', ')
   }
   if (isPlainObject(value)) {
     const entries = Object.entries(value)
     if (entries.length === 0) return '—'
-    return entries.map(([key, v]) => `${humanizeFieldLabel(key)}: ${humanizeProfileValue(v)}`).join('; ')
+    return entries.map(([key, v]) => `${humanizeFieldLabel(key)}: ${humanizeProfileValue(v)}`).join(', ')
   }
   return String(value)
 }
