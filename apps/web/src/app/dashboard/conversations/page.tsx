@@ -142,6 +142,12 @@ export default async function ConversationsPage({
             subtitle="As conversas aparecem aqui assim que o WhatsApp estiver conectado e leads responderem."
           />
         ) : (
+          <>
+          {/* Fase 11 (mobile, achado ao vivo em produção): a tabela (min-w-[760px]) já era scrollável na
+              horizontal numa tela estreita, mas nada sinalizava isso — parecia que as colunas sumiram. */}
+          <p className="border-b border-white/5 px-5 py-2 text-[11px] text-slate-500 sm:hidden">
+            Deslize a tabela para o lado para ver mais colunas →
+          </p>
           <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-sm">
             <TableShell>
@@ -183,6 +189,7 @@ export default async function ConversationsPage({
             </tbody>
           </table>
           </div>
+          </>
         )}
       </Card>
     </div>

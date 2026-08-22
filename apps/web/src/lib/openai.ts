@@ -4,6 +4,20 @@ export function getOpenAIApiKey(): string | null {
   return process.env.OPENAI_API_KEY || null
 }
 
+// Fase 14 (observabilidade, briefing): "nenhuma requisição deve ficar presa
+// indefinidamente" — nenhuma das chamadas à OpenAI neste arquivo tinha
+// timeout antes disso; uma resposta travada do provedor prendia a
+// requisição (webhook do WhatsApp, cron, rota de API) sem limite. Todo
+// fetch() abaixo usa AbortSignal.timeout, que já lança um erro claro
+// (TimeoutError) — cada chamador decide o que fazer com o erro (a maioria
+// já tem fallback needs_human/mensagem de recuperação pra qualquer erro
+// desta lib, não só timeout). CHAT_TIMEOUT_MS cobre os caminhos
+// interativos (resposta de chat, extração estruturada, visão, PDF,
+// embeddings); MEDIA_TIMEOUT_MS cobre geração de imagem/áudio, que já são
+// naturalmente mais lentas.
+const CHAT_TIMEOUT_MS = 30_000
+const MEDIA_TIMEOUT_MS = 60_000
+
 export type ChatMessage = { role: 'user' | 'assistant'; content: string }
 
 export type OpenAiToolCall = { id: string; function: { name: string; arguments: string } }
@@ -31,6 +45,7 @@ export async function generateChatReplyWithTools<TExtra = unknown>(params: {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${params.apiKey}` },
     body: JSON.stringify({ model, messages: baseMessages, tools: params.tools, temperature: 0.7, max_tokens: 400 }),
+    signal: AbortSignal.timeout(CHAT_TIMEOUT_MS),
   })
   const firstData = await firstResponse.json()
   if (!firstResponse.ok) {
@@ -62,6 +77,7 @@ export async function generateChatReplyWithTools<TExtra = unknown>(params: {
       temperature: 0.7,
       max_tokens: 400,
     }),
+    signal: AbortSignal.timeout(CHAT_TIMEOUT_MS),
   })
   const secondData = await secondResponse.json()
   if (!secondResponse.ok) {
@@ -90,6 +106,7 @@ export async function generateChatReply(params: {
       temperature: 0.7,
       max_tokens: 400,
     }),
+    signal: AbortSignal.timeout(CHAT_TIMEOUT_MS),
   })
 
   const data = await response.json()
@@ -130,6 +147,7 @@ export async function generateStructuredReply<T = Record<string, unknown>>(param
       max_tokens: params.maxTokens ?? 1500,
       response_format: { type: 'json_object' },
     }),
+    signal: AbortSignal.timeout(CHAT_TIMEOUT_MS),
   })
 
   const data = await response.json()
@@ -184,6 +202,7 @@ export async function generateStructuredReplyFromImage<T = Record<string, unknow
       max_tokens: params.maxTokens ?? 1000,
       response_format: { type: 'json_object' },
     }),
+    signal: AbortSignal.timeout(CHAT_TIMEOUT_MS),
   })
 
   const data = await response.json()
@@ -243,6 +262,7 @@ export async function generateStructuredReplyFromPdf<T = Record<string, unknown>
       max_tokens: params.maxTokens ?? 1000,
       response_format: { type: 'json_object' },
     }),
+    signal: AbortSignal.timeout(CHAT_TIMEOUT_MS),
   })
 
   const data = await response.json()
@@ -281,6 +301,7 @@ export async function transcribeAudio(params: {
     method: 'POST',
     headers: { Authorization: `Bearer ${params.apiKey}` },
     body: formData,
+    signal: AbortSignal.timeout(MEDIA_TIMEOUT_MS),
   })
 
   const data = await response.json()
@@ -321,6 +342,7 @@ export async function synthesizeSpeech(params: {
         'Fale em tom natural, caloroso e humano, como uma pessoa de verdade numa nota de voz do WhatsApp — nem robótico nem apressado, com entonação e ritmo variados.',
       response_format: 'opus',
     }),
+    signal: AbortSignal.timeout(MEDIA_TIMEOUT_MS),
   })
 
   if (!response.ok) {
@@ -358,6 +380,7 @@ export async function generateImage(params: {
       quality,
       n: 1,
     }),
+    signal: AbortSignal.timeout(MEDIA_TIMEOUT_MS),
   })
 
   const data = await response.json()
@@ -393,6 +416,7 @@ export async function embedTexts(apiKey: string, texts: string[]): Promise<numbe
       model: 'text-embedding-3-small',
       input: texts,
     }),
+    signal: AbortSignal.timeout(CHAT_TIMEOUT_MS),
   })
 
   const data = await response.json()

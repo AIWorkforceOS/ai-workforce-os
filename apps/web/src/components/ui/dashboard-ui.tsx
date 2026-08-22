@@ -370,6 +370,12 @@ export function TableCard({
           {action}
         </div>
       )}
+      {/* Fase 11 (mobile, achado verificado ao vivo em produção, não só leitura de código): a tabela já era
+          scrollável na horizontal (overflow-x-auto), mas nada sinalizava isso numa tela estreita — dava pra
+          achar que as colunas da direita simplesmente não existiam. Aviso só aparece abaixo do breakpoint sm. */}
+      <p className="border-b border-white/5 px-5 py-2 text-[11px] text-slate-500 sm:hidden">
+        Deslize a tabela para o lado para ver mais colunas →
+      </p>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">{children}</table>
       </div>
