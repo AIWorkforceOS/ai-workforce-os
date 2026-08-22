@@ -16,6 +16,7 @@ configuração no lado da Meta.
 |---|---|
 | `META_APP_ID` | ID do app da Meta (não é secreto, mas fica só server-side por simplicidade) |
 | `META_APP_SECRET` | Chave secreta do app — nunca no repo, só em Vercel → Settings → Environment Variables |
+| `META_LOGIN_CONFIG_ID` | ID da "Configuração de Login" do app (ver passo 6) — não é secreto |
 
 ## Passo a passo
 
@@ -31,7 +32,24 @@ configuração no lado da Meta.
    mudar, atualizar aqui também.
 4. **Pegar o App ID e o App Secret** (Painel do app → Configurações → Básico) → colar em
    `META_APP_ID` e `META_APP_SECRET` no Vercel.
-5. **Colocar o app em modo "Live"** (não "Development") quando for usar com clientes de verdade —
+5. **Associar o app a um Portfólio Empresarial (Business Manager)** — Configurações do app →
+   Portfólio empresarial, ou pelo próprio Business Manager (business.facebook.com → Configurações
+   → Contas → Apps → Adicionar → Conectar um ID do app). Sem isso, as permissões de Página/
+   Instagram nem aparecem como opção na Configuração de Login (passo 6) — é uma exigência da
+   própria Meta, não uma escolha nossa. **Nunca associe a um Business Manager do ecossistema
+   Smarter** — use um dedicado à Alizo (ou o pessoal do dono, se ainda não existir um da Alizo).
+6. **Adicionar as 6 permissões aos casos de uso do app** (Painel do app → Casos de uso →
+   Personalizar → Permissões e recursos, em cada um: "Gerenciar tudo na sua Página" e "Gerenciar
+   mensagens e conteúdo no Instagram"): `pages_show_list`, `pages_manage_posts`,
+   `pages_read_engagement`, `instagram_basic`, `instagram_content_publish`, `business_management`
+   — clicar "Adicionar" em cada uma até o Status virar "Pronto para teste".
+7. **Criar a Configuração de Login** (Login do Facebook para Empresas → Configurações → Criar
+   configuração): nome livre, variação "General", token "Token de acesso do usuário" (login
+   pessoal do cliente — não "usuário do sistema"), e nas Permissões marcar as mesmas 6 do passo 6.
+   A Meta mostra um **"Identificação da configuração"** ao final — esse número vai em
+   `META_LOGIN_CONFIG_ID`. Diferente do Login do Facebook clássico, este app **não usa
+   `scope=...` na URL de login** — a Configuração de Login é o que define as permissões pedidas.
+8. **Colocar o app em modo "Live"** (não "Development") quando for usar com clientes de verdade —
    em Development, só administradores/desenvolvedores/testers cadastrados no próprio app
    conseguem fazer login.
 

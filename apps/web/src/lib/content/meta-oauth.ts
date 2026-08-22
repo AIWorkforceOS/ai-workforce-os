@@ -27,6 +27,15 @@
 // instagram_content_publish (publicar no Instagram vinculado),
 // business_management (visibilidade do Business Manager quando houver).
 //
+// O app usa o produto "Login do Facebook para Empresas" — diferente do
+// Login do Facebook clássico, ele NÃO aceita `scope=...` direto na URL do
+// diálogo; as permissões avançadas (Página/Instagram) só ficam disponíveis
+// depois que o app está associado a um Portfólio Empresarial (Business
+// Manager) E cada permissão foi adicionada a algum caso de uso do app no
+// painel da Meta. A partir daí elas ficam empacotadas numa "Configuração de
+// Login" (Business Login Configuration), identificada por um `config_id`
+// fixo — é esse ID que a URL de autorização usa, não a lista de escopos.
+//
 // Permissão da Meta: para o app funcionar com QUALQUER conta de cliente
 // (não só admins/testers do próprio app da Alizo no Meta for Developers),
 // pages_manage_posts e instagram_content_publish exigem App Review
@@ -57,20 +66,21 @@ export const OAUTH_SESSION_TTL_MINUTES = 15
 /** Minutos até um `state` assinado (start → callback) ser considerado velho demais — CSRF/replay. */
 const OAUTH_STATE_TTL_MINUTES = 10
 
-export function getMetaAppCredentials(): { appId: string; appSecret: string } | null {
+export function getMetaAppCredentials(): { appId: string; appSecret: string; loginConfigId: string } | null {
   const appId = process.env.META_APP_ID?.trim()
   const appSecret = process.env.META_APP_SECRET?.trim()
-  if (!appId || !appSecret) return null
-  return { appId, appSecret }
+  const loginConfigId = process.env.META_LOGIN_CONFIG_ID?.trim()
+  if (!appId || !appSecret || !loginConfigId) return null
+  return { appId, appSecret, loginConfigId }
 }
 
 /** Monta a URL de autorização do Facebook Login — função pura, testável sem rede. */
-export function buildFacebookOAuthUrl(params: { appId: string; redirectUri: string; state: string }): string {
+export function buildFacebookOAuthUrl(params: { appId: string; redirectUri: string; state: string; configId: string }): string {
   const url = new URL(META_OAUTH_DIALOG_URL)
   url.searchParams.set('client_id', params.appId)
   url.searchParams.set('redirect_uri', params.redirectUri)
   url.searchParams.set('state', params.state)
-  url.searchParams.set('scope', META_OAUTH_SCOPES)
+  url.searchParams.set('config_id', params.configId)
   url.searchParams.set('response_type', 'code')
   return url.toString()
 }

@@ -41,7 +41,7 @@ export async function GET(request: Request) {
 
   const redirectUri = new URL('/api/content/accounts/oauth/callback', requestUrl.origin).toString()
   const state = signOAuthState({ unitId }, credentials.appSecret)
-  const authorizeUrl = buildFacebookOAuthUrl({ appId: credentials.appId, redirectUri, state })
+  const authorizeUrl = buildFacebookOAuthUrl({ appId: credentials.appId, redirectUri, state, configId: credentials.loginConfigId })
 
   return NextResponse.redirect(authorizeUrl)
 }

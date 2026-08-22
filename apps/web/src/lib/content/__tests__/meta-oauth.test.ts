@@ -3,15 +3,20 @@ import { describe, expect, it } from 'vitest'
 import { buildFacebookOAuthUrl, signOAuthState, verifyOAuthState, META_OAUTH_SCOPES } from '../meta-oauth'
 
 describe('buildFacebookOAuthUrl', () => {
-  it('monta a URL de autorização com client_id, redirect_uri, state e escopos', () => {
-    const url = buildFacebookOAuthUrl({ appId: 'app123', redirectUri: 'https://app.alizoai.com/api/content/accounts/oauth/callback', state: 'xyz' })
+  it('monta a URL de autorização com client_id, redirect_uri, state e config_id', () => {
+    const url = buildFacebookOAuthUrl({
+      appId: 'app123',
+      redirectUri: 'https://app.alizoai.com/api/content/accounts/oauth/callback',
+      state: 'xyz',
+      configId: 'cfg123',
+    })
     const parsed = new URL(url)
     expect(parsed.origin + parsed.pathname).toContain('facebook.com')
     expect(parsed.searchParams.get('client_id')).toBe('app123')
     expect(parsed.searchParams.get('redirect_uri')).toBe('https://app.alizoai.com/api/content/accounts/oauth/callback')
     expect(parsed.searchParams.get('state')).toBe('xyz')
+    expect(parsed.searchParams.get('config_id')).toBe('cfg123')
     expect(parsed.searchParams.get('response_type')).toBe('code')
-    expect(parsed.searchParams.get('scope')).toBe(META_OAUTH_SCOPES)
   })
 
   it('pede os escopos de publicar no Facebook e no Instagram', () => {

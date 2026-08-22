@@ -114,8 +114,8 @@ export function getIntegrationsConfigStatus(): IntegrationConfigStatus[] {
     {
       key: 'meta_app_oauth',
       label: 'Login com Facebook (Gestor de Conteúdo)',
-      configured: has('META_APP_ID') && has('META_APP_SECRET'),
-      detail: 'App da Meta com o produto Facebook Login habilitado — sem isso, "Conectar com Facebook" na tela de Conteúdo não funciona (o método manual continua disponível). Env: META_APP_ID + META_APP_SECRET — ver docs/setup/content-oauth-setup.md',
+      configured: has('META_APP_ID') && has('META_APP_SECRET') && has('META_LOGIN_CONFIG_ID'),
+      detail: 'App da Meta com o produto Facebook Login habilitado — sem isso, "Conectar com Facebook" na tela de Conteúdo não funciona (o método manual continua disponível). Env: META_APP_ID + META_APP_SECRET + META_LOGIN_CONFIG_ID — ver docs/setup/content-oauth-setup.md',
       testable: false,
     },
     {
