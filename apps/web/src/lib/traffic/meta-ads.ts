@@ -316,6 +316,22 @@ export async function getMetaInsights(
     .filter((row) => row.entity_external_id)
 }
 
+export type MetaInterest = { id: string; name: string; audience_size_lower_bound?: number }
+
+/**
+ * Busca interesses reais da Meta por palavra-chave (GET /search?type=adinterest)
+ * — usada pelo gerador de estratégia pra resolver os temas de público que a
+ * IA propôs em IDs de interesse de verdade, em vez de inventar um ID.
+ */
+export async function searchMetaInterests(config: MetaConfig, query: string): Promise<MetaInterest[]> {
+  const data = await metaFetch<{ data: MetaInterest[] }>('search', config, {
+    type: 'adinterest',
+    q: query,
+    limit: '5',
+  })
+  return data.data ?? []
+}
+
 /** Pausa ou reativa campanha/ad set (POST /{id} com status). Exige ads_management. */
 export async function setMetaEntityStatus(
   config: MetaConfig,

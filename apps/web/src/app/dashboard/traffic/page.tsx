@@ -29,7 +29,8 @@ import {
 } from '@/components/ui/dashboard-ui'
 import { TrafficDecisionActions } from '@/components/dashboard/traffic-decision-actions'
 import { TrafficCreativeDraftActions } from '@/components/dashboard/traffic-creative-draft-actions'
-import { BarChart3, ClipboardList, ImageIcon, Plus, Sparkles } from 'lucide-react'
+import { TrafficStrategyGenerateButton } from '@/components/dashboard/traffic-strategy-generate-button'
+import { BarChart3, ClipboardList, ImageIcon, Plus, Sparkles, TrendingUp } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -252,13 +253,14 @@ export default async function TrafficPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-left text-sm">
+          <table className="w-full min-w-[760px] text-left text-sm">
             <TableShell>
               <Th>Conta</Th>
               <Th>Plataforma</Th>
               <Th>Status</Th>
               <Th>Modo</Th>
               <Th>Último sync</Th>
+              <Th>Nova campanha</Th>
             </TableShell>
             <tbody>
               {accounts.map((account) => (
@@ -285,6 +287,11 @@ export default async function TrafficPage() {
                     {account.last_synced_at
                       ? new Date(account.last_synced_at).toLocaleString('pt-BR')
                       : 'nunca'}
+                  </Td>
+                  <Td>
+                    {account.connection_status === 'connected' && (
+                      <TrafficStrategyGenerateButton accountId={account.id} accountName={account.name} />
+                    )}
                   </Td>
                 </Tr>
               ))}
@@ -352,6 +359,17 @@ export default async function TrafficPage() {
                       <p className="mt-1 text-[11px] text-slate-500">
                         Orçamento/dia: {formatCentsBRL(draft.spec.dailyBudgetCents)} · Objetivo: {draft.spec.objective}
                       </p>
+                      {draft.reasoning && (
+                        <p className="mt-2 max-w-xl text-[11px] italic leading-relaxed text-slate-400">&ldquo;{draft.reasoning}&rdquo;</p>
+                      )}
+                      {draft.predicted_leads_min !== null && draft.predicted_leads_max !== null && (
+                        <div className="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-cyan-400">
+                          <TrendingUp size={12} />
+                          Estimativa ({draft.prediction_period_days ?? 30} dias): {draft.predicted_leads_min}–{draft.predicted_leads_max} leads
+                          {draft.predicted_total_cost_cents !== null && <> · custo total ~{formatCentsBRL(draft.predicted_total_cost_cents)}</>}
+                          <span className="font-normal text-slate-500">(estimativa, não garantia)</span>
+                        </div>
+                      )}
                       {!draft.image_applicable && (
                         <p className="mt-1 text-[11px] text-slate-500">
                           Este canal não usa imagem — a campanha é aprovada só com o texto.
@@ -362,7 +380,7 @@ export default async function TrafficPage() {
                       )}
                     </div>
                   </div>
-                  <TrafficCreativeDraftActions draftId={draft.id} />
+                  <TrafficCreativeDraftActions draftId={draft.id} initialDailyBudgetCents={draft.spec.dailyBudgetCents} />
                 </div>
               )
             })}

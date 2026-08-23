@@ -394,6 +394,13 @@ export type CampaignCreativeDraft = {
   decided_by: string | null
   launch_result: CampaignLaunchOutcome | null
   error_message: string | null
+  /** Raciocínio da estratégia (público/orçamento/objetivo) — ver lib/traffic/strategy-generator.ts. Null pra rascunhos criados pelo fluxo antigo (spec fornecido manualmente). */
+  reasoning: string | null
+  /** Previsão de leads/custo — SEMPRE uma estimativa, nunca uma garantia (sem histórico de conta nova). */
+  predicted_leads_min: number | null
+  predicted_leads_max: number | null
+  predicted_total_cost_cents: number | null
+  prediction_period_days: number | null
   created_at: string
   updated_at: string
 }
