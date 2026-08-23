@@ -70,3 +70,47 @@ export type SeoGbpChecklistState = {
   is_done: boolean
   updated_at: string
 }
+
+export type SeoSearchConsoleConnectionStatus = 'connected' | 'error' | 'disconnected'
+
+export type SeoSearchConsoleAccount = {
+  id: string
+  org_id: string
+  unit_id: string
+  site_url: string
+  refresh_token: string
+  access_token: string | null
+  token_expires_at: string | null
+  connection_status: SeoSearchConsoleConnectionStatus
+  connection_error: string | null
+  connected_at: string
+  created_at: string
+  updated_at: string
+}
+
+export type SeoGscOAuthSession = {
+  id: string
+  org_id: string
+  unit_id: string
+  site_urls: string[]
+  refresh_token: string
+  access_token: string
+  expires_at: string
+  created_at: string
+}
+
+export type SeoSearchConsoleQuery = { query: string; clicks: number; impressions: number; ctr: number; position: number }
+
+export type SeoSearchConsoleSnapshot = {
+  id: string
+  org_id: string
+  unit_id: string
+  period_start: string
+  period_end: string
+  total_clicks: number
+  total_impressions: number
+  avg_ctr: number
+  avg_position: number
+  top_queries: SeoSearchConsoleQuery[]
+  created_at: string
+}

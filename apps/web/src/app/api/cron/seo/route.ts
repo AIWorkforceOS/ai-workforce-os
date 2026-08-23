@@ -14,7 +14,9 @@ import {
   siteUrlFrom,
 } from '@/lib/seo/planner'
 import { checkKeywordRanking, getSerpApiKey } from '@/lib/seo/rank-tracking'
-import type { SeoContentItem, SeoKeyword } from '@/lib/seo/types'
+import { fetchSearchConsolePerformance } from '@/lib/seo/search-console'
+import { getGoogleSearchConsoleCredentials, refreshAccessToken } from '@/lib/seo/search-console-oauth'
+import type { SeoContentItem, SeoKeyword, SeoSearchConsoleAccount } from '@/lib/seo/types'
 import type { AgentConfig, Unit } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -32,6 +34,11 @@ export const maxDuration = 300
  *      só este passo é pulado (a auditoria continua rodando).
  *   3) Rank tracking — depende de SERP_API_KEY; sem ela, este passo
  *      inteiro é pulado (log único, não quebra o resto).
+ *   4) Desempenho real (Google Search Console) — só pra unidades que já
+ *      conectaram (dashboard/seo, botão "Conectar Google Search Console");
+ *      cadência semanal (dados da API têm ~3 dias de atraso, não faz
+ *      sentido consultar todo dia). Renova o access token a partir do
+ *      refresh token salvo antes de cada consulta.
  *
  * Env vars:
  *   CRON_SECRET — obrigatório (Vercel envia como Bearer token)
@@ -73,14 +80,17 @@ export async function GET(request: Request) {
 
   const apiKey = getOpenAIApiKey()
   const serpApiKey = getSerpApiKey()
+  const gscCredentials = getGoogleSearchConsoleCredentials()
   const startOfDay = new Date()
   startOfDay.setHours(0, 0, 0, 0)
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+  const sevenDaysAgoDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+  const sevenDaysAgo = sevenDaysAgoDate.toISOString()
   const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)
 
   let auditsRun = 0
   let contentGenerated = 0
   let rankingsChecked = 0
+  let gscSnapshotsFetched = 0
   let errorsCount = 0
   const results: Record<string, unknown>[] = []
 
@@ -232,6 +242,65 @@ export async function GET(request: Request) {
         results.push({ unit: unit.name, rankingError: error instanceof Error ? error.message : String(error) })
       }
     }
+
+    // 4) Desempenho real (Google Search Console) — só quem já conectou
+    if (gscCredentials) {
+      try {
+        const { data: gscAccountRow } = await supabase
+          .from('seo_search_console_accounts')
+          .select('*')
+          .eq('unit_id', unit.id)
+          .maybeSingle()
+        const gscAccount = gscAccountRow as SeoSearchConsoleAccount | null
+
+        if (gscAccount) {
+          const { data: lastSnapshot } = await supabase
+            .from('seo_search_console_snapshots')
+            .select('created_at')
+            .eq('unit_id', unit.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          const lastSnapshotAt = (lastSnapshot as { created_at: string } | null)?.created_at ?? null
+
+          if (!lastSnapshotAt || new Date(lastSnapshotAt) <= sevenDaysAgoDate) {
+            const { accessToken } = await refreshAccessToken({
+              refreshToken: gscAccount.refresh_token,
+              clientId: gscCredentials.clientId,
+              clientSecret: gscCredentials.clientSecret,
+            })
+
+            const performance = await fetchSearchConsolePerformance({ siteUrl: gscAccount.site_url, accessToken })
+            await supabase.from('seo_search_console_snapshots').insert({
+              org_id: unit.org_id,
+              unit_id: unit.id,
+              period_start: performance.periodStart,
+              period_end: performance.periodEnd,
+              total_clicks: performance.totalClicks,
+              total_impressions: performance.totalImpressions,
+              avg_ctr: performance.avgCtr,
+              avg_position: performance.avgPosition,
+              top_queries: performance.topQueries,
+            })
+            await supabase
+              .from('seo_search_console_accounts')
+              .update({ access_token: accessToken, connection_status: 'connected', connection_error: null })
+              .eq('id', gscAccount.id)
+
+            gscSnapshotsFetched += 1
+            results.push({ unit: unit.name, gsc: 'atualizado', clicks: performance.totalClicks })
+          }
+        }
+      } catch (error) {
+        errorsCount += 1
+        const message = error instanceof Error ? error.message : String(error)
+        results.push({ unit: unit.name, gscError: message })
+        await supabase
+          .from('seo_search_console_accounts')
+          .update({ connection_status: 'error', connection_error: message })
+          .eq('unit_id', unit.id)
+      }
+    }
   }
 
   if (!serpApiKey) {
@@ -249,9 +318,9 @@ export async function GET(request: Request) {
     eventType: 'seo_specialist_run',
     message:
       `Cron do SEO executado: ${auditsRun} auditoria(s), ${contentGenerated} conteúdo(s) gerado(s), ` +
-      `${rankingsChecked} posição(ões) checada(s), ${errorsCount} erro(s).`,
+      `${rankingsChecked} posição(ões) checada(s), ${gscSnapshotsFetched} desempenho(s) real(is) do Search Console, ${errorsCount} erro(s).`,
     metadata: { results },
   })
 
-  return NextResponse.json({ ok: true, auditsRun, contentGenerated, rankingsChecked, errors: errorsCount })
+  return NextResponse.json({ ok: true, auditsRun, contentGenerated, rankingsChecked, gscSnapshotsFetched, errors: errorsCount })
 }

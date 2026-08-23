@@ -18,12 +18,23 @@ import { SeoContentItemActions } from '@/components/dashboard/seo-content-item-a
 import { SeoGbpChecklist } from '@/components/dashboard/seo-gbp-checklist'
 import { SeoKeywordTracker, type TrackedKeywordRow } from '@/components/dashboard/seo-keyword-tracker'
 import { SeoAuditRunButton } from '@/components/dashboard/seo-audit-run-button'
+import { SeoGscOAuthBanner, SeoGscSitePicker } from '@/components/dashboard/seo-gsc-site-picker'
 import { GBP_CHECKLIST_ITEMS } from '@/lib/seo/gbp-checklist'
 import { getSerpApiKey } from '@/lib/seo/rank-tracking'
+import { getGoogleSearchConsoleCredentials } from '@/lib/seo/search-console-oauth'
 import { siteUrlFrom } from '@/lib/seo/planner'
-import type { SeoAudit, SeoContentItem, SeoGbpChecklistState, SeoKeyword, SeoKeywordRanking } from '@/lib/seo/types'
+import type {
+  SeoAudit,
+  SeoContentItem,
+  SeoGbpChecklistState,
+  SeoGscOAuthSession,
+  SeoKeyword,
+  SeoKeywordRanking,
+  SeoSearchConsoleAccount,
+  SeoSearchConsoleSnapshot,
+} from '@/lib/seo/types'
 import type { AgentConfig, Unit } from '@/lib/types'
-import { AlertTriangle, ExternalLink, FileText, Gauge, ImageOff, MapPin, Megaphone, Search, Sparkles } from 'lucide-react'
+import { AlertTriangle, ExternalLink, FileText, Gauge, ImageOff, Link2, MapPin, Megaphone, MousePointerClick, Search, Sparkles, TrendingUp } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -46,7 +57,12 @@ const CONTENT_TYPE_LABEL: Record<string, string> = {
 const CONTENT_STATUS_VARIANT: Record<string, BadgeVariant> = { pending_approval: 'amber', approved: 'green', rejected: 'slate' }
 const CONTENT_STATUS_LABEL: Record<string, string> = { pending_approval: 'Aguardando aprovação', approved: 'Aprovado', rejected: 'Rejeitado' }
 
-export default async function SeoPage() {
+export default async function SeoPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ oauth_session?: string; oauth_success?: string; oauth_error?: string }>
+}) {
+  const { oauth_session: oauthSessionId, oauth_success: oauthSuccess, oauth_error: oauthError } = await searchParams
   const supabase = await createClient()
 
   const { data: units } = await supabase.from('units').select('*').order('created_at', { ascending: true })
@@ -61,13 +77,32 @@ export default async function SeoPage() {
     )
   }
 
-  const [{ data: configRow }, { data: audits }, { data: contentItems }, { data: checklistState }, { data: keywordRows }] = await Promise.all([
+  const [
+    { data: configRow },
+    { data: audits },
+    { data: contentItems },
+    { data: checklistState },
+    { data: keywordRows },
+    { data: gscAccountRow },
+    { data: gscSnapshots },
+    gscOauthSession,
+  ] = await Promise.all([
     supabase.from('agent_configs').select('*').eq('unit_id', primaryUnit.id).eq('agent_type', 'seo_specialist').maybeSingle(),
     supabase.from('seo_audits').select('*').eq('unit_id', primaryUnit.id).order('created_at', { ascending: false }).limit(1),
     supabase.from('seo_content_items').select('*').order('created_at', { ascending: false }).limit(60),
     supabase.from('seo_gbp_checklist_state').select('*').eq('unit_id', primaryUnit.id),
     supabase.from('seo_keywords').select('*').eq('unit_id', primaryUnit.id).order('created_at', { ascending: true }),
+    supabase.from('seo_search_console_accounts').select('*').eq('unit_id', primaryUnit.id).maybeSingle(),
+    supabase.from('seo_search_console_snapshots').select('*').eq('unit_id', primaryUnit.id).order('created_at', { ascending: false }).limit(1),
+    oauthSessionId
+      ? supabase.from('seo_gsc_oauth_sessions').select('*').eq('id', oauthSessionId).maybeSingle()
+      : Promise.resolve({ data: null }),
   ])
+
+  const gscAccount = gscAccountRow as SeoSearchConsoleAccount | null
+  const latestGscSnapshot = ((gscSnapshots ?? [])[0] ?? null) as SeoSearchConsoleSnapshot | null
+  const pendingGscSession = gscOauthSession.data as SeoGscOAuthSession | null
+  const gscOauthEnabled = getGoogleSearchConsoleCredentials() !== null
 
   const config = configRow as AgentConfig | null
   const latestAudit = ((audits ?? [])[0] ?? null) as SeoAudit | null
@@ -111,6 +146,11 @@ export default async function SeoPage() {
         subtitle="Auditoria técnica real do site, conteúdo otimizado (blog/landing), Google Business Profile e acompanhamento de palavra-chave — sem prometer o que nenhuma IA entrega de verdade: colocar sua empresa no topo do Google depende de tempo, conteúdo e backlinks."
       />
 
+      <SeoGscOAuthBanner success={oauthSuccess ?? null} error={oauthError ?? null} />
+      {pendingGscSession && pendingGscSession.site_urls.length > 0 && (
+        <SeoGscSitePicker sessionId={pendingGscSession.id} siteUrls={pendingGscSession.site_urls} />
+      )}
+
       {!config || !siteUrl ? (
         <EmptyState
           icon={<Search size={22} className="text-white" />}
@@ -125,6 +165,85 @@ export default async function SeoPage() {
             <KpiCard label="Conteúdo aguardando" value={String(pending.length)} sub="pronto para você decidir" icon={<FileText size={16} className="text-white" />} />
             <KpiCard label="Palavras-chave acompanhadas" value={String(keywords.length)} sub={serpConfigured ? 'checagem automática ativa' : 'checagem automática não configurada'} icon={<Search size={16} className="text-white" />} gradient="from-purple-400 to-indigo-500" />
           </div>
+
+          {/* Desempenho real (Google Search Console) */}
+          <Card className="overflow-hidden p-6">
+            <CardHeader
+              eyebrow="dados reais do google"
+              title="Desempenho de busca (Search Console)"
+              action={
+                !gscAccount && gscOauthEnabled ? (
+                  <a
+                    href={`/api/seo/gsc/oauth/start?unit_id=${primaryUnit.id}`}
+                    className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-black text-white"
+                    style={{ background: 'linear-gradient(135deg, #06b6d4, #4361ee)' }}
+                  >
+                    <Link2 size={13} /> Conectar Google Search Console
+                  </a>
+                ) : null
+              }
+            />
+            {!gscOauthEnabled ? (
+              <AlertBanner
+                tone="warning"
+                icon={<AlertTriangle size={16} className="text-white" />}
+                title="Conexão com o Search Console não configurada"
+                description="O time da Alizo ainda precisa configurar as credenciais do Google para este recurso ficar disponível."
+              />
+            ) : !gscAccount ? (
+              <EmptyState
+                icon={<TrendingUp size={22} className="text-white" />}
+                title="Ainda não conectado"
+                subtitle="Conecte a conta Google que já tem este site verificado no Search Console para ver cliques, impressões e posição média REAIS — dado oficial do Google, atualizado semanalmente."
+              />
+            ) : gscAccount.connection_status === 'error' ? (
+              <AlertBanner
+                tone="warning"
+                icon={<AlertTriangle size={16} className="text-white" />}
+                title="Erro na conexão com o Search Console"
+                description={gscAccount.connection_error ?? 'Não foi possível renovar o acesso — reconecte pelo botão acima.'}
+              />
+            ) : !latestGscSnapshot ? (
+              <EmptyState icon={<TrendingUp size={22} className="text-white" />} title="Conectado — dados chegam em breve" subtitle={`Propriedade: ${gscAccount.site_url}. A primeira coleta acontece no próximo ciclo do cron (diário).`} />
+            ) : (
+              <>
+                <p className="mb-4 text-xs text-slate-500">
+                  Propriedade: <span className="text-slate-300">{gscAccount.site_url}</span> · período: {new Date(latestGscSnapshot.period_start).toLocaleDateString('pt-BR')} a{' '}
+                  {new Date(latestGscSnapshot.period_end).toLocaleDateString('pt-BR')} (últimos 28 dias, dado oficial do Google)
+                </p>
+                <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
+                  <KpiCard label="Cliques" value={latestGscSnapshot.total_clicks.toLocaleString('pt-BR')} sub="últimos 28 dias" icon={<MousePointerClick size={16} className="text-white" />} />
+                  <KpiCard label="Impressões" value={latestGscSnapshot.total_impressions.toLocaleString('pt-BR')} sub="apareceu na busca" icon={<Search size={16} className="text-white" />} />
+                  <KpiCard label="CTR médio" value={`${(latestGscSnapshot.avg_ctr * 100).toFixed(1)}%`} sub="cliques / impressões" icon={<TrendingUp size={16} className="text-white" />} gradient="from-purple-400 to-indigo-500" />
+                  <KpiCard label="Posição média" value={latestGscSnapshot.avg_position.toFixed(1)} sub="quanto menor, melhor" icon={<Gauge size={16} className="text-white" />} gradient="from-amber-400 to-orange-500" />
+                </div>
+                {latestGscSnapshot.top_queries.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[520px] text-left text-sm">
+                      <TableShell>
+                        <Th>Termo de busca</Th>
+                        <Th>Cliques</Th>
+                        <Th>Impressões</Th>
+                        <Th>CTR</Th>
+                        <Th>Posição</Th>
+                      </TableShell>
+                      <tbody>
+                        {latestGscSnapshot.top_queries.slice(0, 10).map((q) => (
+                          <Tr key={q.query}>
+                            <Td className="max-w-xs truncate text-slate-300">{q.query}</Td>
+                            <Td className="text-slate-400">{q.clicks}</Td>
+                            <Td className="text-slate-400">{q.impressions}</Td>
+                            <Td className="text-slate-400">{(q.ctr * 100).toFixed(1)}%</Td>
+                            <Td className="text-slate-400">{q.position.toFixed(1)}</Td>
+                          </Tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
+          </Card>
 
           {/* Auditoria técnica */}
           <Card className="overflow-hidden p-6">
