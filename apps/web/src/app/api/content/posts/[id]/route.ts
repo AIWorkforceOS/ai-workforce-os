@@ -11,7 +11,10 @@ export const maxDuration = 60
  *
  * PATCH { action: 'approve' | 'reject' | 'edit', caption?, image_url? }
  *   - approve: publica de verdade na plataforma (via service role) e marca
- *     published/failed.
+ *     published/failed — MAS só se for pra hoje. Post do planejamento
+ *     semanal com scheduled_for no futuro (pedido do Vinicius, 2026-08-23)
+ *     só marca 'approved' e espera: quem publica de fato na data certa é
+ *     o cron diário (publishDueScheduledPosts, api/cron/content/route.ts).
  *   - reject: marca 'rejected' com o e-mail de quem rejeitou — nunca publica.
  *   - edit: troca legenda e/ou imagem antes de aprovar (só permitido
  *     enquanto o post ainda não foi publicado).
@@ -77,6 +80,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   if (body.action === 'reject') {
     return NextResponse.json({ post: { id: post.id, status: 'rejected' } })
+  }
+
+  // Post do planejamento semanal agendado pro futuro: só marca approved e
+  // espera o cron publicar no dia certo — nunca publica na hora da aprovação.
+  if (post.scheduled_for) {
+    const scheduledAt = new Date(post.scheduled_for)
+    const endOfToday = new Date()
+    endOfToday.setHours(23, 59, 59, 999)
+    if (scheduledAt > endOfToday) {
+      return NextResponse.json({ post: { id: post.id, status: 'approved' }, published: false, scheduled: true })
+    }
   }
 
   const service = createServiceClient()

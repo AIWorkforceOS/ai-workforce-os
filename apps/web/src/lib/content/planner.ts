@@ -35,6 +35,90 @@ export function weeklyFrequencyFrom(profile: Record<string, unknown> | null | un
   return typeof value === 'number' && value > 0 ? Math.round(value) : DEFAULT_WEEKLY_FREQUENCY
 }
 
+/** Segunda=1 ... Domingo=7 (ISO). Espalhamento padrão quando a empresa não escolheu dias específicos. */
+const DEFAULT_POSTING_DAYS_BY_FREQUENCY: Record<number, number[]> = {
+  1: [3],
+  2: [2, 5],
+  3: [1, 3, 5],
+  4: [1, 2, 4, 5],
+  5: [1, 2, 3, 4, 5],
+  6: [1, 2, 3, 4, 5, 6],
+  7: [1, 2, 3, 4, 5, 6, 7],
+}
+
+/**
+ * Dias da semana (planejamento semanal, pedido do Vinicius 2026-08-23) em
+ * que a empresa quer postar — ex: [1,3,5] = seg/qua/sex. Sem escolha
+ * explícita, cai num espalhamento padrão a partir da frequência semanal
+ * já existente, pra nunca deixar o planejamento sem nenhum dia.
+ */
+export function postingDaysFrom(profile: Record<string, unknown> | null | undefined): number[] {
+  const value = profile?.dias_publicacao
+  if (Array.isArray(value)) {
+    const days = value.filter((day): day is number => typeof day === 'number' && day >= 1 && day <= 7)
+    if (days.length > 0) return [...new Set(days)].sort((a, b) => a - b)
+  }
+  const clampedFrequency = Math.min(7, Math.max(1, weeklyFrequencyFrom(profile)))
+  return DEFAULT_POSTING_DAYS_BY_FREQUENCY[clampedFrequency] ?? [1, 3, 5]
+}
+
+function addDaysUtc(date: Date, days: number): Date {
+  const result = new Date(date)
+  result.setUTCDate(result.getUTCDate() + days)
+  return result
+}
+
+/** Segunda-feira (00:00 UTC) da semana ISO que contém a data. */
+function mondayOfWeek(date: Date): Date {
+  const isoWeekday = date.getUTCDay() === 0 ? 7 : date.getUTCDay()
+  const monday = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
+  monday.setUTCDate(monday.getUTCDate() - (isoWeekday - 1))
+  return monday
+}
+
+/**
+ * Datas (uma por dia da semana selecionado) da semana ISO que contém
+ * referenceDate — só as que ainda não passaram, pra completar o
+ * planejamento do resto da semana atual quando chamado no meio dela
+ * (ex: botão "gerar planejamento semanal" clicado numa quarta-feira).
+ */
+export function currentWeekDates(postingDays: number[], referenceDate: Date): Date[] {
+  const monday = mondayOfWeek(referenceDate)
+  const today = new Date(Date.UTC(referenceDate.getUTCFullYear(), referenceDate.getUTCMonth(), referenceDate.getUTCDate()))
+  return postingDays
+    .filter((day) => day >= 1 && day <= 7)
+    .map((isoWeekday) => addDaysUtc(monday, isoWeekday - 1))
+    .filter((date) => date.getTime() >= today.getTime())
+    .sort((a, b) => a.getTime() - b.getTime())
+}
+
+/** As 7 datas (segunda a domingo) da semana ISO que contém referenceDate, sem filtrar passado/futuro — usado na exibição do calendário. */
+export function fullWeekDates(referenceDate: Date): Date[] {
+  const monday = mondayOfWeek(referenceDate)
+  return Array.from({ length: 7 }, (_, i) => addDaysUtc(monday, i))
+}
+
+/** Datas da semana SEGUINTE à que contém referenceDate — usado no gatilho automático de toda sexta-feira. */
+export function nextWeekDates(postingDays: number[], referenceDate: Date): Date[] {
+  const nextMonday = addDaysUtc(mondayOfWeek(referenceDate), 7)
+  return postingDays
+    .filter((day) => day >= 1 && day <= 7)
+    .map((isoWeekday) => addDaysUtc(nextMonday, isoWeekday - 1))
+    .sort((a, b) => a.getTime() - b.getTime())
+}
+
+/**
+ * Datas-alvo pro botão manual "gerar planejamento semanal" (pedido do
+ * Vinicius, 2026-08-23): completa o que resta da semana atual — e, se não
+ * sobrar nenhum dia (clicado sexta à noite, fim de semana, ou já
+ * planejado), cai automaticamente pra semana seguinte, sem precisar o
+ * usuário escolher.
+ */
+export function resolveWeekPlanDates(postingDays: number[], referenceDate: Date): Date[] {
+  const remaining = currentWeekDates(postingDays, referenceDate)
+  return remaining.length > 0 ? remaining : nextWeekDates(postingDays, referenceDate)
+}
+
 /**
  * Decide se o cron deve gerar um post novo hoje: conta quantos posts
  * "ativos" (não rejeitados/falhos) já foram criados nos últimos 7 dias

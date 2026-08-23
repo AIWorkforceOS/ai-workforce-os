@@ -47,6 +47,44 @@ export async function publishContentPost(
   }
 }
 
+/**
+ * Publica todo post 'approved' cujo scheduled_for caia no dia informado
+ * (planejamento semanal, pedido do Vinicius 2026-08-23) — chamada uma vez
+ * por execução do cron diário, além (não em vez) do fluxo avulso de hoje.
+ * Idempotente: uma vez publicado (ou falho), o status sai de 'approved' e
+ * o post não é pego de novo na próxima execução.
+ */
+export async function publishDueScheduledPosts(
+  supabase: SupabaseClient,
+  params: { today?: Date } = {},
+): Promise<{ published: number; errors: number }> {
+  const today = params.today ?? new Date()
+  const dayStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()))
+  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000)
+
+  const { data: due } = await supabase
+    .from('content_posts')
+    .select('*')
+    .eq('status', 'approved')
+    .gte('scheduled_for', dayStart.toISOString())
+    .lt('scheduled_for', dayEnd.toISOString())
+  const posts = (due ?? []) as ContentPost[]
+
+  let published = 0
+  let errors = 0
+  for (const post of posts) {
+    const { data: account } = await supabase.from('social_accounts').select('*').eq('id', post.social_account_id).maybeSingle()
+    if (!account) {
+      errors += 1
+      continue
+    }
+    const outcome = await publishContentPost(supabase, { post, account: account as SocialAccount })
+    if (outcome.ok) published += 1
+    else errors += 1
+  }
+  return { published, errors }
+}
+
 async function publishInstagramContent(
   config: SocialConfig,
   account: SocialAccount,

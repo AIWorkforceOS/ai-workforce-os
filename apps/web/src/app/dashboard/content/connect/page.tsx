@@ -4,7 +4,6 @@ import { PageHeader } from '@/components/ui/dashboard-ui'
 import { ContentConnectForm } from '@/components/dashboard/content-connect-form'
 import { ContentConnectGuide, ContentConnectKaiPanel } from '@/components/dashboard/content-connect-guide'
 import { ContentOAuthPagePicker } from '@/components/dashboard/content-oauth-page-picker'
-import { BrandKitForm, type BrandKitValue } from '@/components/dashboard/brand-kit-form'
 import { getMetaBusinessManagerId } from '@/lib/integrations'
 import { getMetaAppCredentials } from '@/lib/content/meta-oauth'
 import type { ContentOAuthSession, SocialAccount } from '@/lib/content/types'
@@ -31,13 +30,6 @@ export default async function ContentConnectPage({
   const oauthEnabled = getMetaAppCredentials() !== null
   const pendingSession = oauthSession.data as ContentOAuthSession | null
 
-  const firstUnit = (units ?? [])[0] as Unit | undefined
-  const { data: org } = firstUnit
-    ? await supabase.from('organizations').select('business_profile').eq('id', firstUnit.org_id).maybeSingle()
-    : { data: null }
-  const brandKit =
-    ((org?.business_profile as { brand_kit?: BrandKitValue } | undefined)?.brand_kit as BrandKitValue | undefined) ?? null
-
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -60,7 +52,6 @@ export default async function ContentConnectPage({
           />
         </Suspense>
         <div className="flex flex-col gap-6">
-          {firstUnit && <BrandKitForm unitId={firstUnit.id} initial={brandKit} />}
           <ContentConnectKaiPanel />
           <ContentConnectGuide businessManagerId={businessManagerId} />
         </div>

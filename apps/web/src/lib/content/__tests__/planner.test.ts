@@ -2,13 +2,25 @@ import { describe, expect, it } from 'vitest'
 import {
   contentPillarsFrom,
   contentPlatformsFrom,
+  currentWeekDates,
   decidePublishAction,
+  fullWeekDates,
+  nextWeekDates,
   pickNextPillar,
   pickNextPlatform,
+  postingDaysFrom,
+  resolveWeekPlanDates,
   shouldGenerateToday,
   weeklyFrequencyFrom,
 } from '../planner'
 import type { ContentPost } from '../types'
+
+// 1º de janeiro de 2024 é uma segunda-feira (fato verificável, ISO 8601) —
+// usado como âncora nos testes de planejamento semanal pra não depender de
+// nenhuma suposição sobre o dia da semana de uma data arbitrária.
+function utc(year: number, month: number, day: number): Date {
+  return new Date(Date.UTC(year, month - 1, day))
+}
 
 function post(overrides: Partial<ContentPost>): Pick<ContentPost, 'created_at' | 'status' | 'platform' | 'content_pillar'> {
   return {
@@ -116,5 +128,78 @@ describe('pickNextPillar', () => {
     const recentPosts = [post({ content_pillar: 'bastidores', created_at: '2026-07-23T12:00:00Z' })]
     const next = pickNextPillar(['bastidores', 'dicas', 'depoimentos'], recentPosts)
     expect(next).not.toBe('bastidores')
+  })
+})
+
+describe('postingDaysFrom', () => {
+  it('usa os dias escolhidos explicitamente, ordenados e sem duplicata', () => {
+    expect(postingDaysFrom({ dias_publicacao: [5, 1, 3, 1] })).toEqual([1, 3, 5])
+  })
+
+  it('ignora valores fora do intervalo 1-7', () => {
+    expect(postingDaysFrom({ dias_publicacao: [0, 8, 2] })).toEqual([2])
+  })
+
+  it('sem escolha explícita, espalha a partir da frequência semanal (4x/semana → seg/ter/qui/sex)', () => {
+    expect(postingDaysFrom({ frequencia_semanal: 4 })).toEqual([1, 2, 4, 5])
+  })
+
+  it('perfil vazio cai no padrão de 3x/semana (seg/qua/sex)', () => {
+    expect(postingDaysFrom(null)).toEqual([1, 3, 5])
+  })
+})
+
+describe('currentWeekDates', () => {
+  it('devolve só os dias que ainda não passaram na semana atual (quarta-feira, pedindo seg/qua/sex)', () => {
+    const wednesday = utc(2024, 1, 3) // semana de 1-7 jan/2024 (segunda a domingo)
+    const dates = currentWeekDates([1, 3, 5], wednesday)
+    expect(dates).toEqual([utc(2024, 1, 3), utc(2024, 1, 5)]) // segunda (dia 1) já passou
+  })
+
+  it('pedida numa segunda-feira, devolve a semana inteira', () => {
+    const monday = utc(2024, 1, 1)
+    const dates = currentWeekDates([1, 3, 5], monday)
+    expect(dates).toEqual([utc(2024, 1, 1), utc(2024, 1, 3), utc(2024, 1, 5)])
+  })
+})
+
+describe('nextWeekDates', () => {
+  it('devolve as datas da semana seguinte, mesmo pedido no meio da semana atual', () => {
+    const wednesday = utc(2024, 1, 3)
+    const dates = nextWeekDates([1, 3, 5], wednesday)
+    expect(dates).toEqual([utc(2024, 1, 8), utc(2024, 1, 10), utc(2024, 1, 12)])
+  })
+
+  it('gatilho de sexta-feira: pedido numa sexta, devolve a semana seguinte completa', () => {
+    const friday = utc(2024, 1, 5)
+    const dates = nextWeekDates([1, 3, 5], friday)
+    expect(dates).toEqual([utc(2024, 1, 8), utc(2024, 1, 10), utc(2024, 1, 12)])
+  })
+})
+
+describe('fullWeekDates', () => {
+  it('devolve as 7 datas da semana (segunda a domingo), mesmo pedida no meio da semana', () => {
+    const wednesday = utc(2024, 1, 3)
+    expect(fullWeekDates(wednesday)).toEqual([
+      utc(2024, 1, 1),
+      utc(2024, 1, 2),
+      utc(2024, 1, 3),
+      utc(2024, 1, 4),
+      utc(2024, 1, 5),
+      utc(2024, 1, 6),
+      utc(2024, 1, 7),
+    ])
+  })
+})
+
+describe('resolveWeekPlanDates (botão manual "gerar planejamento semanal")', () => {
+  it('no meio da semana, completa o que resta da semana atual', () => {
+    const wednesday = utc(2024, 1, 3)
+    expect(resolveWeekPlanDates([1, 3, 5], wednesday)).toEqual([utc(2024, 1, 3), utc(2024, 1, 5)])
+  })
+
+  it('sem nenhum dia restante na semana atual (clicado sábado), cai pra semana seguinte', () => {
+    const saturday = utc(2024, 1, 6) // seg/qua/sex já passaram
+    expect(resolveWeekPlanDates([1, 3, 5], saturday)).toEqual([utc(2024, 1, 8), utc(2024, 1, 10), utc(2024, 1, 12)])
   })
 })

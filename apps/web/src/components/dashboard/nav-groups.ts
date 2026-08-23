@@ -92,7 +92,7 @@ export const navGroups: { label: Record<Locale, string>; items: NavItem[] }[] = 
     label: { pt: 'Marketing', en: 'Marketing' },
     items: [
       { href: '/dashboard/traffic', label: { pt: 'Tráfego pago', en: 'Paid ads' }, icon: Megaphone },
-      { href: '/dashboard/content', label: { pt: 'Conteúdo', en: 'Content' }, icon: FileText },
+      { href: '/dashboard/content', label: { pt: 'Gestor de Conteúdo', en: 'Content Manager' }, icon: FileText },
       { href: '/dashboard/seo', label: { pt: 'SEO', en: 'SEO' }, icon: Search },
       { href: '/dashboard/email-marketing', label: { pt: 'E-mail marketing', en: 'Email marketing' }, icon: Mail },
     ],

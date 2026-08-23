@@ -114,6 +114,16 @@ describe('buildCaptionSystemPrompt', () => {
     const prompt = buildCaptionSystemPrompt({ config, unit, organizationProfile: null, platform: 'instagram', pillar: null })
     expect(prompt).not.toContain('Identidade visual da marca')
   })
+
+  it('inclui a data comemorativa quando o post é planejado pra ela (planejamento semanal)', () => {
+    const prompt = buildCaptionSystemPrompt({ config, unit, organizationProfile: null, platform: 'instagram', pillar: null, holiday: 'Natal' })
+    expect(prompt).toContain('Data comemorativa: este post vai ao ar em "Natal"')
+  })
+
+  it('não menciona data comemorativa quando não há uma pro dia', () => {
+    const prompt = buildCaptionSystemPrompt({ config, unit, organizationProfile: null, platform: 'instagram', pillar: null })
+    expect(prompt).not.toContain('Data comemorativa')
+  })
 })
 
 describe('generatePostImage — composição do logo', () => {

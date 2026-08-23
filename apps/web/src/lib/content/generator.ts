@@ -41,8 +41,10 @@ export function buildCaptionSystemPrompt(params: {
   organizationProfile: Record<string, unknown> | null
   platform: SocialPlatform
   pillar: string | null
+  /** Nome da data comemorativa em que este post vai ao ar, se houver (planejamento semanal, ver lib/content/holidays.ts). */
+  holiday?: string | null
 }): string {
-  const { config, unit, organizationProfile, platform, pillar } = params
+  const { config, unit, organizationProfile, platform, pillar, holiday } = params
   const businessContext = buildCombinedBusinessContext(organizationProfile, config.business_profile)
   const detectedLanguage = detectBusinessLanguage([organizationProfile, config.business_profile])
   const brandKit = brandKitFrom(organizationProfile)
@@ -57,6 +59,9 @@ export function buildCaptionSystemPrompt(params: {
     `Idioma da legenda: escreva a legenda inteiramente em ${detectedLanguage === 'en' ? 'inglês' : 'português'} — esse idioma foi detectado automaticamente lendo o texto real da ficha da empresa acima (não confie em nenhum campo de configuração isolado de idioma, ele pode estar errado ou ausente). O "reasoning" continua em português (é só para o dono da empresa entender, no painel); o "image_prompt" continua em inglês (é só para o gerador de imagem).`,
     brandKit
       ? `Identidade visual da marca: ao descrever a imagem (image_prompt), use como cores predominantes da cena${brandKit.primary_color ? ` a cor primária ${brandKit.primary_color}` : ''}${brandKit.secondary_color ? ` e a cor secundária ${brandKit.secondary_color}` : ''} — mantenha consistência visual com os outros posts da marca.`
+      : null,
+    holiday
+      ? `Data comemorativa: este post vai ao ar em "${holiday}" — aproveite a ocasião no post (legenda e imagem), conectando com o negócio quando fizer sentido, sem forçar. Nunca invente que a empresa está fechada, aberta, com promoção ou horário especial nessa data a menos que isso já esteja escrito na ficha do negócio.`
       : null,
     'FORMATO DA RESPOSTA — responda SOMENTE um JSON válido no formato:',
     '{"caption": "a legenda pronta para publicar, incluindo call to action se fizer sentido para a empresa", "image_prompt": "descrição em inglês, detalhada e visual, para gerar a imagem que acompanha o post — sem nenhum texto/letra embutido na imagem", "reasoning": "1 frase curta, em português, explicando por que este post faz sentido agora, para o dono da empresa entender"}',
@@ -73,6 +78,7 @@ export async function generatePostContent(params: {
   organizationProfile: Record<string, unknown> | null
   platform: SocialPlatform
   pillar: string | null
+  holiday?: string | null
 }): Promise<GeneratedPostContent> {
   const systemPrompt = buildCaptionSystemPrompt(params)
   const output = await generateStructuredReply<CaptionOutput>({

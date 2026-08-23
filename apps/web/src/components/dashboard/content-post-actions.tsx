@@ -6,11 +6,26 @@ import { Check, Pencil, X } from 'lucide-react'
 import { Textarea } from '@/components/ui/dashboard-ui'
 
 /**
- * Ações humanas sobre um post pendente de aprovação: aprovar (publica de
- * verdade via /api/content/posts/[id]), rejeitar, ou editar a legenda
- * antes de decidir — mesmo espírito de traffic-decision-actions.tsx.
+ * Ações humanas sobre um post pendente de aprovação: aprovar, rejeitar, ou
+ * editar a legenda antes de decidir — mesmo espírito de
+ * traffic-decision-actions.tsx. Aprovar publica na hora SÓ quando o post é
+ * pra hoje; um post do planejamento semanal (scheduledFor no futuro) só
+ * marca aprovado e espera o cron publicar no dia certo (pedido do
+ * Vinicius, 2026-08-23) — o texto do botão avisa qual dos dois vai acontecer.
  */
-export function ContentPostActions({ postId, initialCaption }: { postId: string; initialCaption: string }) {
+export function ContentPostActions({
+  postId,
+  initialCaption,
+  scheduledFor,
+}: {
+  postId: string
+  initialCaption: string
+  scheduledFor?: string | null
+}) {
+  // Mesmo corte de "futuro" usado no backend (api/content/posts/[id]/route.ts): depois do fim do dia de hoje.
+  const endOfToday = new Date()
+  endOfToday.setHours(23, 59, 59, 999)
+  const isFutureScheduled = Boolean(scheduledFor && new Date(scheduledFor).getTime() > endOfToday.getTime())
   const router = useRouter()
   const [pending, setPending] = useState<'approve' | 'reject' | 'edit' | null>(null)
   const [editing, setEditing] = useState(false)
@@ -75,10 +90,14 @@ export function ContentPostActions({ postId, initialCaption }: { postId: string;
           disabled={pending !== null}
           className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-bold text-white transition-all hover:scale-[1.02] disabled:opacity-50"
           style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}
-          title="Aprova e publica o post agora"
+          title={
+            isFutureScheduled
+              ? `Aprova — publica sozinho no dia agendado (${new Date(scheduledFor!).toLocaleDateString('pt-BR')})`
+              : 'Aprova e publica o post agora'
+          }
         >
           <Check size={12} />
-          {pending === 'approve' ? 'Publicando…' : 'Aprovar e publicar'}
+          {pending === 'approve' ? (isFutureScheduled ? 'Aprovando…' : 'Publicando…') : isFutureScheduled ? 'Aprovar' : 'Aprovar e publicar'}
         </button>
         <button
           onClick={() => act('reject')}
