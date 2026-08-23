@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import sharp from 'sharp'
 import { buildCaptionSystemPrompt } from '../generator'
 import type { AgentConfig, Unit } from '@/lib/types'
 
@@ -66,5 +67,109 @@ describe('buildCaptionSystemPrompt', () => {
     expect(prompt).toContain('"caption"')
     expect(prompt).toContain('"image_prompt"')
     expect(prompt).toContain('"reasoning"')
+  })
+
+  it('detecta inglês pelo texto real da ficha e instrui a legenda nesse idioma (achado ao vivo na Mawi Cleaning)', () => {
+    const prompt = buildCaptionSystemPrompt({
+      config,
+      unit,
+      organizationProfile: {
+        descricao_curta: 'Empresa profissional de limpeza no Arizona.',
+        observacoes: [
+          'The main objective is to generate customers, not simply content. Every post should help build trust with our customers.',
+          'English should be the primary social-media language, while Mawi can communicate with leads in English, Portuguese, or Spanish.',
+        ],
+      },
+      platform: 'instagram',
+      pillar: null,
+    })
+    expect(prompt).toContain('escreva a legenda inteiramente em inglês')
+    expect(prompt).toContain('detectado automaticamente lendo o texto real da ficha')
+  })
+
+  it('detecta português quando a ficha é predominantemente em português', () => {
+    const prompt = buildCaptionSystemPrompt({
+      config,
+      unit,
+      organizationProfile: { descricao_curta: 'Somos uma empresa de limpeza residencial e comercial com atendimento personalizado e pontual.' },
+      platform: 'instagram',
+      pillar: null,
+    })
+    expect(prompt).toContain('escreva a legenda inteiramente em português')
+  })
+
+  it('inclui as cores da marca no prompt da imagem quando há brand_kit na ficha da organização', () => {
+    const prompt = buildCaptionSystemPrompt({
+      config,
+      unit,
+      organizationProfile: { brand_kit: { primary_color: '#1E40AF', secondary_color: '#10B981' } },
+      platform: 'instagram',
+      pillar: null,
+    })
+    expect(prompt).toContain('#1E40AF')
+    expect(prompt).toContain('#10B981')
+  })
+
+  it('não menciona paleta de marca quando não há brand_kit configurado', () => {
+    const prompt = buildCaptionSystemPrompt({ config, unit, organizationProfile: null, platform: 'instagram', pillar: null })
+    expect(prompt).not.toContain('Identidade visual da marca')
+  })
+})
+
+describe('generatePostImage — composição do logo', () => {
+  afterEach(() => {
+    vi.doUnmock('@/lib/openai')
+    vi.resetModules()
+    vi.unstubAllGlobals()
+  })
+
+  async function tinyPngBase64(color: { r: number; g: number; b: number }): Promise<string> {
+    const buffer = await sharp({ create: { width: 40, height: 40, channels: 3, background: color } }).png().toBuffer()
+    return buffer.toString('base64')
+  }
+
+  it('sem logoUrl, devolve a imagem gerada sem tentar buscar nada', async () => {
+    vi.resetModules()
+    const baseImage = await tinyPngBase64({ r: 10, g: 20, b: 30 })
+    vi.doMock('@/lib/openai', () => ({ generateImage: async () => ({ base64Image: baseImage }) }))
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { generatePostImage } = await import('../generator')
+    const result = await generatePostImage({ apiKey: 'k', imagePrompt: 'a scene' })
+
+    expect(result.base64Image).toBe(baseImage)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('com logoUrl, baixa o logo e devolve uma imagem PNG válida e diferente da original (logo colado de verdade)', async () => {
+    vi.resetModules()
+    const baseImage = await tinyPngBase64({ r: 200, g: 50, b: 50 })
+    const logoBuffer = await sharp({ create: { width: 20, height: 20, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } })
+      .png()
+      .toBuffer()
+    vi.doMock('@/lib/openai', () => ({ generateImage: async () => ({ base64Image: baseImage }) }))
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, arrayBuffer: async () => logoBuffer.buffer.slice(logoBuffer.byteOffset, logoBuffer.byteOffset + logoBuffer.byteLength) })))
+
+    const { generatePostImage } = await import('../generator')
+    const result = await generatePostImage({ apiKey: 'k', imagePrompt: 'a scene', logoUrl: 'https://example.com/logo.png' })
+
+    expect(result.base64Image).not.toBe(baseImage)
+    const metadata = await sharp(Buffer.from(result.base64Image, 'base64')).metadata()
+    expect(metadata.width).toBe(40)
+    expect(metadata.height).toBe(40)
+  })
+
+  it('se o download do logo falhar, devolve a imagem original em vez de derrubar o post inteiro', async () => {
+    vi.resetModules()
+    const baseImage = await tinyPngBase64({ r: 5, g: 5, b: 5 })
+    vi.doMock('@/lib/openai', () => ({ generateImage: async () => ({ base64Image: baseImage }) }))
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404 })))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const { generatePostImage } = await import('../generator')
+    const result = await generatePostImage({ apiKey: 'k', imagePrompt: 'a scene', logoUrl: 'https://example.com/missing.png' })
+
+    expect(result.base64Image).toBe(baseImage)
   })
 })

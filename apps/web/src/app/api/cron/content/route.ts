@@ -143,7 +143,8 @@ export async function GET(request: Request) {
 
       try {
         const content = await generatePostContent({ apiKey, config, unit, organizationProfile, platform, pillar })
-        const image = await generatePostImage({ apiKey, imagePrompt: content.imagePrompt })
+        const logoUrl = (organizationProfile as { brand_kit?: { logo_url?: string | null } } | null)?.brand_kit?.logo_url ?? null
+        const image = await generatePostImage({ apiKey, imagePrompt: content.imagePrompt, logoUrl })
         const imageUrl = await uploadGeneratedImage({ supabase, unitId: unit.id, base64Image: image.base64Image })
 
         const action = decidePublishAction(account.publishing_mode)

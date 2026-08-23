@@ -3,10 +3,21 @@
 // (lib/openai.ts). Legenda via chat (JSON mode); imagem via gpt-image-1.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import sharp from 'sharp'
 import { generateImage, generateStructuredReply } from '@/lib/openai'
 import { buildCombinedBusinessContext } from '@/lib/interview/engine'
+import { detectBusinessLanguage } from './language'
 import type { AgentConfig, Unit } from '@/lib/types'
 import type { SocialPlatform } from './types'
+
+/** Ficha da Empresa compartilhada carrega opcionalmente a identidade visual (logo + paleta) — ver api/content/brand-kit. */
+export type BrandKit = { logo_url?: string | null; primary_color?: string | null; secondary_color?: string | null }
+
+function brandKitFrom(organizationProfile: Record<string, unknown> | null | undefined): BrandKit | null {
+  const raw = (organizationProfile as { brand_kit?: BrandKit } | null | undefined)?.brand_kit
+  if (!raw || (!raw.logo_url && !raw.primary_color && !raw.secondary_color)) return null
+  return raw
+}
 
 type CaptionOutput = { caption?: string; image_prompt?: string; reasoning?: string }
 
@@ -33,6 +44,9 @@ export function buildCaptionSystemPrompt(params: {
 }): string {
   const { config, unit, organizationProfile, platform, pillar } = params
   const businessContext = buildCombinedBusinessContext(organizationProfile, config.business_profile)
+  const detectedLanguage = detectBusinessLanguage([organizationProfile, config.business_profile])
+  const brandKit = brandKitFrom(organizationProfile)
+
   return [
     `Você é ${config.persona_name}, gestor(a) de conteúdo e redes sociais digital da unidade ${unit.name}.`,
     `Sua tarefa agora: criar UM post orgânico para o ${platformLabel(platform)}${pillar ? `, sobre o pilar de conteúdo "${pillar}"` : ''}.`,
@@ -40,6 +54,10 @@ export function buildCaptionSystemPrompt(params: {
       'Ainda não há uma ficha de negócio detalhada — escreva algo genérico, seguro e verdadeiro para uma empresa de serviços, sem inventar detalhes específicos.',
     'A legenda deve soar humana, natural, sem parecer gerada por IA e sem clichês genéricos de marketing. Use no máximo 2 emojis, só se fizer sentido para o tom da marca.',
     'Nunca invente promoção, preço ou resultado que não esteja na ficha da empresa. Nunca mencione concorrentes. Respeite qualquer proibição registrada na ficha.',
+    `Idioma da legenda: escreva a legenda inteiramente em ${detectedLanguage === 'en' ? 'inglês' : 'português'} — esse idioma foi detectado automaticamente lendo o texto real da ficha da empresa acima (não confie em nenhum campo de configuração isolado de idioma, ele pode estar errado ou ausente). O "reasoning" continua em português (é só para o dono da empresa entender, no painel); o "image_prompt" continua em inglês (é só para o gerador de imagem).`,
+    brandKit
+      ? `Identidade visual da marca: ao descrever a imagem (image_prompt), use como cores predominantes da cena${brandKit.primary_color ? ` a cor primária ${brandKit.primary_color}` : ''}${brandKit.secondary_color ? ` e a cor secundária ${brandKit.secondary_color}` : ''} — mantenha consistência visual com os outros posts da marca.`
+      : null,
     'FORMATO DA RESPOSTA — responda SOMENTE um JSON válido no formato:',
     '{"caption": "a legenda pronta para publicar, incluindo call to action se fizer sentido para a empresa", "image_prompt": "descrição em inglês, detalhada e visual, para gerar a imagem que acompanha o post — sem nenhum texto/letra embutido na imagem", "reasoning": "1 frase curta, em português, explicando por que este post faz sentido agora, para o dono da empresa entender"}',
   ]
@@ -74,9 +92,57 @@ export async function generatePostContent(params: {
   return { caption, imagePrompt, reasoning: reasoning || 'Post gerado conforme a frequência configurada pela empresa.' }
 }
 
-/** Gera a imagem (gpt-image-1) a partir do prompt textual do post. */
-export async function generatePostImage(params: { apiKey: string; imagePrompt: string }): Promise<{ base64Image: string }> {
-  return generateImage({ apiKey: params.apiKey, prompt: params.imagePrompt, size: '1024x1024', quality: 'medium' })
+/**
+ * Gera a imagem (gpt-image-1) a partir do prompt textual do post e, se a
+ * marca tiver logo cadastrado (brand kit), compõe o logo por cima antes de
+ * devolver — a cor já foi pedida no prompt (buildCaptionSystemPrompt), mas
+ * o logo em si nenhum gerador de imagem reproduz de forma consistente só
+ * por descrição textual, por isso ele é colado de verdade na imagem final.
+ */
+export async function generatePostImage(params: {
+  apiKey: string
+  imagePrompt: string
+  logoUrl?: string | null
+}): Promise<{ base64Image: string }> {
+  const { base64Image } = await generateImage({ apiKey: params.apiKey, prompt: params.imagePrompt, size: '1024x1024', quality: 'medium' })
+  if (!params.logoUrl) return { base64Image }
+
+  try {
+    return { base64Image: await compositeLogoOntoImage(base64Image, params.logoUrl) }
+  } catch (error) {
+    // Nunca bloqueia o post por causa do logo — publica sem marca em vez de derrubar o pipeline inteiro.
+    console.error('[content/generator] falha ao compor o logo na imagem, seguindo sem ele:', error instanceof Error ? error.message : error)
+    return { base64Image }
+  }
+}
+
+/** Cola o logo da marca no canto inferior direito da imagem gerada (padding + redimensionamento proporcionais ao tamanho da imagem). */
+async function compositeLogoOntoImage(baseImageBase64: string, logoUrl: string): Promise<string> {
+  const baseBuffer = Buffer.from(baseImageBase64, 'base64')
+  const logoResponse = await fetch(logoUrl)
+  if (!logoResponse.ok) throw new Error(`Não foi possível baixar o logo da marca (status ${logoResponse.status}).`)
+  const logoBuffer = Buffer.from(await logoResponse.arrayBuffer())
+
+  const baseMeta = await sharp(baseBuffer).metadata()
+  const baseWidth = baseMeta.width ?? 1024
+  const baseHeight = baseMeta.height ?? 1024
+
+  const targetLogoWidth = Math.round(baseWidth * 0.18)
+  const resizedLogo = await sharp(logoBuffer)
+    .resize({ width: targetLogoWidth, fit: 'inside', withoutEnlargement: true })
+    .png()
+    .toBuffer()
+  const logoMeta = await sharp(resizedLogo).metadata()
+
+  const padding = Math.round(baseWidth * 0.03)
+  const left = Math.max(0, baseWidth - (logoMeta.width ?? targetLogoWidth) - padding)
+  const top = Math.max(0, baseHeight - (logoMeta.height ?? targetLogoWidth) - padding)
+
+  const composited = await sharp(baseBuffer)
+    .composite([{ input: resizedLogo, left, top }])
+    .png()
+    .toBuffer()
+  return composited.toString('base64')
 }
 
 /**

@@ -147,14 +147,50 @@ export async function publishFacebookPhoto(
   return { externalPostId: result.post_id ?? result.id }
 }
 
+const CONTAINER_POLL_INTERVAL_MS = 2000
+const CONTAINER_POLL_MAX_ATTEMPTS = 10 // ~20s no total — o endpoint de aprovação tem 60s de orçamento
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * O container de mídia do Instagram (POST /{ig}/media) é assíncrono: a Meta
+ * ainda está baixando/processando a imagem quando a chamada retorna. Chamar
+ * media_publish antes disso terminar dá "Media ID is not available" (code
+ * 9007) — reproduzido ao vivo em 2026-08-23 publicando de verdade pro
+ * @mawicleaning. Aqui a gente espera o status_code virar FINISHED antes de
+ * publicar (developers.facebook.com/docs/instagram-api/guides/content-publishing#publish-content).
+ */
+async function waitForMediaContainerReady(
+  containerId: string,
+  accessToken: string,
+  opts: { pollIntervalMs?: number; maxAttempts?: number } = {},
+): Promise<void> {
+  const pollIntervalMs = opts.pollIntervalMs ?? CONTAINER_POLL_INTERVAL_MS
+  const maxAttempts = opts.maxAttempts ?? CONTAINER_POLL_MAX_ATTEMPTS
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const status = await socialGet<{ status_code?: string }>(containerId, accessToken, { fields: 'status_code' })
+    if (status.status_code === 'FINISHED') return
+    if (status.status_code === 'ERROR' || status.status_code === 'EXPIRED') {
+      throw new Error(`Container de mídia do Instagram falhou ao processar (status ${status.status_code}).`)
+    }
+    if (attempt < maxAttempts - 1) await sleep(pollIntervalMs)
+  }
+  throw new Error('Container de mídia do Instagram não ficou pronto a tempo (timeout aguardando processamento).')
+}
+
 export async function publishInstagramPost(
   config: SocialConfig,
   params: { instagramBusinessAccountId: string; imageUrl: string; caption: string },
+  pollOpts?: { pollIntervalMs?: number; maxAttempts?: number },
 ): Promise<{ externalPostId: string }> {
   const container = await socialPost<{ id: string }>(`${params.instagramBusinessAccountId}/media`, config.pageAccessToken, {
     image_url: params.imageUrl,
     caption: params.caption,
   })
+  await waitForMediaContainerReady(container.id, config.pageAccessToken, pollOpts)
   const published = await socialPost<{ id: string }>(
     `${params.instagramBusinessAccountId}/media_publish`,
     config.pageAccessToken,
