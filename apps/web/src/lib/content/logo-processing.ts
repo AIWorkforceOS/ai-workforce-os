@@ -32,30 +32,70 @@ function toHex({ r, g, b }: RGB): string {
   return `#${[r, g, b].map((n) => clamp(n).toString(16).padStart(2, '0')).join('').toUpperCase()}`
 }
 
-function pixelAt(data: Buffer, width: number, x: number, y: number): RGB {
+function pixelAt(data: Buffer, width: number, x: number, y: number): { r: number; g: number; b: number; a: number } {
   const offset = (y * width + x) * 4
-  return { r: data[offset]!, g: data[offset + 1]!, b: data[offset + 2]! }
+  return { r: data[offset]!, g: data[offset + 1]!, b: data[offset + 2]!, a: data[offset + 3]! }
 }
 
-/** Já tem transparência real de sobra (ex: PNG exportado com fundo removido) — não mexe. */
-function hasEnoughExistingTransparency(data: Buffer, pixelCount: number): boolean {
-  let transparent = 0
+function countOpaque(data: Buffer, pixelCount: number): number {
+  let count = 0
   for (let i = 0; i < pixelCount; i++) {
-    if (data[i * 4 + 3]! < 16) transparent += 1
+    if (data[i * 4 + 3]! >= 128) count += 1
   }
-  return transparent / pixelCount > 0.05
+  return count
 }
 
 const BG_THRESHOLD = 32
 const BG_SOFT_BAND = 20
-const MAX_CORNER_SPREAD = 40
+const PROBE_RUN_LENGTH = 8
+const PROBE_RUN_TOLERANCE = 10
+const CLUSTER_TOLERANCE = 30
+const MIN_REMAINING_OPAQUE_FRACTION = 0.02
+const MIN_REMAINING_OPAQUE_PIXELS = 8
 
 /**
- * Remove o fundo sólido do logo (heurística de chroma-key pelos cantos).
- * Devolve PNG com transparência. Se o fundo não for uniforme o bastante
- * (cantos muito diferentes entre si) ou já tiver transparência real,
- * devolve a imagem original sem mexer — mais seguro que arriscar estragar
- * um logo com fundo complexo.
+ * Anda na diagonal a partir de um canto até achar uma sequência estável de
+ * pixels opacos parecidos entre si — pula direto qualquer sombra/anti-alias
+ * fino na borda de um emblema/badge (que teria cor intermediária, nem fundo
+ * nem arte) e pousa na cor real do preenchimento de fundo.
+ */
+function probeBackgroundColor(data: Buffer, width: number, height: number, dx: number, dy: number): RGB | null {
+  let x = dx > 0 ? 0 : width - 1
+  let y = dy > 0 ? 0 : height - 1
+  const maxSteps = Math.min(width, height)
+  let run: RGB[] = []
+  for (let i = 0; i < maxSteps; i++) {
+    const p = pixelAt(data, width, x, y)
+    if (p.a >= 250) {
+      const last = run[run.length - 1]
+      if (!last || colorDistance(p, last) < PROBE_RUN_TOLERANCE) {
+        run.push(p)
+      } else {
+        run = [p]
+      }
+      if (run.length >= PROBE_RUN_LENGTH) return averageColor(run)
+    } else {
+      run = []
+    }
+    x += dx
+    y += dy
+  }
+  return run.length > 0 ? averageColor(run) : null
+}
+
+/**
+ * Remove o fundo sólido do logo (heurística de chroma-key, cor obtida pelos
+ * 4 cantos). Um logo tipo "emblema/badge" pode já ter uma margem transparente
+ * de verdade em volta (canvas retangular sobrando de um desenho circular) e
+ * ainda assim ter um disco de cor sólida por remover por dentro dela — por
+ * isso a amostragem anda pra dentro a partir do canto em vez de olhar só o
+ * pixel exato do canto, e usa o voto da maioria dos 4 cantos (em vez da
+ * média direta) pra não deixar um canto que caiu em cima da própria arte
+ * estragar a leitura da cor de fundo.
+ *
+ * Nunca deixa a remoção apagar quase todo o conteúdo opaco: se sobrar pouco
+ * (sinal de que a "cor de fundo" identificada era na verdade a própria arte,
+ * não um fundo real), devolve a imagem original sem mexer.
  */
 export async function removeSolidBackground(input: Buffer): Promise<Buffer> {
   const { data, info } = await sharp(input).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
@@ -63,21 +103,31 @@ export async function removeSolidBackground(input: Buffer): Promise<Buffer> {
   if (channels < 4 || width < 2 || height < 2) return input
 
   const pixelCount = width * height
-  if (hasEnoughExistingTransparency(data, pixelCount)) return input
+  const opaqueBefore = countOpaque(data, pixelCount)
+  if (opaqueBefore === 0) return input // nada opaco pra processar
 
-  const corners = [
-    pixelAt(data, width, 0, 0),
-    pixelAt(data, width, width - 1, 0),
-    pixelAt(data, width, 0, height - 1),
-    pixelAt(data, width, width - 1, height - 1),
-  ]
-  const bgColor = averageColor(corners)
-  const cornerSpread = Math.max(...corners.map((c) => colorDistance(c, bgColor)))
-  if (cornerSpread > MAX_CORNER_SPREAD) return input // cantos muito diferentes — provavelmente não é fundo sólido
+  const samples = [
+    probeBackgroundColor(data, width, height, 1, 1),
+    probeBackgroundColor(data, width, height, -1, 1),
+    probeBackgroundColor(data, width, height, 1, -1),
+    probeBackgroundColor(data, width, height, -1, -1),
+  ].filter((s): s is RGB => s !== null)
+  if (samples.length === 0) return input
+
+  let bestCluster = [samples[0]!]
+  for (const candidate of samples) {
+    const cluster = samples.filter((s) => colorDistance(s, candidate) < CLUSTER_TOLERANCE)
+    if (cluster.length > bestCluster.length) bestCluster = cluster
+  }
+  const minAgreement = samples.length >= 4 ? 3 : samples.length
+  if (bestCluster.length < minAgreement) return input // cantos não concordam — provavelmente não é fundo sólido
+
+  const bgColor = averageColor(bestCluster)
 
   const out = Buffer.from(data)
   for (let i = 0; i < pixelCount; i++) {
     const offset = i * 4
+    if (data[offset + 3]! < 16) continue // já transparente
     const pixel: RGB = { r: data[offset]!, g: data[offset + 1]!, b: data[offset + 2]! }
     const dist = colorDistance(pixel, bgColor)
     if (dist < BG_THRESHOLD) {
@@ -88,6 +138,10 @@ export async function removeSolidBackground(input: Buffer): Promise<Buffer> {
       out[offset + 3] = Math.round(out[offset + 3]! * fade)
     }
   }
+
+  const remainingOpaque = countOpaque(out, pixelCount)
+  const minRemaining = Math.max(MIN_REMAINING_OPAQUE_PIXELS, Math.round(opaqueBefore * MIN_REMAINING_OPAQUE_FRACTION))
+  if (remainingOpaque < minRemaining) return input // teria apagado quase tudo — a "cor de fundo" achada era a própria arte
 
   return sharp(out, { raw: { width, height, channels: 4 } }).png().toBuffer()
 }

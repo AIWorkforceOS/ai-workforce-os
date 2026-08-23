@@ -59,6 +59,47 @@ describe('removeSolidBackground', () => {
   })
 })
 
+async function circleBadgeLogo(): Promise<Buffer> {
+  // Emblema circular: canvas quadrado com margem transparente real nos cantos
+  // (fora do círculo) + disco branco sólido preenchendo o círculo + uma marca
+  // vermelha por cima — reproduz o caso real que o algoritmo antigo deixava
+  // passar batido (via de sobra o disco branco intacto).
+  const size = 60
+  const svg = `<svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="${size / 2}" cy="${size / 2}" r="${size / 2 - 2}" fill="white" />
+  </svg>`
+  const badge = sharp(Buffer.from(svg)).png()
+  const mark = await solidPng(10, 10, { r: 210, g: 20, b: 20 })
+  return badge.composite([{ input: mark, left: 25, top: 25 }]).png().toBuffer()
+}
+
+describe('removeSolidBackground — emblema circular (margem já transparente + disco por remover)', () => {
+  it('remove o disco branco por dentro da margem transparente, mantendo a marca colorida', async () => {
+    const logo = await circleBadgeLogo()
+    const result = await removeSolidBackground(logo)
+
+    // acha sobre um fundo verde vivo pra provar transparência real
+    // (RGB de pixel totalmente transparente não é confiável sozinho)
+    const onColor = await sharp(result).flatten({ background: { r: 0, g: 200, b: 0 } }).raw().toBuffer({ resolveWithObject: true })
+    const width = onColor.info.width
+
+    function compositedAt(x: number, y: number) {
+      const o = (y * width + x) * 3
+      return { r: onColor.data[o], g: onColor.data[o + 1], b: onColor.data[o + 2] }
+    }
+
+    // ponto do disco branco (fora da marca vermelha, dentro do círculo) — deve mostrar o verde do fundo composto
+    const diskPoint = compositedAt(10, 30)
+    expect(diskPoint.g).toBeGreaterThan(150)
+    expect(diskPoint.r).toBeLessThan(80)
+
+    // a marca vermelha central continua opaca e vermelha
+    const markPoint = compositedAt(30, 30)
+    expect(markPoint.r).toBeGreaterThan(150)
+    expect(markPoint.g).toBeLessThan(80)
+  })
+})
+
 describe('extractPaletteFromLogo', () => {
   it('extrai a cor do desenho como primária depois do fundo removido (pixels transparentes são ignorados)', async () => {
     const logo = await logoOnWhiteBg()
