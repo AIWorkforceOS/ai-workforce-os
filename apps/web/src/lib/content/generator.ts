@@ -6,7 +6,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import sharp from 'sharp'
 import { generateImage, generateStructuredReply } from '@/lib/openai'
 import { buildCombinedBusinessContext } from '@/lib/interview/engine'
-import { detectBusinessLanguage } from './language'
+import { resolveContentLanguage } from './language'
 import type { AgentConfig, Unit } from '@/lib/types'
 import type { SocialPlatform } from './types'
 
@@ -46,7 +46,7 @@ export function buildCaptionSystemPrompt(params: {
 }): string {
   const { config, unit, organizationProfile, platform, pillar, holiday } = params
   const businessContext = buildCombinedBusinessContext(organizationProfile, config.business_profile)
-  const detectedLanguage = detectBusinessLanguage([organizationProfile, config.business_profile])
+  const detectedLanguage = resolveContentLanguage(unit.default_conversation_language, [organizationProfile, config.business_profile])
   const brandKit = brandKitFrom(organizationProfile)
 
   return [
@@ -56,7 +56,7 @@ export function buildCaptionSystemPrompt(params: {
       'Ainda não há uma ficha de negócio detalhada — escreva algo genérico, seguro e verdadeiro para uma empresa de serviços, sem inventar detalhes específicos.',
     'A legenda deve soar humana, natural, sem parecer gerada por IA e sem clichês genéricos de marketing. Use no máximo 2 emojis, só se fizer sentido para o tom da marca.',
     'Nunca invente promoção, preço ou resultado que não esteja na ficha da empresa. Nunca mencione concorrentes. Respeite qualquer proibição registrada na ficha.',
-    `Idioma da legenda: escreva a legenda inteiramente em ${detectedLanguage === 'en' ? 'inglês' : 'português'} — esse idioma foi detectado automaticamente lendo o texto real da ficha da empresa acima (não confie em nenhum campo de configuração isolado de idioma, ele pode estar errado ou ausente). O "reasoning" continua em português (é só para o dono da empresa entender, no painel); o "image_prompt" continua em inglês (é só para o gerador de imagem).`,
+    `Idioma da legenda: escreva a legenda inteiramente em ${detectedLanguage === 'en' ? 'inglês' : 'português'} — esse é o idioma em que o negócio atende seus clientes (configurado na unidade, ou detectado a partir da ficha quando esse dado não existe). O "reasoning" continua em português (é só para o dono da empresa entender, no painel); o "image_prompt" continua em inglês (é só para o gerador de imagem).`,
     brandKit
       ? `Identidade visual da marca: ao descrever a imagem (image_prompt), use como cores predominantes da cena${brandKit.primary_color ? ` a cor primária ${brandKit.primary_color}` : ''}${brandKit.secondary_color ? ` e a cor secundária ${brandKit.secondary_color}` : ''} — mantenha consistência visual com os outros posts da marca.`
       : null,

@@ -84,7 +84,21 @@ describe('buildCaptionSystemPrompt', () => {
       pillar: null,
     })
     expect(prompt).toContain('escreva a legenda inteiramente em inglês')
-    expect(prompt).toContain('detectado automaticamente lendo o texto real da ficha')
+  })
+
+  it('idioma explícito da unidade vence a detecção por texto (achado ao vivo: dono descreveu em português negócio que opera em inglês)', () => {
+    const englishUnit = { ...unit, default_conversation_language: 'en' } as Unit
+    const prompt = buildCaptionSystemPrompt({
+      config,
+      unit: englishUnit,
+      organizationProfile: {
+        descricao_curta: 'Empresa profissional de limpeza no Arizona.',
+        observacoes: ['Construir autoridade, não apenas engajamento; focar em qualified leads e contratos recorrentes.'],
+      },
+      platform: 'instagram',
+      pillar: null,
+    })
+    expect(prompt).toContain('escreva a legenda inteiramente em inglês')
   })
 
   it('detecta português quando a ficha é predominantemente em português', () => {

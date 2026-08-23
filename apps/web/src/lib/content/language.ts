@@ -2,13 +2,22 @@
 // testar a Mawi Cleaning): a legenda saiu em português porque o prompt de
 // geração é todo escrito em português e nunca diz em qual idioma escrever
 // — mesmo a ficha da empresa dizendo "English should be the primary
-// social-media language". A correção pedida não é declarar um idioma fixo
-// num campo de configuração (pode estar errado/ausente); é LER o texto de
-// verdade da ficha (todos os campos descritivos, org + agente) e detectar
-// o idioma dominante por volume de sinais — não por presença de 1 palavra
-// isolada, já que a ficha real da Mawi mistura os dois idiomas (poucas
-// frases em português, muito texto em inglês) e o idioma que deve vencer é
-// o que domina o conteúdo, não o que apareceu primeiro.
+// social-media language". A correção original leu o texto de verdade da
+// ficha (todos os campos descritivos, org + agente) e detectou o idioma
+// dominante por volume de sinais, em vez de confiar num campo isolado.
+//
+// Segundo achado ao vivo (mesmo dia): pra Mawi (negócio em inglês, EUA) a
+// detecção por texto ainda errava pra português — porque o DONO preencheu
+// a ficha inteira (tom de voz, proibições, público-alvo etc.) em
+// português, sua própria língua, ainda que o negócio opere em inglês com
+// clientes americanos. A língua que o operador usa pra CONFIGURAR o
+// funcionário não é a língua em que o funcionário deve PUBLICAR. Por isso
+// resolveContentLanguage agora prioriza units.default_conversation_language
+// (campo explícito, sempre preenchido no onboarding — ver
+// docs/region-language) quando presente, e só cai pra detecção por texto
+// quando esse campo estiver ausente — não é "confiar cegamente num campo
+// que pode estar errado ou ausente" (a preocupação original), é usar o
+// campo quando ele de fato existe e reservar o texto pra quando não existir.
 
 export type DetectedLanguage = 'pt' | 'en'
 
@@ -73,4 +82,19 @@ export function detectLanguageFromText(text: string): DetectedLanguage {
 /** Atalho: detecta o idioma direto a partir das fichas de negócio (org + agente). */
 export function detectBusinessLanguage(profiles: (Record<string, unknown> | null | undefined)[]): DetectedLanguage {
   return detectLanguageFromText(extractProseText(profiles))
+}
+
+/**
+ * Resolve o idioma da legenda: usa o idioma explícito da unidade
+ * (default_conversation_language, definido no onboarding — ver
+ * lib/i18n/config.ts) quando presente, já que é o dado mais direto sobre em
+ * que língua o negócio atende seus clientes. Só cai pra detecção por texto
+ * da ficha quando esse campo estiver ausente.
+ */
+export function resolveContentLanguage(
+  explicitUnitLanguage: DetectedLanguage | null | undefined,
+  profiles: (Record<string, unknown> | null | undefined)[],
+): DetectedLanguage {
+  if (explicitUnitLanguage === 'pt' || explicitUnitLanguage === 'en') return explicitUnitLanguage
+  return detectBusinessLanguage(profiles)
 }

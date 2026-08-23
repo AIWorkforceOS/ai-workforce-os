@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { detectBusinessLanguage, detectLanguageFromText, extractProseText } from '../language'
+import { detectBusinessLanguage, detectLanguageFromText, extractProseText, resolveContentLanguage } from '../language'
 
 describe('detectLanguageFromText', () => {
   it('detecta português num texto claramente em português', () => {
@@ -58,5 +58,29 @@ describe('detectBusinessLanguage', () => {
     const orgProfile = { descricao_curta: 'We serve customers across the Phoenix metro area with reliable cleaning services.' }
     const agentProfile = { pilares_conteudo: ['Resultados e transformações'] }
     expect(detectBusinessLanguage([orgProfile, agentProfile])).toBe('en')
+  })
+})
+
+describe('resolveContentLanguage', () => {
+  it('idioma explícito da unidade vence, mesmo com a ficha inteira escrita no outro idioma (o bug real da Mawi)', () => {
+    // Ficha real: dono brasileiro descreveu em português um negócio que opera em inglês nos EUA —
+    // a detecção por texto sozinha erraria pra português aqui (mais sinal em pt do que en).
+    const agentProfile = {
+      tom_de_voz: 'Profissional, simpático, acolhedor e objetivo.',
+      publico_alvo: 'Facility Managers, Property Managers e proprietários de empresas na região de Phoenix.',
+      observacoes: ['Construir autoridade, não apenas engajamento; focar em qualified leads e contratos recorrentes.'],
+    }
+    expect(resolveContentLanguage('en', [null, agentProfile])).toBe('en')
+  })
+
+  it('sem idioma explícito da unidade, cai pra detecção por texto', () => {
+    const agentProfile = { descricao_curta: 'We serve customers across the Phoenix metro area with reliable cleaning services.' }
+    expect(resolveContentLanguage(null, [null, agentProfile])).toBe('en')
+    expect(resolveContentLanguage(undefined, [null, agentProfile])).toBe('en')
+  })
+
+  it('idioma explícito "pt" também vence sobre texto majoritariamente em inglês', () => {
+    const agentProfile = { descricao_curta: 'We serve customers across the Phoenix metro area with reliable cleaning services.' }
+    expect(resolveContentLanguage('pt', [null, agentProfile])).toBe('pt')
   })
 })
