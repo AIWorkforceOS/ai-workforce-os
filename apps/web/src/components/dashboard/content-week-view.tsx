@@ -7,7 +7,7 @@ import type { ContentPost } from '@/lib/content/types'
 // abrir a fila de aprovação pra ver o panorama. `days` sempre tem 7 datas
 // (segunda a domingo, ver lib/content/planner.ts).
 
-const WEEKDAY_LABELS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
+const WEEKDAY_LABELS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom']
 
 function dateKey(date: Date): string {
   return date.toISOString().slice(0, 10)

@@ -16,7 +16,7 @@ const WEEKDAYS: { day: number; label: string }[] = [
   { day: 3, label: 'Qua' },
   { day: 4, label: 'Qui' },
   { day: 5, label: 'Sex' },
-  { day: 6, label: 'Sáb' },
+  { day: 6, label: 'Sab' },
   { day: 7, label: 'Dom' },
 ]
 

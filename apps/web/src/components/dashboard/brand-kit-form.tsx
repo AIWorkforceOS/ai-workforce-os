@@ -3,7 +3,6 @@
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { CheckCircle2, ImagePlus, Loader2, X } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
 import { Card, CardHeader, Label, brandGradient } from '@/components/ui/dashboard-ui'
 
 // Identidade visual da marca (logo + paleta), pedido do Vinicius 2026-08-23:
@@ -12,6 +11,12 @@ import { Card, CardHeader, Label, brandGradient } from '@/components/ui/dashboar
 // cima — ver lib/content/generator.ts). Fica em
 // organizations.business_profile.brand_kit (ficha compartilhada, vale pra
 // todos os funcionários digitais da org, não só o de Conteúdo).
+//
+// O upload do logo passa pelo servidor (api/content/brand-kit/logo, não
+// direto pro Storage do navegador) porque o processamento — remover o
+// fundo sólido e extrair a paleta de cores do próprio desenho — usa sharp,
+// que só roda em Node. As cores extraídas pré-preenchem os seletores
+// automaticamente; o usuário ainda pode ajustar à mão antes de salvar.
 
 export type BrandKitValue = { logo_url: string | null; primary_color: string | null; secondary_color: string | null }
 
@@ -33,21 +38,31 @@ export function BrandKitForm({ unitId, initial }: { unitId: string; initial: Bra
   async function handleFileChange(file: File | null) {
     if (!file) return
     setError(null)
+    setSuccess(null)
     if (file.size > FILE_MAX_BYTES) {
       setError('Logo muito grande — envie um arquivo de até 5MB.')
       return
     }
     setUploading(true)
-    const supabase = createClient()
-    const path = `${unitId}/brand/logo-${Date.now()}-${file.name}`
-    const { error: uploadError } = await supabase.storage.from('content-media').upload(path, file, { contentType: file.type })
-    setUploading(false)
-    if (uploadError) {
-      setError('Não foi possível enviar o logo. Tente de novo.')
-      return
+    try {
+      const form = new FormData()
+      form.append('unit_id', unitId)
+      form.append('file', file)
+      const response = await fetch('/api/content/brand-kit/logo', { method: 'POST', body: form })
+      const data = (await response.json()) as { error?: string; logo_url?: string; primary_color?: string; secondary_color?: string | null }
+      if (!response.ok) {
+        setError(data.error ?? 'Não foi possível enviar o logo.')
+        return
+      }
+      setLogoUrl(data.logo_url ?? null)
+      // Pré-preenche as cores extraídas do próprio logo — o usuário ainda pode ajustar antes de salvar.
+      if (data.primary_color) setPrimaryColor(data.primary_color)
+      if (data.secondary_color) setSecondaryColor(data.secondary_color)
+    } catch {
+      setError('Erro de rede ao enviar o logo. Tente de novo.')
+    } finally {
+      setUploading(false)
     }
-    const { data } = supabase.storage.from('content-media').getPublicUrl(path)
-    setLogoUrl(data.publicUrl)
   }
 
   async function handleSave() {
