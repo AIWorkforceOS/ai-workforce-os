@@ -18,7 +18,7 @@ import { SeoContentItemActions } from '@/components/dashboard/seo-content-item-a
 import { SeoGbpChecklist } from '@/components/dashboard/seo-gbp-checklist'
 import { SeoKeywordTracker, type TrackedKeywordRow } from '@/components/dashboard/seo-keyword-tracker'
 import { SeoAuditRunButton } from '@/components/dashboard/seo-audit-run-button'
-import { SeoGscOAuthBanner, SeoGscSitePicker } from '@/components/dashboard/seo-gsc-site-picker'
+import { SeoGscOAuthBanner, SeoGscRefreshButton, SeoGscSitePicker } from '@/components/dashboard/seo-gsc-site-picker'
 import { GBP_CHECKLIST_ITEMS } from '@/lib/seo/gbp-checklist'
 import { getSerpApiKey } from '@/lib/seo/rank-tracking'
 import { getGoogleSearchConsoleCredentials } from '@/lib/seo/search-console-oauth'
@@ -172,14 +172,16 @@ export default async function SeoPage({
               eyebrow="dados reais do google"
               title="Desempenho de busca (Search Console)"
               action={
-                !gscAccount && gscOauthEnabled ? (
+                (!gscAccount || gscAccount.connection_status === 'error') && gscOauthEnabled ? (
                   <a
                     href={`/api/seo/gsc/oauth/start?unit_id=${primaryUnit.id}`}
                     className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-black text-white"
                     style={{ background: 'linear-gradient(135deg, #06b6d4, #4361ee)' }}
                   >
-                    <Link2 size={13} /> Conectar Google Search Console
+                    <Link2 size={13} /> {gscAccount ? 'Reconectar' : 'Conectar'} Google Search Console
                   </a>
+                ) : gscAccount ? (
+                  <SeoGscRefreshButton unitId={primaryUnit.id} />
                 ) : null
               }
             />
