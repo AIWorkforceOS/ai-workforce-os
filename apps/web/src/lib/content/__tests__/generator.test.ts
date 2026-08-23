@@ -69,6 +69,51 @@ describe('buildCaptionSystemPrompt', () => {
     expect(prompt).toContain('"reasoning"')
   })
 
+  it('instrui a agir como gestor de conteúdo de verdade, não postar por postar (pedido do Vinicius, 2026-08-23)', () => {
+    const prompt = buildCaptionSystemPrompt({ config, unit, organizationProfile: null, platform: 'instagram', pillar: null })
+    expect(prompt).toContain('gestor de conteúdo de verdade')
+    expect(prompt).toContain('gerar resultado de negócio de verdade')
+  })
+
+  it('sem posts recentes, não inclui a seção de contexto (nada pra evitar repetir ainda)', () => {
+    const prompt = buildCaptionSystemPrompt({ config, unit, organizationProfile: null, platform: 'instagram', pillar: null })
+    expect(prompt).not.toContain('POSTS RECENTES DESTA CONTA')
+  })
+
+  it('com posts recentes, lista pilar + legenda + cena de cada um e instrui a não repetir', () => {
+    const prompt = buildCaptionSystemPrompt({
+      config,
+      unit,
+      organizationProfile: null,
+      platform: 'instagram',
+      pillar: 'dicas',
+      recentPosts: [
+        { pillar: 'bastidores', caption: 'Nossa equipe em ação hoje cedo, preparando tudo para o dia.', imagePrompt: 'team cleaning an office lobby at sunrise' },
+        { pillar: 'dicas', caption: 'Dica rápida: troque o pano de microfibra a cada 200 usos.', imagePrompt: null },
+      ],
+    })
+    expect(prompt).toContain('POSTS RECENTES DESTA CONTA')
+    expect(prompt).toContain('não repita o mesmo tema, gancho ou cena/composição visual')
+    expect(prompt).toContain('[bastidores]')
+    expect(prompt).toContain('team cleaning an office lobby at sunrise')
+    expect(prompt).toContain('[dicas]')
+    expect(prompt).toContain('Dica rápida')
+  })
+
+  it('trunca legendas/cenas longas do contexto de posts recentes', () => {
+    const longCaption = 'A'.repeat(200)
+    const prompt = buildCaptionSystemPrompt({
+      config,
+      unit,
+      organizationProfile: null,
+      platform: 'instagram',
+      pillar: null,
+      recentPosts: [{ pillar: null, caption: longCaption, imagePrompt: null }],
+    })
+    expect(prompt).not.toContain(longCaption)
+    expect(prompt).toContain('…')
+  })
+
   it('detecta inglês pelo texto real da ficha e instrui a legenda nesse idioma (achado ao vivo na Mawi Cleaning)', () => {
     const prompt = buildCaptionSystemPrompt({
       config,
@@ -184,16 +229,15 @@ describe('generatePostImage — composição do logo', () => {
     expect(metadata.height).toBe(40)
   })
 
-  it('se o download do logo falhar, devolve a imagem original em vez de derrubar o post inteiro', async () => {
+  it('se o download do logo falhar, a geração falha inteira em vez de publicar sem a marca (pedido do Vinicius: nenhum post sem logo)', async () => {
     vi.resetModules()
     const baseImage = await tinyPngBase64({ r: 5, g: 5, b: 5 })
     vi.doMock('@/lib/openai', () => ({ generateImage: async () => ({ base64Image: baseImage }) }))
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404 })))
-    vi.spyOn(console, 'error').mockImplementation(() => {})
 
     const { generatePostImage } = await import('../generator')
-    const result = await generatePostImage({ apiKey: 'k', imagePrompt: 'a scene', logoUrl: 'https://example.com/missing.png' })
-
-    expect(result.base64Image).toBe(baseImage)
+    await expect(
+      generatePostImage({ apiKey: 'k', imagePrompt: 'a scene', logoUrl: 'https://example.com/missing.png' }),
+    ).rejects.toThrow('Não foi possível baixar o logo da marca')
   })
 })

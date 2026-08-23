@@ -28,7 +28,7 @@ export async function generateSinglePostForAccount(params: {
   config: AgentConfig
   unit: Unit
   account: SocialAccount
-  recentPosts: Pick<ContentPost, 'platform' | 'content_pillar' | 'created_at'>[]
+  recentPosts: Pick<ContentPost, 'platform' | 'content_pillar' | 'created_at' | 'caption' | 'image_prompt'>[]
   scheduledFor?: Date | null
 }): Promise<SinglePostResult> {
   const { supabase, apiKey, config, unit, account, recentPosts, scheduledFor } = params
@@ -47,6 +47,9 @@ export async function generateSinglePostForAccount(params: {
   const pillar = pickNextPillar(pillars, recentPosts)
   const organizationProfile = await fetchOrganizationBusinessProfile(supabase, unit.org_id)
   const holiday = scheduledFor ? holidayOnDate(scheduledFor) : null
+  const recentPostsContext = [...recentPosts]
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .map((p) => ({ pillar: p.content_pillar, caption: p.caption, imagePrompt: p.image_prompt }))
 
   try {
     const content = await generatePostContent({
@@ -57,6 +60,7 @@ export async function generateSinglePostForAccount(params: {
       platform,
       pillar,
       holiday: holiday?.name ?? null,
+      recentPosts: recentPostsContext,
     })
     const logoUrl = (organizationProfile as { brand_kit?: { logo_url?: string | null } } | null)?.brand_kit?.logo_url ?? null
     const image = await generatePostImage({ apiKey, imagePrompt: content.imagePrompt, logoUrl })

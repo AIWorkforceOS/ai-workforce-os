@@ -153,14 +153,14 @@ export async function GET(request: Request) {
 
       const { data: recent } = await supabase
         .from('content_posts')
-        .select('platform, content_pillar, status, created_at, scheduled_for')
+        .select('platform, content_pillar, status, created_at, scheduled_for, caption, image_prompt')
         .eq('social_account_id', account.id)
         .gte('created_at', sevenDaysAgo.toISOString())
         .order('created_at', { ascending: false })
         .limit(50)
       const recentPosts = (recent ?? []) as Pick<
         ContentPost,
-        'platform' | 'content_pillar' | 'status' | 'created_at' | 'scheduled_for'
+        'platform' | 'content_pillar' | 'status' | 'created_at' | 'scheduled_for' | 'caption' | 'image_prompt'
       >[]
 
       // O planejamento semanal já pode ter coberto hoje (post com

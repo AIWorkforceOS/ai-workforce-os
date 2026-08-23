@@ -56,23 +56,26 @@ export async function generateWeekPostsForAccount(params: {
   const historyStart = new Date(rangeStart.getTime() - 7 * 24 * 60 * 60 * 1000)
   const { data: existing } = await supabase
     .from('content_posts')
-    .select('platform, content_pillar, status, created_at, scheduled_for')
+    .select('platform, content_pillar, status, created_at, scheduled_for, caption, image_prompt')
     .eq('social_account_id', account.id)
     .gte('created_at', historyStart.toISOString())
     .order('created_at', { ascending: false })
     .limit(100)
-  const history = (existing ?? []) as Pick<ContentPost, 'platform' | 'content_pillar' | 'status' | 'created_at' | 'scheduled_for'>[]
+  const history = (existing ?? []) as Pick<
+    ContentPost,
+    'platform' | 'content_pillar' | 'status' | 'created_at' | 'scheduled_for' | 'caption' | 'image_prompt'
+  >[]
 
   const alreadyScheduled = new Set(history.filter((p) => p.scheduled_for).map((p) => dateKey(new Date(p.scheduled_for!))))
 
   // Acumula o histórico + o que já foi gerado dentro deste mesmo lote, pra
   // pickNextPlatform/pickNextPillar continuarem alternando corretamente ao
-  // longo da semana toda, não só olhando pro que já existia antes.
-  const runningHistory: Pick<ContentPost, 'platform' | 'content_pillar' | 'created_at'>[] = history.map((p) => ({
-    platform: p.platform,
-    content_pillar: p.content_pillar,
-    created_at: p.created_at,
-  }))
+  // longo da semana toda (não só olhando pro que já existia antes), e pra
+  // dar contexto de "posts recentes" ao gerador dentro do próprio lote —
+  // sem isso, o dia 2 da semana não saberia o que o dia 1 já publicou.
+  const runningHistory: Pick<ContentPost, 'platform' | 'content_pillar' | 'created_at' | 'caption' | 'image_prompt'>[] = history.map(
+    (p) => ({ platform: p.platform, content_pillar: p.content_pillar, created_at: p.created_at, caption: p.caption, image_prompt: p.image_prompt }),
+  )
 
   const logoUrl = (organizationProfile as { brand_kit?: { logo_url?: string | null } } | null)?.brand_kit?.logo_url ?? null
 
@@ -86,6 +89,9 @@ export async function generateWeekPostsForAccount(params: {
     const platform = pickNextPlatform(supportedPlatforms, runningHistory)
     const pillar = pickNextPillar(pillars, runningHistory)
     const holiday = holidayOnDate(date)
+    const recentPostsContext = [...runningHistory]
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .map((p) => ({ pillar: p.content_pillar, caption: p.caption, imagePrompt: p.image_prompt }))
 
     try {
       const content = await generatePostContent({
@@ -96,6 +102,7 @@ export async function generateWeekPostsForAccount(params: {
         platform,
         pillar,
         holiday: holiday?.name ?? null,
+        recentPosts: recentPostsContext,
       })
       const image = await generatePostImage({ apiKey, imagePrompt: content.imagePrompt, logoUrl })
       const imageUrl = await uploadGeneratedImage({ supabase, unitId: unit.id, base64Image: image.base64Image })
@@ -126,7 +133,13 @@ export async function generateWeekPostsForAccount(params: {
       if (insertError || !inserted) throw new Error(insertError?.message ?? 'Falha ao gravar o post gerado.')
 
       result.created += 1
-      runningHistory.push({ platform, content_pillar: pillar, created_at: new Date().toISOString() })
+      runningHistory.push({
+        platform,
+        content_pillar: pillar,
+        created_at: new Date().toISOString(),
+        caption: content.caption,
+        image_prompt: content.imagePrompt,
+      })
     } catch (error) {
       result.errors.push({ date: key, error: error instanceof Error ? error.message : String(error) })
     }
