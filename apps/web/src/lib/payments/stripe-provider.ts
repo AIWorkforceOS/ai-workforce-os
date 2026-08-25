@@ -109,6 +109,21 @@ export function createStripeProvider(secretKey: string): PaymentProvider {
       return { ok: true }
     },
 
+    async refundPayment(paymentRef: string): Promise<{ ok: boolean; error?: string }> {
+      // Sem "amount": a Stripe estorna o valor cheio por padrão (garantia
+      // de 7 dias é tudo ou nada, nunca parcial). paymentRef precisa ser
+      // um charge id (ch_...) ou payment_intent id (pi_...) — a Stripe
+      // aceita os dois em "charge"/"payment_intent" respectivamente; como
+      // não sabemos qual foi capturado (ver parseWebhookEvent), tentamos
+      // como charge primeiro.
+      const res = await stripeFetch('/refunds', { charge: paymentRef })
+      if (!res.ok) {
+        const err = res.data?.error as { message?: string } | undefined
+        return { ok: false, error: `Stripe (estornar cobrança): ${err?.message ?? `HTTP ${res.status}`}` }
+      }
+      return { ok: true }
+    },
+
     verifyWebhookSignature(rawBody: string, headers: Headers): boolean {
       const sigHeader = headers.get('stripe-signature')
       const secret = process.env.STRIPE_WEBHOOK_SECRET
@@ -157,12 +172,25 @@ export function createStripeProvider(secretKey: string): PaymentProvider {
       const subscriptionRef =
         eventType === 'checkout.session.completed' && typeof obj?.subscription === 'string' ? obj.subscription : null
 
+      // obj.charge: presente em eventos de invoice (cobranças recorrentes,
+      // a partir do 2º mês) — é o id refundável via refundPayment acima.
+      // ATENÇÃO: no checkout.session.completed do 1º pagamento a Stripe
+      // NÃO expõe o charge id na própria sessão (só subscription/customer/
+      // payment_intent) — a garantia de 7 dias sobre o 1º mês de um
+      // cliente Stripe não consegue estornar automaticamente hoje por essa
+      // lacuna; cai no fallback manual do fluxo de cancelamento (ver
+      // app/api/billing/cancel). Verificar contra um evento real antes de
+      // confiar 100% — não testado contra a API de verdade nesta sessão
+      // (o teste ao vivo desta rodada é só Asaas/BR).
+      const paymentRef = typeof obj?.charge === 'string' ? obj.charge : null
+
       return {
         externalEventId: eventId,
         type,
         providerChargeRef: (obj?.id as string | undefined) ?? null,
         providerCustomerRef: (obj?.customer as string | undefined) ?? null,
         ...(subscriptionRef ? { providerSubscriptionRef: subscriptionRef } : {}),
+        ...(paymentRef ? { providerPaymentRef: paymentRef } : {}),
         raw: payload,
       }
     },

@@ -40,6 +40,12 @@ describe('AsaasProvider — parseWebhookEvent', () => {
     expect(event?.externalEventId).toBe('PAYMENT_CONFIRMED:pay_1')
   })
 
+  it('regressão (2026-08-25, garantia de 7 dias): extrai payment.id como providerPaymentRef — é o que refundPayment usa pra estornar a cobrança certa', () => {
+    const body = JSON.stringify({ event: 'PAYMENT_CONFIRMED', payment: { id: 'pay_1', customer: 'cus_1' } })
+    const event = provider.parseWebhookEvent(body)
+    expect(event?.providerPaymentRef).toBe('pay_1')
+  })
+
   it('a cada cobrança mensal gerada pela assinatura, o pagamento continua trazendo o customer ref — é isso que resolve a org de volta no webhook-handler (a subscription ref só serve de fallback)', () => {
     const body = JSON.stringify({ event: 'PAYMENT_CONFIRMED', payment: { id: 'pay_month_2', customer: 'cus_1' } })
     const event = provider.parseWebhookEvent(body)
@@ -228,5 +234,35 @@ describe('AsaasProvider — cancelSubscription', () => {
     const result = await provider.cancelSubscription('sub_inexistente')
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error).toContain('assinatura não encontrada')
+  })
+})
+
+describe('AsaasProvider — refundPayment (garantia de 7 dias)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('chama POST /payments/{id}/refund sem "value" (estorno cheio) e retorna ok', async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(String(url)).toContain('/payments/pay_123/refund')
+      expect(init?.method).toBe('POST')
+      return new Response(JSON.stringify({ id: 'pay_123', status: 'REFUNDED' }), { status: 200 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const provider = createAsaasProvider('fake-key')
+    const result = await provider.refundPayment('pay_123')
+    expect(result.ok).toBe(true)
+  })
+
+  it('retorna erro descritivo quando a Asaas rejeita o estorno', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ errors: [{ description: 'cobrança já estornada' }] }), { status: 400 })),
+    )
+    const provider = createAsaasProvider('fake-key')
+    const result = await provider.refundPayment('pay_123')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('cobrança já estornada')
   })
 })

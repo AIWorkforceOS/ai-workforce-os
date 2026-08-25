@@ -121,8 +121,11 @@ export async function handlePaymentWebhook(params: {
       .eq('id', org.id)
   }
 
-  // financial_records: schema/colunas existentes, sem alteração — só
-  // atualiza o registro pendente da cobrança em questão (não cria linha nova).
+  // financial_records: só atualiza o registro pendente da cobrança em
+  // questão (não cria linha nova). Quando confirma pagamento, também
+  // grava provider_payment_ref (migration 075) — necessário pro estorno
+  // automático da garantia de 7 dias (ver app/api/billing/cancel) saber
+  // EXATAMENTE qual cobrança reembolsar na processadora.
   const financialStatus = FINANCIAL_RECORD_STATUS_MAP[event.type]
   if (financialStatus) {
     await supabase
@@ -130,6 +133,7 @@ export async function handlePaymentWebhook(params: {
       .update({
         status: financialStatus,
         paid_at: financialStatus === 'paid' ? new Date().toISOString() : null,
+        ...(financialStatus === 'paid' && event.providerPaymentRef ? { provider_payment_ref: event.providerPaymentRef } : {}),
       })
       .eq('org_id', org.id)
       .eq('status', 'pending')

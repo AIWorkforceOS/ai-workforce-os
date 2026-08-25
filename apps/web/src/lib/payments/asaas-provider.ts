@@ -103,6 +103,17 @@ export function createAsaasProvider(apiKey: string): PaymentProvider {
       return { ok: true }
     },
 
+    async refundPayment(paymentRef: string): Promise<{ ok: boolean; error?: string }> {
+      // Sem "value" no body: a Asaas estorna o valor cheio da cobrança
+      // por padrão (garantia de 7 dias é tudo ou nada, nunca parcial).
+      const res = await asaasFetch(`/payments/${paymentRef}/refund`, {})
+      if (!res.ok) {
+        const errors = res.data?.errors as Array<{ description?: string }> | undefined
+        return { ok: false, error: `Asaas (estornar cobrança): ${errors?.[0]?.description ?? `HTTP ${res.status}`}` }
+      }
+      return { ok: true }
+    },
+
     verifyWebhookSignature(_rawBody: string, headers: Headers): boolean {
       // Asaas assina via token fixo enviado no header configurado no
       // dashboard (Configurações → Webhooks → "Token de autenticação"),
@@ -138,6 +149,9 @@ export function createAsaasProvider(apiKey: string): PaymentProvider {
         type,
         providerChargeRef: String(payment.id),
         providerCustomerRef: payment.customer ? String(payment.customer) : null,
+        // payment.id é sempre a cobrança específica (independente do tipo
+        // de evento) — é o mesmo valor usado por refundPayment acima.
+        providerPaymentRef: String(payment.id),
         ...(subscriptionRef ? { providerSubscriptionRef: subscriptionRef } : {}),
         raw: payload,
       }

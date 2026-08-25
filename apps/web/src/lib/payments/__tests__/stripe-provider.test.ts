@@ -99,6 +99,24 @@ describe('StripeProvider — parseWebhookEvent', () => {
     )
     expect(event?.providerSubscriptionRef).toBeUndefined()
   })
+
+  it('regressão (2026-08-25, garantia de 7 dias): extrai obj.charge como providerPaymentRef em evento de invoice (cobrança recorrente)', () => {
+    const event = provider.parseWebhookEvent(
+      JSON.stringify({
+        id: 'evt_7',
+        type: 'invoice.payment_succeeded',
+        data: { object: { id: 'in_1', customer: 'cus_1', charge: 'ch_real_9' } },
+      }),
+    )
+    expect(event?.providerPaymentRef).toBe('ch_real_9')
+  })
+
+  it('sem obj.charge no payload (ex.: checkout.session.completed do 1º pagamento), providerPaymentRef fica ausente — estorno automático não é possível nesse caso, ver comentário em stripe-provider.ts', () => {
+    const event = provider.parseWebhookEvent(
+      JSON.stringify({ id: 'evt_8', type: 'checkout.session.completed', data: { object: { id: 'cs_3', customer: 'cus_1' } } }),
+    )
+    expect(event?.providerPaymentRef).toBeUndefined()
+  })
 })
 
 describe('StripeProvider — createCustomerAndCharge', () => {
@@ -190,5 +208,36 @@ describe('StripeProvider — cancelSubscription', () => {
     const result = await provider.cancelSubscription('sub_inexistente')
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error).toContain('No such subscription')
+  })
+})
+
+describe('StripeProvider — refundPayment (garantia de 7 dias)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('chama POST /refunds com o charge id e retorna ok', async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(String(url)).toContain('/refunds')
+      expect(init?.method ?? 'POST').toBe('POST')
+      expect(String(init?.body)).toContain('charge=ch_real_9')
+      return new Response(JSON.stringify({ id: 're_1', status: 'succeeded' }), { status: 200 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const provider = createStripeProvider('sk_test')
+    const result = await provider.refundPayment('ch_real_9')
+    expect(result.ok).toBe(true)
+  })
+
+  it('retorna erro descritivo quando a Stripe rejeita o estorno', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ error: { message: 'Charge already refunded' } }), { status: 400 })),
+    )
+    const provider = createStripeProvider('sk_test')
+    const result = await provider.refundPayment('ch_real_9')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('Charge already refunded')
   })
 })

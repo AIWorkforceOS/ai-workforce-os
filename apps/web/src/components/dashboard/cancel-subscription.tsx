@@ -29,6 +29,7 @@ export function CancelSubscriptionCard({ billingStatus }: { billingStatus: strin
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
+  const [refunded, setRefunded] = useState(false)
 
   if (billingStatus === 'canceled') {
     return (
@@ -65,6 +66,7 @@ export function CancelSubscriptionCard({ billingStatus }: { billingStatus: strin
       setError(data.error ?? 'Não foi possível cancelar agora. Tente de novo.')
       return
     }
+    setRefunded(Boolean(data.refunded))
     setDone(true)
     router.refresh()
   }
@@ -73,7 +75,11 @@ export function CancelSubscriptionCard({ billingStatus }: { billingStatus: strin
     return (
       <Card className="p-5">
         <p className="text-sm font-bold text-emerald-400">Assinatura cancelada.</p>
-        <p className="mt-1 text-xs text-slate-400">A cobrança recorrente foi interrompida. Sentiremos sua falta.</p>
+        <p className="mt-1 text-xs text-slate-400">
+          {refunded
+            ? 'Você está dentro dos 7 dias de garantia — o valor já foi estornado automaticamente pro seu cartão (pode levar até 10 dias úteis pra aparecer na fatura). A cobrança recorrente foi interrompida.'
+            : 'A cobrança recorrente foi interrompida. Sentiremos sua falta.'}
+        </p>
       </Card>
     )
   }

@@ -8,6 +8,7 @@ function fakeProvider(overrides: Partial<PaymentProvider> = {}): PaymentProvider
     id: 'asaas',
     createCustomerAndCharge: vi.fn(),
     cancelSubscription: vi.fn(),
+    refundPayment: vi.fn(),
     verifyWebhookSignature: () => true,
     parseWebhookEvent: () => null,
     ...overrides,
@@ -92,6 +93,26 @@ describe('handlePaymentWebhook', () => {
     expect(result.status).toBe(200)
     expect((db.organizations as Array<{ billing_status: string }>)[0]!.billing_status).toBe('active')
     expect((db.financial_records as Array<{ status: string }>)[0]!.status).toBe('paid')
+  })
+
+  it('regressão (2026-08-25, garantia de 7 dias): payment_success com providerPaymentRef grava financial_records.provider_payment_ref — é o que o estorno automático usa depois', async () => {
+    const { supabase, db } = createFakeSupabase({
+      organizations: [{ id: 'org-1', billing_status: 'trialing', billing_provider_subscription_ref: 'pay_1' }],
+      financial_records: [{ id: 'fr-1', org_id: 'org-1', status: 'pending', amount: 497 }],
+    })
+    const event: PaymentWebhookEvent = {
+      externalEventId: 'PAYMENT_CONFIRMED:pay_1',
+      type: 'payment_success',
+      providerChargeRef: 'pay_1',
+      providerCustomerRef: null,
+      providerPaymentRef: 'pay_1',
+      raw: {},
+    }
+    const provider = fakeProvider({ parseWebhookEvent: () => event })
+
+    await handlePaymentWebhook({ supabase, provider, rawBody: '{}', headers: new Headers() })
+
+    expect((db.financial_records as Array<{ provider_payment_ref: string }>)[0]!.provider_payment_ref).toBe('pay_1')
   })
 
   it('subscription_canceled cancela a org sem tocar em financial_records já pago', async () => {
