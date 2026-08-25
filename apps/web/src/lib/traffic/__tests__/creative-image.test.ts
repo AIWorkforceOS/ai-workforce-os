@@ -89,4 +89,57 @@ describe('buildCreativeImageSystemPrompt', () => {
     expect(prompt).toContain('"reasoning"')
     expect(prompt).toContain('sem nenhum texto/letra/logotipo embutido na imagem')
   })
+
+  it('regressão (2026-08-25, achado real: campanha saiu fora do segmento) — reforça o segmento do negócio explicitamente quando verticalKey é passado', () => {
+    const prompt = buildCreativeImageSystemPrompt({
+      platform: 'meta',
+      objective: 'OUTCOME_TRAFFIC',
+      creative,
+      targeting,
+      organizationProfile: null,
+      agentBusinessProfile: null,
+      verticalKey: 'cleaning_services',
+    })
+    expect(prompt).toContain('Serviços de Limpeza')
+    expect(prompt).toContain('PRECISAM condizer com esse segmento específico')
+  })
+
+  it('sem verticalKey (ou inválida), não quebra e não menciona segmento', () => {
+    expect(() =>
+      buildCreativeImageSystemPrompt({
+        platform: 'meta',
+        objective: 'OUTCOME_TRAFFIC',
+        creative,
+        targeting,
+        organizationProfile: null,
+        agentBusinessProfile: null,
+        verticalKey: 'segmento-inventado',
+      }),
+    ).not.toThrow()
+  })
+
+  it('se a organização tem brand kit (cores), instrui a usar as cores da marca na cena', () => {
+    const prompt = buildCreativeImageSystemPrompt({
+      platform: 'meta',
+      objective: 'OUTCOME_TRAFFIC',
+      creative,
+      targeting,
+      organizationProfile: { brand_kit: { primary_color: '#021E44', secondary_color: '#0B993F' } },
+      agentBusinessProfile: null,
+    })
+    expect(prompt).toContain('#021E44')
+    expect(prompt).toContain('#0B993F')
+  })
+
+  it('se apresenta como especialista em design de criativos, não só gestor de tráfego', () => {
+    const prompt = buildCreativeImageSystemPrompt({
+      platform: 'meta',
+      objective: 'OUTCOME_TRAFFIC',
+      creative,
+      targeting,
+      organizationProfile: null,
+      agentBusinessProfile: null,
+    })
+    expect(prompt).toContain('especialista em design de criativos')
+  })
 })

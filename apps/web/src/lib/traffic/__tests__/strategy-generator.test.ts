@@ -52,6 +52,24 @@ describe('buildStrategySystemPrompt', () => {
     const prompt = buildStrategySystemPrompt({ platform: 'meta', organizationProfile: null, agentBusinessProfile: null, defaultCountry: 'US', hasTargetCpa: false })
     expect(prompt).toContain('["US"]')
   })
+
+  it('regressão (2026-08-25, achado real: campanha saiu fora do segmento) — reforça o segmento do negócio explicitamente quando verticalKey é passado', () => {
+    const prompt = buildStrategySystemPrompt({
+      platform: 'meta',
+      organizationProfile: null,
+      agentBusinessProfile: null,
+      defaultCountry: 'BR',
+      hasTargetCpa: false,
+      verticalKey: 'dental_clinic',
+    })
+    expect(prompt).toContain('Clínica Odontológica')
+    expect(prompt).toContain('PRECISAM condizer com esse segmento específico')
+  })
+
+  it('instrui a escolher o diferencial mais forte da ficha como ângulo central, em vez de anúncio genérico', () => {
+    const prompt = buildStrategySystemPrompt({ platform: 'meta', organizationProfile: null, agentBusinessProfile: null, defaultCountry: 'BR', hasTargetCpa: false })
+    expect(prompt).toContain('diferencial/valor mais forte')
+  })
 })
 
 describe('generateCampaignStrategy', () => {

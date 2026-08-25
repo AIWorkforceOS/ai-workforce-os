@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { getOpenAIApiKey } from '@/lib/openai'
-import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
+import { fetchOrganizationBusinessProfile, fetchOrganizationVerticalKey } from '@/lib/organizations'
+import { brandKitFrom } from '@/lib/brand-kit'
 import { generateCampaignStrategy } from '@/lib/traffic/strategy-generator'
 import { getMetaConfig } from '@/lib/traffic/meta-ads'
 import { isImageApplicable, generateCreativeImagePrompt, generateCampaignCreativeImage, uploadCampaignCreativeImage } from '@/lib/traffic/creative-image'
@@ -93,6 +94,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     )
   }
   const organizationProfile = adAccount.org_id ? await fetchOrganizationBusinessProfile(service, adAccount.org_id) : null
+  const verticalKey = adAccount.org_id ? await fetchOrganizationVerticalKey(service, adAccount.org_id) : null
 
   let metaPageId: string | null = null
   if (adAccount.platform === 'meta') {
@@ -119,6 +121,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       linkUrl: siteUrl,
       metaPageId,
       metaConfig,
+      verticalKey,
     })
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Falha ao gerar a estratégia da campanha.' }, { status: 502 })
@@ -139,8 +142,13 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         targeting: strategy.spec.targeting,
         organizationProfile,
         agentBusinessProfile,
+        verticalKey,
       })
-      const { base64Image } = await generateCampaignCreativeImage({ apiKey, imagePrompt: prompt })
+      const { base64Image } = await generateCampaignCreativeImage({
+        apiKey,
+        imagePrompt: prompt,
+        logoUrl: brandKitFrom(organizationProfile)?.logo_url,
+      })
       imageUrl = await uploadCampaignCreativeImage({ supabase: service, unitId: adAccount.unit_id, base64Image })
       imagePrompt = prompt
     } catch (error) {

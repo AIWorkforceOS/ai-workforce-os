@@ -27,6 +27,7 @@
 
 import { generateStructuredReply } from '@/lib/openai'
 import { buildCombinedBusinessContext } from '@/lib/interview/engine'
+import { isVerticalKey, VERTICAL_TEMPLATES } from '@/lib/verticals/catalog'
 import { strategyFromBusinessProfile } from './strategy-engine'
 import { searchMetaInterests, type MetaConfig } from './meta-ads'
 import type { AdPlatform, CampaignCreative, CampaignTargeting, NewCampaignSpec } from './types'
@@ -80,15 +81,22 @@ export function buildStrategySystemPrompt(params: {
   agentBusinessProfile: Record<string, unknown> | null
   defaultCountry: string
   hasTargetCpa: boolean
+  /** organizations.vertical_key — reforça o segmento explicitamente, pra não propor público/ângulo de outro tipo de negócio (achado real do Vinicius: campanha saiu fora do segmento). */
+  verticalKey?: string | null
 }): string {
-  const { platform, organizationProfile, agentBusinessProfile, defaultCountry, hasTargetCpa } = params
+  const { platform, organizationProfile, agentBusinessProfile, defaultCountry, hasTargetCpa, verticalKey } = params
   const businessContext = buildCombinedBusinessContext(organizationProfile, agentBusinessProfile)
   const objectives = platform === 'meta' ? META_OBJECTIVES : GOOGLE_OBJECTIVES
+  const verticalLabel = verticalKey && isVerticalKey(verticalKey) ? VERTICAL_TEMPLATES[verticalKey].labelPt : null
 
   return [
     `Você é o(a) gestor(a) de tráfego pago digital, estudando o negócio de verdade para propor do zero uma campanha de anúncio em ${platform === 'meta' ? 'Meta Ads (Instagram/Facebook)' : 'Google Ads'}.`,
+    verticalLabel
+      ? `Segmento do negócio: ${verticalLabel}. O público-alvo, os interesses propostos e o ângulo do anúncio PRECISAM condizer com esse segmento específico — nunca com outro tipo de negócio.`
+      : null,
     businessContext ??
       'Ainda não há uma ficha de negócio detalhada — proponha algo genérico, seguro e verdadeiro para uma empresa de serviços, sem inventar detalhes específicos.',
+    'Antes de escrever, escolha o diferencial/valor mais forte da ficha da empresa pra ser o ângulo central do anúncio (o que faz ESTE negócio ganhar do concorrente genérico) — nunca escreva um anúncio de propósito genérico que serviria pra qualquer empresa do mesmo setor.',
     `Escolha o objetivo mais adequado entre: ${objectives.join(', ')} (siga o objetivo declarado pela empresa na ficha quando houver).`,
     'Escreva um título (headline) curto e um corpo de anúncio (body) persuasivo e verdadeiro.',
     'Nunca invente promoção, preço, prazo ou resultado que não esteja na ficha da empresa. Nunca mencione concorrentes. Respeite qualquer proibição registrada na ficha.',
@@ -123,6 +131,7 @@ export async function generateCampaignStrategy(params: {
   linkUrl: string
   metaPageId?: string | null
   metaConfig?: MetaConfig | null // pra resolver interesses reais via Graph API — omitido em modo mock/sem credenciais
+  verticalKey?: string | null
 }): Promise<GeneratedCampaignStrategy> {
   const strategyTargets = strategyFromBusinessProfile(params.agentBusinessProfile)
   const hasTargetCpa = Boolean(strategyTargets.target_cpa_cents)
@@ -134,6 +143,7 @@ export async function generateCampaignStrategy(params: {
     agentBusinessProfile: params.agentBusinessProfile,
     defaultCountry,
     hasTargetCpa,
+    verticalKey: params.verticalKey,
   })
 
   const output = await generateStructuredReply<StrategyModelOutput>({

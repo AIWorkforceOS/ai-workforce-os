@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { getOpenAIApiKey } from '@/lib/openai'
-import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
+import { fetchOrganizationBusinessProfile, fetchOrganizationVerticalKey } from '@/lib/organizations'
+import { brandKitFrom } from '@/lib/brand-kit'
 import {
   generateCampaignCreativeImage,
   generateCreativeImagePrompt,
@@ -84,6 +85,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         const agentBusinessProfile =
           (trafficConfig as { business_profile?: Record<string, unknown> } | null)?.business_profile ?? null
         const organizationProfile = await fetchOrganizationBusinessProfile(service, adAccount.org_id)
+        const verticalKey = await fetchOrganizationVerticalKey(service, adAccount.org_id)
 
         const { imagePrompt: prompt } = await generateCreativeImagePrompt({
           apiKey,
@@ -93,8 +95,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           targeting: spec.targeting,
           organizationProfile,
           agentBusinessProfile,
+          verticalKey,
         })
-        const { base64Image } = await generateCampaignCreativeImage({ apiKey, imagePrompt: prompt })
+        const { base64Image } = await generateCampaignCreativeImage({
+          apiKey,
+          imagePrompt: prompt,
+          logoUrl: brandKitFrom(organizationProfile)?.logo_url,
+        })
         imageUrl = await uploadCampaignCreativeImage({ supabase: service, unitId: adAccount.unit_id, base64Image })
         imagePrompt = prompt
       } catch (error) {

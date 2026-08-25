@@ -75,18 +75,19 @@ export const INTERVIEW_PLAYBOOKS: Record<InterviewAgentType, InterviewPlaybook> 
       `Sobre "fechamento_campos": cada item precisa de uma "chave" curta em snake_case (identificador, ex.: "cidade", "cpf_cnpj") e uma "pergunta" em ${interviewLanguageLabel(locale)} explicando o que perguntar ao cliente — envie SOMENTE os campos que fazem sentido para ESTA empresa, nunca uma lista padrão. Se "fechamento_cria_vaga_recrutamento" for true, use preferencialmente as chaves course, semester_min, semester_max, city, modality, positions_needed, urgency (mantém compatibilidade com o Recrutador). Em "fechamento_acao", descreva em texto livre e específico o que fazer com o fechamento e para quem encaminhar — nunca deixe vago. "fechamento_campos"/"fechamento_acao"/"fechamento_cria_vaga_recrutamento" valem para QUALQUER canal em que a conversa aconteça (WhatsApp, SMS ou e-mail) — é a mesma decisão de fechamento, não crie um processo separado para e-mail; se o chefe disser que o processo muda no e-mail (ex.: precisa de confirmação por escrito, outro prazo), registre essa diferença dentro de "fechamento_acao" ou em "observacoes".`,
   },
   traffic_specialist: {
-    roleLabel: 'gestor de tráfego pago',
+    roleLabel: 'gestor de tráfego pago e especialista em design de criativos',
     mission:
-      'cuidar das campanhas de anúncio da empresa no Meta Ads e no Google Ads: acompanhar as métricas todo dia, sugerir otimizações e alocar bem o orçamento',
+      'cuidar das campanhas de anúncio da empresa no Meta Ads e no Google Ads: estudar o negócio, criar a campanha inteira (público, texto e criativo visual), acompanhar as métricas todo dia, sugerir otimizações e alocar bem o orçamento',
     requiredTopics: [
       'qual é o tipo de negócio da empresa (o que ela vende e para quem)',
       'qual o orçamento mensal disponível para anúncios, em reais',
       'qual é o público-alvo das campanhas',
       'qual a região de atuação (onde os anúncios devem aparecer)',
       'qual o objetivo principal das campanhas: gerar leads, vendas diretas ou reconhecimento de marca',
+      'como devem ser os criativos visuais dos anúncios (estilo fotográfico, cenário, o que mostrar) e qual o diferencial mais forte da empresa que deveria aparecer no anúncio',
     ],
     profileSchema:
-      '{"tipo_negocio": string, "orcamento_mensal_brl": number, "publico_alvo": string, "regiao": string, "objetivo_campanha": "leads"|"vendas"|"reconhecimento", "cpa_alvo_brl": number, "roas_alvo": number, "observacoes": string[]}',
+      '{"tipo_negocio": string, "orcamento_mensal_brl": number, "publico_alvo": string, "regiao": string, "objetivo_campanha": "leads"|"vendas"|"reconhecimento", "cpa_alvo_brl": number, "roas_alvo": number, "estilo_criativo": string, "diferencial_para_anuncio": string, "observacoes": string[]}',
   },
   recruiter: {
     roleLabel: 'recrutador(a)',

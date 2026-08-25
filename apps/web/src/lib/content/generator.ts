@@ -3,21 +3,14 @@
 // (lib/openai.ts). Legenda via chat (JSON mode); imagem via gpt-image-1.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import sharp from 'sharp'
 import { generateImage, generateStructuredReply } from '@/lib/openai'
 import { buildCombinedBusinessContext } from '@/lib/interview/engine'
+import { brandKitFrom, compositeLogoOntoImage, type BrandKit } from '@/lib/brand-kit'
 import { resolveContentLanguage } from './language'
 import type { AgentConfig, Unit } from '@/lib/types'
 import type { SocialPlatform } from './types'
 
-/** Ficha da Empresa compartilhada carrega opcionalmente a identidade visual (logo + paleta) — ver api/content/brand-kit. */
-export type BrandKit = { logo_url?: string | null; primary_color?: string | null; secondary_color?: string | null }
-
-function brandKitFrom(organizationProfile: Record<string, unknown> | null | undefined): BrandKit | null {
-  const raw = (organizationProfile as { brand_kit?: BrandKit } | null | undefined)?.brand_kit
-  if (!raw || (!raw.logo_url && !raw.primary_color && !raw.secondary_color)) return null
-  return raw
-}
+export type { BrandKit }
 
 type CaptionOutput = { caption?: string; image_prompt?: string; reasoning?: string }
 
@@ -154,35 +147,6 @@ export async function generatePostImage(params: {
   const { base64Image } = await generateImage({ apiKey: params.apiKey, prompt: params.imagePrompt, size: '1024x1024', quality: 'medium' })
   if (!params.logoUrl) return { base64Image }
   return { base64Image: await compositeLogoOntoImage(base64Image, params.logoUrl) }
-}
-
-/** Cola o logo da marca no canto inferior direito da imagem gerada (padding + redimensionamento proporcionais ao tamanho da imagem). */
-async function compositeLogoOntoImage(baseImageBase64: string, logoUrl: string): Promise<string> {
-  const baseBuffer = Buffer.from(baseImageBase64, 'base64')
-  const logoResponse = await fetch(logoUrl, { signal: AbortSignal.timeout(15_000) })
-  if (!logoResponse.ok) throw new Error(`Não foi possível baixar o logo da marca (status ${logoResponse.status}).`)
-  const logoBuffer = Buffer.from(await logoResponse.arrayBuffer())
-
-  const baseMeta = await sharp(baseBuffer).metadata()
-  const baseWidth = baseMeta.width ?? 1024
-  const baseHeight = baseMeta.height ?? 1024
-
-  const targetLogoWidth = Math.round(baseWidth * 0.18)
-  const resizedLogo = await sharp(logoBuffer)
-    .resize({ width: targetLogoWidth, fit: 'inside', withoutEnlargement: true })
-    .png()
-    .toBuffer()
-  const logoMeta = await sharp(resizedLogo).metadata()
-
-  const padding = Math.round(baseWidth * 0.03)
-  const left = Math.max(0, baseWidth - (logoMeta.width ?? targetLogoWidth) - padding)
-  const top = Math.max(0, baseHeight - (logoMeta.height ?? targetLogoWidth) - padding)
-
-  const composited = await sharp(baseBuffer)
-    .composite([{ input: resizedLogo, left, top }])
-    .png()
-    .toBuffer()
-  return composited.toString('base64')
 }
 
 /**

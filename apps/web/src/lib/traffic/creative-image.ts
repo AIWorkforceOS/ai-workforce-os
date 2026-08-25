@@ -11,6 +11,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { generateImage, generateStructuredReply } from '@/lib/openai'
 import { buildCombinedBusinessContext } from '@/lib/interview/engine'
+import { brandKitFrom, compositeLogoOntoImage } from '@/lib/brand-kit'
+import { isVerticalKey, VERTICAL_TEMPLATES } from '@/lib/verticals/catalog'
 import type { AdPlatform, CampaignCreative, CampaignTargeting } from './types'
 
 type ImagePromptOutput = { image_prompt?: string; reasoning?: string }
@@ -51,18 +53,29 @@ export function buildCreativeImageSystemPrompt(params: {
   targeting: CampaignTargeting
   organizationProfile: Record<string, unknown> | null
   agentBusinessProfile: Record<string, unknown> | null
+  /** organizations.vertical_key — reforça o segmento explicitamente, pra não gerar cena de outro tipo de negócio (achado real do Vinicius: campanha saiu fora do segmento). */
+  verticalKey?: string | null
 }): string {
-  const { platform, objective, creative, targeting, organizationProfile, agentBusinessProfile } = params
+  const { platform, objective, creative, targeting, organizationProfile, agentBusinessProfile, verticalKey } = params
   const businessContext = buildCombinedBusinessContext(organizationProfile, agentBusinessProfile)
+  const brandKit = brandKitFrom(organizationProfile)
+  const verticalLabel = verticalKey && isVerticalKey(verticalKey) ? VERTICAL_TEMPLATES[verticalKey].labelPt : null
   return [
-    `Você é o(a) gestor(a) de tráfego pago digital, criando o criativo visual de um anúncio para ${platform === 'meta' ? 'Meta Ads (Instagram/Facebook)' : 'Google Ads'}.`,
+    `Você é o(a) gestor(a) de tráfego pago digital E especialista em design de criativos, criando o criativo visual de um anúncio para ${platform === 'meta' ? 'Meta Ads (Instagram/Facebook)' : 'Google Ads'}.`,
+    verticalLabel
+      ? `Segmento do negócio: ${verticalLabel}. A cena, os elementos e o cenário da imagem PRECISAM condizer com esse segmento específico — nunca com outro tipo de negócio.`
+      : null,
     `Objetivo da campanha: ${objective}. Público-alvo: ${targetingSummary(targeting)}.`,
     `Texto do anúncio já decidido — título: "${creative.headline}". Corpo: "${creative.body}".`,
     businessContext ??
       'Ainda não há uma ficha de negócio detalhada — descreva algo genérico, seguro e verdadeiro para uma empresa de serviços, sem inventar detalhes específicos.',
+    brandKit
+      ? `Identidade visual da marca: use como cores predominantes da cena${brandKit.primary_color ? ` a cor primária ${brandKit.primary_color}` : ''}${brandKit.secondary_color ? ` e a cor secundária ${brandKit.secondary_color}` : ''} — mantenha consistência visual com a marca.`
+      : null,
+    'Pense como designer de anúncios de alta conversão: composição limpa, foco claro no assunto/produto/serviço principal, boa hierarquia visual — nunca uma cena genérica de banco de imagens que serviria pra qualquer negócio.',
     'Nunca invente promoção, preço ou resultado que não esteja na ficha da empresa. Nunca mencione concorrentes. Respeite qualquer proibição registrada na ficha.',
     'FORMATO DA RESPOSTA — responda SOMENTE um JSON válido no formato:',
-    '{"image_prompt": "descrição em inglês, detalhada e visual, formato paisagem adequado para anúncio pago, coerente com o título/corpo e o público-alvo — sem nenhum texto/letra/logotipo embutido na imagem", "reasoning": "1 frase curta, em português, explicando a escolha visual, para o dono da empresa entender"}',
+    '{"image_prompt": "descrição em inglês, detalhada e visual, formato paisagem adequado para anúncio pago, coerente com o título/corpo, o público-alvo e o segmento do negócio — sem nenhum texto/letra/logotipo embutido na imagem (o logo real é colado por cima depois)", "reasoning": "1 frase curta, em português, explicando a escolha visual, para o dono da empresa entender"}',
   ]
     .filter(Boolean)
     .join(' ')
@@ -77,6 +90,7 @@ export async function generateCreativeImagePrompt(params: {
   targeting: CampaignTargeting
   organizationProfile: Record<string, unknown> | null
   agentBusinessProfile: Record<string, unknown> | null
+  verticalKey?: string | null
 }): Promise<GeneratedCreativeImagePrompt> {
   const systemPrompt = buildCreativeImageSystemPrompt(params)
   const output = await generateStructuredReply<ImagePromptOutput>({
@@ -95,12 +109,25 @@ export async function generateCreativeImagePrompt(params: {
   return { imagePrompt, reasoning: reasoning || 'Imagem gerada a partir do texto do anúncio e do público-alvo.' }
 }
 
-/** Gera a imagem (gpt-image-1) a partir do prompt textual do criativo — formato paisagem, próximo do 1.91:1 recomendado para anúncios. */
+/**
+ * Gera a imagem (gpt-image-1) a partir do prompt textual do criativo —
+ * formato paisagem, próximo do 1.91:1 recomendado para anúncios — e, se a
+ * marca tiver logo cadastrado (brand kit), compõe o logo real por cima
+ * (mesma técnica do Conteúdo/Social, ver lib/brand-kit.ts): nenhum gerador
+ * de imagem reproduz um logo específico de forma consistente só por
+ * descrição textual. Quando há logo, ele é OBRIGATÓRIO no criativo — se a
+ * composição falhar, a geração falha inteira (quem chama já trata isso
+ * como falha best-effort e cria o rascunho sem imagem) em vez de deixar
+ * ir ao ar um anúncio pago sem a marca da empresa.
+ */
 export async function generateCampaignCreativeImage(params: {
   apiKey: string
   imagePrompt: string
+  logoUrl?: string | null
 }): Promise<{ base64Image: string }> {
-  return generateImage({ apiKey: params.apiKey, prompt: params.imagePrompt, size: '1536x1024', quality: 'medium' })
+  const { base64Image } = await generateImage({ apiKey: params.apiKey, prompt: params.imagePrompt, size: '1536x1024', quality: 'medium' })
+  if (!params.logoUrl) return { base64Image }
+  return { base64Image: await compositeLogoOntoImage(base64Image, params.logoUrl) }
 }
 
 /**

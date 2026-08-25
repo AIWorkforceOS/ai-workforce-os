@@ -22,7 +22,7 @@ describe('computeTrainingCompleteness', () => {
       agent_type: 'traffic_specialist',
       business_profile: { tipo_negocio: 'clínica', orcamento_mensal_brl: 5000 },
     })
-    // profileSchema do traffic_specialist tem 7 campos; 2 preenchidos
+    // profileSchema do traffic_specialist tem 10 campos; 2 preenchidos
     expect(partial).toBeGreaterThan(0)
     expect(partial).toBeLessThan(100)
   })
@@ -38,6 +38,8 @@ describe('computeTrainingCompleteness', () => {
         objetivo_campanha: 'leads',
         cpa_alvo_brl: 50,
         roas_alvo: 3,
+        estilo_criativo: 'fotos reais da equipe, cores vivas',
+        diferencial_para_anuncio: 'atendimento no mesmo dia',
         observacoes: ['nenhuma'],
       },
     })
@@ -84,7 +86,7 @@ describe('missingProfileFields — versão acionável do score, pro Manual de Tr
     const missing = missingProfileFields({ agent_type: 'traffic_specialist', business_profile: {} })
     expect(missing).toContain('Tipo negocio')
     expect(missing).toContain('Orcamento mensal brl')
-    expect(missing).toHaveLength(8)
+    expect(missing).toHaveLength(10)
   })
 
   it('some da lista assim que o campo é preenchido — nunca mostra o que já foi ensinado como pendência', () => {
@@ -106,6 +108,8 @@ describe('missingProfileFields — versão acionável do score, pro Manual de Tr
       objetivo_campanha: 'leads',
       cpa_alvo_brl: 50,
       roas_alvo: 3,
+      estilo_criativo: 'fotos reais da equipe, cores vivas',
+      diferencial_para_anuncio: 'atendimento no mesmo dia',
       observacoes: ['nenhuma'],
     }
     expect(computeTrainingCompleteness({ agent_type: 'traffic_specialist', business_profile: profile })).toBe(100)
