@@ -12,6 +12,7 @@ import { Card, PageHeader } from '@/components/ui/dashboard-ui'
 import { CopyField } from '@/components/dashboard/copy-field'
 import { ChangePasswordCard } from '@/components/dashboard/change-password'
 import { CancelSubscriptionCard } from '@/components/dashboard/cancel-subscription'
+import { ManagerWhatsappSettingsCard } from '@/components/dashboard/manager-whatsapp-settings'
 import type { Unit } from '@/lib/types'
 
 const SECTIONS = [
@@ -75,11 +76,11 @@ export default async function SettingsPage() {
   // Com RLS ativo, o cliente só recebe as próprias unidades aqui
   const { data: units } = await supabase
     .from('units')
-    .select('id, name, slug, intake_token')
+    .select('id, name, slug, intake_token, manager_whatsapp_phone')
     .eq('is_active', true)
     .order('name')
 
-  const unitRows = (units ?? []) as Pick<Unit, 'id' | 'name' | 'slug' | 'intake_token'>[]
+  const unitRows = (units ?? []) as Pick<Unit, 'id' | 'name' | 'slug' | 'intake_token' | 'manager_whatsapp_phone'>[]
 
   // Cancelamento self-service não vale pra Super Admin (não representa
   // uma conta de cliente pagante) — só para org comum com orgId real.
@@ -128,6 +129,9 @@ export default async function SettingsPage() {
 
       {/* Cancelamento self-service — só para conta de cliente, não Super Admin */}
       {billingStatus && <CancelSubscriptionCard billingStatus={billingStatus} />}
+
+      {/* WhatsApp do responsável — resumo diário da agenda + comandos administrativos */}
+      <ManagerWhatsappSettingsCard units={unitRows.map((u) => ({ id: u.id, name: u.name, manager_whatsapp_phone: u.manager_whatsapp_phone ?? null }))} />
 
       {/* Webhook de intake — integração self-service com CRM externo */}
       <Card className="p-5">

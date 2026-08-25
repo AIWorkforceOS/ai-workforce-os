@@ -44,6 +44,10 @@
     {
       "path": "/api/cron/smarter-franquia-crm-sync",
       "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron/manager-agenda-digest",
+      "schedule": "30 9 * * *"
     }
   ]
 }

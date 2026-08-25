@@ -42,6 +42,16 @@ export type Unit = {
   slug: string
   whatsapp_instance_id: string | null
   whatsapp_phone: string | null
+  /**
+   * WhatsApp do gestor/dono responsável pela unidade (migration 074) —
+   * recebe o resumo diário da agenda e é reconhecido como comando
+   * administrativo pela Recepcionista (não cliente comum). Null/ausente =
+   * notificação/comando administrativo desativados. Opcional no tipo
+   * (tem default null no banco) pra não quebrar fixtures de teste
+   * pré-existentes que constroem Unit sem ele — mesmo padrão de
+   * whatsapp_connect_token acima.
+   */
+  manager_whatsapp_phone?: string | null
   email_from: string | null
   email_reply_to: string | null
   /** URL pública da logo da unidade (Supabase Storage, bucket unit-logos), usada no template de e-mail do Sales Rep. */
