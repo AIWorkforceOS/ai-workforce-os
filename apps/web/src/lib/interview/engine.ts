@@ -547,7 +547,7 @@ export function buildCombinedBusinessContext(
   const agentContext = buildBusinessContext(agentProfile)
   if (!orgContext) return agentContext
   const orgBlock = [
-    'FICHA COMPARTILHADA DA EMPRESA — vale para todos os funcionários digitais desta empresa, aprendida na entrevista de contratação de um deles:',
+    'FICHA COMPARTILHADA DA EMPRESA — vale para todos os funcionários digitais desta empresa. Dentro de "team_knowledge" está o que CADA outro funcionário (sdr, receptionist, recruiter, traffic_specialist, content_specialist, seo_specialist) já aprendeu na própria entrevista de contratação — consulte antes de dizer que não sabe algo, pode ser que um colega já saiba:',
     JSON.stringify(organizationProfile),
     'Use essas informações ativamente; NÃO invente nada que não esteja nelas.',
   ].join(' ')
@@ -584,4 +584,38 @@ export function extractOrganizationIntake(profile: Record<string, unknown>): Org
     if (value !== undefined) business_profile[to] = value
   }
   return { vertical_key: profile.org_vertical_key, business_profile }
+}
+
+export type OrganizationProfileUpdate = { business_profile: Record<string, unknown>; vertical_key?: VerticalKey }
+
+/**
+ * Calcula o novo organizations.business_profile depois que UM funcionário
+ * conclui sua entrevista (inicial ou retreinamento) — combina, num objeto
+ * só, os dois mecanismos que gravam na ficha compartilhada (ver comentário
+ * de uso em app/api/agent/interview/route.ts): o intake de identidade
+ * (extractOrganizationIntake, só quando a org ainda não tem vertical_key) e
+ * a promoção do conhecimento específico de função desse agente pra
+ * business_profile.team_knowledge[agentType], que buildCombinedBusinessContext
+ * já devolve pra todos os outros funcionários. Nunca sobrescreve o
+ * team_knowledge de outro agentType (merge por chave); nunca sobrescreve
+ * campos da ficha já existentes que o intake não tocar (ex.: brand_kit).
+ * Função pura — quem chama decide se/como gravar (e a trava de concorrência
+ * .is('vertical_key', null) quando vertical_key vier no retorno).
+ */
+export function buildOrganizationProfileUpdate(params: {
+  currentOrgProfile: Record<string, unknown>
+  currentVerticalKey: string | null
+  agentType: string
+  agentProfile: Record<string, unknown>
+}): OrganizationProfileUpdate {
+  const orgIntake = params.currentVerticalKey ? null : extractOrganizationIntake(params.agentProfile)
+  const currentTeamKnowledge = (params.currentOrgProfile.team_knowledge as Record<string, unknown> | undefined) ?? {}
+
+  const business_profile = {
+    ...params.currentOrgProfile,
+    ...(orgIntake?.business_profile ?? {}),
+    team_knowledge: { ...currentTeamKnowledge, [params.agentType]: params.agentProfile },
+  }
+
+  return orgIntake ? { business_profile, vertical_key: orgIntake.vertical_key } : { business_profile }
 }

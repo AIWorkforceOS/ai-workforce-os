@@ -5,6 +5,7 @@ import {
   buildCombinedBusinessContext,
   buildInterviewerPrompt,
   buildKaiOnboardingPrompt,
+  buildOrganizationProfileUpdate,
   extractOrganizationIntake,
   isInterviewAgentType,
   mergeProfile,
@@ -273,6 +274,15 @@ describe('buildCombinedBusinessContext — Ficha da Empresa compartilhada (migra
     expect(combined).toContain('FICHA COMPARTILHADA DA EMPRESA')
     expect(combined).not.toContain('INFORMAÇÕES ESPECÍFICAS')
   })
+
+  it('instrui o agente a consultar team_knowledge (o que os outros funcionários aprenderam) antes de dizer que não sabe algo', () => {
+    const combined = buildCombinedBusinessContext(
+      { team_knowledge: { recruiter: { cultura_valores: 'pontualidade' } } },
+      agentProfile,
+    )
+    expect(combined).toContain('team_knowledge')
+    expect(combined).toContain('pontualidade')
+  })
 })
 
 describe('extractOrganizationIntake', () => {
@@ -309,6 +319,88 @@ describe('extractOrganizationIntake', () => {
     expect(result).toEqual({
       vertical_key: 'general_maintenance',
       business_profile: { company_name: 'Manutenções Rápidas' },
+    })
+  })
+})
+
+describe('buildOrganizationProfileUpdate — comunicação entre funcionários via ficha compartilhada', () => {
+  it('org sem vertical_key ainda + intake confirmado: grava vertical_key + campos genéricos E o team_knowledge do agente', () => {
+    const result = buildOrganizationProfileUpdate({
+      currentOrgProfile: {},
+      currentVerticalKey: null,
+      agentType: 'sdr',
+      agentProfile: {
+        org_vertical_key: 'cleaning_services',
+        org_vertical_confirmed: true,
+        org_company_name: 'Mawi Cleaning',
+        politica_desconto: '10% à vista',
+      },
+    })
+    expect(result.vertical_key).toBe('cleaning_services')
+    expect(result.business_profile.company_name).toBe('Mawi Cleaning')
+    expect(result.business_profile.team_knowledge).toEqual({
+      sdr: {
+        org_vertical_key: 'cleaning_services',
+        org_vertical_confirmed: true,
+        org_company_name: 'Mawi Cleaning',
+        politica_desconto: '10% à vista',
+      },
+    })
+  })
+
+  it('org já com vertical_key: NÃO regrava vertical_key nem os campos genéricos, mas promove team_knowledge do agente normalmente', () => {
+    const result = buildOrganizationProfileUpdate({
+      currentOrgProfile: { company_name: 'Mawi Cleaning', vertical_key_already_set: true },
+      currentVerticalKey: 'cleaning_services',
+      agentType: 'recruiter',
+      agentProfile: { cultura_valores: 'pontualidade e respeito' },
+    })
+    expect(result.vertical_key).toBeUndefined()
+    expect(result.business_profile.company_name).toBe('Mawi Cleaning')
+    expect(result.business_profile.team_knowledge).toEqual({ recruiter: { cultura_valores: 'pontualidade e respeito' } })
+  })
+
+  it('funcionário B concluindo a entrevista NÃO apaga o team_knowledge já gravado pelo funcionário A', () => {
+    const afterA = buildOrganizationProfileUpdate({
+      currentOrgProfile: {},
+      currentVerticalKey: 'cleaning_services',
+      agentType: 'sdr',
+      agentProfile: { politica_desconto: '10% à vista' },
+    })
+    const afterB = buildOrganizationProfileUpdate({
+      currentOrgProfile: afterA.business_profile,
+      currentVerticalKey: 'cleaning_services',
+      agentType: 'traffic_specialist',
+      agentProfile: { publico_alvo: 'famílias em bairros de classe média' },
+    })
+    expect(afterB.business_profile.team_knowledge).toEqual({
+      sdr: { politica_desconto: '10% à vista' },
+      traffic_specialist: { publico_alvo: 'famílias em bairros de classe média' },
+    })
+  })
+
+  it('retreinamento do MESMO agente atualiza só a entrada dele em team_knowledge, sem duplicar nem perder as dos outros', () => {
+    const afterFirstInterview = buildOrganizationProfileUpdate({
+      currentOrgProfile: { team_knowledge: { recruiter: { cultura_valores: 'antiga' } } },
+      currentVerticalKey: 'cleaning_services',
+      agentType: 'recruiter',
+      agentProfile: { cultura_valores: 'nova, pós-retreinamento' },
+    })
+    expect(afterFirstInterview.business_profile.team_knowledge).toEqual({
+      recruiter: { cultura_valores: 'nova, pós-retreinamento' },
+    })
+  })
+
+  it('não sobrescreve outros campos já existentes na ficha compartilhada (ex.: brand_kit)', () => {
+    const result = buildOrganizationProfileUpdate({
+      currentOrgProfile: { brand_kit: { logo_url: 'https://x/logo.png' } },
+      currentVerticalKey: 'cleaning_services',
+      agentType: 'content_specialist',
+      agentProfile: { pilares_conteudo: ['dicas de limpeza', 'antes e depois'] },
+    })
+    expect(result.business_profile.brand_kit).toEqual({ logo_url: 'https://x/logo.png' })
+    expect(result.business_profile.team_knowledge).toEqual({
+      content_specialist: { pilares_conteudo: ['dicas de limpeza', 'antes e depois'] },
     })
   })
 })

@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { getAppUser } from '@/lib/app-user'
 import { getOpenAIApiKey } from '@/lib/openai'
-import { extractOrganizationIntake, INTERVIEW_PLAYBOOKS, isInterviewAgentType, runInterviewTurn } from '@/lib/interview/engine'
+import { buildOrganizationProfileUpdate, INTERVIEW_PLAYBOOKS, isInterviewAgentType, runInterviewTurn } from '@/lib/interview/engine'
 import type { AgentConfig, InterviewTranscriptEntry, Organization, Unit } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -187,36 +187,52 @@ export async function POST(request: Request) {
   }
 
   // Ficha da Empresa compartilhada (organizations.vertical_key/business_profile,
-  // migration 025): só grava quando o chefe confirmou o segmento nesta
-  // entrevista e a organização ainda não tinha vertical_key — never sobrescreve
-  // uma ficha já definida (uma vez por organização). A policy organizations_write
-  // exige is_super_admin(), então o cliente da sessão do usuário nunca
-  // conseguia gravar aqui (update silenciosamente afetava 0 linhas, sem
-  // erro) — é por isso que nenhuma organização tinha a ficha compartilhada
-  // preenchida até este fix. Usa o service client (mesmo padrão de
-  // api-usage.ts/seo audits/content generate-week) pra gravar de verdade, e
-  // funde com o business_profile já existente (ex.: brand_kit) em vez de
-  // sobrescrever. Best-effort: se o service client não estiver configurado
-  // ou a gravação falhar, a entrevista do funcionário já foi salva
-  // normalmente acima, então não retornamos erro por causa disso.
-  if (organization && !organization.vertical_key) {
-    const orgIntake = extractOrganizationIntake(result.profile)
-    if (orgIntake) {
-      const service = createServiceClient()
-      if (!service) {
-        console.error('[interview] org intake persist skipped: service client não configurado')
-      } else {
-        const { error: orgSaveError } = await service
-          .from('organizations')
-          .update({
-            vertical_key: orgIntake.vertical_key,
-            business_profile: { ...(organization.business_profile ?? {}), ...orgIntake.business_profile },
-          })
-          .eq('id', organization.id)
-          .is('vertical_key', null)
-        if (orgSaveError) {
-          console.error('[interview] org intake persist error:', orgSaveError.message)
-        }
+  // migration 025) — dois mecanismos gravam nela, num ÚNICO update pra um
+  // não sobrescrever o outro:
+  //
+  // 1) Intake de identidade/segmento (vertical_key + 7 campos genéricos:
+  //    nome, descrição, diferenciais, tom de voz, idiomas, horário, canais)
+  //    — só roda quando o chefe confirma o segmento e a org ainda não tem
+  //    vertical_key (uma vez por organização; nunca sobrescreve depois).
+  //
+  // 2) Conhecimento específico de função aprendido em QUALQUER entrevista
+  //    concluída (política de desconto do SDR, cultura do Recrutador,
+  //    público-alvo do Tráfego etc.) — antes ficava preso só em
+  //    agent_configs.business_profile DAQUELE agente, invisível pros
+  //    outros 5. Pedido do Vinicius (2026-08-24): "confirma se todos os
+  //    funcionarios conseguem se comunicar entre si... se ela não souber
+  //    uma informação ele pode buscar com outro funcionario antes de
+  //    responder" — decisão de escopo confirmada: sem troca de mensagens
+  //    em tempo real, enriquecer a ficha compartilhada. Promovido pra
+  //    business_profile.team_knowledge[agent_type], que
+  //    buildCombinedBusinessContext já devolve pra TODOS os funcionários
+  //    (stringifica o business_profile da org inteiro) — roda em toda
+  //    entrevista concluída (inclusive retreinamento, pra manter
+  //    atualizado), nunca sobrescreve o team_knowledge de outro agent_type.
+  //
+  // A policy organizations_write exige is_super_admin(), então o client da
+  // sessão do usuário nunca conseguia gravar aqui (update silenciosamente
+  // afetava 0 linhas, sem erro) — usa o service client (mesmo padrão de
+  // api-usage.ts/seo audits/content generate-week). Best-effort: se o
+  // service client não estiver configurado ou a gravação falhar, a
+  // entrevista do funcionário já foi salva normalmente acima, então não
+  // retornamos erro por causa disso.
+  if (organization && result.done) {
+    const service = createServiceClient()
+    if (!service) {
+      console.error('[interview] ficha compartilhada: persist skipped, service client não configurado')
+    } else {
+      const orgUpdate = buildOrganizationProfileUpdate({
+        currentOrgProfile: organization.business_profile ?? {},
+        currentVerticalKey: organization.vertical_key,
+        agentType: config.agent_type,
+        agentProfile: result.profile,
+      })
+      let query = service.from('organizations').update(orgUpdate).eq('id', organization.id)
+      if (orgUpdate.vertical_key) query = query.is('vertical_key', null)
+      const { error: orgSaveError } = await query
+      if (orgSaveError) {
+        console.error('[interview] ficha compartilhada: persist error:', orgSaveError.message)
       }
     }
   }
