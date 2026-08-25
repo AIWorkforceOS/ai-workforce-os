@@ -11,6 +11,7 @@ import {
 import { Card, PageHeader } from '@/components/ui/dashboard-ui'
 import { CopyField } from '@/components/dashboard/copy-field'
 import { ChangePasswordCard } from '@/components/dashboard/change-password'
+import { CancelSubscriptionCard } from '@/components/dashboard/cancel-subscription'
 import type { Unit } from '@/lib/types'
 
 const SECTIONS = [
@@ -79,6 +80,14 @@ export default async function SettingsPage() {
     .order('name')
 
   const unitRows = (units ?? []) as Pick<Unit, 'id' | 'name' | 'slug' | 'intake_token'>[]
+
+  // Cancelamento self-service não vale pra Super Admin (não representa
+  // uma conta de cliente pagante) — só para org comum com orgId real.
+  let billingStatus: string | null = null
+  if (!isSuperAdmin && appUser?.orgId) {
+    const { data: org } = await supabase.from('organizations').select('billing_status').eq('id', appUser.orgId).maybeSingle()
+    billingStatus = (org as { billing_status?: string } | null)?.billing_status ?? null
+  }
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://SEU-DOMINIO.vercel.app'
   const webhookUrl = `${baseUrl.replace(/\/+$/, '')}/api/intake/lead`
 
@@ -116,6 +125,9 @@ export default async function SettingsPage() {
 
       {/* Segurança — troca de senha self-service */}
       <ChangePasswordCard />
+
+      {/* Cancelamento self-service — só para conta de cliente, não Super Admin */}
+      {billingStatus && <CancelSubscriptionCard billingStatus={billingStatus} />}
 
       {/* Webhook de intake — integração self-service com CRM externo */}
       <Card className="p-5">

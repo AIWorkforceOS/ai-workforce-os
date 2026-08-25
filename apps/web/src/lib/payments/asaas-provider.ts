@@ -1,9 +1,16 @@
 import type { ChargeInput, ChargeResult, PaymentProvider, PaymentWebhookEvent, PaymentWebhookEventType } from './provider'
 
 /**
- * Asaas (BR) — PIX/boleto/cartão numa API só, com invoiceUrl hospedada
- * (o cliente paga num link do próprio Asaas; não guardamos dado de
- * cartão no nosso servidor nem no frontend).
+ * Asaas (BR) — cartão de crédito/débito recorrente, via Checkout
+ * hospedado da Asaas (POST /v3/checkouts, chargeTypes=RECURRENT). Nunca
+ * PIX/boleto: decisão do produto (2026-08-25) é aceitar só cartão, porque
+ * é o único método que permite cobrança automática de verdade todo mês
+ * sem o cliente precisar agir — PIX/boleto recorrente na Asaas ainda
+ * exige o cliente pagar cada fatura manualmente. Usar o Checkout
+ * hospedado (não POST /subscriptions com billingType=CREDIT_CARD direto)
+ * é essencial: a alternativa exigiria receber os dados do cartão no
+ * nosso servidor pra repassar à Asaas — o Checkout evita isso por
+ * completo, o cliente digita o cartão só na página da própria Asaas.
  *
  * Docs: https://docs.asaas.com
  */
@@ -22,34 +29,25 @@ const EVENT_MAP: Record<string, PaymentWebhookEventType> = {
   PAYMENT_CHARGEBACK_REQUESTED: 'past_due',
 }
 
-const BILLING_TYPE: Record<ChargeInput['paymentMethod'], string> = {
-  pix: 'PIX',
-  boleto: 'BOLETO',
-  card: 'CREDIT_CARD',
-  zelle: 'PIX', // zelle não existe pro Asaas (BR-only) — fallback nunca deve ser exercitado na prática (região US usa Stripe)
-}
-
 export function createAsaasProvider(apiKey: string): PaymentProvider {
-  async function asaasFetch(path: string, body: Record<string, unknown>) {
+  async function asaasFetch(path: string, body: Record<string, unknown>, method: 'POST' | 'DELETE' = 'POST') {
     const res = await fetch(`${asaasBaseUrl()}${path}`, {
-      method: 'POST',
+      method,
       headers: { 'Content-Type': 'application/json', access_token: apiKey },
-      body: JSON.stringify(body),
+      ...(method === 'POST' ? { body: JSON.stringify(body) } : {}),
     })
     const data = await res.json().catch(() => null)
     return { ok: res.ok, status: res.status, data: data as Record<string, unknown> | null }
-  }
-
-  async function asaasGetList(path: string) {
-    const res = await fetch(`${asaasBaseUrl()}${path}`, { headers: { access_token: apiKey } })
-    const data = await res.json().catch(() => null)
-    return { ok: res.ok, status: res.status, data: data as { data?: Array<Record<string, unknown>> } | null }
   }
 
   return {
     id: 'asaas',
 
     async createCustomerAndCharge(input: ChargeInput): Promise<ChargeResult> {
+      // Cliente criado via API primeiro (mesmo padrão do Stripe,
+      // stripe-provider.ts) pra providerCustomerRef ficar disponível já
+      // na resposta — resolve o webhook (payment.customer) em qualquer
+      // cobrança futura da assinatura, sem depender de externalReference.
       const customerRes = await asaasFetch('/customers', {
         name: input.name,
         email: input.email,
@@ -61,38 +59,48 @@ export function createAsaasProvider(apiKey: string): PaymentProvider {
         return { ok: false, error: `Asaas (cliente): ${errors?.[0]?.description ?? `HTTP ${customerRes.status}`}` }
       }
 
-      // Assinatura mensal recorrente — não cobrança avulsa: a Asaas gera e
-      // cobra a fatura seguinte sozinha todo mês, sem cron nem lógica
-      // nossa (mesmo padrão que o Stripe já usa via mode:'subscription',
-      // ver stripe-provider.ts).
       const nextDueDate = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-      const subscriptionRes = await asaasFetch('/subscriptions', {
+      const checkoutRes = await asaasFetch('/checkouts', {
         customer: customerId,
-        billingType: BILLING_TYPE[input.paymentMethod],
-        value: input.amount,
-        nextDueDate,
-        cycle: 'MONTHLY',
-        description: input.description,
+        billingTypes: ['CREDIT_CARD'],
+        chargeTypes: ['RECURRENT'],
+        minutesToExpire: 60,
+        callback: {
+          successUrl: input.successUrl ?? 'https://www.alizoai.com/dashboard?billing=success',
+          cancelUrl: input.cancelUrl ?? 'https://www.alizoai.com/checkout?billing=canceled',
+        },
+        items: [{ name: input.description, quantity: 1, value: input.amount }],
+        subscription: { cycle: 'MONTHLY', nextDueDate },
       })
-      const subscriptionId = subscriptionRes.data?.id as string | undefined
-      if (!subscriptionRes.ok || !subscriptionId) {
-        const errors = subscriptionRes.data?.errors as Array<{ description?: string }> | undefined
-        return { ok: false, error: `Asaas (assinatura): ${errors?.[0]?.description ?? `HTTP ${subscriptionRes.status}`}` }
+      const checkoutId = checkoutRes.data?.id as string | undefined
+      const checkoutLink = checkoutRes.data?.link as string | undefined
+      if (!checkoutRes.ok || !checkoutId) {
+        const errors = checkoutRes.data?.errors as Array<{ description?: string }> | undefined
+        return { ok: false, error: `Asaas (checkout): ${errors?.[0]?.description ?? `HTTP ${checkoutRes.status}`}` }
       }
-
-      // A criação da assinatura não devolve o link de pagamento da 1ª
-      // fatura (a Asaas gera ela de forma assíncrona) — precisa buscar a
-      // cobrança já criada pra essa assinatura à parte.
-      const firstPaymentRes = await asaasGetList(`/payments?subscription=${subscriptionId}&limit=1`)
-      const firstPayment = firstPaymentRes.data?.data?.[0]
 
       return {
         ok: true,
         providerCustomerRef: customerId,
-        providerChargeRef: subscriptionId,
-        paymentUrl: (firstPayment?.invoiceUrl as string | undefined) ?? null,
+        // Referência provisória (id do Checkout, não da assinatura — a
+        // assinatura só existe depois que o cliente completa o
+        // pagamento). webhook-handler.ts resolve a organização pelo
+        // providerCustomerRef acima; quando o 1º pagamento confirmar
+        // (PAYMENT_CONFIRMED), guardamos o subscription real por cima
+        // (ver checkout/complete e webhook-handler).
+        providerChargeRef: checkoutId,
+        paymentUrl: checkoutLink ?? null,
         status: 'pending',
       }
+    },
+
+    async cancelSubscription(subscriptionRef: string): Promise<{ ok: boolean; error?: string }> {
+      const res = await asaasFetch(`/subscriptions/${subscriptionRef}`, {}, 'DELETE')
+      if (!res.ok) {
+        const errors = res.data?.errors as Array<{ description?: string }> | undefined
+        return { ok: false, error: `Asaas (cancelar assinatura): ${errors?.[0]?.description ?? `HTTP ${res.status}`}` }
+      }
+      return { ok: true }
     },
 
     verifyWebhookSignature(_rawBody: string, headers: Headers): boolean {
@@ -117,11 +125,20 @@ export function createAsaasProvider(apiKey: string): PaymentProvider {
       const payment = payload.payment as Record<string, unknown> | undefined
       if (!type || !payment?.id) return null
 
+      // payment.subscription: id real da assinatura que gerou esta cobrança
+      // (presente em pagamentos recorrentes) — diferente do id do Checkout
+      // guardado como providerChargeRef na criação (ver createCustomerAndCharge
+      // acima). ATENÇÃO: verificar contra um payload real em sandbox antes
+      // de confiar em produção — a doc pública da Asaas não confirma 100%
+      // este campo no payload de webhook (só no objeto de listagem).
+      const subscriptionRef = typeof payment.subscription === 'string' ? payment.subscription : null
+
       return {
         externalEventId: `${eventName}:${payment.id}`,
         type,
         providerChargeRef: String(payment.id),
         providerCustomerRef: payment.customer ? String(payment.customer) : null,
+        ...(subscriptionRef ? { providerSubscriptionRef: subscriptionRef } : {}),
         raw: payload,
       }
     },

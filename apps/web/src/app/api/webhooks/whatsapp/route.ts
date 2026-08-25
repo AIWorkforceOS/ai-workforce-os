@@ -17,6 +17,7 @@ import { logOpenAIAudioUsage } from '@/lib/api-usage'
 import { logSystemEvent } from '@/lib/system-events'
 import { recordHumanIntervention } from '@/lib/human-intervention'
 import { unitDefaultLocale } from '@/lib/i18n/config'
+import { fetchOrgBillingStatus, isOrgBillingBlocked } from '@/lib/payments/billing-gate'
 import type { Unit } from '@/lib/types'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -348,6 +349,24 @@ export async function POST(request: Request) {
     }
 
     const sentAt = resolveSentAt(data.messageTimestamp)
+
+    // Bloqueio automático por falta de pagamento (2026-08-25): checado
+    // aqui, ANTES de qualquer funcionário processar a mensagem — nunca
+    // responde ao cliente final (ficaria estranho um "serviço suspenso"
+    // vindo do WhatsApp da empresa), só para de atender silenciosamente e
+    // registra o evento pra auditoria/dashboard. Ver lib/payments/billing-gate.ts.
+    const billingStatus = await fetchOrgBillingStatus(supabase, unitRow.org_id)
+    if (isOrgBillingBlocked(billingStatus)) {
+      await logSystemEvent(supabase, {
+        level: 'warning',
+        source: 'evolution',
+        eventType: 'whatsapp_inbound_blocked_billing',
+        message: `Mensagem inbound na unidade "${unitRow.name}" ignorada — organização com pagamento pendente (billing_status=${billingStatus}).`,
+        orgId: unitRow.org_id,
+        unitId: unitRow.id,
+      })
+      return NextResponse.json({ ok: true, billingBlocked: true })
+    }
 
     // Instância dedicada à Recepcionista (migration 051): toda mensagem
     // nesse número é dela, sem passar pela triagem genérica de Rota 3 —

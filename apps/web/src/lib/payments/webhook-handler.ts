@@ -20,8 +20,12 @@ const BILLING_STATUS_MAP: Partial<Record<PaymentWebhookEvent['type'], Organizati
   subscription_canceled: 'canceled',
   refunded: 'canceled',
   grace_period: 'grace_period',
-  // payment_failed: uma falha isolada de cobrança não rebaixa o status sozinha
-  // (só vira past_due quando o provider mandar esse evento explicitamente).
+  // payment_failed não está mapeado aqui de propósito — nenhum dos dois
+  // providers emite mais esse tipo (Asaas PAYMENT_OVERDUE e Stripe
+  // invoice.payment_failed vão direto pra 'past_due', ver
+  // asaas-provider.ts/stripe-provider.ts). Decisão do produto
+  // (2026-08-25): pagamento recorrente que não efetiva bloqueia o uso na
+  // hora (ver lib/payments/billing-gate.ts), sem tolerância de 1ª falha.
 }
 
 const FINANCIAL_RECORD_STATUS_MAP: Partial<Record<PaymentWebhookEvent['type'], 'paid' | 'overdue' | 'cancelled'>> = {
@@ -104,6 +108,17 @@ export async function handlePaymentWebhook(params: {
   const billingStatus = BILLING_STATUS_MAP[event.type]
   if (billingStatus) {
     await supabase.from('organizations').update({ billing_status: billingStatus }).eq('id', org.id)
+  }
+
+  // Corrige a referência de assinatura pro id REAL quando o evento o
+  // revela (ver comentário em PaymentWebhookEvent.providerSubscriptionRef)
+  // — sem isso, cancelSubscription (chamado pelo fluxo de cancelamento do
+  // cliente) tentaria cancelar o id errado (sessão/checkout, não assinatura).
+  if (event.providerSubscriptionRef) {
+    await supabase
+      .from('organizations')
+      .update({ billing_provider_subscription_ref: event.providerSubscriptionRef })
+      .eq('id', org.id)
   }
 
   // financial_records: schema/colunas existentes, sem alteração — só

@@ -163,6 +163,64 @@ describe('POST /api/webhooks/whatsapp — reentrega do provedor não duplica res
     expect((leadsAfterSecond as unknown[]).length).toBe(1)
   })
 
+  // Bloqueio automático por falta de pagamento (2026-08-25): organização
+  // com billing_status='past_due' não deve gerar NENHUMA resposta ao
+  // cliente — nem processar a mensagem, nem enviar nada pelo WhatsApp.
+  it('organização com pagamento pendente (billing_status past_due) é ignorada silenciosamente, sem responder o cliente', async () => {
+    const { supabase } = createFakeSupabase({
+      units: [buildUnit() as unknown as Record<string, unknown>],
+      organizations: [{ id: 'org-1', billing_status: 'past_due' }],
+    })
+
+    vi.doMock('@/lib/supabase/service', () => ({
+      createServiceClient: () => supabase,
+    }))
+    vi.doMock('@/lib/evolution', () => ({
+      getEvolutionConfig: () => ({ apiUrl: 'https://fake-evolution.test', apiKey: 'fake', instanceName: 'test-instance' }),
+      resolveWhatsappChannelByInstanceName: vi.fn(async () => ({
+        unit: buildUnit(),
+        agentType: null,
+        channel: {
+          agentType: null,
+          config: { apiUrl: 'https://fake-evolution.test', apiKey: 'fake', instanceName: 'test-instance' },
+          whatsappPhone: buildUnit().whatsapp_phone,
+          persistPhone: vi.fn(async () => {}),
+        },
+      })),
+      resolveWhatsappChannel: vi.fn(async () => null),
+      getBase64FromMediaMessage: vi.fn(),
+      syncWhatsappPhoneIfConnected: vi.fn(async () => {}),
+      sendWhatsAppMessage,
+      sendTypingPresence: vi.fn(async () => ({ ok: true })),
+      sendRecordingPresence: vi.fn(async () => ({ ok: true })),
+      sendWhatsAppAudio: vi.fn(async () => ({ ok: true })),
+      sendWhatsAppDocument: vi.fn(async () => ({ ok: true })),
+    }))
+    vi.doMock('@/lib/openai', () => ({
+      getOpenAIApiKey: () => 'fake-key',
+      generateChatReply,
+      generateStructuredReply: vi.fn(async () => ({})),
+      transcribeAudio: vi.fn(),
+      synthesizeSpeech: vi.fn(),
+    }))
+
+    const { POST } = await import('../route')
+
+    const response = await POST(
+      new Request('http://localhost/api/webhooks/whatsapp', {
+        method: 'POST',
+        body: JSON.stringify(buildEvolutionPayload('MSG-BILLING-BLOCKED-1')),
+      }),
+    )
+    const body = await response.json()
+
+    expect(body).toEqual({ ok: true, billingBlocked: true })
+    expect(sendWhatsAppMessage).not.toHaveBeenCalled()
+
+    const { data: leads } = await supabase.from('leads').select('*')
+    expect((leads as unknown[]).length).toBe(0)
+  })
+
   // Regressão do incidente de 2026-08-01: Evolution API/Baileys reentregou
   // uma resposta que NÓS mesmos enviamos como se fosse um inbound novo —
   // `key.fromMe` chegou ausente/falso (o guard da linha ~145 não cobre esse

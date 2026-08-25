@@ -12,9 +12,13 @@ const brandGradient = 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)'
 const CONTACT_EMAIL = 'suporte@alizo.com.br'
 
 /**
- * Formas de pagamento do lançamento — sem parcelamento:
- * Brasil: PIX, cartão (débito/crédito à vista) e boleto.
- * EUA: cartão (débito/crédito, cobrança única mensal).
+ * Forma de pagamento do lançamento — só cartão (crédito ou débito),
+ * Brasil e EUA (decisão do produto, 2026-08-25): é o único método com
+ * cobrança recorrente de verdade sem o cliente precisar agir todo mês —
+ * PIX/boleto recorrente ainda exigiria pagar cada fatura manualmente,
+ * o que não sustenta o bloqueio automático em caso de falha de pagamento.
+ * 'pix'/'boleto'/'zelle' seguem no tipo só por compatibilidade com
+ * registros antigos de financial_records — não são mais oferecidos aqui.
  */
 type PaymentMethod = 'pix' | 'card' | 'boleto' | 'zelle'
 
@@ -31,14 +35,12 @@ const COPY = {
       },
     },
     paymentMethods: [
-      { id: 'pix' as PaymentMethod, label: 'PIX', flag: '⚡', sub: 'Aprovação imediata' },
-      { id: 'card' as PaymentMethod, label: 'Cartão', flag: '💳', sub: 'Débito ou crédito à vista' },
-      { id: 'boleto' as PaymentMethod, label: 'Boleto', flag: '📄', sub: '1–3 dias úteis' },
+      { id: 'card' as PaymentMethod, label: 'Cartão', flag: '💳', sub: 'Crédito ou débito, cobrança mensal automática' },
     ],
-    methodLabel: { pix: 'PIX', card: 'Cartão (à vista)', boleto: 'Boleto', zelle: 'Zelle' } as Record<PaymentMethod, string>,
+    methodLabel: { pix: 'PIX', card: 'Cartão (assinatura mensal)', boleto: 'Boleto', zelle: 'Zelle' } as Record<PaymentMethod, string>,
     methodInstruction: {
       pix: 'QR Code PIX',
-      card: 'link de pagamento no cartão (à vista, sem parcelamento)',
+      card: 'link seguro para cadastrar o cartão — a mensalidade é cobrada automaticamente todo mês a partir daí',
       boleto: 'boleto',
       zelle: 'dados para transferência Zelle',
     } as Record<PaymentMethod, string>,
@@ -112,12 +114,12 @@ const COPY = {
       },
     },
     paymentMethods: [
-      { id: 'card' as PaymentMethod, label: 'Card', flag: '💳', sub: 'Debit or credit, single charge' },
+      { id: 'card' as PaymentMethod, label: 'Card', flag: '💳', sub: 'Debit or credit, automatic monthly billing' },
     ],
-    methodLabel: { pix: 'PIX', card: 'Card (single charge)', boleto: 'Boleto', zelle: 'Zelle' } as Record<PaymentMethod, string>,
+    methodLabel: { pix: 'PIX', card: 'Card (monthly subscription)', boleto: 'Boleto', zelle: 'Zelle' } as Record<PaymentMethod, string>,
     methodInstruction: {
       pix: 'PIX QR code',
-      card: 'card payment link (single monthly charge, no installments)',
+      card: 'secure link to add your card — the monthly charge happens automatically from there',
       boleto: 'boleto',
       zelle: 'Zelle transfer details',
     } as Record<PaymentMethod, string>,
@@ -229,7 +231,7 @@ function CheckoutForm() {
   const planSlug = resolvePlan(params.get('plan'))
 
   const [step, setStep] = useState<1 | 2 | 3>(1)
-  const [payMethod, setPayMethod] = useState<PaymentMethod>(locale === 'en' ? 'card' : 'pix')
+  const [payMethod, setPayMethod] = useState<PaymentMethod>('card')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState(false)

@@ -652,6 +652,9 @@ export type Organization = {
   billing_provider: string | null
   billing_provider_customer_ref: string | null
   billing_provider_subscription_ref: string | null
+  /** Existem desde a migration 20260714000010 (fluxo Super Admin de desativação manual) — reaproveitados pelo cancelamento self-service do cliente (app/api/billing/cancel), que só grava aqui, nunca mexe em is_active. */
+  cancelled_at: string | null
+  cancellation_reason: string | null
   created_at: string
   updated_at: string
 }

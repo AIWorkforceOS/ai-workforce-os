@@ -67,3 +67,26 @@ export async function getPaymentProviderForRegion(
   }
   return null
 }
+
+/**
+ * Instancia o PaymentProvider por id de processadora (organizations.billing_provider),
+ * não por região — usado pelo fluxo de cancelamento (app/api/billing/cancel),
+ * que precisa reinstanciar a MESMA processadora que a org já usa pra cobrar,
+ * independente de qual região está ativa hoje em payment_gateway_settings.
+ */
+export async function getPaymentProviderById(
+  service: SupabaseClient,
+  providerId: string,
+): Promise<PaymentProvider | null> {
+  const { data, error } = await service
+    .from('payment_gateway_settings')
+    .select('credentials')
+    .eq('provider', providerId)
+    .eq('is_active', true)
+    .maybeSingle()
+
+  if (error || !data) return null
+  const factory = PROVIDER_FACTORIES[providerId]
+  if (!factory) return null
+  return factory((data.credentials as Record<string, string> | null) ?? {})
+}

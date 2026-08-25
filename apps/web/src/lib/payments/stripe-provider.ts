@@ -21,7 +21,12 @@ const STRIPE_BASE = 'https://api.stripe.com/v1'
 const EVENT_MAP: Record<string, PaymentWebhookEventType> = {
   'checkout.session.completed': 'payment_success',
   'invoice.payment_succeeded': 'payment_success',
-  'invoice.payment_failed': 'payment_failed',
+  // Achado real (2026-08-25): 'invoice.payment_failed' antes não estava
+  // mapeado — uma org pagando via Stripe nunca chegava a 'past_due' via
+  // webhook (só o Asaas chegava, via PAYMENT_OVERDUE). Sem isso, o
+  // bloqueio automático de uso (ver lib/payments/billing-gate.ts) nunca
+  // dispararia pra clientes Stripe.
+  'invoice.payment_failed': 'past_due',
   'customer.subscription.deleted': 'subscription_canceled',
   'customer.subscription.trial_will_end': 'grace_period',
   'charge.refunded': 'refunded',
@@ -36,14 +41,14 @@ function toFormBody(params: Record<string, string | undefined>): string {
 }
 
 export function createStripeProvider(secretKey: string): PaymentProvider {
-  async function stripeFetch(path: string, params: Record<string, string | undefined>) {
+  async function stripeFetch(path: string, params: Record<string, string | undefined>, method: 'POST' | 'DELETE' = 'POST') {
     const res = await fetch(`${STRIPE_BASE}${path}`, {
-      method: 'POST',
+      method,
       headers: {
         Authorization: `Bearer ${secretKey}`,
         'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: toFormBody(params),
+      ...(method === 'POST' ? { body: toFormBody(params) } : {}),
     })
     const data = await res.json().catch(() => null)
     return { ok: res.ok, status: res.status, data: data as Record<string, unknown> | null }
@@ -95,6 +100,15 @@ export function createStripeProvider(secretKey: string): PaymentProvider {
       }
     },
 
+    async cancelSubscription(subscriptionRef: string): Promise<{ ok: boolean; error?: string }> {
+      const res = await stripeFetch(`/subscriptions/${subscriptionRef}`, {}, 'DELETE')
+      if (!res.ok) {
+        const err = res.data?.error as { message?: string } | undefined
+        return { ok: false, error: `Stripe (cancelar assinatura): ${err?.message ?? `HTTP ${res.status}`}` }
+      }
+      return { ok: true }
+    },
+
     verifyWebhookSignature(rawBody: string, headers: Headers): boolean {
       const sigHeader = headers.get('stripe-signature')
       const secret = process.env.STRIPE_WEBHOOK_SECRET
@@ -135,11 +149,20 @@ export function createStripeProvider(secretKey: string): PaymentProvider {
       const eventId = payload.id as string | undefined
       if (!eventId) return null
 
+      // checkout.session.completed: obj.id é o id da SESSÃO (cs_...), não
+      // da assinatura — a Stripe expõe o id real da assinatura recorrente
+      // (sub_...) no campo obj.subscription desse mesmo evento. Sem isso,
+      // billing_provider_subscription_ref fica com o id da sessão pra
+      // sempre, e cancelSubscription (DELETE /subscriptions/{id}) falharia.
+      const subscriptionRef =
+        eventType === 'checkout.session.completed' && typeof obj?.subscription === 'string' ? obj.subscription : null
+
       return {
         externalEventId: eventId,
         type,
         providerChargeRef: (obj?.id as string | undefined) ?? null,
         providerCustomerRef: (obj?.customer as string | undefined) ?? null,
+        ...(subscriptionRef ? { providerSubscriptionRef: subscriptionRef } : {}),
         raw: payload,
       }
     },

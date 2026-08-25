@@ -10,9 +10,10 @@ export const dynamic = 'force-dynamic'
 
 const PLAN_SLUGS = ['starter', 'pro'] as const
 
-// Sem parcelamento no lançamento: PIX/boleto só no Brasil,
-// cartão (débito/crédito à vista) nos dois mercados.
-// 'zelle' segue no enum por compatibilidade com registros antigos de financial_records.
+// Decisão do produto (2026-08-25): só cartão (crédito/débito), com
+// assinatura recorrente de verdade — Brasil e EUA. 'pix'/'boleto'/'zelle'
+// seguem no enum só por compatibilidade com registros antigos de
+// financial_records; o checkout (checkout/page.tsx) não oferece mais eles.
 const PAYMENT_METHODS = ['pix', 'card', 'boleto', 'zelle'] as const
 type PaymentMethod = (typeof PAYMENT_METHODS)[number]
 
@@ -93,9 +94,7 @@ export async function POST(request: Request) {
   }
   const plan: PaidPlanSlug = PLAN_SLUGS.includes(body?.plan) ? body.plan : 'starter'
   const currency: 'BRL' | 'USD' = locale === 'en' ? 'USD' : 'BRL'
-  const paymentMethod: PaymentMethod = PAYMENT_METHODS.includes(body?.paymentMethod)
-    ? body.paymentMethod
-    : locale === 'en' ? 'card' : 'pix'
+  const paymentMethod: PaymentMethod = PAYMENT_METHODS.includes(body?.paymentMethod) ? body.paymentMethod : 'card'
 
   if (!company || !name || !email || !email.includes('@')) {
     return NextResponse.json({ error: err.invalidFields }, { status: 400 })

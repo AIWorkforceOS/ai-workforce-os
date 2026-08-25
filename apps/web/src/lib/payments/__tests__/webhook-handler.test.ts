@@ -7,6 +7,7 @@ function fakeProvider(overrides: Partial<PaymentProvider> = {}): PaymentProvider
   return {
     id: 'asaas',
     createCustomerAndCharge: vi.fn(),
+    cancelSubscription: vi.fn(),
     verifyWebhookSignature: () => true,
     parseWebhookEvent: () => null,
     ...overrides,
@@ -150,5 +151,46 @@ describe('handlePaymentWebhook', () => {
     await handlePaymentWebhook({ supabase, provider, rawBody: '{}', headers: new Headers() })
 
     expect((db.organizations as Array<{ billing_status: string }>)[0]!.billing_status).toBe('active')
+  })
+
+  it('regressão (2026-08-25): quando o evento traz providerSubscriptionRef, corrige billing_provider_subscription_ref pro id real da assinatura (ex.: checkout.session.completed da Stripe, checkout da Asaas)', async () => {
+    const { supabase, db } = createFakeSupabase({
+      organizations: [{ id: 'org-1', billing_status: 'trialing', billing_provider_customer_ref: 'cus_1', billing_provider_subscription_ref: 'checkout_123' }],
+    })
+    const event: PaymentWebhookEvent = {
+      externalEventId: 'evt_sub_ref',
+      type: 'payment_success',
+      providerChargeRef: 'pay_1',
+      providerCustomerRef: 'cus_1',
+      providerSubscriptionRef: 'sub_real_9',
+      raw: {},
+    }
+    const provider = fakeProvider({ parseWebhookEvent: () => event })
+
+    await handlePaymentWebhook({ supabase, provider, rawBody: '{}', headers: new Headers() })
+
+    expect((db.organizations as Array<{ billing_provider_subscription_ref: string }>)[0]!.billing_provider_subscription_ref).toBe(
+      'sub_real_9',
+    )
+  })
+
+  it('sem providerSubscriptionRef no evento, billing_provider_subscription_ref não é tocado', async () => {
+    const { supabase, db } = createFakeSupabase({
+      organizations: [{ id: 'org-1', billing_status: 'trialing', billing_provider_customer_ref: 'cus_1', billing_provider_subscription_ref: 'checkout_123' }],
+    })
+    const event: PaymentWebhookEvent = {
+      externalEventId: 'evt_no_sub_ref',
+      type: 'payment_success',
+      providerChargeRef: 'pay_1',
+      providerCustomerRef: 'cus_1',
+      raw: {},
+    }
+    const provider = fakeProvider({ parseWebhookEvent: () => event })
+
+    await handlePaymentWebhook({ supabase, provider, rawBody: '{}', headers: new Headers() })
+
+    expect((db.organizations as Array<{ billing_provider_subscription_ref: string }>)[0]!.billing_provider_subscription_ref).toBe(
+      'checkout_123',
+    )
   })
 })

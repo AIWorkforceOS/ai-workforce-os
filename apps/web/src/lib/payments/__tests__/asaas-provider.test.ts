@@ -46,6 +46,21 @@ describe('AsaasProvider — parseWebhookEvent', () => {
     expect(event?.providerCustomerRef).toBe('cus_1')
   })
 
+  it('extrai payment.subscription como providerSubscriptionRef quando presente (corrige billing_provider_subscription_ref pro id real da assinatura)', () => {
+    const body = JSON.stringify({
+      event: 'PAYMENT_CONFIRMED',
+      payment: { id: 'pay_1', customer: 'cus_1', subscription: 'sub_real_9' },
+    })
+    const event = provider.parseWebhookEvent(body)
+    expect(event?.providerSubscriptionRef).toBe('sub_real_9')
+  })
+
+  it('sem payment.subscription no payload, providerSubscriptionRef fica ausente (não quebra)', () => {
+    const body = JSON.stringify({ event: 'PAYMENT_CONFIRMED', payment: { id: 'pay_1', customer: 'cus_1' } })
+    const event = provider.parseWebhookEvent(body)
+    expect(event?.providerSubscriptionRef).toBeUndefined()
+  })
+
   it('mapeia PAYMENT_OVERDUE para past_due e PAYMENT_REFUNDED para refunded', () => {
     expect(
       provider.parseWebhookEvent(JSON.stringify({ event: 'PAYMENT_OVERDUE', payment: { id: 'pay_2' } }))?.type,
@@ -73,15 +88,15 @@ describe('AsaasProvider — createCustomerAndCharge', () => {
     vi.unstubAllGlobals()
   })
 
-  it('cria a assinatura mensal e busca o paymentUrl da 1ª cobrança gerada por ela', async () => {
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+  it('cria o cliente e o Checkout hospedado (cartão recorrente), devolvendo o link e o id do checkout', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
       const u = String(url)
       if (u.includes('/customers')) return new Response(JSON.stringify({ id: 'cus_9' }), { status: 200 })
-      if (!init || init.method === 'POST') {
-        if (u.includes('/subscriptions')) return new Response(JSON.stringify({ id: 'sub_9' }), { status: 200 })
-      }
-      if (u.includes('/payments?subscription=sub_9')) {
-        return new Response(JSON.stringify({ data: [{ id: 'pay_9', invoiceUrl: 'https://asaas.com/i/pay_9' }] }), { status: 200 })
+      if (u.includes('/checkouts')) {
+        return new Response(
+          JSON.stringify({ id: 'checkout_9', link: 'https://sandbox.asaas.com/checkoutSession/show/checkout_9' }),
+          { status: 200 },
+        )
       }
       return new Response('{}', { status: 404 })
     })
@@ -95,16 +110,49 @@ describe('AsaasProvider — createCustomerAndCharge', () => {
       plan: 'starter',
       amount: 497,
       currency: 'BRL',
-      paymentMethod: 'pix',
+      paymentMethod: 'card',
       description: 'teste',
     })
 
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.paymentUrl).toBe('https://asaas.com/i/pay_9')
+      expect(result.paymentUrl).toBe('https://sandbox.asaas.com/checkoutSession/show/checkout_9')
       expect(result.providerCustomerRef).toBe('cus_9')
-      expect(result.providerChargeRef).toBe('sub_9')
+      expect(result.providerChargeRef).toBe('checkout_9')
     }
+  })
+
+  it('o body do checkout pede só CREDIT_CARD (crédito/débito) e RECURRENT — nunca PIX/boleto, decisão do produto de 2026-08-25', async () => {
+    let checkoutBody: Record<string, unknown> | null = null
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const u = String(url)
+      if (u.includes('/customers')) return new Response(JSON.stringify({ id: 'cus_9' }), { status: 200 })
+      if (u.includes('/checkouts')) {
+        checkoutBody = JSON.parse(String(init?.body))
+        return new Response(JSON.stringify({ id: 'checkout_9', link: 'https://x/checkout_9' }), { status: 200 })
+      }
+      return new Response('{}', { status: 404 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const provider = createAsaasProvider('fake-key')
+    await provider.createCustomerAndCharge({
+      name: 'Maria',
+      email: 'maria@padaria.com',
+      phone: null,
+      plan: 'starter',
+      amount: 497,
+      currency: 'BRL',
+      paymentMethod: 'card',
+      description: 'teste',
+    })
+
+    expect(checkoutBody).toMatchObject({
+      customer: 'cus_9',
+      billingTypes: ['CREDIT_CARD'],
+      chargeTypes: ['RECURRENT'],
+      subscription: { cycle: 'MONTHLY' },
+    })
   })
 
   it('retorna erro descritivo quando a API do Asaas rejeita o cliente', async () => {
@@ -121,7 +169,7 @@ describe('AsaasProvider — createCustomerAndCharge', () => {
       plan: 'starter',
       amount: 497,
       currency: 'BRL',
-      paymentMethod: 'pix',
+      paymentMethod: 'card',
       description: 'teste',
     })
 
@@ -129,7 +177,7 @@ describe('AsaasProvider — createCustomerAndCharge', () => {
     if (!result.ok) expect(result.error).toContain('CPF/CNPJ inválido')
   })
 
-  it('retorna erro descritivo quando a API do Asaas rejeita a criação da assinatura', async () => {
+  it('retorna erro descritivo quando a API do Asaas rejeita a criação do checkout', async () => {
     const fetchMock = vi.fn(async (url: string) => {
       if (String(url).includes('/customers')) return new Response(JSON.stringify({ id: 'cus_9' }), { status: 200 })
       return new Response(JSON.stringify({ errors: [{ description: 'ciclo inválido' }] }), { status: 400 })
@@ -144,41 +192,41 @@ describe('AsaasProvider — createCustomerAndCharge', () => {
       plan: 'starter',
       amount: 497,
       currency: 'BRL',
-      paymentMethod: 'pix',
+      paymentMethod: 'card',
       description: 'teste',
     })
 
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error).toContain('ciclo inválido')
   })
+})
 
-  it('ainda retorna ok=true com paymentUrl null se a assinatura foi criada mas a busca da 1ª cobrança falhar (best-effort)', async () => {
+describe('AsaasProvider — cancelSubscription', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('chama DELETE /subscriptions/{id} e retorna ok quando a Asaas confirma o cancelamento', async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      const u = String(url)
-      if (u.includes('/customers')) return new Response(JSON.stringify({ id: 'cus_9' }), { status: 200 })
-      if (!init || init.method === 'POST') {
-        if (u.includes('/subscriptions')) return new Response(JSON.stringify({ id: 'sub_9' }), { status: 200 })
-      }
-      return new Response('{}', { status: 500 })
+      expect(String(url)).toContain('/subscriptions/sub_real_9')
+      expect(init?.method).toBe('DELETE')
+      return new Response(JSON.stringify({ id: 'sub_real_9', deleted: true }), { status: 200 })
     })
     vi.stubGlobal('fetch', fetchMock)
 
     const provider = createAsaasProvider('fake-key')
-    const result = await provider.createCustomerAndCharge({
-      name: 'Maria',
-      email: 'maria@padaria.com',
-      phone: null,
-      plan: 'starter',
-      amount: 497,
-      currency: 'BRL',
-      paymentMethod: 'pix',
-      description: 'teste',
-    })
-
+    const result = await provider.cancelSubscription('sub_real_9')
     expect(result.ok).toBe(true)
-    if (result.ok) {
-      expect(result.paymentUrl).toBeNull()
-      expect(result.providerChargeRef).toBe('sub_9')
-    }
+  })
+
+  it('retorna erro descritivo quando a Asaas rejeita o cancelamento', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ errors: [{ description: 'assinatura não encontrada' }] }), { status: 404 })),
+    )
+    const provider = createAsaasProvider('fake-key')
+    const result = await provider.cancelSubscription('sub_inexistente')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('assinatura não encontrada')
   })
 })

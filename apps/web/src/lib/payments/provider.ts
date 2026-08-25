@@ -59,12 +59,24 @@ export type PaymentWebhookEvent = {
   type: PaymentWebhookEventType
   providerChargeRef: string | null
   providerCustomerRef: string | null
+  /**
+   * Id REAL da assinatura recorrente, quando o evento o revela e é
+   * diferente de providerChargeRef (ex.: Stripe checkout.session.completed
+   * — providerChargeRef ali é o id da SESSÃO, não da assinatura; a
+   * assinatura só existe depois que a Stripe processa o checkout). Quando
+   * presente, webhook-handler.ts atualiza
+   * organizations.billing_provider_subscription_ref com este valor —
+   * necessário pra cancelSubscription funcionar com o id certo depois.
+   */
+  providerSubscriptionRef?: string | null
   raw: unknown
 }
 
 export interface PaymentProvider {
   id: 'asaas' | 'stripe'
   createCustomerAndCharge(input: ChargeInput): Promise<ChargeResult>
+  /** Cancela a cobrança recorrente na processadora (organizations.billing_provider_subscription_ref) — usado pelo fluxo de cancelamento do cliente (ver app/api/billing/cancel). Idempotente do lado de quem chama: se a assinatura já não existir/estiver cancelada na processadora, trate como sucesso. */
+  cancelSubscription(subscriptionRef: string): Promise<{ ok: boolean; error?: string }>
   /** Valida a assinatura do webhook a partir do corpo bruto (string, antes de JSON.parse) e dos headers da requisição. */
   verifyWebhookSignature(rawBody: string, headers: Headers): boolean
   /** Interpreta o corpo já validado num evento normalizado; retorna null para tipos de evento que não mapeamos (ignorados). */

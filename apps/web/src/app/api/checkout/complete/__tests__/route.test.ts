@@ -176,16 +176,13 @@ describe('POST /api/checkout/complete — nunca bloqueia por falta de processado
     })
     seedAuth(supabase)
 
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const fetchMock = vi.fn(async (url: string) => {
       const u = String(url)
       if (u.includes('/customers')) {
         return new Response(JSON.stringify({ id: 'cus_123' }), { status: 200 })
       }
-      if (u.includes('/subscriptions') && (!init || init.method === 'POST')) {
-        return new Response(JSON.stringify({ id: 'sub_123' }), { status: 200 })
-      }
-      if (u.includes('/payments?subscription=sub_123')) {
-        return new Response(JSON.stringify({ data: [{ id: 'pay_123', invoiceUrl: 'https://asaas.com/i/pay_123' }] }), { status: 200 })
+      if (u.includes('/checkouts')) {
+        return new Response(JSON.stringify({ id: 'checkout_123', link: 'https://asaas.com/i/pay_123' }), { status: 200 })
       }
       return new Response('{}', { status: 404 })
     })
@@ -208,7 +205,9 @@ describe('POST /api/checkout/complete — nunca bloqueia por falta de processado
 
     const org = (db.organizations as Array<Record<string, unknown>>)[0]!
     expect(org.billing_provider).toBe('asaas')
-    expect(org.billing_provider_subscription_ref).toBe('sub_123')
+    // Referência provisória (id do Checkout) até o webhook confirmar o 1º
+    // pagamento e corrigir pro id real da assinatura — ver webhook-handler.ts.
+    expect(org.billing_provider_subscription_ref).toBe('checkout_123')
 
     vi.unstubAllGlobals()
   })

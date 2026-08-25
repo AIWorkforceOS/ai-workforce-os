@@ -58,12 +58,12 @@ describe('StripeProvider — parseWebhookEvent', () => {
     expect(event?.externalEventId).toBe('evt_1')
   })
 
-  it('mapeia invoice.payment_failed e customer.subscription.deleted', () => {
+  it('regressão (2026-08-25): invoice.payment_failed vai direto pra past_due — antes não estava mapeado, org paga via Stripe nunca bloqueava (só a Asaas chegava a past_due)', () => {
     expect(
       provider.parseWebhookEvent(
         JSON.stringify({ id: 'evt_2', type: 'invoice.payment_failed', data: { object: { id: 'in_1' } } }),
       )?.type,
-    ).toBe('payment_failed')
+    ).toBe('past_due')
     expect(
       provider.parseWebhookEvent(
         JSON.stringify({ id: 'evt_3', type: 'customer.subscription.deleted', data: { object: { id: 'sub_1' } } }),
@@ -79,6 +79,25 @@ describe('StripeProvider — parseWebhookEvent', () => {
 
   it('retorna null pra JSON inválido', () => {
     expect(provider.parseWebhookEvent('not json')).toBeNull()
+  })
+
+  it('regressão (2026-08-25): checkout.session.completed extrai o id REAL da assinatura (obj.subscription), não o id da sessão — sem isso cancelSubscription cancelaria o id errado', () => {
+    const event = provider.parseWebhookEvent(
+      JSON.stringify({
+        id: 'evt_5',
+        type: 'checkout.session.completed',
+        data: { object: { id: 'cs_1', customer: 'cus_1', subscription: 'sub_real_123' } },
+      }),
+    )
+    expect(event?.providerChargeRef).toBe('cs_1')
+    expect(event?.providerSubscriptionRef).toBe('sub_real_123')
+  })
+
+  it('sem obj.subscription no payload, providerSubscriptionRef fica ausente (não quebra)', () => {
+    const event = provider.parseWebhookEvent(
+      JSON.stringify({ id: 'evt_6', type: 'checkout.session.completed', data: { object: { id: 'cs_2', customer: 'cus_1' } } }),
+    )
+    expect(event?.providerSubscriptionRef).toBeUndefined()
   })
 })
 
@@ -141,5 +160,35 @@ describe('StripeProvider — createCustomerAndCharge', () => {
       expect(result.paymentUrl).toBe('https://checkout.stripe.com/cs_1')
       expect(result.providerChargeRef).toBe('cs_1')
     }
+  })
+})
+
+describe('StripeProvider — cancelSubscription', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('chama DELETE /subscriptions/{id} e retorna ok quando a Stripe confirma o cancelamento', async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(String(url)).toContain('/subscriptions/sub_real_123')
+      expect(init?.method).toBe('DELETE')
+      return new Response(JSON.stringify({ id: 'sub_real_123', status: 'canceled' }), { status: 200 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const provider = createStripeProvider('sk_test')
+    const result = await provider.cancelSubscription('sub_real_123')
+    expect(result.ok).toBe(true)
+  })
+
+  it('retorna erro descritivo quando a Stripe rejeita o cancelamento', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ error: { message: 'No such subscription' } }), { status: 404 })),
+    )
+    const provider = createStripeProvider('sk_test')
+    const result = await provider.cancelSubscription('sub_inexistente')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('No such subscription')
   })
 })
