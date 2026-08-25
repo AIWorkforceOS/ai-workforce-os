@@ -4,6 +4,7 @@ import {
   buildBusinessContext,
   buildCombinedBusinessContext,
   buildInterviewerPrompt,
+  buildKaiOnboardingPrompt,
   extractOrganizationIntake,
   isInterviewAgentType,
   mergeProfile,
@@ -360,5 +361,36 @@ describe('isInterviewAgentType', () => {
     expect(isInterviewAgentType('recruiter')).toBe(true)
     expect(isInterviewAgentType('traffic_specialist')).toBe(true)
     expect(isInterviewAgentType('support')).toBe(false)
+  })
+})
+
+describe('buildKaiOnboardingPrompt — entrevista de boas-vindas conduzida pela KAI', () => {
+  it('se apresenta como a KAI (não um funcionário específico) e explica o Alizo antes de perguntar', () => {
+    const prompt = buildKaiOnboardingPrompt({ companyName: 'Padaria Estrela', profile: {}, finalAlreadyAsked: false })
+    expect(prompt).toContain('Você é a KAI')
+    expect(prompt).toContain('Padaria Estrela')
+    expect(prompt).toContain('não um funcionário digital específico')
+  })
+
+  it('cobre os mesmos tópicos/schema da Ficha Compartilhada (segmento + identidade da empresa)', () => {
+    const prompt = buildKaiOnboardingPrompt({ companyName: 'Padaria Estrela', profile: {}, finalAlreadyAsked: false })
+    expect(prompt).toContain('org_company_name')
+    expect(prompt).toContain('org_vertical_key')
+    expect(prompt).toContain('org_vertical_confirmed')
+  })
+
+  it('usa a mesma pergunta final obrigatória e respeita finalAlreadyAsked', () => {
+    const prompt = buildKaiOnboardingPrompt({ companyName: 'Padaria Estrela', profile: {}, finalAlreadyAsked: true })
+    expect(prompt).toContain(FINAL_QUESTION)
+    expect(prompt).toContain('JÁ FOI a pergunta final')
+  })
+
+  it('leva o perfil já coletado pro próximo turno', () => {
+    const prompt = buildKaiOnboardingPrompt({
+      companyName: 'Padaria Estrela',
+      profile: { org_company_name: 'Padaria Estrela' },
+      finalAlreadyAsked: false,
+    })
+    expect(prompt).toContain('"org_company_name":"Padaria Estrela"')
   })
 })

@@ -4,6 +4,7 @@ import { getAppUser } from '@/lib/app-user'
 import { computeSetupStatus, pickDefaultUnit, type UnitWhatsappChannelRow } from '@/lib/setup-status'
 import { fetchOrganizationManagementMode } from '@/lib/organizations'
 import { OnboardingWizard } from '@/components/onboarding/wizard'
+import { KaiOnboardingChat } from '@/components/dashboard/kai-onboarding-chat'
 import type { AgentConfig, Unit } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -12,6 +13,16 @@ export default async function OnboardingPage() {
   const supabase = await createClient()
   const appUser = await getAppUser()
   if (!appUser) redirect('/login')
+
+  // A KAI dá as boas-vindas e faz a entrevista de identidade da empresa
+  // (Ficha Compartilhada, organizations.vertical_key) ANTES de qualquer
+  // wizard de funcionário — pedido do Vinicius, 2026-08-24: "assim que o
+  // cliente novo entrar já abre uma tela com a KAI". Só roda uma vez por
+  // organização (vertical_key null = ainda não rodou).
+  const { data: org } = await supabase.from('organizations').select('name, vertical_key').eq('id', appUser.orgId ?? '').maybeSingle()
+  if (org && !org.vertical_key) {
+    return <KaiOnboardingChat companyName={org.name} />
+  }
 
   const [{ data: units }, { data: configs }, { data: whatsappChannels }, managementMode] = await Promise.all([
     supabase.from('units').select('*').order('created_at', { ascending: true }),

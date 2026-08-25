@@ -40,20 +40,24 @@ export async function buildAccountContext(supabase: SupabaseClient, orgId?: stri
   let whatsappChannelsQuery = supabase.from('unit_whatsapp_channels').select('unit_id, agent_type, whatsapp_phone')
   let adAccountsQuery = supabase.from('ad_accounts').select('connection_status')
   let socialAccountsQuery = supabase.from('social_accounts').select('connection_status')
+  let orgQuery = supabase.from('organizations').select('plan, vertical_key').limit(1)
   if (orgId) {
     unitsQuery = unitsQuery.eq('org_id', orgId)
     whatsappChannelsQuery = whatsappChannelsQuery.eq('org_id', orgId)
     adAccountsQuery = adAccountsQuery.eq('org_id', orgId)
     socialAccountsQuery = socialAccountsQuery.eq('org_id', orgId)
+    orgQuery = orgQuery.eq('id', orgId)
   }
 
-  const [unitsResult, agentConfigsResult, whatsappChannelsResult, adAccountsResult, socialAccountsResult] = await Promise.allSettled([
-    unitsQuery,
-    supabase.from('agent_configs').select('unit_id, agent_type, persona_name, is_active, interview_status'),
-    whatsappChannelsQuery,
-    adAccountsQuery,
-    socialAccountsQuery,
-  ])
+  const [unitsResult, agentConfigsResult, whatsappChannelsResult, adAccountsResult, socialAccountsResult, orgResult] =
+    await Promise.allSettled([
+      unitsQuery,
+      supabase.from('agent_configs').select('unit_id, agent_type, persona_name, is_active, interview_status'),
+      whatsappChannelsQuery,
+      adAccountsQuery,
+      socialAccountsQuery,
+      orgQuery,
+    ])
 
   const units = extractRows<Pick<Unit, 'id' | 'name' | 'whatsapp_phone' | 'is_active'>>(unitsResult, 'units')
   let agentConfigs = extractRows<
@@ -62,6 +66,8 @@ export async function buildAccountContext(supabase: SupabaseClient, orgId?: stri
   const whatsappChannels = extractRows<UnitWhatsappChannelRow>(whatsappChannelsResult, 'unit_whatsapp_channels') ?? []
   const adAccounts = extractRows<AdAccountRow>(adAccountsResult, 'ad_accounts')
   const socialAccounts = extractRows<SocialAccountRow>(socialAccountsResult, 'social_accounts')
+  const orgRows = extractRows<{ plan: string; vertical_key: string | null }>(orgResult, 'organizations')
+  const org = orgRows?.[0] ?? null
 
   if (orgId && units && agentConfigs) {
     const unitIds = new Set(units.map((u) => u.id))
@@ -69,6 +75,20 @@ export async function buildAccountContext(supabase: SupabaseClient, orgId?: stri
   }
 
   const sections: string[] = []
+
+  if (org) {
+    sections.push(`Plano contratado: ${org.plan}.`)
+  }
+
+  if (agentConfigs) {
+    const hiredTypes = new Set(agentConfigs.map((c) => c.agent_type))
+    const notHired = Object.keys(AGENT_TYPE_LABEL).filter((type) => !hiredTypes.has(type))
+    if (notHired.length > 0) {
+      sections.push(
+        `Funcionários digitais ainda NÃO contratados (disponíveis pra configurar em /dashboard/equipe-digital): ${notHired.map((t) => AGENT_TYPE_LABEL[t]).join(', ')}.`,
+      )
+    }
+  }
 
   if (units) {
     if (units.length === 0) {

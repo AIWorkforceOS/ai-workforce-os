@@ -206,7 +206,7 @@ export function EmployeeCatalog({
           state={sdr?.is_active && whatsappConnected ? 'working' : sdr || whatsappConnected ? 'configuring' : 'available'}
           panelHref="/dashboard/agents"
           personaName={sdr?.persona_name ?? null}
-          activation={{ agentType: 'sdr', config: sdr ?? null, unitId: selectedUnitId, askName: true, defaultName: 'Kai', cloneSources: cloneSourcesFor('sdr'), regionHint: selectedUnit?.region_city ?? null }}
+          activation={{ agentType: 'sdr', config: sdr ?? null, unitId: selectedUnitId, askName: true, defaultName: 'Théo', cloneSources: cloneSourcesFor('sdr'), regionHint: selectedUnit?.region_city ?? null }}
           trainingScore={sdr ? computeTrainingCompleteness(sdr, verticalKey) : null}
           testConfigId={sdr?.id ?? null}
           trainConfigId={sdr?.id ?? null}

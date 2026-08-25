@@ -58,7 +58,10 @@ export const EMPLOYEE_WIZARD_META: Record<WizardAgentType, EmployeeWizardMeta> =
     icon: Bot,
     color: '#818cf8',
     askName: true,
-    defaultName: 'Kai',
+    // Nunca "Kai" — esse nome é reservado pra assistente da própria Alizo
+    // (kai-launcher.tsx); um funcionário SDR com o mesmo nome padrão confundia
+    // o cliente assim que a Kai passou a orquestrar a contratação dele.
+    defaultName: 'Théo',
     askTone: true,
     connectStep: { type: 'whatsapp' },
     testable: true,
