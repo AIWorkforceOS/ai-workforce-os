@@ -146,6 +146,41 @@ describe('reduceInterview — regra da pergunta final', () => {
     expect(result.done).toBe(false)
   })
 
+  it('regressão ao vivo (2026-08-25, entrevista de boas-vindas da KAI): pergunta final já feita + modelo repete a MESMA mensagem de fechamento de novo (sem bater as flags que os outros testes cobrem) → trava de segurança força a conclusão', () => {
+    const closingMessage = 'Muito obrigado! Fico feliz em ajudar. Vamos começar a configurar tudo.'
+    const transcriptWithRepeatedClosing: InterviewTranscriptEntry[] = [
+      ...finalAskedTranscript,
+      { role: 'assistant', content: closingMessage },
+      { role: 'user', content: 'Não, é isso. Pode começar!' },
+    ]
+
+    const result = reduceInterview({
+      profile: {},
+      transcript: transcriptWithRepeatedClosing,
+      // Sem asked_final_question/interview_complete — simula o modelo real
+      // que voltou a mandar a mesma mensagem sem sinalizar nada previsível.
+      output: { message: closingMessage },
+    })
+
+    expect(result.done).toBe(true)
+  })
+
+  it('não aciona a trava de repetição se a pergunta final ainda não foi feita (mensagem igual por coincidência não deve encerrar cedo)', () => {
+    const repeated = 'Entendi, obrigado!'
+    const result = reduceInterview({
+      profile: {},
+      transcript: [
+        { role: 'assistant', content: 'O que a empresa vende?' },
+        { role: 'user', content: 'Software.' },
+        { role: 'assistant', content: repeated },
+        { role: 'user', content: 'Mais alguma coisa?' },
+      ],
+      output: { message: repeated },
+    })
+
+    expect(result.done).toBe(false)
+  })
+
   it('acumula o perfil a cada turno', () => {
     const result = reduceInterview({
       profile: { tipo_cliente: 'b2b' },

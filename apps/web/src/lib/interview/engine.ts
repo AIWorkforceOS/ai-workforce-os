@@ -347,6 +347,24 @@ function lastAssistantAskedFinal(transcript: InterviewTranscriptEntry[]): boolea
   return false
 }
 
+function lastAssistantMessage(transcript: InterviewTranscriptEntry[]): string | null {
+  for (let i = transcript.length - 1; i >= 0; i--) {
+    const entry = transcript[i]!
+    if (entry.role === 'assistant') return entry.content
+  }
+  return null
+}
+
+// Diferente de lastAssistantAskedFinal (que só olha a última fala do
+// assistente — usada pra decidir se o turno ATUAL é uma re-pergunta
+// legítima), esta varre o histórico inteiro: precisa pra trava de
+// repetição, que pode disparar vários turnos depois da pergunta final já
+// ter sido feita e respondida (quando `asked_final` não está mais na
+// última entrada do assistente).
+function wasFinalQuestionEverAsked(transcript: InterviewTranscriptEntry[]): boolean {
+  return transcript.some((entry) => entry.role === 'assistant' && entry.asked_final === true)
+}
+
 export type InterviewTurnResult = {
   reply: string
   done: boolean
@@ -385,11 +403,28 @@ export function reduceInterview(params: {
   const finalAlreadyAsked = lastAssistantAskedFinal(params.transcript)
   const wantsComplete = params.output.interview_complete === true
   const askingFinalNow = params.output.asked_final_question === true
-  const hasNewInfo = Object.keys(params.output.profile_updates ?? {}).length > 0
+  // Compara o perfil de fato (não só "profile_updates veio não-vazio"):
+  // achado ao vivo — o modelo às vezes REPETE os mesmos campos já
+  // coletados em profile_updates na própria mensagem de fechamento (não é
+  // informação nova, é eco do que já tinha), o que fazia até a checagem
+  // "tem profile_updates?" achar falso positivo de "trouxe algo novo" e
+  // manter o loop. Só conta como novo se o merge muda o perfil de verdade.
+  const hasNewInfo = JSON.stringify(profile) !== JSON.stringify(params.profile)
 
-  const done = wantsComplete && finalAlreadyAsked && (!askingFinalNow || !hasNewInfo)
+  const rawReply = (params.output.message ?? '').trim()
+  // Trava de segurança final: se a pergunta final já foi feita e o modelo
+  // devolve a MESMA mensagem de fechamento de novo (achado ao vivo: o
+  // modelo às vezes repete `asked_final_question`/`interview_complete` sem
+  // padrão previsível), força a conclusão — nunca deixa o usuário preso
+  // repetindo a mesma resposta pra sempre, mesmo que as flags não batam.
+  const repeatsLastClosing =
+    wasFinalQuestionEverAsked(params.transcript) &&
+    rawReply.length > 0 &&
+    rawReply === lastAssistantMessage(params.transcript)
 
-  let reply = (params.output.message ?? '').trim()
+  const done = repeatsLastClosing || (wantsComplete && finalAlreadyAsked && (!askingFinalNow || !hasNewInfo))
+
+  let reply = rawReply
   let askedFinal = askingFinalNow && !done
 
   if (wantsComplete && !done && !askedFinal) {
