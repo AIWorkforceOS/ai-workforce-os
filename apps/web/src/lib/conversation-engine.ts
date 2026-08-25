@@ -564,7 +564,13 @@ async function findSemanticEscalationReason(incomingText: string, apiKey: string
     })
     if (result.needs_escalation && result.reason) return result.reason
     return null
-  } catch {
+  } catch (error) {
+    // Best-effort mesmo (nunca impede a resposta normal do SDR), mas uma
+    // falha aqui não pode ficar indistinguível de "genuinamente não precisa
+    // escalar" — sem log, uma ameaça jurídica real que coincidisse com uma
+    // falha de rede/parse passaria batido sem ninguém saber que a checagem
+    // nem rodou.
+    console.error('[sdr] falha na checagem semântica de escalação:', error instanceof Error ? error.message : error)
     return null
   }
 }
