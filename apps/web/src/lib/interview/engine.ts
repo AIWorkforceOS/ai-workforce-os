@@ -360,8 +360,17 @@ export type InterviewTurnResult = {
  * Garante em código a regra do produto: a entrevista SÓ termina depois
  * que a pergunta final ("tem mais alguma coisa?") foi feita E respondida.
  * Se o modelo tentar encerrar sem tê-la feito, a mensagem vira a pergunta
- * final; se ele marcar as duas flags no mesmo turno, vale como pergunta
- * final (ainda não encerra).
+ * final; se ele marcar as duas flags no MESMO turno em que a pergunta
+ * final ainda não tinha sido feita antes, vale como pergunta final (ainda
+ * não encerra) — mas se a pergunta final JÁ tinha sido feita e o modelo
+ * repete "asked_final_question" numa mensagem de fechamento SEM trazer
+ * nenhuma informação nova (profile_updates vazio), a flag repetida é
+ * ruído do modelo, não uma re-pergunta legítima — travar nisso criava um
+ * loop sem saída pro usuário (achado ao vivo, teste real da entrevista de
+ * boas-vindas da KAI, 2026-08-24: o modelo repetia a mesma mensagem de
+ * agradecimento com as duas flags marcadas turno após turno). Só quando
+ * profile_updates traz algo novo é que a re-pergunta é legítima e a
+ * entrevista continua.
  */
 export function reduceInterview(params: {
   profile: Record<string, unknown>
@@ -376,9 +385,9 @@ export function reduceInterview(params: {
   const finalAlreadyAsked = lastAssistantAskedFinal(params.transcript)
   const wantsComplete = params.output.interview_complete === true
   const askingFinalNow = params.output.asked_final_question === true
+  const hasNewInfo = Object.keys(params.output.profile_updates ?? {}).length > 0
 
-  // Encerra apenas se a pergunta final já tinha sido feita (e este turno não é ela de novo)
-  const done = wantsComplete && finalAlreadyAsked && !askingFinalNow
+  const done = wantsComplete && finalAlreadyAsked && (!askingFinalNow || !hasNewInfo)
 
   let reply = (params.output.message ?? '').trim()
   let askedFinal = askingFinalNow && !done

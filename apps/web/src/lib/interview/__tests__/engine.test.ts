@@ -116,6 +116,36 @@ describe('reduceInterview — regra da pergunta final', () => {
     expect(result.reply.length).toBeGreaterThan(0)
   })
 
+  it('regressão ao vivo (2026-08-24, entrevista de boas-vindas da KAI): pergunta final já feita + modelo repete as duas flags SEM info nova → encerra mesmo assim, não trava num loop', () => {
+    const result = reduceInterview({
+      profile: {},
+      transcript: finalAskedTranscript,
+      output: {
+        message: 'Muito obrigado! Fico feliz em ajudar. Vamos começar a configurar tudo.',
+        asked_final_question: true,
+        interview_complete: true,
+      },
+    })
+
+    expect(result.done).toBe(true)
+    expect(result.transcript[result.transcript.length - 1]!.asked_final).toBeFalsy()
+  })
+
+  it('mas se o mesmo turno (pergunta final já feita + duas flags) trouxer profile_updates novo, NÃO encerra — continua sendo tratado como re-pergunta legítima', () => {
+    const result = reduceInterview({
+      profile: {},
+      transcript: finalAskedTranscript,
+      output: {
+        message: 'Anotado! Mais alguma coisa?',
+        profile_updates: { observacoes: ['nunca atender sábado'] },
+        asked_final_question: true,
+        interview_complete: true,
+      },
+    })
+
+    expect(result.done).toBe(false)
+  })
+
   it('acumula o perfil a cada turno', () => {
     const result = reduceInterview({
       profile: { tipo_cliente: 'b2b' },
