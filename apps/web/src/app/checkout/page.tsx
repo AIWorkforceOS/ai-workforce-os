@@ -82,6 +82,8 @@ const COPY = {
       sub1: 'Sua empresa ', sub2: ' já está na plataforma.',
       sub3: 'Você tem 7 dias de garantia total. Entrando no painel de configuração…',
       cta: 'Configurar meu funcionário digital',
+      payNow: 'Pagar agora',
+      payLater: 'As instruções também chegaram no seu e-mail — pode pagar quando preferir.',
     },
     summary: {
       eyebrow: 'Resumo do pedido', plan: 'Plano', total: 'Total mensal', taxes: '+ impostos aplicáveis',
@@ -159,6 +161,8 @@ const COPY = {
       sub1: 'Your company ', sub2: ' is on the platform.',
       sub3: 'You have a full 7-day guarantee. Taking you to the setup panel…',
       cta: 'Set up my digital employee',
+      payNow: 'Pay now',
+      payLater: 'Instructions were also emailed to you — pay whenever works for you.',
     },
     summary: {
       eyebrow: 'Order summary', plan: 'Plan', total: 'Monthly total', taxes: '+ applicable taxes',
@@ -230,6 +234,7 @@ function CheckoutForm() {
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
   const [termsAccepted, setTermsAccepted] = useState(false)
+  const [paymentUrl, setPaymentUrl] = useState<string | null>(null)
 
   const [form, setForm] = useState({
     company: '',
@@ -282,6 +287,8 @@ function CheckoutForm() {
         return
       }
 
+      setPaymentUrl(data.paymentUrl ?? null)
+
       // 2. Login automático com a senha que a própria pessoa escolheu
       const supabase = createClient()
       const { error: signInError } = await supabase.auth.signInWithPassword({
@@ -320,6 +327,20 @@ function CheckoutForm() {
           </p>
           <p className="mt-1 text-sm text-slate-500">{t.done.sub3}</p>
         </div>
+        {paymentUrl && (
+          <div className="flex flex-col items-center gap-2">
+            <a
+              href={paymentUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 rounded-2xl border border-emerald-400/40 bg-emerald-400/10 px-6 py-3 text-sm font-black text-emerald-300 transition-all hover:bg-emerald-400/20"
+            >
+              <CreditCard size={14} />
+              {t.done.payNow}
+            </a>
+            <p className="max-w-xs text-xs text-slate-500">{t.done.payLater}</p>
+          </div>
+        )}
         <Link
           href="/dashboard/onboarding"
           className="flex items-center gap-2 rounded-2xl px-8 py-4 text-sm font-black text-white"

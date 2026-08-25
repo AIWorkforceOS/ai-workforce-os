@@ -40,6 +40,12 @@ export function createAsaasProvider(apiKey: string): PaymentProvider {
     return { ok: res.ok, status: res.status, data: data as Record<string, unknown> | null }
   }
 
+  async function asaasGetList(path: string) {
+    const res = await fetch(`${asaasBaseUrl()}${path}`, { headers: { access_token: apiKey } })
+    const data = await res.json().catch(() => null)
+    return { ok: res.ok, status: res.status, data: data as { data?: Array<Record<string, unknown>> } | null }
+  }
+
   return {
     id: 'asaas',
 
@@ -55,25 +61,36 @@ export function createAsaasProvider(apiKey: string): PaymentProvider {
         return { ok: false, error: `Asaas (cliente): ${errors?.[0]?.description ?? `HTTP ${customerRes.status}`}` }
       }
 
-      const dueDate = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-      const chargeRes = await asaasFetch('/payments', {
+      // Assinatura mensal recorrente — não cobrança avulsa: a Asaas gera e
+      // cobra a fatura seguinte sozinha todo mês, sem cron nem lógica
+      // nossa (mesmo padrão que o Stripe já usa via mode:'subscription',
+      // ver stripe-provider.ts).
+      const nextDueDate = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+      const subscriptionRes = await asaasFetch('/subscriptions', {
         customer: customerId,
         billingType: BILLING_TYPE[input.paymentMethod],
         value: input.amount,
-        dueDate,
+        nextDueDate,
+        cycle: 'MONTHLY',
         description: input.description,
       })
-      const chargeId = chargeRes.data?.id as string | undefined
-      if (!chargeRes.ok || !chargeId) {
-        const errors = chargeRes.data?.errors as Array<{ description?: string }> | undefined
-        return { ok: false, error: `Asaas (cobrança): ${errors?.[0]?.description ?? `HTTP ${chargeRes.status}`}` }
+      const subscriptionId = subscriptionRes.data?.id as string | undefined
+      if (!subscriptionRes.ok || !subscriptionId) {
+        const errors = subscriptionRes.data?.errors as Array<{ description?: string }> | undefined
+        return { ok: false, error: `Asaas (assinatura): ${errors?.[0]?.description ?? `HTTP ${subscriptionRes.status}`}` }
       }
+
+      // A criação da assinatura não devolve o link de pagamento da 1ª
+      // fatura (a Asaas gera ela de forma assíncrona) — precisa buscar a
+      // cobrança já criada pra essa assinatura à parte.
+      const firstPaymentRes = await asaasGetList(`/payments?subscription=${subscriptionId}&limit=1`)
+      const firstPayment = firstPaymentRes.data?.data?.[0]
 
       return {
         ok: true,
         providerCustomerRef: customerId,
-        providerChargeRef: chargeId,
-        paymentUrl: (chargeRes.data?.invoiceUrl as string | undefined) ?? null,
+        providerChargeRef: subscriptionId,
+        paymentUrl: (firstPayment?.invoiceUrl as string | undefined) ?? null,
         status: 'pending',
       }
     },

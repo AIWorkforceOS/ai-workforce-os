@@ -7,9 +7,12 @@ export const dynamic = 'force-dynamic'
 
 /**
  * Painel interno (super admin, herda o guard do SalesLayout): credenciais
- * das processadoras de pagamento por região + guia de escolha. As
- * credenciais ficam vazias até a processadora ser contratada — o checkout
- * registra as cobranças como pendentes até a integração ser ligada.
+ * das processadoras de pagamento por região + guia de escolha. A
+ * integração real já existe em código (lib/payments/*) — assim que uma
+ * linha aqui é marcada "Ativo" com credenciais preenchidas, o checkout
+ * passa a cobrar de verdade (Asaas: assinatura mensal recorrente; Stripe:
+ * Checkout Session recorrente). Sem isso, a cobrança fica pendente e a
+ * conta segue liberada mesmo assim (nunca bloqueia cadastro).
  */
 export default async function PaymentsSetupPage() {
   const supabase = await createClient()
@@ -32,7 +35,7 @@ export default async function PaymentsSetupPage() {
       <PageHeader
         eyebrow="operação alizo"
         title="Processadoras de pagamento"
-        subtitle="Escolha e configure as processadoras do Brasil e dos EUA. Nada é cobrado automaticamente até a integração ser ligada no código — hoje o checkout registra a cobrança como pendente."
+        subtitle="Escolha e configure as processadoras do Brasil e dos EUA. A integração já é real: assim que uma linha abaixo estiver com credenciais preenchidas e marcada como ativa, o checkout passa a cobrar de verdade."
       />
 
       {/* ─── GUIA DE ESCOLHA ─── */}
@@ -89,9 +92,10 @@ export default async function PaymentsSetupPage() {
         </div>
 
         <p className="mt-4 text-[11px] text-slate-600">
-          Importante: preencher credenciais aqui ainda não liga a cobrança automática — a integração com a
-          processadora escolhida é a próxima etapa de desenvolvimento. Hoje o checkout libera o acesso e grava
-          a cobrança pendente (com moeda e método) em Cobranças.
+          Importante: preencher a API key aqui e marcar &quot;Ativo&quot; já liga a cobrança automática de
+          verdade — o próximo cadastro nessa região vai gerar uma cobrança real (Asaas: assinatura mensal;
+          Stripe: Checkout Session recorrente). O acesso do cliente nunca fica bloqueado por falha ou ausência
+          de processadora — a cobrança fica pendente em Cobranças até ser resolvida manualmente.
         </p>
       </Card>
 

@@ -207,11 +207,21 @@ export async function sendRecruiterEmail(params: {
  * escolheu a própria senha), o e-mail só confirma o cadastro e aponta
  * para o login.
  */
+const PAYMENT_METHOD_LABEL: Record<string, string> = {
+  pix: 'PIX',
+  boleto: 'boleto',
+  card: 'cartão',
+  zelle: 'Zelle',
+}
+
 export async function sendWelcomeEmail(params: {
   to: string
   name: string | null
   companyName: string
   setPasswordUrl?: string | null
+  /** Link de pagamento hospedado (Asaas invoiceUrl / Stripe Checkout Session) — presente só quando a cobrança automática deu certo no checkout (ver app/api/checkout/complete/route.ts). */
+  paymentUrl?: string | null
+  paymentMethod?: string | null
 }): Promise<SendResult> {
   const from = defaultFrom()
   if (!from) return { ok: false, error: 'EMAIL_FROM_DOMAIN não está configurada.' }
@@ -224,6 +234,14 @@ export async function sendWelcomeEmail(params: {
     : `<p><a href="${appUrl}/login" style="display:inline-block;padding:12px 20px;border-radius:10px;background:#06b6d4;color:#fff;text-decoration:none;font-weight:700;">Entrar no painel</a></p>
        <p style="font-size:12px;color:#64748b;">Use o e-mail e a senha que você criou no cadastro.</p>`
 
+  const paymentBlock = params.paymentUrl
+    ? `<div style="margin:20px 0;padding:16px;border-radius:12px;background:#f0fdfa;border:1px solid #99f6e4;">
+         <p style="margin:0 0 8px;font-weight:700;color:#0f766e;">Falta só o pagamento pra ativar sua assinatura</p>
+         <p style="margin:0 0 12px;font-size:13px;color:#0f766e;">Forma escolhida: ${PAYMENT_METHOD_LABEL[params.paymentMethod ?? ''] ?? params.paymentMethod ?? 'a combinar'}.</p>
+         <a href="${params.paymentUrl}" style="display:inline-block;padding:10px 18px;border-radius:10px;background:#0d9488;color:#fff;text-decoration:none;font-weight:700;">Pagar agora</a>
+       </div>`
+    : ''
+
   return sendEmail({
     to: params.to,
     from,
@@ -232,6 +250,7 @@ export async function sendWelcomeEmail(params: {
       <p>${greeting}</p>
       <p>A conta da <strong>${params.companyName}</strong> já está pronta na Alizo — seu funcionário digital está a poucos passos de começar a atender.</p>
       ${cta}
+      ${paymentBlock}
       <p>Qualquer dúvida, é só responder este e-mail.</p>
     `,
   })

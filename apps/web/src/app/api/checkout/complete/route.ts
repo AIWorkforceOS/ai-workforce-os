@@ -293,7 +293,14 @@ export async function POST(request: Request) {
   // envio não deve travar o checkout (acesso já foi liberado acima), mas
   // precisa ficar visível (achado P1.3 da auditoria: antes o resultado
   // nem era checado — uma falha desaparecia sem deixar rastro nenhum).
-  const welcomeEmailResult = await sendWelcomeEmail({ to: email, name, companyName: company, setPasswordUrl: null })
+  const welcomeEmailResult = await sendWelcomeEmail({
+    to: email,
+    name,
+    companyName: company,
+    setPasswordUrl: null,
+    paymentUrl,
+    paymentMethod,
+  })
   if (!welcomeEmailResult.ok) {
     await logSystemEvent(service, {
       level: 'warning',
