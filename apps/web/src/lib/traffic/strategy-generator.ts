@@ -161,6 +161,7 @@ export async function generateCampaignStrategy(params: {
     DEFAULT_DAILY_BUDGET_CENTS
 
   let interestIds: string[] | undefined
+  let interestSearchDegraded = false
   if (params.platform === 'meta' && params.metaConfig && output.interest_keywords?.length) {
     interestIds = []
     for (const keyword of output.interest_keywords.slice(0, 6)) {
@@ -171,7 +172,15 @@ export async function generateCampaignStrategy(params: {
         // busca de interesse é melhor-esforço — um termo sem match não derruba a estratégia inteira
       }
     }
-    if (interestIds.length === 0) interestIds = undefined
+    if (interestIds.length === 0) {
+      interestIds = undefined
+      // Nenhum dos interesses propostos foi resolvido de verdade (token
+      // expirado, termo sem match etc.) — a segmentação caiu silenciosamente
+      // pra só país+idade. Isso precisa aparecer pro humano que vai aprovar,
+      // não sumir sem aviso (achado real: campanha saiu com público mais
+      // genérico do que a própria estratégia pretendia).
+      interestSearchDegraded = true
+    }
   }
 
   const targeting: CampaignTargeting = {
@@ -218,6 +227,8 @@ export async function generateCampaignStrategy(params: {
     predictedLeadsMax,
     predictedTotalCostCents: totalBudgetCents,
     predictionPeriodDays: PREDICTION_PERIOD_DAYS,
-    reasoning: reasoning || 'Estratégia gerada a partir da ficha de negócio da empresa.',
+    reasoning: interestSearchDegraded
+      ? `${reasoning || 'Estratégia gerada a partir da ficha de negócio da empresa.'} ⚠️ Não foi possível encontrar interesses reais no Meta para os temas de público sugeridos — a campanha está indo com segmentação só por país e idade, mais ampla do que o ideal. Considere ajustar antes de aprovar.`
+      : reasoning || 'Estratégia gerada a partir da ficha de negócio da empresa.',
   }
 }

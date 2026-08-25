@@ -264,7 +264,7 @@ export function buildInterviewerPrompt(params: {
     '{"message": "sua próxima mensagem para o chefe", "profile_updates": { apenas os campos aprendidos com a ÚLTIMA resposta dele }, "asked_final_question": boolean, "interview_complete": boolean}',
     `Schema do perfil (preencha nesses nomes de campo): ${playbook.profileSchema}.`,
     includeOrgIntake
-      ? `Além desse schema, quando cobrir os tópicos 1 e 2 (e SOMENTE depois de o chefe confirmar o segmento), inclua também estes campos no profile_updates: ${ORG_INTAKE_PROFILE_SCHEMA_FRAGMENT}.`
+      ? `Além desse schema, quando cobrir os tópicos 1 e 2 (e SOMENTE depois de o chefe confirmar o segmento), inclua também estes campos no profile_updates, usando EXATAMENTE estes nomes de campo (não troque por sinônimos nem por nomes mais naturais — outro sistema lê essas chaves literalmente): ${ORG_INTAKE_PROFILE_SCHEMA_FRAGMENT}.`
       : '',
     verticalExtra
       ? `Esta empresa é do segmento "${VERTICAL_TEMPLATES[verticalKey!].labelPt}" — além do schema acima, quando cobrir os tópicos específicos do segmento, inclua também estes campos no profile_updates: ${verticalExtra.profileSchemaFragment}.`

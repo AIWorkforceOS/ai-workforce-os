@@ -73,11 +73,25 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
   const { data: trafficConfig } = await service
     .from('agent_configs')
-    .select('business_profile')
+    .select('business_profile, interview_status')
     .eq('unit_id', adAccount.unit_id)
     .eq('agent_type', 'traffic_specialist')
     .maybeSingle()
-  const agentBusinessProfile = (trafficConfig as { business_profile?: Record<string, unknown> } | null)?.business_profile ?? null
+  const trafficConfigRow = trafficConfig as { business_profile?: Record<string, unknown>; interview_status?: string } | null
+  const agentBusinessProfile = trafficConfigRow?.business_profile ?? null
+  // Sem a entrevista concluída, o gerador cai no fallback genérico ("empresa
+  // de serviços") — bloqueia aqui em vez de gerar uma campanha que não
+  // conhece o negócio de verdade (achado real: cliente testou e a campanha
+  // veio genérica, causa raiz era exatamente isso).
+  if (trafficConfigRow?.interview_status !== 'completed') {
+    return NextResponse.json(
+      {
+        error:
+          'A entrevista de contratação do Especialista em Tráfego ainda não foi concluída — complete-a antes de gerar uma campanha, para que ela conheça o negócio de verdade e não crie algo genérico.',
+      },
+      { status: 400 },
+    )
+  }
   const organizationProfile = adAccount.org_id ? await fetchOrganizationBusinessProfile(service, adAccount.org_id) : null
 
   let metaPageId: string | null = null

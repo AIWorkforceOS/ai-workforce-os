@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { getAppUser } from '@/lib/app-user'
 import { getOpenAIApiKey } from '@/lib/openai'
 import { extractOrganizationIntake, INTERVIEW_PLAYBOOKS, isInterviewAgentType, runInterviewTurn } from '@/lib/interview/engine'
@@ -188,19 +189,34 @@ export async function POST(request: Request) {
   // Ficha da Empresa compartilhada (organizations.vertical_key/business_profile,
   // migration 025): só grava quando o chefe confirmou o segmento nesta
   // entrevista e a organização ainda não tinha vertical_key — never sobrescreve
-  // uma ficha já definida (uma vez por organização). Best-effort: se falhar
-  // (ex.: migration 025 ainda não aplicada), a entrevista do funcionário já
-  // foi salva normalmente acima, então não retornamos erro por causa disso.
+  // uma ficha já definida (uma vez por organização). A policy organizations_write
+  // exige is_super_admin(), então o cliente da sessão do usuário nunca
+  // conseguia gravar aqui (update silenciosamente afetava 0 linhas, sem
+  // erro) — é por isso que nenhuma organização tinha a ficha compartilhada
+  // preenchida até este fix. Usa o service client (mesmo padrão de
+  // api-usage.ts/seo audits/content generate-week) pra gravar de verdade, e
+  // funde com o business_profile já existente (ex.: brand_kit) em vez de
+  // sobrescrever. Best-effort: se o service client não estiver configurado
+  // ou a gravação falhar, a entrevista do funcionário já foi salva
+  // normalmente acima, então não retornamos erro por causa disso.
   if (organization && !organization.vertical_key) {
     const orgIntake = extractOrganizationIntake(result.profile)
     if (orgIntake) {
-      const { error: orgSaveError } = await supabase
-        .from('organizations')
-        .update({ vertical_key: orgIntake.vertical_key, business_profile: orgIntake.business_profile })
-        .eq('id', organization.id)
-        .is('vertical_key', null)
-      if (orgSaveError) {
-        console.error('[interview] org intake persist error:', orgSaveError.message)
+      const service = createServiceClient()
+      if (!service) {
+        console.error('[interview] org intake persist skipped: service client não configurado')
+      } else {
+        const { error: orgSaveError } = await service
+          .from('organizations')
+          .update({
+            vertical_key: orgIntake.vertical_key,
+            business_profile: { ...(organization.business_profile ?? {}), ...orgIntake.business_profile },
+          })
+          .eq('id', organization.id)
+          .is('vertical_key', null)
+        if (orgSaveError) {
+          console.error('[interview] org intake persist error:', orgSaveError.message)
+        }
       }
     }
   }
