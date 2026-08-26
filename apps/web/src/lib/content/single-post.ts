@@ -5,6 +5,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
+import { fetchActiveAttachments, buildAttachmentsContext } from '@/lib/attachments'
 import { contentPillarsFrom, contentPlatformsFrom, decidePublishAction, pickNextPillar, pickNextPlatform } from './planner'
 import { generatePostContent, generatePostImage, uploadGeneratedImage } from './generator'
 import { holidayOnDate } from './holidays'
@@ -46,6 +47,8 @@ export async function generateSinglePostForAccount(params: {
   const platform = pickNextPlatform(supportedPlatforms, recentPosts)
   const pillar = pickNextPillar(pillars, recentPosts)
   const organizationProfile = await fetchOrganizationBusinessProfile(supabase, unit.org_id)
+  const attachments = await fetchActiveAttachments(supabase, unit, 'content_specialist')
+  const attachmentsContext = buildAttachmentsContext(attachments)
   const holiday = scheduledFor ? holidayOnDate(scheduledFor) : null
   const recentPostsContext = [...recentPosts]
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
@@ -61,6 +64,7 @@ export async function generateSinglePostForAccount(params: {
       pillar,
       holiday: holiday?.name ?? null,
       recentPosts: recentPostsContext,
+      attachmentsContext,
     })
     const logoUrl = (organizationProfile as { brand_kit?: { logo_url?: string | null } } | null)?.brand_kit?.logo_url ?? null
     const image = await generatePostImage({ apiKey, imagePrompt: content.imagePrompt, logoUrl })

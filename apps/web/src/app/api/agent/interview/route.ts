@@ -4,6 +4,7 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { getAppUser } from '@/lib/app-user'
 import { getOpenAIApiKey } from '@/lib/openai'
 import { buildOrganizationProfileUpdate, INTERVIEW_PLAYBOOKS, isInterviewAgentType, runInterviewTurn } from '@/lib/interview/engine'
+import { fetchActiveAttachments, buildAttachmentsContext } from '@/lib/attachments'
 import type { AgentConfig, InterviewTranscriptEntry, Organization, Unit } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -145,9 +146,17 @@ export async function POST(request: Request) {
   // sobrescrever o histórico da entrevista inicial (interview_transcript).
   const configForTurn = retrain ? { ...config, interview_transcript: config.retrain_transcript ?? [] } : config
 
+  // Ficha da Empresa (organization.business_profile) + biblioteca de
+  // materiais aplicáveis a este cargo — pra este funcionário já entrar na
+  // própria entrevista sabendo o que a KAI/outros colegas já aprenderam
+  // (site, documentos anexados, entrevistas anteriores), em vez de
+  // perguntar tudo do zero (pedido do Vinicius, 2026-08-26).
+  const attachments = await fetchActiveAttachments(supabase, unit, config.agent_type)
+  const attachmentsContext = buildAttachmentsContext(attachments)
+
   let result
   try {
-    result = await runInterviewTurn({ apiKey, config: configForTurn, unit, organization, userMessage: message })
+    result = await runInterviewTurn({ apiKey, config: configForTurn, unit, organization, attachmentsContext, userMessage: message })
   } catch (error) {
     console.error('[interview] OpenAI error:', error instanceof Error ? error.message : error)
     return NextResponse.json({ error: 'Não consegui gerar a próxima pergunta. Tente de novo.' }, { status: 502 })

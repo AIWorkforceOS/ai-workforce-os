@@ -38,6 +38,18 @@ describe('buildSeoContentSystemPrompt', () => {
     expect(prompt).toContain('750 caracteres')
   })
 
+  it('regressão (2026-08-26): inclui o attachmentsContext quando fornecido — SEO era um dos 3 cargos que ainda não liam a biblioteca de materiais', () => {
+    const prompt = buildSeoContentSystemPrompt({
+      config,
+      unit,
+      organizationProfile: null,
+      contentType: 'blog',
+      keyword: 'limpeza residencial',
+      attachmentsContext: 'MATERIAIS DISPONÍVEIS PARA ENVIAR: tabela-precos.pdf',
+    })
+    expect(prompt).toContain('tabela-precos.pdf')
+  })
+
   it('inclui a ficha do negócio quando existe business_profile', () => {
     const prompt = buildSeoContentSystemPrompt({ config, unit, organizationProfile: { org_company_name: 'Limpeza Rápida' }, contentType: 'blog', keyword: null })
     expect(prompt).toContain('Limpeza Rápida')

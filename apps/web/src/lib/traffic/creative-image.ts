@@ -1,6 +1,6 @@
 // Geração de imagem de criativo do Gestor de Tráfego Pago, reaproveitando
 // o mesmo motor do funcionário Conteúdo/Social (lib/content/generator.ts):
-// gpt-image-1 via lib/openai.ts, mesma OPENAI_API_KEY já configurada.
+// gpt-image-2 via lib/openai.ts, mesma OPENAI_API_KEY já configurada.
 //
 // Diferença de contexto: aqui a legenda/headline do anúncio já vem pronta
 // (quem chama já decidiu o texto, ver NewCampaignSpec.creative) — não
@@ -55,8 +55,10 @@ export function buildCreativeImageSystemPrompt(params: {
   agentBusinessProfile: Record<string, unknown> | null
   /** organizations.vertical_key — reforça o segmento explicitamente, pra não gerar cena de outro tipo de negócio (achado real do Vinicius: campanha saiu fora do segmento). */
   verticalKey?: string | null
+  /** Materiais da biblioteca aplicáveis a 'traffic_specialist' (lib/attachments.ts) — pedido do Vinicius (2026-08-26): criativos ruins, um dos 3 cargos que ainda não liam a biblioteca. */
+  attachmentsContext?: string | null
 }): string {
-  const { platform, objective, creative, targeting, organizationProfile, agentBusinessProfile, verticalKey } = params
+  const { platform, objective, creative, targeting, organizationProfile, agentBusinessProfile, verticalKey, attachmentsContext } = params
   const businessContext = buildCombinedBusinessContext(organizationProfile, agentBusinessProfile)
   const brandKit = brandKitFrom(organizationProfile)
   const verticalLabel = verticalKey && isVerticalKey(verticalKey) ? VERTICAL_TEMPLATES[verticalKey].labelPt : null
@@ -69,6 +71,7 @@ export function buildCreativeImageSystemPrompt(params: {
     `Texto do anúncio já decidido — título: "${creative.headline}". Corpo: "${creative.body}".`,
     businessContext ??
       'Ainda não há uma ficha de negócio detalhada — descreva algo genérico, seguro e verdadeiro para uma empresa de serviços, sem inventar detalhes específicos.',
+    attachmentsContext || null,
     brandKit
       ? `Identidade visual da marca: use como cores predominantes da cena${brandKit.primary_color ? ` a cor primária ${brandKit.primary_color}` : ''}${brandKit.secondary_color ? ` e a cor secundária ${brandKit.secondary_color}` : ''} — mantenha consistência visual com a marca.`
       : null,
@@ -91,6 +94,7 @@ export async function generateCreativeImagePrompt(params: {
   organizationProfile: Record<string, unknown> | null
   agentBusinessProfile: Record<string, unknown> | null
   verticalKey?: string | null
+  attachmentsContext?: string | null
 }): Promise<GeneratedCreativeImagePrompt> {
   const systemPrompt = buildCreativeImageSystemPrompt(params)
   const output = await generateStructuredReply<ImagePromptOutput>({
@@ -110,7 +114,7 @@ export async function generateCreativeImagePrompt(params: {
 }
 
 /**
- * Gera a imagem (gpt-image-1) a partir do prompt textual do criativo —
+ * Gera a imagem (gpt-image-2) a partir do prompt textual do criativo —
  * formato paisagem, próximo do 1.91:1 recomendado para anúncios — e, se a
  * marca tiver logo cadastrado (brand kit), compõe o logo real por cima
  * (mesma técnica do Conteúdo/Social, ver lib/brand-kit.ts): nenhum gerador

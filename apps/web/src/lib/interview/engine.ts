@@ -171,6 +171,7 @@ function orgIntakeTopics(locale: Locale): string[] {
   return [
     `o segmento principal do negócio — apresente estas opções: ${verticalOptionsLabel(locale)}; se a resposta do chefe não se encaixar claramente em nenhuma, analise a descrição que ele der do negócio e sugira o segmento que parece mais adequado (ou "${locale === 'en' ? VERTICAL_TEMPLATES.other.labelEn : VERTICAL_TEMPLATES.other.labelPt}" se nenhum se encaixar bem) — em qualquer caso, SEMPRE peça confirmação explícita do chefe antes de registrar "org_vertical_confirmed": true`,
     'um pequeno conjunto de fatos de identidade da empresa, compartilhados entre todos os funcionários digitais dela: nome oficial, descrição curta do negócio, principais diferenciais competitivos, tom de voz preferido no atendimento, idioma(s) em que a empresa atende, horário geral de funcionamento, e quais canais de atendimento ela usa',
+    'peça o link do site da empresa, se ela tiver um — é opcional, se não tiver, apenas registre isso e siga em frente sem insistir',
   ]
 }
 
@@ -231,8 +232,21 @@ export function buildInterviewerPrompt(params: {
   includeOrgIntake?: boolean
   /** organizations.vertical_key já confirmado — soma os tópicos/campos extras do segmento (verticals/catalog.ts) ao roteiro do cargo. Ausente/null = comportamento idêntico ao de antes desta função existir. */
   verticalKey?: VerticalKey | null
+  /**
+   * Ficha Compartilhada da empresa já existente (organizations.business_profile
+   * — inclui team_knowledge de outros funcionários já entrevistados e
+   * company_dossier do site/documentos estudados pela KAI, ver
+   * lib/company-research.ts) — quando presente, o funcionário sendo
+   * entrevistado agora já entra sabendo disso, em vez de perguntar tudo
+   * do zero. Pedido do Vinicius (2026-08-26): a entrevista individual
+   * deve SOMAR ao que já foi ensinado, não repetir.
+   */
+  organizationProfile?: Record<string, unknown> | null
+  /** Materiais da biblioteca (lib/attachments.ts) aplicáveis a este cargo — mesmo texto que o funcionário usa depois no trabalho real. */
+  attachmentsContext?: string | null
 }): string {
   const { config, unit, profile, finalAlreadyAsked, includeOrgIntake = false, verticalKey = null } = params
+  const orgBusinessContext = buildBusinessContext(params.organizationProfile)
   const playbook = INTERVIEW_PLAYBOOKS[config.agent_type as InterviewAgentType]
   const locale = unitDefaultLocale(unit)
   const verticalExtra = verticalKey
@@ -252,6 +266,10 @@ export function buildInterviewerPrompt(params: {
     includeOrgIntake
       ? 'Esta empresa ainda não tem uma Ficha da Empresa compartilhada entre os funcionários digitais dela — comece a entrevista pelos tópicos 1 e 2 (identidade da empresa e segmento de negócio) antes de entrar nos tópicos específicos do seu cargo.'
       : '',
+    orgBusinessContext
+      ? `${orgBusinessContext} NÃO repita perguntas cuja resposta já esteja na ficha acima — use-a como ponto de partida e foque em aprofundar ou preencher o que ainda falta pro SEU cargo específico.`
+      : '',
+    params.attachmentsContext ?? '',
     `TÓPICOS OBRIGATÓRIOS (todos precisam estar cobertos antes de encerrar): ${topics}`,
     'REGRA INEGOCIÁVEL DO ENCERRAMENTO:',
     `- Quando (e somente quando) todos os tópicos obrigatórios estiverem cobertos, sua próxima mensagem deve ser a pergunta final: "${finalQuestionFor(locale)}" (pode adaptar as palavras, nunca o sentido) — e nela marque "asked_final_question": true.`,
@@ -292,6 +310,13 @@ export function buildKaiOnboardingPrompt(params: {
   profile: Record<string, unknown>
   finalAlreadyAsked: boolean
   locale?: Locale
+  /**
+   * Dossiê já extraído do site da empresa nesta mesma conversa (ver
+   * researchCompanyWebsite em lib/company-research.ts, chamado pela rota
+   * quando o dono cola uma URL no chat) — quando presente, a KAI já
+   * "leu" o site e não deve repetir perguntas cuja resposta já está aqui.
+   */
+  websiteFindings?: string | null
 }): string {
   const { companyName, profile, finalAlreadyAsked } = params
   const locale = params.locale ?? 'pt'
@@ -300,9 +325,13 @@ export function buildKaiOnboardingPrompt(params: {
     `Você é a KAI, a assistente de IA da Alizo (AI Workforce OS) — não um funcionário digital específico, e sim quem dá as boas-vindas e orienta o cliente em TUDO dentro do sistema.`,
     `AGORA você está conhecendo a empresa "${companyName}" pela primeira vez: quem fala com você é o dono ou gestor, que acabou de assinar o Alizo. Antes de entrar em detalhes de configuração, dê boas-vindas breves e explique em 1-2 frases o que o Alizo faz (funcionários digitais de IA — Vendas, Recepção, Recrutamento, Conteúdo/Redes, SEO e Tráfego Pago — que trabalham de verdade pelo WhatsApp/redes/anúncios da empresa) antes de começar as perguntas. Não precisa repetir essa explicação depois da primeira mensagem.`,
     'COMO CONDUZIR: você faz as perguntas e o dono responde. No máximo 2 perguntas por mensagem, começando pelas mais importantes. Se uma resposta for vaga ou ambígua, peça UM esclarecimento objetivo antes de avançar.',
+    'Você aprende com MUITO mais do que só as respostas do dono: se ele colar o link do site da empresa nesta conversa, o sistema já estuda o site automaticamente e te devolve o que encontrou (ver abaixo) — comente brevemente o que aprendeu quando isso acontecer, em vez de ignorar. Também existe um botão de anexar (clipe) ao lado da caixa de mensagem — mencione, quando fizer sentido, que o dono pode anexar ali documentos da empresa (cardápio, tabela de preços, política de atendimento, catálogo de serviços etc.) pra você e todos os outros funcionários digitais estudarem; isso substitui perguntas que já estejam respondidas nesses documentos.',
     'Tom caloroso, direto e profissional. Mensagens curtas, sem markdown.',
     interviewLanguageDirective(locale),
     `TÓPICOS OBRIGATÓRIOS (todos precisam estar cobertos antes de encerrar): ${topics}`,
+    params.websiteFindings
+      ? `JÁ ESTUDADO NO SITE DA EMPRESA (não pergunte de novo o que já está aqui — só confirme algo se fizer sentido, ou aprofunde o que estiver incompleto): ${params.websiteFindings}`
+      : '',
     'REGRA INEGOCIÁVEL DO ENCERRAMENTO:',
     `- Quando (e somente quando) todos os tópicos obrigatórios estiverem cobertos, sua próxima mensagem deve ser a pergunta final: "${finalQuestionFor(locale)}" (pode adaptar as palavras, nunca o sentido) — e nela marque "asked_final_question": true.`,
     '- Se a resposta à pergunta final trouxer informação nova, registre no perfil, aprofunde se necessário e faça a pergunta final DE NOVO depois.',
@@ -456,11 +485,13 @@ export async function runInterviewTurn(params: {
   apiKey: string
   config: AgentConfig
   unit: Unit
-  /** Organização dona da unidade — usada só para decidir/gravar a Ficha da Empresa compartilhada (vertical_key/business_profile, migration 025). Ausente/null = nunca pergunta a ficha compartilhada, comportamento idêntico ao de hoje. */
+  /** Organização dona da unidade — decide/grava a Ficha da Empresa compartilhada (vertical_key/business_profile, migration 025) E agora também é repassada pra dentro do prompt (business_profile inteiro, incluindo team_knowledge/company_dossier) pra este funcionário já entrar sabendo o que a empresa/outros colegas já ensinaram. Ausente/null = comportamento idêntico ao de antes desta função existir. */
   organization?: Organization | null
+  /** Materiais da biblioteca aplicáveis a este cargo (lib/attachments.ts) — quem chama busca e monta a string, esta função só injeta. */
+  attachmentsContext?: string | null
   userMessage: string | null
 }): Promise<InterviewTurnResult> {
-  const { apiKey, config, unit, organization = null, userMessage } = params
+  const { apiKey, config, unit, organization = null, attachmentsContext = null, userMessage } = params
   if (!isInterviewAgentType(config.agent_type)) {
     throw new Error(`Tipo de agente sem entrevista de contratação: ${config.agent_type}`)
   }
@@ -505,6 +536,8 @@ export async function runInterviewTurn(params: {
       finalAlreadyAsked: lastAssistantAskedFinal(transcript),
       includeOrgIntake,
       verticalKey,
+      organizationProfile: organization?.business_profile,
+      attachmentsContext,
     }),
     history,
     maxTokens: 900,

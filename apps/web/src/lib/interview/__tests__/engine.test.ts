@@ -550,4 +550,81 @@ describe('buildKaiOnboardingPrompt — entrevista de boas-vindas conduzida pela 
     })
     expect(prompt).toContain('"org_company_name":"Padaria Estrela"')
   })
+
+  it('regressão (2026-08-26): pede o site da empresa como tópico obrigatório (opcional, não trava se não tiver)', () => {
+    const prompt = buildKaiOnboardingPrompt({ companyName: 'Padaria Estrela', profile: {}, finalAlreadyAsked: false })
+    expect(prompt).toContain('site da empresa')
+  })
+
+  it('regressão (2026-08-26): menciona o botão de anexar documentos (clipe) — pedido do Vinicius: "poder anexar arquivos e ela poder estudar"', () => {
+    const prompt = buildKaiOnboardingPrompt({ companyName: 'Padaria Estrela', profile: {}, finalAlreadyAsked: false })
+    expect(prompt).toContain('anexar')
+  })
+
+  it('regressão (2026-08-26): sem websiteFindings, não inventa um bloco "JÁ ESTUDADO NO SITE"', () => {
+    const prompt = buildKaiOnboardingPrompt({ companyName: 'Padaria Estrela', profile: {}, finalAlreadyAsked: false })
+    expect(prompt).not.toContain('JÁ ESTUDADO NO SITE')
+  })
+
+  it('regressão (2026-08-26): com websiteFindings, injeta o dossiê e instrui a não perguntar de novo', () => {
+    const prompt = buildKaiOnboardingPrompt({
+      companyName: 'Padaria Estrela',
+      profile: {},
+      finalAlreadyAsked: false,
+      websiteFindings: 'Padaria com cardápio de pães e bolos, aberta das 6h às 20h.',
+    })
+    expect(prompt).toContain('JÁ ESTUDADO NO SITE DA EMPRESA')
+    expect(prompt).toContain('cardápio de pães e bolos')
+    expect(prompt).toContain('não pergunte de novo')
+  })
+})
+
+describe('buildInterviewerPrompt — Ficha da Empresa e materiais já existentes (2026-08-26)', () => {
+  const unit = { name: 'Padaria Estrela', region_city: 'Campinas' } as Unit
+  const config = {
+    id: 'cfg-1',
+    unit_id: 'unit-1',
+    agent_type: 'content_specialist',
+    persona_name: 'Bia',
+    persona_tone: 'friendly',
+    daily_limit: 15,
+    active_hours: { start: '08:00', end: '18:00', days: [1, 2, 3, 4, 5] },
+    escalation_rules: { after_messages: 5, keywords: [] },
+    sectors: [],
+    is_active: false,
+    created_at: '',
+    updated_at: '',
+  } as AgentConfig
+
+  it('sem organizationProfile, comportamento antigo intocado (sem "FICHA DA EMPRESA")', () => {
+    const prompt = buildInterviewerPrompt({ config, unit, profile: {}, finalAlreadyAsked: false })
+    expect(prompt).not.toContain('FICHA DA EMPRESA')
+  })
+
+  it('com organizationProfile já preenchido (site estudado pela KAI, ou entrevista de outro colega), injeta a ficha e instrui a não repetir perguntas — pedido do Vinicius: "a entrevista individual deve somar, não repetir"', () => {
+    const prompt = buildInterviewerPrompt({
+      config,
+      unit,
+      profile: {},
+      finalAlreadyAsked: false,
+      organizationProfile: {
+        company_dossier: 'Padaria com cardápio de pães e bolos.',
+        team_knowledge: { sdr: { politica_desconto: '10% à vista' } },
+      },
+    })
+    expect(prompt).toContain('FICHA DA EMPRESA')
+    expect(prompt).toContain('cardápio de pães e bolos')
+    expect(prompt).toContain('NÃO repita perguntas')
+  })
+
+  it('com attachmentsContext, injeta os materiais da biblioteca na entrevista', () => {
+    const prompt = buildInterviewerPrompt({
+      config,
+      unit,
+      profile: {},
+      finalAlreadyAsked: false,
+      attachmentsContext: 'MATERIAIS DISPONÍVEIS PARA ENVIAR: cardapio.pdf',
+    })
+    expect(prompt).toContain('cardapio.pdf')
+  })
 })

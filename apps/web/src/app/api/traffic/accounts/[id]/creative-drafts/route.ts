@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { getOpenAIApiKey } from '@/lib/openai'
 import { fetchOrganizationBusinessProfile, fetchOrganizationVerticalKey } from '@/lib/organizations'
+import { fetchActiveAttachments, buildAttachmentsContext } from '@/lib/attachments'
 import { brandKitFrom } from '@/lib/brand-kit'
 import {
   generateCampaignCreativeImage,
@@ -86,6 +87,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           (trafficConfig as { business_profile?: Record<string, unknown> } | null)?.business_profile ?? null
         const organizationProfile = await fetchOrganizationBusinessProfile(service, adAccount.org_id)
         const verticalKey = await fetchOrganizationVerticalKey(service, adAccount.org_id)
+        const attachments = await fetchActiveAttachments(
+          service,
+          { id: adAccount.unit_id, org_id: adAccount.org_id },
+          'traffic_specialist',
+        )
+        const attachmentsContext = buildAttachmentsContext(attachments)
 
         const { imagePrompt: prompt } = await generateCreativeImagePrompt({
           apiKey,
@@ -96,6 +103,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           organizationProfile,
           agentBusinessProfile,
           verticalKey,
+          attachmentsContext,
         })
         const { base64Image } = await generateCampaignCreativeImage({
           apiKey,

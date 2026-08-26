@@ -21,7 +21,7 @@ export default async function OnboardingPage() {
   // organização (vertical_key null = ainda não rodou).
   const { data: org } = await supabase.from('organizations').select('name, vertical_key').eq('id', appUser.orgId ?? '').maybeSingle()
   if (org && !org.vertical_key) {
-    return <KaiOnboardingChat companyName={org.name} />
+    return <KaiOnboardingChat companyName={org.name} orgId={appUser.orgId!} />
   }
 
   const [{ data: units }, { data: configs }, { data: whatsappChannels }, managementMode] = await Promise.all([

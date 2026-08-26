@@ -91,6 +91,13 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: { message: string
     this.filters.push([key, { __gte: value } as unknown])
     return this
   }
+  // Só cobre .is(key, null) — o único uso real do produto (ex.: trava de
+  // concorrência ".is('vertical_key', null)" antes de promover o intake
+  // de identidade da org, ver app/api/kai/onboarding/route.ts).
+  is(key: string, value: null) {
+    this.filters.push([key, { __is: value } as unknown])
+    return this
+  }
   overlaps(key: string, values: unknown[]) {
     this.filters.push([key, { __overlaps: values } as unknown])
     return this
@@ -167,6 +174,9 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: { message: string
         const target = (value as { __gte: unknown }).__gte
         const cell = row[key]
         return cell !== null && cell !== undefined && compare(cell, target) >= 0
+      }
+      if (value && typeof value === 'object' && '__is' in (value as Record<string, unknown>)) {
+        return row[key] === null || row[key] === undefined
       }
       if (value && typeof value === 'object' && '__lt' in (value as Record<string, unknown>)) {
         const target = (value as { __lt: unknown }).__lt

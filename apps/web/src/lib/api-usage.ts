@@ -129,13 +129,16 @@ export async function logOpenAIAudioUsage(params: { durationSeconds: number; uni
   })
 }
 
-// USD por imagem gerada (gpt-image-1, 1024x1024, tabela pública jul/2026) —
-// cobrança por imagem+qualidade, não por token, por isso fica fora de
-// OPENAI_PRICING_PER_1M.
+// USD por imagem gerada (gpt-image-2, 1024x1024, tabela oficial de
+// "Calculating costs" da OpenAI, ago/2026 — substituiu gpt-image-1 em
+// 2026-08-26, ver lib/openai.ts) — cobrança por imagem+qualidade, não
+// por token linear, por isso fica fora de OPENAI_PRICING_PER_1M. Os
+// tiers NÃO escalam pela mesma proporção do gpt-image-1 (low ficou mais
+// barato, high ficou levemente mais caro) — não recalcular por multiplicador.
 const OPENAI_IMAGE_COST_PER_IMAGE_USD: Record<'low' | 'medium' | 'high', number> = {
-  low: 0.02,
-  medium: 0.07,
-  high: 0.19,
+  low: 0.006,
+  medium: 0.053,
+  high: 0.211,
 }
 
 export function estimateImageCost(quality: 'low' | 'medium' | 'high'): number {
@@ -151,7 +154,7 @@ export async function logOpenAIImageUsage(params: {
   await logApiUsage({
     provider: 'openai',
     endpoint: 'images.generations',
-    model: 'gpt-image-1',
+    model: 'gpt-image-2',
     estimatedCostUsd: estimateImageCost(params.quality),
     unitId: params.unitId,
     orgId: params.orgId,

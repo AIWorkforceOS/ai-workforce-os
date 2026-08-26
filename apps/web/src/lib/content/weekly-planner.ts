@@ -11,6 +11,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
+import { fetchActiveAttachments, buildAttachmentsContext } from '@/lib/attachments'
 import { contentPillarsFrom, contentPlatformsFrom, decidePublishAction, pickNextPillar, pickNextPlatform } from './planner'
 import { generatePostContent, generatePostImage, uploadGeneratedImage } from './generator'
 import { holidayOnDate } from './holidays'
@@ -50,6 +51,8 @@ export async function generateWeekPostsForAccount(params: {
   }
 
   const organizationProfile = await fetchOrganizationBusinessProfile(supabase, unit.org_id)
+  const attachments = await fetchActiveAttachments(supabase, unit, 'content_specialist')
+  const attachmentsContext = buildAttachmentsContext(attachments)
   const pillars = contentPillarsFrom(config.business_profile ?? {})
 
   const rangeStart = dates.reduce((min, d) => (d < min ? d : min), dates[0]!)
@@ -103,6 +106,7 @@ export async function generateWeekPostsForAccount(params: {
         pillar,
         holiday: holiday?.name ?? null,
         recentPosts: recentPostsContext,
+        attachmentsContext,
       })
       const image = await generatePostImage({ apiKey, imagePrompt: content.imagePrompt, logoUrl })
       const imageUrl = await uploadGeneratedImage({ supabase, unitId: unit.id, base64Image: image.base64Image })

@@ -39,6 +39,19 @@ describe('buildCreativeImageSystemPrompt', () => {
     expect(prompt).toContain('países: BR')
   })
 
+  it('regressão (2026-08-26): inclui o attachmentsContext quando fornecido — Tráfego era um dos 3 cargos que ainda não liam a biblioteca de materiais, achado real do Vinicius (criativos ruins)', () => {
+    const prompt = buildCreativeImageSystemPrompt({
+      platform: 'meta',
+      objective: 'OUTCOME_SALES',
+      creative,
+      targeting,
+      organizationProfile: null,
+      agentBusinessProfile: null,
+      attachmentsContext: 'MATERIAIS DISPONÍVEIS PARA ENVIAR: identidade-visual.pdf',
+    })
+    expect(prompt).toContain('identidade-visual.pdf')
+  })
+
   it('menciona Google Ads quando platform é google', () => {
     const prompt = buildCreativeImageSystemPrompt({
       platform: 'google',

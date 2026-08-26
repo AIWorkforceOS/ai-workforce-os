@@ -9,7 +9,13 @@ import {
   reduceInterview,
   type InterviewerOutput,
 } from '@/lib/interview/engine'
+import { researchCompanyWebsite } from '@/lib/company-research'
 import type { InterviewTranscriptEntry, Organization } from '@/lib/types'
+
+// Detecta uma URL solta na mensagem do dono (ex.: "www.padariaestrela.com.br"
+// ou "https://..."), pra estudar o site automaticamente sem exigir um campo
+// dedicado no chat — casa http(s):// opcional + domínio.tld, sem espaço.
+const URL_PATTERN = /\b((?:https?:\/\/)?(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s]*)?)\b/i
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -98,9 +104,24 @@ export async function POST(request: Request) {
     )
   }
 
-  const { transcript: baseTranscript, profile } = readIntakeState(org)
+  const { transcript: baseTranscript, profile: baseProfile } = readIntakeState(org)
   const transcript: InterviewTranscriptEntry[] =
     message && message.trim().length > 0 ? [...baseTranscript, { role: 'user', content: message.trim() }] : [...baseTranscript]
+
+  // Estuda o site automaticamente quando o dono cola uma URL no chat —
+  // best-effort: falha (site fora do ar, sem conteúdo etc.) nunca trava a
+  // entrevista, a KAI só segue sem ter "lido" nada. Só tenta uma vez por
+  // URL (guarda em _website_research_url) pra não reprocessar a cada turno.
+  let profile = baseProfile
+  const urlMatch = message?.match(URL_PATTERN)?.[1]
+  if (urlMatch && profile._website_research_url !== urlMatch) {
+    const research = await researchCompanyWebsite({ url: urlMatch, apiKey })
+    profile = {
+      ...profile,
+      _website_research_url: urlMatch,
+      ...(research.ok ? { _website_research: research.summary } : {}),
+    }
+  }
 
   const history = transcript.slice(-24).map(({ role, content }) => ({ role, content }))
   if (history.length === 0) {
@@ -118,6 +139,7 @@ export async function POST(request: Request) {
         companyName: org.name,
         profile,
         finalAlreadyAsked: lastAssistantAskedFinal(transcript),
+        websiteFindings: typeof profile._website_research === 'string' ? profile._website_research : null,
       }),
       history,
       maxTokens: 900,
@@ -136,6 +158,12 @@ export async function POST(request: Request) {
     const orgIntake = extractOrganizationIntake(result.profile)
     const nextBusinessProfile = { ...(org.business_profile ?? {}) }
     delete nextBusinessProfile._kai_onboarding
+    // Dossiê do site estudado durante esta entrevista (ver URL_PATTERN
+    // acima) vira conhecimento permanente da empresa — visível a todos os
+    // 6 funcionários via buildCombinedBusinessContext, igual ao
+    // team_knowledge de cada entrevista individual.
+    const websiteDossier = typeof result.profile._website_research === 'string' ? result.profile._website_research : null
+    if (websiteDossier) nextBusinessProfile.company_dossier = websiteDossier
     const { error } = await service
       .from('organizations')
       .update({

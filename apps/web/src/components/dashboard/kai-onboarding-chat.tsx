@@ -1,9 +1,14 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowRight, Bot, Check, Loader2, Send, Sparkles } from 'lucide-react'
+import { ArrowRight, Bot, Check, FileText, Loader2, Paperclip, Send, Sparkles } from 'lucide-react'
 import { brandGradient } from '@/components/ui/dashboard-ui'
+import { createClient } from '@/lib/supabase/client'
+import { EMPLOYEE_OPTIONS } from '@/components/dashboard/attachment-library-manager'
+
+const ALL_EMPLOYEE_TYPES = EMPLOYEE_OPTIONS.map((o) => o.value)
+const ATTACHMENT_MAX_BYTES = 15 * 1024 * 1024
 
 // Entrevista de boas-vindas conduzida pela KAI — primeira tela que um
 // cliente novo vê logo após o pagamento, ANTES de qualquer funcionário
@@ -14,16 +19,19 @@ import { brandGradient } from '@/components/ui/dashboard-ui'
 // diferente de InterviewChat, que é por funcionário).
 
 type ChatEntry = { role: 'user' | 'assistant'; content: string }
+type UploadedDoc = { name: string; status: 'uploading' | 'done' | 'error' }
 
-export function KaiOnboardingChat({ companyName }: { companyName: string }) {
+export function KaiOnboardingChat({ companyName, orgId }: { companyName: string; orgId: string }) {
   const router = useRouter()
   const [messages, setMessages] = useState<ChatEntry[]>([])
   const [status, setStatus] = useState<'loading' | 'in_progress' | 'completed'>('loading')
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [uploadedDocs, setUploadedDocs] = useState<UploadedDoc[]>([])
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const startedRef = useRef(false)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -111,6 +119,78 @@ export function KaiOnboardingChat({ companyName }: { companyName: string }) {
     setSending(false)
   }
 
+  // Documentos anexados durante o treinamento inicial (cardápio, tabela de
+  // preços, política de atendimento etc.) — pedido do Vinicius (2026-08-26):
+  // "poder anexar arquivos e ela poder estudar e aprender tudo". Reaproveita
+  // exatamente o mesmo bucket/tabela da biblioteca de materiais
+  // (attachment-library-manager.tsx), só que sempre org-wide (unit_id null)
+  // e aplicável aos 6 funcionários — o objetivo aqui é a empresa toda
+  // aprender de uma vez, não um material específico de um cargo.
+  async function handleFilesSelected(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? [])
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    if (files.length === 0) return
+
+    const supabase = createClient()
+    for (const file of files) {
+      const isImage = file.type.startsWith('image/')
+      const isPdf = file.type === 'application/pdf'
+      if (!isImage && !isPdf) {
+        setUploadedDocs((docs) => [...docs, { name: file.name, status: 'error' }])
+        continue
+      }
+      if (file.size > ATTACHMENT_MAX_BYTES) {
+        setUploadedDocs((docs) => [...docs, { name: file.name, status: 'error' }])
+        continue
+      }
+
+      setUploadedDocs((docs) => [...docs, { name: file.name, status: 'uploading' }])
+      try {
+        const path = `${orgId}/${Date.now()}-${file.name}`
+        const { error: uploadError } = await supabase.storage
+          .from('employee-attachments')
+          .upload(path, file, { upsert: true, contentType: file.type })
+        if (uploadError) throw uploadError
+
+        const { data: publicUrlData } = supabase.storage.from('employee-attachments').getPublicUrl(path)
+        const fileUrl = publicUrlData.publicUrl
+
+        let extractedText: string | null = null
+        if (isPdf) {
+          try {
+            const extractRes = await fetch('/api/employee-attachments/extract-text', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ fileUrl, fileName: file.name }),
+            })
+            const extractJson = await extractRes.json().catch(() => null)
+            extractedText = typeof extractJson?.text === 'string' ? extractJson.text : null
+          } catch {
+            extractedText = null
+          }
+        }
+
+        const { error: insertError } = await supabase.from('employee_attachments').insert({
+          org_id: orgId,
+          unit_id: null,
+          kind: isPdf ? 'pdf' : 'image',
+          title: file.name,
+          usage_instructions: 'Documento da empresa enviado durante o treinamento inicial com a KAI — use como fonte de verdade sobre a empresa.',
+          file_url: fileUrl,
+          file_name: file.name,
+          extracted_text: extractedText,
+          applicable_employees: ALL_EMPLOYEE_TYPES,
+          is_active: true,
+        })
+        if (insertError) throw insertError
+
+        setUploadedDocs((docs) => docs.map((d) => (d.name === file.name && d.status === 'uploading' ? { ...d, status: 'done' } : d)))
+      } catch {
+        setUploadedDocs((docs) => docs.map((d) => (d.name === file.name && d.status === 'uploading' ? { ...d, status: 'error' } : d)))
+      }
+    }
+  }
+
   return (
     <div className="mx-auto flex min-h-screen max-w-2xl flex-col justify-center gap-4 px-4 py-10">
       <div className="flex items-center gap-2 text-slate-400">
@@ -155,6 +235,26 @@ export function KaiOnboardingChat({ companyName }: { companyName: string }) {
             </div>
           )}
 
+          {uploadedDocs.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {uploadedDocs.map((doc, i) => (
+                <div
+                  key={`${doc.name}-${i}`}
+                  className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs"
+                  style={{
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    background: 'rgba(255,255,255,0.03)',
+                    color: doc.status === 'error' ? '#f87171' : doc.status === 'uploading' ? '#94a3b8' : '#67e8f9',
+                  }}
+                >
+                  {doc.status === 'uploading' ? <Loader2 size={11} className="animate-spin" /> : <FileText size={11} />}
+                  {doc.name}
+                  {doc.status === 'error' && ' — falhou'}
+                </div>
+              ))}
+            </div>
+          )}
+
           {status === 'completed' && (
             <div className="space-y-4">
               <div
@@ -185,6 +285,24 @@ export function KaiOnboardingChat({ companyName }: { companyName: string }) {
             className="flex items-center gap-2 p-3"
             style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}
           >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/pdf,image/*"
+              multiple
+              onChange={handleFilesSelected}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={status === 'loading'}
+              title="Anexar documentos da empresa (cardápio, preços, políticas...)"
+              className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl text-slate-400 transition-colors hover:text-cyan-300 disabled:opacity-40"
+              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              <Paperclip size={14} />
+            </button>
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}

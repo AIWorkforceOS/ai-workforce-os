@@ -30,7 +30,8 @@ const GENERIC_EMAIL_PREFIXES = [
   'sales',
 ]
 
-async function fetchHtml(url: string): Promise<string | null> {
+/** Exportado pra reuso em lib/company-research.ts (pesquisa de site na Ficha da Empresa) — mesmo fetch com timeout/limite de tamanho, sem duplicar. */
+export async function fetchHtml(url: string): Promise<string | null> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
   try {
@@ -47,7 +48,7 @@ async function fetchHtml(url: string): Promise<string | null> {
   }
 }
 
-function stripHtml(html: string): string {
+export function stripHtml(html: string): string {
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')

@@ -185,6 +185,26 @@ describe('buildCaptionSystemPrompt', () => {
   })
 })
 
+describe('buildCaptionSystemPrompt — biblioteca de materiais (2026-08-26)', () => {
+  it('regressão: inclui o attachmentsContext quando fornecido — Conteúdo/Social era um dos 3 cargos que ainda não liam a biblioteca de materiais, achado real do Vinicius (criativos ruins)', () => {
+    const prompt = buildCaptionSystemPrompt({
+      config,
+      unit,
+      organizationProfile: null,
+      platform: 'instagram',
+      pillar: null,
+      attachmentsContext: 'MATERIAIS DISPONÍVEIS PARA ENVIAR: cardápio-padaria.pdf',
+    })
+    expect(prompt).toContain('MATERIAIS DISPONÍVEIS PARA ENVIAR')
+    expect(prompt).toContain('cardápio-padaria.pdf')
+  })
+
+  it('sem attachmentsContext, não quebra (comportamento antigo intocado)', () => {
+    const prompt = buildCaptionSystemPrompt({ config, unit, organizationProfile: null, platform: 'instagram', pillar: null })
+    expect(prompt).not.toContain('MATERIAIS DISPONÍVEIS')
+  })
+})
+
 describe('generatePostImage — composição do logo', () => {
   afterEach(() => {
     vi.doUnmock('@/lib/openai')

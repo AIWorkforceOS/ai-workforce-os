@@ -1,7 +1,7 @@
 // Identidade visual da marca (logo + paleta), guardada em
 // organizations.business_profile.brand_kit (ver api/content/brand-kit).
 // Compartilhado entre Conteúdo/Social e Tráfego Pago — os dois geram
-// imagem com gpt-image-1 e colam o logo real por cima via sharp, porque
+// imagem com gpt-image-2 e colam o logo real por cima via sharp, porque
 // nenhum gerador de imagem reproduz um logo específico de forma
 // consistente só por descrição textual.
 

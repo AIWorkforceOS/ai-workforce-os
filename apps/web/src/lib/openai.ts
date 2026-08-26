@@ -355,10 +355,16 @@ export async function synthesizeSpeech(params: {
 }
 
 /**
- * Gera uma imagem (gpt-image-1) a partir de um prompt em texto — usada
- * pelo funcionário digital de Conteúdo/Social para ilustrar posts.
- * Sempre devolve base64 (gpt-image-1 não aceita response_format: 'url';
- * quem chama decide o que fazer com os bytes — aqui, upload no Storage).
+ * Gera uma imagem (gpt-image-2) a partir de um prompt em texto — usada
+ * por Tráfego, Conteúdo/Social, SEO e Brand Kit. Trocado de gpt-image-1
+ * em 2026-08-26: melhor qualidade pra criativos com texto/identidade
+ * visual (achado real: criativos do Gestor de Conteúdo estavam ruins) e
+ * ~25% mais barato — gpt-image-1 some da API OpenAI em 01/12/2026, então
+ * a troca seria necessária de qualquer forma. Mesmo request/response
+ * shape dos dois modelos (confirmado na doc oficial), só o nome do
+ * modelo muda. Sempre devolve base64 (gpt-image não aceita
+ * response_format: 'url'; quem chama decide o que fazer com os bytes —
+ * aqui, upload no Storage).
  */
 export async function generateImage(params: {
   apiKey: string
@@ -374,7 +380,7 @@ export async function generateImage(params: {
       Authorization: `Bearer ${params.apiKey}`,
     },
     body: JSON.stringify({
-      model: 'gpt-image-1',
+      model: 'gpt-image-2',
       prompt: params.prompt,
       size: params.size ?? '1024x1024',
       quality,

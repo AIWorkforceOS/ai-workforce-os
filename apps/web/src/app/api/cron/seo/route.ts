@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { logSystemEvent } from '@/lib/system-events'
 import { getOpenAIApiKey } from '@/lib/openai'
 import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
+import { fetchActiveAttachments, buildAttachmentsContext } from '@/lib/attachments'
 import { runSeoAudit } from '@/lib/seo/audit'
 import { generateSeoContent, generateSeoImage, uploadSeoImage } from '@/lib/seo/generator'
 import {
@@ -165,8 +166,10 @@ export async function GET(request: Request) {
             const keywords = seoKeywordsFrom(profile)
             const keyword = pickNextKeyword({ contentType, keywords, recentItems })
             const organizationProfile = await fetchOrganizationBusinessProfile(supabase, unit.org_id)
+            const attachments = await fetchActiveAttachments(supabase, unit, 'seo_specialist')
+            const attachmentsContext = buildAttachmentsContext(attachments)
 
-            const content = await generateSeoContent({ apiKey, config, unit, organizationProfile, contentType, keyword })
+            const content = await generateSeoContent({ apiKey, config, unit, organizationProfile, contentType, keyword, attachmentsContext })
 
             let imageUrl: string | null = null
             if (content.imagePrompt) {

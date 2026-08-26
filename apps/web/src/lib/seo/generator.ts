@@ -1,6 +1,6 @@
 // Geração de conteúdo do funcionário digital de SEO — reaproveita o
 // mesmo motor de texto (generateStructuredReply) e imagem (generateImage,
-// gpt-image-1) já usado pelo Conteúdo/Social e pelo retrofit de imagem do
+// gpt-image-2) já usado pelo Conteúdo/Social e pelo retrofit de imagem do
 // Tráfego (lib/openai.ts, mesma OPENAI_API_KEY), com prompts próprios por
 // tipo de conteúdo: post de blog, landing page, descrição de Google
 // Business Profile e post de atualização de GBP.
@@ -55,8 +55,10 @@ export function buildSeoContentSystemPrompt(params: {
   organizationProfile: Record<string, unknown> | null
   contentType: SeoContentType
   keyword: string | null
+  /** Materiais da biblioteca aplicáveis a 'seo_specialist' (lib/attachments.ts) — um dos 3 cargos que ainda não liam a biblioteca (pedido do Vinicius, 2026-08-26). */
+  attachmentsContext?: string | null
 }): string {
-  const { config, unit, organizationProfile, contentType, keyword } = params
+  const { config, unit, organizationProfile, contentType, keyword, attachmentsContext } = params
   const businessContext = buildCombinedBusinessContext(organizationProfile, config.business_profile)
   return [
     `Você é ${config.persona_name}, especialista em SEO digital da unidade ${unit.name}.`,
@@ -64,6 +66,7 @@ export function buildSeoContentSystemPrompt(params: {
     CONTENT_TYPE_INSTRUCTIONS[contentType],
     businessContext ??
       'Ainda não há uma ficha de negócio detalhada — escreva algo genérico, seguro e verdadeiro para uma empresa de serviços, sem inventar detalhes específicos.',
+    attachmentsContext || null,
     'O texto deve soar humano e natural, sem parecer gerado por IA e sem clichês genéricos de marketing.',
     'Nunca invente promoção, preço ou resultado que não esteja na ficha da empresa. Nunca mencione concorrentes pelo nome. Respeite qualquer proibição registrada na ficha.',
     'FORMATO DA RESPOSTA — responda SOMENTE um JSON válido no formato:',
@@ -81,6 +84,7 @@ export async function generateSeoContent(params: {
   organizationProfile: Record<string, unknown> | null
   contentType: SeoContentType
   keyword: string | null
+  attachmentsContext?: string | null
 }): Promise<GeneratedSeoContent> {
   const systemPrompt = buildSeoContentSystemPrompt(params)
   const output = await generateStructuredReply<SeoContentOutput>({
@@ -110,7 +114,7 @@ export async function generateSeoContent(params: {
   }
 }
 
-/** Gera a imagem (gpt-image-1) a partir do prompt textual do conteúdo. */
+/** Gera a imagem (gpt-image-2) a partir do prompt textual do conteúdo. */
 export async function generateSeoImage(params: { apiKey: string; imagePrompt: string }): Promise<{ base64Image: string }> {
   return generateImage({ apiKey: params.apiKey, prompt: params.imagePrompt, size: '1024x1024', quality: 'medium' })
 }
