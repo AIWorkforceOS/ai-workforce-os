@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { buildAttachmentsContext, truncateAttachmentText } from '@/lib/attachments'
+import { describe, expect, it, vi, afterEach } from 'vitest'
+import { buildAttachmentsContext, extractAttachmentImageDescription, truncateAttachmentText } from '@/lib/attachments'
 import type { EmployeeAttachment } from '@/lib/types'
 
 function makeAttachment(overrides: Partial<EmployeeAttachment> = {}): EmployeeAttachment {
@@ -62,6 +62,52 @@ describe('buildAttachmentsContext', () => {
     const context = buildAttachmentsContext([makeAttachment({ extracted_text: longText })])
     expect(context).toContain('[conteúdo truncado]')
     expect(context.length).toBeLessThan(longText.length)
+  })
+})
+
+describe('extractAttachmentImageDescription (2026-08-27, achado: imagens eram anexadas mas nunca "lidas" pelo modelo)', () => {
+  const originalKey = process.env.OPENAI_API_KEY
+
+  afterEach(() => {
+    process.env.OPENAI_API_KEY = originalKey
+    vi.unstubAllGlobals()
+  })
+
+  it('sem OPENAI_API_KEY, devolve null sem tentar chamar a API', async () => {
+    delete process.env.OPENAI_API_KEY
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await extractAttachmentImageDescription('https://x/print-concorrente.png', 'print-concorrente.png')
+
+    expect(result).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('com API key, devolve a descrição gerada pela visão do modelo', async () => {
+    process.env.OPENAI_API_KEY = 'fake-key'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: '{"description":"Post de Instagram com fundo azul, tipografia bold, foto de produto em destaque."}' } }],
+        }),
+      })),
+    )
+
+    const result = await extractAttachmentImageDescription('https://x/print-concorrente.png', 'print-concorrente.png')
+
+    expect(result).toBe('Post de Instagram com fundo azul, tipografia bold, foto de produto em destaque.')
+  })
+
+  it('falha da API (ex.: imagem corrompida): devolve null, nunca lança', async () => {
+    process.env.OPENAI_API_KEY = 'fake-key'
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, json: async () => ({ error: { message: 'invalid image' } }) })))
+
+    const result = await extractAttachmentImageDescription('https://x/quebrada.png', 'quebrada.png')
+
+    expect(result).toBeNull()
   })
 })
 

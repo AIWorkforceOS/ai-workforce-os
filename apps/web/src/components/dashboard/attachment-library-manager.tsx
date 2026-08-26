@@ -159,11 +159,12 @@ export function AttachmentLibraryManager({
     const editing = editingId ? attachments.find((a) => a.id === editingId) : null
     let fileUrl = form.kind === 'link' ? form.linkUrl.trim() : editing?.file_url ?? ''
     let fileName: string | null = editing?.file_name ?? null
-    // Texto extraído do PDF (item 5 do pedido de 2026-08-14) — mantém o
-    // que já existia na edição sem trocar o arquivo; null pra link/imagem
-    // (extração cobre só PDF) ou quando um novo PDF é enviado (extraído
+    // Texto extraído (PDF: item 5 do pedido de 2026-08-14; imagem: achado
+    // da auditoria de 2026-08-26, ver extractAttachmentImageDescription)
+    // — mantém o que já existia na edição sem trocar o arquivo; null pra
+    // link (sem extração) ou quando um novo arquivo é enviado (extraído
     // abaixo).
-    let extractedText: string | null = form.kind === 'pdf' ? (editing?.extracted_text ?? null) : null
+    let extractedText: string | null = form.kind !== 'link' ? (editing?.extracted_text ?? null) : null
 
     if (form.kind !== 'link') {
       if (file) {
@@ -183,16 +184,17 @@ export function AttachmentLibraryManager({
         fileUrl = data.publicUrl
         fileName = file.name
 
-        // Extração de texto roda server-side (precisa da OPENAI_API_KEY,
+        // Extração de conteúdo roda server-side (precisa da OPENAI_API_KEY,
         // secreta) — best-effort: falha aqui nunca bloqueia o cadastro do
-        // material, só significa "sem conteúdo extraído desta vez" (ver
-        // extractAttachmentPdfText em lib/attachments.ts).
-        if (form.kind === 'pdf') {
+        // material, só significa "sem conteúdo extraído desta vez" (PDF:
+        // extractAttachmentPdfText; imagem: extractAttachmentImageDescription,
+        // ambos em lib/attachments.ts).
+        if (form.kind === 'pdf' || form.kind === 'image') {
           try {
             const extractRes = await fetch('/api/employee-attachments/extract-text', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ fileUrl, fileName: file.name }),
+              body: JSON.stringify({ fileUrl, fileName: file.name, kind: form.kind }),
             })
             const extractJson = await extractRes.json().catch(() => null)
             extractedText = typeof extractJson?.text === 'string' ? extractJson.text : null

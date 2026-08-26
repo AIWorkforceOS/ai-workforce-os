@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { createAdLead } from '@/lib/leads/ad-lead-intake'
+import { META_API_VERSION } from '@/lib/traffic/meta-ads'
 import type { Unit } from '@/lib/types'
 
 /**
@@ -61,7 +62,7 @@ export async function POST(request: Request) {
       let metaLead: Record<string, unknown> | null = null
       try {
         const res = await fetch(
-          `https://graph.facebook.com/v19.0/${leadgenId}?fields=id,created_time,field_data&access_token=${accessToken}`,
+          `https://graph.facebook.com/${META_API_VERSION}/${leadgenId}?fields=id,created_time,field_data&access_token=${accessToken}`,
         )
         metaLead = await res.json()
       } catch {

@@ -31,6 +31,7 @@ import {
   createMetaAdCreative,
   createMetaAdSet,
   createMetaCampaign,
+  createMetaLeadForm,
   getMetaConfig,
   metaOptimizationGoalFor,
 } from './meta-ads'
@@ -115,6 +116,9 @@ async function launchMetaCampaign(account: AdAccount, spec: NewCampaignSpec): Pr
       adExternalId: adId,
       steps: [
         { step: 'campaign', externalId: campaignId },
+        ...(spec.objective === 'OUTCOME_LEADS' && spec.metaPageId
+          ? [{ step: 'lead_form' as const, externalId: mockExternalId('leadform') }]
+          : []),
         { step: 'ad_set', externalId: adSetId },
         { step: 'creative', externalId: mockExternalId('creative') },
         { step: 'ad', externalId: adId },
@@ -137,8 +141,30 @@ async function launchMetaCampaign(account: AdAccount, spec: NewCampaignSpec): Pr
     campaignId = campaign.id
     steps.push({ step: 'campaign', externalId: campaign.id })
 
+    // Formulário instantâneo nativo (Leads Ads) — só tenta pra OUTCOME_LEADS
+    // com Página disponível. Falha aqui (ex.: leads_retrieval pendente de
+    // App Review na conta do cliente) NUNCA aborta a campanha: cai de volta
+    // pro comportamento anterior (link pra landing page), só fica registrado
+    // no step com o erro pra quem for investigar depois.
+    currentStep = 'lead_form'
+    let leadGenFormId: string | null = null
+    if (spec.objective === 'OUTCOME_LEADS' && spec.metaPageId) {
+      try {
+        const form = await createMetaLeadForm(config, { pageId: spec.metaPageId, name: `${spec.name} — Formulário` })
+        leadGenFormId = form.id
+        steps.push({ step: 'lead_form', externalId: form.id })
+      } catch (error) {
+        steps.push({
+          step: 'lead_form',
+          externalId: null,
+          error: `Formulário nativo não criado, campanha segue com link pra landing page: ${error instanceof Error ? error.message : 'erro desconhecido'}`,
+        })
+      }
+    }
+
     currentStep = 'ad_set'
-    const optimizationGoal = metaOptimizationGoalFor(spec.objective, Boolean(spec.metaPixelId))
+    const useNativeLeadForm = Boolean(leadGenFormId)
+    const optimizationGoal = metaOptimizationGoalFor(spec.objective, Boolean(spec.metaPixelId), useNativeLeadForm)
     const adSet = await createMetaAdSet(config, {
       name: `${spec.name} — Conjunto 1`,
       campaignId: campaign.id,
@@ -152,6 +178,8 @@ async function launchMetaCampaign(account: AdAccount, spec: NewCampaignSpec): Pr
         interestIds: spec.targeting.interests,
       },
       promotedObjectPixelId: spec.metaPixelId,
+      promotedObjectPageId: useNativeLeadForm ? spec.metaPageId : undefined,
+      destinationType: useNativeLeadForm ? 'ON_AD' : undefined,
     })
     adSetId = adSet.id
     steps.push({ step: 'ad_set', externalId: adSet.id })
@@ -177,6 +205,7 @@ async function launchMetaCampaign(account: AdAccount, spec: NewCampaignSpec): Pr
       headline: spec.creative.headline,
       callToActionType: spec.creative.callToAction,
       imageUrl: spec.creative.imageUrl,
+      leadGenFormId: leadGenFormId ?? undefined,
     })
     steps.push({ step: 'creative', externalId: creative.id })
 

@@ -347,7 +347,7 @@ export type NewCampaignSpec = {
   metaPixelId?: string
 }
 
-export type CampaignLaunchStep = 'budget' | 'campaign' | 'ad_set' | 'creative' | 'ad'
+export type CampaignLaunchStep = 'budget' | 'campaign' | 'lead_form' | 'ad_set' | 'creative' | 'ad'
 
 export type CampaignLaunchStepResult = {
   step: CampaignLaunchStep

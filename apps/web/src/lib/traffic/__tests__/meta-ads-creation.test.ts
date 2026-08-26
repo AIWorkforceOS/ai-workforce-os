@@ -7,6 +7,7 @@ import {
   createMetaAdCreative,
   createMetaAdSet,
   createMetaCampaign,
+  createMetaLeadForm,
   metaOptimizationGoalFor,
   type MetaConfig,
 } from '../meta-ads'
@@ -56,6 +57,28 @@ describe('metaOptimizationGoalFor', () => {
 
   it('objetivo desconhecido cai no fallback seguro LINK_CLICKS', () => {
     expect(metaOptimizationGoalFor('ALGO_NOVO_DA_META', false)).toBe('LINK_CLICKS')
+  })
+
+  it('regressão (2026-08-27): OUTCOME_LEADS com useNativeLeadForm=true → LEAD_GENERATION, mesmo sem pixel', () => {
+    expect(metaOptimizationGoalFor('OUTCOME_LEADS', false, true)).toBe('LEAD_GENERATION')
+  })
+
+  it('OUTCOME_LEADS com pixel mas SEM formulário nativo continua caindo em OFFSITE_CONVERSIONS (comportamento anterior)', () => {
+    expect(metaOptimizationGoalFor('OUTCOME_LEADS', true, false)).toBe('OFFSITE_CONVERSIONS')
+  })
+})
+
+describe('createMetaLeadForm (2026-08-27, formulário nativo de leads)', () => {
+  it('cria o formulário na PÁGINA (não na conta de anúncios) com os 3 campos padrão que o webhook de recebimento sabe extrair', async () => {
+    const fetchMock = mockFetchOnce({ id: 'form_1' })
+    const result = await createMetaLeadForm(config, { pageId: 'page_1', name: 'Campanha X — Formulário' })
+
+    expect(result).toEqual({ id: 'form_1' })
+    expect(lastRequestUrl(fetchMock)).toContain('page_1/leadgen_forms')
+    expect(lastRequestUrl(fetchMock)).not.toContain('act_999')
+    const body = lastRequestBody(fetchMock)
+    expect(body.get('name')).toBe('Campanha X — Formulário')
+    expect(JSON.parse(body.get('questions')!)).toEqual([{ type: 'FULL_NAME' }, { type: 'EMAIL' }, { type: 'PHONE' }])
   })
 })
 
@@ -146,6 +169,22 @@ describe('createMetaAdSet', () => {
     })
     expect(lastRequestBody(fetchMock).get('promoted_object')).toBeNull()
   })
+
+  it('regressão (2026-08-27): LEAD_GENERATION envia promoted_object com page_id (não pixel_id) e destination_type=ON_AD', async () => {
+    const fetchMock = mockFetchOnce({ id: 'adset_5' })
+    await createMetaAdSet(config, {
+      name: 'Conjunto 5',
+      campaignId: 'camp_1',
+      dailyBudgetCents: 5000,
+      optimizationGoal: 'LEAD_GENERATION',
+      targeting: { countries: ['BR'] },
+      promotedObjectPageId: 'page_1',
+      destinationType: 'ON_AD',
+    })
+    const body = lastRequestBody(fetchMock)
+    expect(JSON.parse(body.get('promoted_object')!)).toEqual({ page_id: 'page_1' })
+    expect(body.get('destination_type')).toBe('ON_AD')
+  })
 })
 
 describe('createMetaAdCreative', () => {
@@ -202,6 +241,20 @@ describe('createMetaAdCreative', () => {
     })
     const spec = JSON.parse(lastRequestBody(fetchMock).get('object_story_spec')!)
     expect(spec.link_data.picture).toBeUndefined()
+  })
+
+  it('regressão (2026-08-27): com leadGenFormId, usa call_to_action SIGN_UP com o form id e link=https://fb.me/ (placeholder exigido pela Meta pra anúncio de formulário nativo)', async () => {
+    const fetchMock = mockFetchOnce({ id: 'creative_5' })
+    await createMetaAdCreative(config, {
+      name: 'Criativo 5',
+      pageId: 'page_1',
+      message: 'X',
+      linkUrl: 'https://minha-landing-normal.com', // ignorado quando leadGenFormId está presente
+      leadGenFormId: 'form_1',
+    })
+    const spec = JSON.parse(lastRequestBody(fetchMock).get('object_story_spec')!)
+    expect(spec.link_data.link).toBe('https://fb.me/')
+    expect(spec.link_data.call_to_action).toEqual({ type: 'SIGN_UP', value: { lead_gen_form_id: 'form_1' } })
   })
 })
 

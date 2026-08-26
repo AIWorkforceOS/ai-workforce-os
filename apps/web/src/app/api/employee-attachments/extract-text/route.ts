@@ -1,17 +1,18 @@
 import { NextResponse } from 'next/server'
 import { getAppUser } from '@/lib/app-user'
-import { extractAttachmentPdfText } from '@/lib/attachments'
+import { extractAttachmentImageDescription, extractAttachmentPdfText } from '@/lib/attachments'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * POST /api/employee-attachments/extract-text — item 5 do pedido de
- * 2026-08-14. O upload da biblioteca de materiais (AttachmentLibraryManager)
- * roda inteiramente no cliente (insert direto no Supabase via RLS), mas a
- * extração de texto precisa da OPENAI_API_KEY, que é secreta — por isso
- * esta rota server-side: o cliente sobe o PDF no Storage, chama esta rota
- * com a URL pública, e só então grava a linha em employee_attachments já
- * com `extracted_text` preenchido. Mesmo padrão de
+ * 2026-08-14 (PDF) + achado da auditoria de 2026-08-26 (imagem, ver
+ * extractAttachmentImageDescription). O upload da biblioteca de materiais
+ * (AttachmentLibraryManager) roda inteiramente no cliente (insert direto
+ * no Supabase via RLS), mas a extração precisa da OPENAI_API_KEY, que é
+ * secreta — por isso esta rota server-side: o cliente sobe o arquivo no
+ * Storage, chama esta rota com a URL pública, e só então grava a linha em
+ * employee_attachments já com `extracted_text` preenchido. Mesmo padrão de
  * /api/units/[id]/service-order/extract (extrai antes de gravar, no
  * cliente).
  */
@@ -27,11 +28,12 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null)
   const fileUrl = (body as { fileUrl?: unknown } | null)?.fileUrl
   const fileName = (body as { fileName?: unknown } | null)?.fileName
+  const kind = (body as { kind?: unknown } | null)?.kind
   if (typeof fileUrl !== 'string' || !fileUrl || typeof fileName !== 'string' || !fileName) {
     return NextResponse.json({ error: 'Informe a URL e o nome do arquivo.' }, { status: 400 })
   }
 
-  const text = await extractAttachmentPdfText(fileUrl, fileName)
+  const text = kind === 'image' ? await extractAttachmentImageDescription(fileUrl, fileName) : await extractAttachmentPdfText(fileUrl, fileName)
 
   return NextResponse.json({ text, failed: text === null })
 }

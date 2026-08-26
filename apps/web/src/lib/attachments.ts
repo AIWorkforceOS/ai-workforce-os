@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { generateStructuredReplyFromPdf, getOpenAIApiKey } from '@/lib/openai'
+import { generateStructuredReplyFromImage, generateStructuredReplyFromPdf, getOpenAIApiKey } from '@/lib/openai'
 import type { EmployeeAttachment, Unit } from '@/lib/types'
 
 /**
@@ -87,6 +87,44 @@ export async function extractAttachmentPdfText(fileUrl: string, fileName: string
   } catch (error) {
     console.error(
       `[attachments] falha ao extrair texto do PDF "${fileName}": ${error instanceof Error ? error.message : String(error)}`,
+    )
+    return null
+  }
+}
+
+/**
+ * Descrição por IA de uma imagem anexada (achado real da auditoria
+ * pré-lançamento de 2026-08-26: imagens eram anexadas mas nunca "lidas"
+ * pelo modelo — só o PDF tinha extração de conteúdo, ver
+ * extractAttachmentPdfText acima). Mesmo padrão: melhor esforço, nunca
+ * bloqueia o upload, devolve null em qualquer falha. Usa a mesma visão
+ * nativa do gpt-4o-mini já usada por generateStructuredReplyFromImage
+ * (extração da ordem de serviço) — sem serviço de visão à parte.
+ *
+ * Serve tanto pra materiais de marca (cardápio em foto, print de
+ * embalagem) quanto pra referências de criativos que o cliente admira
+ * (print de post de concorrente, por exemplo) — o Gestor de Conteúdo
+ * passa a "ver" o que descreve, em vez de só saber que a imagem existe.
+ */
+export async function extractAttachmentImageDescription(fileUrl: string, fileName: string): Promise<string | null> {
+  const apiKey = getOpenAIApiKey()
+  if (!apiKey) return null
+
+  try {
+    const raw = await generateStructuredReplyFromImage<{ description?: unknown }>({
+      apiKey,
+      systemPrompt:
+        'Você recebe uma imagem anexada por um cliente numa plataforma de funcionários digitais de IA. Descreva em detalhe, em português, tudo que for relevante pra um profissional de marketing/conteúdo entender e se inspirar: composição, cores predominantes, estilo visual, textos visíveis na imagem (transcreva-os), elementos de marca, e o assunto/produto/serviço retratado. Responda SOMENTE um JSON válido: {"description": string}.',
+      imageUrl: fileUrl,
+      userText: `Descreva esta imagem ("${fileName}") em detalhe.`,
+      maxTokens: 700,
+    })
+
+    const description = typeof raw.description === 'string' ? raw.description.trim() : ''
+    return description || null
+  } catch (error) {
+    console.error(
+      `[attachments] falha ao descrever a imagem "${fileName}": ${error instanceof Error ? error.message : String(error)}`,
     )
     return null
   }

@@ -156,12 +156,12 @@ export function KaiOnboardingChat({ companyName, orgId }: { companyName: string;
         const fileUrl = publicUrlData.publicUrl
 
         let extractedText: string | null = null
-        if (isPdf) {
+        if (isPdf || isImage) {
           try {
             const extractRes = await fetch('/api/employee-attachments/extract-text', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ fileUrl, fileName: file.name }),
+              body: JSON.stringify({ fileUrl, fileName: file.name, kind: isPdf ? 'pdf' : 'image' }),
             })
             const extractJson = await extractRes.json().catch(() => null)
             extractedText = typeof extractJson?.text === 'string' ? extractJson.text : null

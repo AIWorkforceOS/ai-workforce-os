@@ -27,9 +27,15 @@
 //     — nenhum pré-requisito além da conta ativa e uma Página do Facebook
 //       (page_id) para servir de dono do criativo.
 //   OUTCOME_LEADS
-//     — sem formulário/CRM configurado, cai em LINK_CLICKS apontando pra
-//       landing page; formulário instantâneo (Leads Ads nativo) não é
-//       criado por este cliente (fora de escopo desta rodada).
+//     — cria um formulário instantâneo nativo (Leads Ads) automaticamente
+//       (POST /{page_id}/leadgen_forms, campos padrão nome/e-mail/telefone —
+//       os mesmos que app/api/webhooks/meta-leads/route.ts já sabe
+//       extrair) e aponta o anúncio pra ele (optimization_goal=
+//       LEAD_GENERATION, destination_type=ON_AD). Se a criação do
+//       formulário falhar (ex.: permissão leads_retrieval pendente de App
+//       Review na conta do cliente), cai de volta pro comportamento
+//       anterior — LINK_CLICKS/OFFSITE_CONVERSIONS apontando pra landing
+//       page — em vez de quebrar a campanha inteira.
 //   OUTCOME_SALES (conversões)
 //     — exige Pixel do Meta (ou Conversions API) já instalado no site E
 //       um evento de conversão configurado; sem `metaPixelId` no spec,
@@ -356,11 +362,19 @@ export async function setMetaDailyBudget(
 // Criação (campanha do zero) — ver pré-requisitos por objective no topo do arquivo
 // ---------------------------------------------------------------------------
 
-/** Mapeia objective → optimization_goal do ad set (o que a Meta cobra no leilão). */
-export function metaOptimizationGoalFor(objective: string, hasPixel: boolean): string {
+/**
+ * Mapeia objective → optimization_goal do ad set (o que a Meta cobra no
+ * leilão). `useNativeLeadForm` (true só quando createMetaLeadForm deu
+ * certo, ver launcher.ts) manda pro otimizador nativo de geração de leads
+ * da própria Meta — bem mais eficiente que otimizar por clique de link
+ * pra depois torcer que a pessoa preencha o formulário na landing page.
+ */
+export function metaOptimizationGoalFor(objective: string, hasPixel: boolean, useNativeLeadForm = false): string {
   switch (objective) {
-    case 'OUTCOME_SALES':
     case 'OUTCOME_LEADS':
+      if (useNativeLeadForm) return 'LEAD_GENERATION'
+      return hasPixel ? 'OFFSITE_CONVERSIONS' : 'LINK_CLICKS'
+    case 'OUTCOME_SALES':
       return hasPixel ? 'OFFSITE_CONVERSIONS' : 'LINK_CLICKS'
     case 'OUTCOME_AWARENESS':
       return 'REACH'
@@ -370,6 +384,29 @@ export function metaOptimizationGoalFor(objective: string, hasPixel: boolean): s
     default:
       return 'LINK_CLICKS'
   }
+}
+
+export type MetaLeadFormCreateSpec = {
+  /** id da Página do Facebook — leadgen_forms é endpoint de página, não de conta de anúncios. */
+  pageId: string
+  name: string
+}
+
+/**
+ * POST /{page_id}/leadgen_forms — formulário instantâneo nativo com os 3
+ * campos padrão (nome completo, e-mail, telefone). Esses 3 tipos
+ * (FULL_NAME/EMAIL/PHONE) são os únicos que o webhook de recebimento
+ * (app/api/webhooks/meta-leads/route.ts) sabe extrair pelo nome do campo
+ * que a Meta devolve (full_name/email/phone_number) — não adicionar
+ * pergunta customizada sem atualizar aquele parser também.
+ * privacy_policy é opcional na API da Meta; omitido nesta rodada.
+ */
+export async function createMetaLeadForm(config: MetaConfig, spec: MetaLeadFormCreateSpec): Promise<{ id: string }> {
+  const questions = [{ type: 'FULL_NAME' }, { type: 'EMAIL' }, { type: 'PHONE' }]
+  return metaPost<{ id: string }>(`${spec.pageId}/leadgen_forms`, config, {
+    name: spec.name,
+    questions: JSON.stringify(questions),
+  })
 }
 
 export type MetaCampaignCreateSpec = {
@@ -409,6 +446,10 @@ export type MetaAdSetCreateSpec = {
   }
   /** Pixel do Meta — obrigatório quando optimizationGoal === 'OFFSITE_CONVERSIONS'. */
   promotedObjectPixelId?: string
+  /** id da Página do Facebook — obrigatório quando optimizationGoal === 'LEAD_GENERATION' (promoted_object usa page_id em vez de pixel_id nesse caso). */
+  promotedObjectPageId?: string
+  /** ON_AD = leads abrem o formulário nativo sem sair do Facebook/Instagram (exige objective=OUTCOME_LEADS); ausente = comportamento anterior (site externo). */
+  destinationType?: 'ON_AD' | 'WEBSITE'
 }
 
 /** POST /act_{account_id}/adsets. */
@@ -440,7 +481,10 @@ export async function createMetaAdSet(
       pixel_id: spec.promotedObjectPixelId,
       custom_event_type: 'PURCHASE',
     })
+  } else if (spec.optimizationGoal === 'LEAD_GENERATION' && spec.promotedObjectPageId) {
+    body.promoted_object = JSON.stringify({ page_id: spec.promotedObjectPageId })
   }
+  if (spec.destinationType) body.destination_type = spec.destinationType
 
   return metaPost<{ id: string }>(`${config.adAccountId}/adsets`, config, body)
 }
@@ -455,6 +499,8 @@ export type MetaAdCreativeCreateSpec = {
   callToActionType?: string
   /** URL pública da imagem aprovada (ver lib/traffic/creative-image.ts) — omitida, o anúncio nasce sem imagem (comportamento anterior). */
   imageUrl?: string
+  /** id do formulário nativo (ver createMetaLeadForm) — quando presente, o CTA abre o formulário na hora em vez de sair pro linkUrl. A Meta exige link="https://fb.me/" como placeholder nesse caso (documentado oficialmente, não é bug). */
+  leadGenFormId?: string
 }
 
 /** POST /act_{account_id}/adcreatives — link_data aceita imagem por URL (`picture`), sem exigir upload prévio para o image_hash. */
@@ -466,9 +512,11 @@ export async function createMetaAdCreative(
     page_id: spec.pageId,
     link_data: {
       message: spec.message,
-      link: spec.linkUrl,
+      link: spec.leadGenFormId ? 'https://fb.me/' : spec.linkUrl,
       name: spec.headline,
-      call_to_action: { type: spec.callToActionType ?? 'LEARN_MORE' },
+      call_to_action: spec.leadGenFormId
+        ? { type: 'SIGN_UP', value: { lead_gen_form_id: spec.leadGenFormId } }
+        : { type: spec.callToActionType ?? 'LEARN_MORE' },
       ...(spec.imageUrl ? { picture: spec.imageUrl } : {}),
     },
   }

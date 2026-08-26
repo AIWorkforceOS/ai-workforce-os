@@ -192,6 +192,65 @@ describe('launchCampaign — Meta com credenciais reais (fetch mockado)', () => 
     expect(calledUrls[3]).toContain('/ads')
   })
 
+  it('regressão (2026-08-27): OUTCOME_LEADS com metaPageId cria formulário nativo e aponta o ad set/criativo pra ele', async () => {
+    const calledUrls: string[] = []
+    const fetchMock = vi.fn(async (url: string, init?: { body?: URLSearchParams }) => {
+      calledUrls.push(url)
+      if (url.includes('/leadgen_forms')) return { ok: true, json: async () => ({ id: 'form_1' }) }
+      if (url.includes('/campaigns')) return { ok: true, json: async () => ({ id: 'camp_1' }) }
+      if (url.includes('/adsets')) {
+        expect(JSON.parse((init?.body as URLSearchParams).get('promoted_object')!)).toEqual({ page_id: 'page_1' })
+        expect((init?.body as URLSearchParams).get('optimization_goal')).toBe('LEAD_GENERATION')
+        expect((init?.body as URLSearchParams).get('destination_type')).toBe('ON_AD')
+        return { ok: true, json: async () => ({ id: 'adset_1' }) }
+      }
+      if (url.includes('/adcreatives')) {
+        const spec = JSON.parse((init?.body as URLSearchParams).get('object_story_spec')!)
+        expect(spec.link_data.call_to_action).toEqual({ type: 'SIGN_UP', value: { lead_gen_form_id: 'form_1' } })
+        return { ok: true, json: async () => ({ id: 'creative_1' }) }
+      }
+      if (url.includes('/ads')) return { ok: true, json: async () => ({ id: 'ad_1' }) }
+      throw new Error(`chamada inesperada: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const { client } = makeFakeSupabase()
+
+    const outcome = await launchCampaign(client, {
+      account: baseAccount({ platform: 'meta', access_token: 'token123' }),
+      spec: { ...baseSpec, objective: 'OUTCOME_LEADS', metaPageId: 'page_1' },
+      executedBy: 'human_approved:test@example.com',
+    })
+
+    expect(outcome.result).toBe('success')
+    expect(outcome.steps.find((s) => s.step === 'lead_form')?.externalId).toBe('form_1')
+    expect(calledUrls[1]).toContain('/leadgen_forms')
+  })
+
+  it('regressão (2026-08-27): formulário nativo falha (ex.: permissão pendente) — cai de volta pro fluxo com link, campanha continua com sucesso', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes('/leadgen_forms')) return { ok: false, json: async () => ({ error: { message: 'leads_retrieval permission missing' } }) }
+      if (url.includes('/campaigns')) return { ok: true, json: async () => ({ id: 'camp_1' }) }
+      if (url.includes('/adsets')) return { ok: true, json: async () => ({ id: 'adset_1' }) }
+      if (url.includes('/adcreatives')) return { ok: true, json: async () => ({ id: 'creative_1' }) }
+      if (url.includes('/ads')) return { ok: true, json: async () => ({ id: 'ad_1' }) }
+      throw new Error(`chamada inesperada: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const { client } = makeFakeSupabase()
+
+    const outcome = await launchCampaign(client, {
+      account: baseAccount({ platform: 'meta', access_token: 'token123' }),
+      spec: { ...baseSpec, objective: 'OUTCOME_LEADS', metaPageId: 'page_1' },
+      executedBy: 'human_approved:test@example.com',
+    })
+
+    expect(outcome.result).toBe('success')
+    expect(outcome.adExternalId).toBe('ad_1')
+    const leadFormStep = outcome.steps.find((s) => s.step === 'lead_form')
+    expect(leadFormStep?.externalId).toBeNull()
+    expect(leadFormStep?.error).toMatch(/leads_retrieval permission missing/)
+  })
+
   it('repassa creative.imageUrl para o adcreative (picture no link_data)', async () => {
     let creativeBody: URLSearchParams | null = null
     const fetchMock = vi.fn(async (url: string, init?: { body?: URLSearchParams }) => {
