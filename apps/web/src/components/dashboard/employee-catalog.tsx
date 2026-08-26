@@ -150,7 +150,7 @@ export function EmployeeCatalog({
 
   const seoSteps: Step[] = [
     { label: 'Contratar o especialista em SEO', desc: 'Ele te entrevista sobre o site, palavras-chave e concorrentes — e fica de prontidão.', done: !!seo?.is_active, inline: true },
-    { label: 'Aguardar a primeira auditoria', desc: 'Ele audita o site de verdade (título, meta description, mobile, etc.) — pode rodar na hora pelo painel dele.', done: seoAudits > 0, href: '/dashboard/seo' },
+    { label: 'Aguardar a primeira auditoria', desc: 'Ele audita o site de verdade (título, meta description, mobile, etc.) e entrega o diagnóstico + conteúdo pronto (posts, Google Business Profile) — quem aplica as mudanças no site é você ou seu time.', done: seoAudits > 0, href: '/dashboard/seo' },
   ]
 
   return (

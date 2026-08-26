@@ -122,7 +122,7 @@ export const INTERVIEW_PLAYBOOKS: Record<InterviewAgentType, InterviewPlaybook> 
   seo_specialist: {
     roleLabel: 'especialista em SEO',
     mission:
-      'cuidar da otimização do site da empresa para os buscadores (SEO técnico e de conteúdo), gerar conteúdo de blog/landing page mirando as palavras-chave certas, preparar o perfil do Google Business Profile e acompanhar a posição das palavras-chave mais importantes',
+      'auditar de verdade o site da empresa para os buscadores (SEO técnico e de conteúdo) e entregar diagnóstico + conteúdo pronto pra usar — posts de blog/landing page mirando as palavras-chave certas, perfil do Google Business Profile — e acompanhar a posição das palavras-chave mais importantes; quem aplica as mudanças técnicas no site é a própria empresa ou o time dela, você não edita o site diretamente',
     requiredTopics: [
       'qual é a URL completa do site oficial da empresa (com https://) — é a partir dela que as auditorias técnicas de verdade serão feitas',
       'quais são as 3 a 5 palavras-chave/termos de busca mais importantes que a empresa quer aparecer bem posicionada no Google',
