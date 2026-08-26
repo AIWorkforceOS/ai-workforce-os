@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getAppUser } from '@/lib/app-user'
 import { createServiceClient } from '@/lib/supabase/service'
 import { sendWelcomeEmail } from '@/lib/email'
+import { generateAccessLink } from '@/lib/auth/access-link'
 
 function siteUrl(): string {
   return (process.env.NEXT_PUBLIC_APP_URL || 'https://SEU-DOMINIO.vercel.app').replace(/\/+$/, '')
@@ -67,11 +68,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Organização não encontrada.' }, { status: 404 })
   }
 
+  let unitLogoUrl: string | null = null
   if (unitId) {
-    const { data: unit } = await service.from('units').select('id, org_id').eq('id', unitId).maybeSingle()
+    const { data: unit } = await service.from('units').select('id, org_id, logo_url').eq('id', unitId).maybeSingle()
     if (!unit || unit.org_id !== orgId) {
       return NextResponse.json({ error: 'Unidade não encontrada nesta empresa.' }, { status: 404 })
     }
+    unitLogoUrl = unit.logo_url ?? null
   }
 
   // Registro de negócio (public.users) — upsert por e-mail
@@ -96,38 +99,10 @@ export async function POST(request: Request) {
   // Conta de login (Supabase Auth): link seguro de primeiro acesso em vez de
   // senha em texto puro. 'invite' cria a conta; se já existir, cai para
   // 'recovery' (reset de senha) na mesma conta.
-  const redirectTo = `${siteUrl()}/auth/set-password`
-  let actionLink: string | null = null
-  let linkType: 'invite' | 'recovery' = 'invite'
-
-  const invite = await service.auth.admin.generateLink({ type: 'invite', email, options: { redirectTo } })
-  if (invite.error) {
-    const alreadyExists = /already|registered|exists/i.test(invite.error.message)
-    if (!alreadyExists) {
-      return NextResponse.json(
-        { error: `Usuário vinculado à empresa, mas falha ao gerar link de acesso: ${invite.error.message}` },
-        { status: 500 },
-      )
-    }
-    linkType = 'recovery'
-    const recovery = await service.auth.admin.generateLink({ type: 'recovery', email, options: { redirectTo } })
-    if (recovery.error || !recovery.data.properties?.action_link) {
-      return NextResponse.json({
-        ok: true,
-        email,
-        emailSent: false,
-        setupLink: null,
-        note: 'Usuário vinculado à empresa. A conta de login já existia e não foi possível gerar um novo link — a senha atual continua valendo.',
-      })
-    }
-    actionLink = recovery.data.properties.action_link
-  } else {
-    actionLink = invite.data.properties?.action_link ?? null
-  }
-
-  if (!actionLink) {
+  const accessLink = await generateAccessLink(service, email, `${siteUrl()}/auth/set-password`)
+  if (!accessLink.ok) {
     return NextResponse.json(
-      { error: 'Usuário vinculado à empresa, mas não foi possível gerar o link de acesso.' },
+      { error: `Usuário vinculado à empresa, mas falha ao gerar link de acesso: ${accessLink.error}` },
       { status: 500 },
     )
   }
@@ -136,7 +111,8 @@ export async function POST(request: Request) {
     to: email,
     name,
     companyName: org.name,
-    setPasswordUrl: actionLink,
+    setPasswordUrl: accessLink.link,
+    logoUrl: unitLogoUrl,
   })
 
   return NextResponse.json({
@@ -146,7 +122,7 @@ export async function POST(request: Request) {
     emailError: emailResult.ok ? null : emailResult.error,
     // Só volta pra tela se o e-mail não pôde ser enviado (ex.: RESEND_API_KEY
     // ausente) — nesse caso a equipe repassa o link por canal seguro.
-    setupLink: emailResult.ok ? null : actionLink,
-    linkType,
+    setupLink: emailResult.ok ? null : accessLink.link,
+    linkType: accessLink.linkType,
   })
 }

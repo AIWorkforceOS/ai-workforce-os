@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { createFakeSupabase } from '@/lib/__tests__/fake-supabase'
 import { handlePaymentWebhook } from '../webhook-handler'
 import type { PaymentProvider, PaymentWebhookEvent } from '../provider'
+import * as emailModule from '@/lib/email'
+import * as accessLinkModule from '@/lib/auth/access-link'
 
 function fakeProvider(overrides: Partial<PaymentProvider> = {}): PaymentProvider {
   return {
@@ -213,5 +215,182 @@ describe('handlePaymentWebhook', () => {
     expect((db.organizations as Array<{ billing_provider_subscription_ref: string }>)[0]!.billing_provider_subscription_ref).toBe(
       'checkout_123',
     )
+  })
+
+  describe('regressão (2026-08-26): pagamento aprovado provisiona a conta a partir de pending_signups', () => {
+    beforeEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    function pendingSignupRow(overrides: Record<string, unknown> = {}) {
+      return {
+        id: 'ps-1',
+        company: 'Padaria Estrela',
+        name: 'Maria Silva',
+        email: 'maria@padaria.com',
+        phone: '+55 11 99999-0000',
+        plan: 'starter',
+        currency: 'BRL',
+        region: 'BR',
+        locale: 'pt',
+        amount: 497,
+        payment_method: 'card',
+        provider: 'asaas',
+        provider_customer_ref: 'cus_9',
+        provider_charge_ref: 'checkout_9',
+        terms_version: '2026-08-19-draft1',
+        privacy_version: '2026-08-19-draft1',
+        accept_ip: '1.2.3.4',
+        status: 'pending',
+        org_id: null,
+        ...overrides,
+      }
+    }
+
+    it('sem org e sem pending_signups batendo: continua "organization_not_found" (comportamento antigo intocado)', async () => {
+      const { supabase, db } = createFakeSupabase({ organizations: [], pending_signups: [] })
+      const event: PaymentWebhookEvent = {
+        externalEventId: 'evt_ghost',
+        type: 'payment_success',
+        providerChargeRef: 'checkout_ghost',
+        providerCustomerRef: 'cus_ghost',
+        raw: {},
+      }
+      const provider = fakeProvider({ parseWebhookEvent: () => event })
+
+      const result = await handlePaymentWebhook({ supabase, provider, rawBody: '{}', headers: new Headers() })
+
+      expect(result.body.skipped).toBe('organization_not_found')
+      expect(db.organizations ?? []).toHaveLength(0)
+    })
+
+    it('evento que não é payment_success (ex.: past_due) sem org batendo: NÃO tenta provisionar a partir de pending_signups', async () => {
+      const { supabase, db } = createFakeSupabase({
+        organizations: [],
+        pending_signups: [pendingSignupRow()],
+      })
+      const event: PaymentWebhookEvent = {
+        externalEventId: 'evt_past_due',
+        type: 'past_due',
+        providerChargeRef: 'checkout_9',
+        providerCustomerRef: 'cus_9',
+        raw: {},
+      }
+      const provider = fakeProvider({ parseWebhookEvent: () => event })
+
+      const result = await handlePaymentWebhook({ supabase, provider, rawBody: '{}', headers: new Headers() })
+
+      expect(result.body.skipped).toBe('organization_not_found')
+      expect(db.organizations ?? []).toHaveLength(0)
+      expect((db.pending_signups as Array<{ status: string }>)[0]!.status).toBe('pending')
+    })
+
+    it('payment_success batendo por providerCustomerRef: provisiona a conta, ativa billing, marca a cobrança paga, completa o pending_signups e manda o e-mail de boas-vindas com link de acesso', async () => {
+      const { supabase, db } = createFakeSupabase({ organizations: [], pending_signups: [pendingSignupRow()] })
+      vi.spyOn(accessLinkModule, 'generateAccessLink').mockResolvedValue({ ok: true, link: 'https://app/auth/set-password?token=abc', linkType: 'invite' })
+      const sendWelcomeEmail = vi.spyOn(emailModule, 'sendWelcomeEmail').mockResolvedValue({ ok: true })
+
+      const event: PaymentWebhookEvent = {
+        externalEventId: 'PAYMENT_CONFIRMED:pay_1',
+        type: 'payment_success',
+        providerChargeRef: 'checkout_9',
+        providerCustomerRef: 'cus_9',
+        providerPaymentRef: 'pay_1',
+        raw: {},
+      }
+      const provider = fakeProvider({ parseWebhookEvent: () => event })
+
+      const result = await handlePaymentWebhook({ supabase, provider, rawBody: '{}', headers: new Headers() })
+
+      expect(result.status).toBe(200)
+      expect(db.organizations).toHaveLength(1)
+      const org = (db.organizations as Array<Record<string, unknown>>)[0]!
+      expect(org.billing_status).toBe('active')
+      expect(org.billing_provider).toBe('asaas')
+      expect(org.billing_provider_customer_ref).toBe('cus_9')
+
+      expect(db.financial_records).toHaveLength(1)
+      const record = (db.financial_records as Array<Record<string, unknown>>)[0]!
+      expect(record.status).toBe('paid')
+      expect(record.provider_payment_ref).toBe('pay_1')
+
+      const pending = (db.pending_signups as Array<Record<string, unknown>>)[0]!
+      expect(pending.status).toBe('completed')
+      expect(pending.org_id).toBe(org.id)
+
+      expect(sendWelcomeEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ to: 'maria@padaria.com', companyName: 'Padaria Estrela', setPasswordUrl: 'https://app/auth/set-password?token=abc' }),
+      )
+    })
+
+    it('providerCustomerRef não bate em nada, mas providerChargeRef bate: resolve por fallback', async () => {
+      const { supabase, db } = createFakeSupabase({
+        organizations: [],
+        pending_signups: [pendingSignupRow({ provider_customer_ref: 'cus_9', provider_charge_ref: 'checkout_9' })],
+      })
+      vi.spyOn(accessLinkModule, 'generateAccessLink').mockResolvedValue({ ok: true, link: 'https://x', linkType: 'invite' })
+      vi.spyOn(emailModule, 'sendWelcomeEmail').mockResolvedValue({ ok: true })
+
+      const event: PaymentWebhookEvent = {
+        externalEventId: 'evt_by_charge_ref',
+        type: 'payment_success',
+        providerChargeRef: 'checkout_9',
+        providerCustomerRef: 'cus_outro', // não bate com o pending_signups
+        raw: {},
+      }
+      const provider = fakeProvider({ parseWebhookEvent: () => event })
+
+      const result = await handlePaymentWebhook({ supabase, provider, rawBody: '{}', headers: new Headers() })
+
+      expect(result.status).toBe(200)
+      expect(db.organizations).toHaveLength(1)
+    })
+
+    it('reentrega do mesmo webhook depois de já ter provisionado (pending_signups já completed): reaproveita a org existente, não provisiona de novo', async () => {
+      const { supabase, db } = createFakeSupabase({
+        organizations: [{ id: 'org-already', billing_status: 'active' }],
+        pending_signups: [pendingSignupRow({ status: 'completed', org_id: 'org-already' })],
+      })
+      const sendWelcomeEmail = vi.spyOn(emailModule, 'sendWelcomeEmail').mockResolvedValue({ ok: true })
+
+      const event: PaymentWebhookEvent = {
+        externalEventId: 'evt_retry',
+        type: 'payment_success',
+        providerChargeRef: 'checkout_9',
+        providerCustomerRef: 'cus_9',
+        raw: {},
+      }
+      const provider = fakeProvider({ parseWebhookEvent: () => event })
+
+      const result = await handlePaymentWebhook({ supabase, provider, rawBody: '{}', headers: new Headers() })
+
+      expect(result.status).toBe(200)
+      // Não duplica organização nenhuma nem manda e-mail de novo
+      expect(db.organizations).toHaveLength(1)
+      expect(sendWelcomeEmail).not.toHaveBeenCalled()
+    })
+
+    it('o provisionamento falha (ex.: erro no banco ao criar a unidade): loga o erro e trata como organization_not_found, sem deixar nada pela metade', async () => {
+      const { supabase, db } = createFakeSupabase(
+        { organizations: [], pending_signups: [pendingSignupRow()] },
+        { units: { insert: 'unidade: falha simulada' } },
+      )
+
+      const event: PaymentWebhookEvent = {
+        externalEventId: 'evt_provision_fail',
+        type: 'payment_success',
+        providerChargeRef: 'checkout_9',
+        providerCustomerRef: 'cus_9',
+        raw: {},
+      }
+      const provider = fakeProvider({ parseWebhookEvent: () => event })
+
+      const result = await handlePaymentWebhook({ supabase, provider, rawBody: '{}', headers: new Headers() })
+
+      expect(result.body.skipped).toBe('organization_not_found')
+      expect(db.organizations ?? []).toHaveLength(0)
+      const events = (db.system_events ?? []) as Array<{ event_type: string }>
+      expect(events.some((e) => e.event_type === 'pending_signup_provision_failed')).toBe(true)
+    })
   })
 })

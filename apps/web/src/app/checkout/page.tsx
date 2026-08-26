@@ -1,26 +1,14 @@
 'use client'
 
-import { useState, Suspense } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Check, CreditCard, Zap, Lock, ArrowRight, Loader2, Mail } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
+import { Check, CreditCard, Zap, Lock, ArrowRight, Loader2, Mail, RefreshCw } from 'lucide-react'
 import { useLocale } from '@/lib/i18n/client'
 import { currencyForLocale, planPrice, type Locale, type PaidPlanSlug } from '@/lib/i18n/config'
 
 const brandGradient = 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)'
 const CONTACT_EMAIL = 'suporte@alizo.com.br'
-
-/**
- * Forma de pagamento do lançamento — só cartão (crédito ou débito),
- * Brasil e EUA (decisão do produto, 2026-08-25): é o único método com
- * cobrança recorrente de verdade sem o cliente precisar agir todo mês —
- * PIX/boleto recorrente ainda exigiria pagar cada fatura manualmente,
- * o que não sustenta o bloqueio automático em caso de falha de pagamento.
- * 'pix'/'boleto'/'zelle' seguem no tipo só por compatibilidade com
- * registros antigos de financial_records — não são mais oferecidos aqui.
- */
-type PaymentMethod = 'pix' | 'card' | 'boleto' | 'zelle'
 
 const COPY = {
   pt: {
@@ -34,62 +22,53 @@ const COPY = {
         features: ['Até 5 unidades', 'Até 3 funcionários digitais', 'Funil de vendas completo', 'Suporte prioritário', 'Configuração assistida'],
       },
     },
-    paymentMethods: [
-      { id: 'card' as PaymentMethod, label: 'Cartão', flag: '💳', sub: 'Crédito ou débito, cobrança mensal automática' },
-    ],
-    methodLabel: { pix: 'PIX', card: 'Cartão (assinatura mensal)', boleto: 'Boleto', zelle: 'Zelle' } as Record<PaymentMethod, string>,
-    methodInstruction: {
-      pix: 'QR Code PIX',
-      card: 'link seguro para cadastrar o cartão — a mensalidade é cobrada automaticamente todo mês a partir daí',
-      boleto: 'boleto',
-      zelle: 'dados para transferência Zelle',
-    } as Record<PaymentMethod, string>,
-    steps: ['Sua conta', 'Pagamento', 'Confirmar'],
+    steps: ['Sua conta', 'Pagamento'],
     checkoutSecure: 'Checkout seguro',
     loading: 'Carregando...',
     account: {
       title: 'Crie sua conta',
-      sub: 'Com esses dados criamos sua empresa na plataforma — você entra direto, sem esperar e-mail.',
+      sub: 'Com esses dados preparamos sua empresa na plataforma — o acesso é liberado assim que o pagamento for aprovado.',
       company: 'Nome da empresa *', companyPh: 'Ex: Padaria Estrela',
       name: 'Seu nome *', namePh: 'Ex: Maria Silva',
       email: 'E-mail *', emailPh: 'voce@empresa.com',
       phone: 'WhatsApp / Telefone', phonePh: '+55 11 99999-0000',
-      password: 'Crie uma senha de acesso *', passwordPh: 'Mín. 8 caracteres',
       continue: 'Continuar para pagamento',
-    },
-    payment: {
-      title: 'Forma de pagamento',
-      boxTitle: 'Acesso liberado na hora',
-      boxText: (instruction: string) =>
-        `Você entra na plataforma agora e configura seu funcionário digital. As instruções de pagamento (${instruction}) chegam no seu e-mail — e você tem 7 dias de garantia total.`,
-      back: 'Voltar',
-      review: 'Revisar pedido',
-    },
-    confirm: {
-      title: 'Confirmar pedido',
-      company: 'Empresa', name: 'Nome', email: 'E-mail', plan: 'Plano', payment: 'Pagamento', total: 'Total',
-      perMonth: '/mês',
-      trust: '✓ 7 dias de garantia total  ·  ✓ Cancele quando quiser  ·  ✓ Dados protegidos por SSL',
-      back: 'Voltar',
-      submit: 'Criar conta e começar',
-      submitting: 'Criando sua conta...',
       agreePrefix: 'Li e concordo com os ',
       agreeTerms: 'Termos de Uso',
       agreeMiddle: ' e a ',
       agreePrivacy: 'Política de Privacidade',
       agreeSuffix: '.',
     },
-    done: {
-      title: 'Conta criada! 🎉',
-      sub1: 'Sua empresa ', sub2: ' já está na plataforma.',
-      sub3: 'Você tem 7 dias de garantia total. Entrando no painel de configuração…',
-      cta: 'Configurar meu funcionário digital',
-      payNow: 'Pagar agora',
-      payLater: 'As instruções também chegaram no seu e-mail — pode pagar quando preferir.',
+    payment: {
+      title: 'Forma de pagamento',
+      boxTitle: 'Pagamento seguro na processadora',
+      boxText: 'Você será levado para a página segura de pagamento pra digitar os dados do cartão (crédito ou débito) — nunca ficam com a gente. Aprovado o pagamento, seu acesso é liberado na hora.',
+      back: 'Voltar',
+      submit: 'Ir para pagamento seguro',
+      submitting: 'Preparando pagamento...',
+      trust: '✓ 7 dias de garantia total  ·  ✓ Cancele quando quiser  ·  ✓ Dados protegidos por SSL',
+    },
+    finish: {
+      waitingTitle: 'Confirmando seu pagamento...',
+      waitingSub: 'Isso pode levar alguns instantes. Não feche esta página.',
+      successTitle: 'Pagamento aprovado! 🎉',
+      successSub1: 'Sua empresa ', successSub2: ' já está na Alizo.',
+      successSub3: 'Enviamos um e-mail pra você definir sua senha e entrar.',
+      cta: 'Ir para o login',
+      stillPendingTitle: 'Ainda confirmando com a operadora',
+      stillPendingSub: 'Pode levar mais alguns instantes. Você também recebe a confirmação por e-mail assim que aprovar.',
+      retry: 'Atualizar',
+      notFoundTitle: 'Não encontramos esse pagamento',
+      notFoundSub: `Se você concluiu o pagamento e isso persistir, fale com a gente: ${CONTACT_EMAIL}`,
+      backToCheckout: 'Voltar para o checkout',
+    },
+    canceled: {
+      title: 'Pagamento cancelado',
+      sub: 'Você pode tentar novamente quando quiser.',
     },
     summary: {
       eyebrow: 'Resumo do pedido', plan: 'Plano', total: 'Total mensal', taxes: '+ impostos aplicáveis',
-      badges: ['Pagamento seguro SSL', 'Acesso imediato', '7 dias de garantia'],
+      badges: ['Pagamento seguro SSL', '7 dias de garantia', 'Cancele quando quiser'],
     },
     enterprise: {
       title: 'Plano Enterprise — sob consulta',
@@ -113,62 +92,53 @@ const COPY = {
         features: ['Up to 5 units', 'Up to 3 digital employees', 'Full sales pipeline', 'Priority support', 'Assisted setup'],
       },
     },
-    paymentMethods: [
-      { id: 'card' as PaymentMethod, label: 'Card', flag: '💳', sub: 'Debit or credit, automatic monthly billing' },
-    ],
-    methodLabel: { pix: 'PIX', card: 'Card (monthly subscription)', boleto: 'Boleto', zelle: 'Zelle' } as Record<PaymentMethod, string>,
-    methodInstruction: {
-      pix: 'PIX QR code',
-      card: 'secure link to add your card — the monthly charge happens automatically from there',
-      boleto: 'boleto',
-      zelle: 'Zelle transfer details',
-    } as Record<PaymentMethod, string>,
-    steps: ['Your account', 'Payment', 'Confirm'],
+    steps: ['Your account', 'Payment'],
     checkoutSecure: 'Secure checkout',
     loading: 'Loading...',
     account: {
       title: 'Create your account',
-      sub: 'We use this to set up your company on the platform — you get in right away, no waiting for emails.',
+      sub: 'We use this to set up your company on the platform — access is granted right after payment is approved.',
       company: 'Company name *', companyPh: 'E.g.: Star Bakery',
       name: 'Your name *', namePh: 'E.g.: Mary Smith',
       email: 'Email *', emailPh: 'you@company.com',
       phone: 'WhatsApp / Phone', phonePh: '+1 (555) 000-0000',
-      password: 'Create a password *', passwordPh: 'Min. 8 characters',
       continue: 'Continue to payment',
-    },
-    payment: {
-      title: 'Payment method',
-      boxTitle: 'Instant access',
-      boxText: (instruction: string) =>
-        `You get into the platform now and set up your digital employee. Payment instructions (${instruction}) arrive by email — and you have a full 7-day guarantee.`,
-      back: 'Back',
-      review: 'Review order',
-    },
-    confirm: {
-      title: 'Confirm your order',
-      company: 'Company', name: 'Name', email: 'Email', plan: 'Plan', payment: 'Payment', total: 'Total',
-      perMonth: '/mo',
-      trust: '✓ Full 7-day guarantee  ·  ✓ Cancel anytime  ·  ✓ SSL-protected data',
-      back: 'Back',
-      submit: 'Create account and start',
-      submitting: 'Creating your account...',
       agreePrefix: 'I have read and agree to the ',
       agreeTerms: 'Terms of Service',
       agreeMiddle: ' and the ',
       agreePrivacy: 'Privacy Policy',
       agreeSuffix: '.',
     },
-    done: {
-      title: 'Account created! 🎉',
-      sub1: 'Your company ', sub2: ' is on the platform.',
-      sub3: 'You have a full 7-day guarantee. Taking you to the setup panel…',
-      cta: 'Set up my digital employee',
-      payNow: 'Pay now',
-      payLater: 'Instructions were also emailed to you — pay whenever works for you.',
+    payment: {
+      title: 'Payment method',
+      boxTitle: 'Secure payment on the processor',
+      boxText: "You'll be taken to the payment processor's secure page to enter your card details (credit or debit) — we never see or store them. Once approved, your access is granted instantly.",
+      back: 'Back',
+      submit: 'Go to secure payment',
+      submitting: 'Preparing payment...',
+      trust: '✓ Full 7-day guarantee  ·  ✓ Cancel anytime  ·  ✓ SSL-protected data',
+    },
+    finish: {
+      waitingTitle: 'Confirming your payment...',
+      waitingSub: 'This can take a few moments. Please don’t close this page.',
+      successTitle: 'Payment approved! 🎉',
+      successSub1: 'Your company ', successSub2: ' is now on Alizo.',
+      successSub3: 'We emailed you a link to set your password and sign in.',
+      cta: 'Go to login',
+      stillPendingTitle: 'Still confirming with the processor',
+      stillPendingSub: 'This can take a bit longer. You will also get an email confirmation once it’s approved.',
+      retry: 'Refresh',
+      notFoundTitle: 'We could not find that payment',
+      notFoundSub: `If you completed payment and this persists, contact us: ${CONTACT_EMAIL}`,
+      backToCheckout: 'Back to checkout',
+    },
+    canceled: {
+      title: 'Payment canceled',
+      sub: 'You can try again whenever you like.',
     },
     summary: {
       eyebrow: 'Order summary', plan: 'Plan', total: 'Monthly total', taxes: '+ applicable taxes',
-      badges: ['SSL secure payment', 'Instant access', '7-day guarantee'],
+      badges: ['SSL secure payment', '7-day guarantee', 'Cancel anytime'],
     },
     enterprise: {
       title: 'Enterprise plan — custom pricing',
@@ -222,100 +192,42 @@ function EnterpriseContact({ t }: { t: Copy }) {
   )
 }
 
-function CheckoutForm() {
-  const params = useSearchParams()
-  const router = useRouter()
-  const locale = useLocale()
-  const t: Copy = COPY[locale]
+type FinishStatus = 'pending' | 'completed' | 'expired' | 'not_found'
 
-  const planSlug = resolvePlan(params.get('plan'))
+/** Tela de retorno do checkout hospedado (Asaas/Stripe) — faz polling até o webhook confirmar o pagamento e provisionar a conta (ver lib/payments/webhook-handler.ts). */
+function FinishScreen({ pendingId, t }: { pendingId: string; t: Copy }) {
+  const [status, setStatus] = useState<FinishStatus>('pending')
+  const [elapsedMs, setElapsedMs] = useState(0)
+  const startedAt = useRef(Date.now())
 
-  const [step, setStep] = useState<1 | 2 | 3>(1)
-  const [payMethod, setPayMethod] = useState<PaymentMethod>('card')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [done, setDone] = useState(false)
-  const [termsAccepted, setTermsAccepted] = useState(false)
-  const [paymentUrl, setPaymentUrl] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout>
 
-  const [form, setForm] = useState({
-    company: '',
-    name: '',
-    email: '',
-    phone: '',
-    password: '',
-  })
-
-  if (planSlug === 'enterprise') {
-    return <EnterpriseContact t={t} />
-  }
-
-  const plan = t.plans[planSlug]
-  const price = planPrice(planSlug, locale)
-  const paymentMethodCount: number = t.paymentMethods.length
-
-  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setForm(f => ({ ...f, [e.target.name]: e.target.value }))
-  }
-
-  function step1Valid() {
-    return form.company.trim() && form.name.trim() && form.email.includes('@') && form.password.length >= 8
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!termsAccepted) return
-    setLoading(true)
-    setError(null)
-
-    try {
-      // 1. Cria de verdade: empresa + unidade + acesso
-      const res = await fetch('/api/checkout/complete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...form,
-          plan: planSlug,
-          locale,
-          currency: currencyForLocale(locale),
-          paymentMethod: payMethod,
-          termsAccepted,
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        setError(data.error ?? t.errors.generic)
-        setLoading(false)
-        return
+    async function poll() {
+      try {
+        const res = await fetch(`/api/checkout/status?pending=${encodeURIComponent(pendingId)}`, { cache: 'no-store' })
+        const data = await res.json()
+        if (cancelled) return
+        const nextStatus: FinishStatus = data.status ?? 'not_found'
+        setStatus(nextStatus)
+        setElapsedMs(Date.now() - startedAt.current)
+        if (nextStatus === 'pending') {
+          timer = setTimeout(poll, 2500)
+        }
+      } catch {
+        if (!cancelled) timer = setTimeout(poll, 2500)
       }
-
-      setPaymentUrl(data.paymentUrl ?? null)
-
-      // 2. Login automático com a senha que a própria pessoa escolheu
-      const supabase = createClient()
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: form.email.trim().toLowerCase(),
-        password: form.password,
-      })
-
-      setLoading(false)
-      setDone(true)
-
-      // Se o login automático falhar (ex.: conta de auth antiga com outra
-      // senha), a tela de sucesso orienta a entrar manualmente.
-      if (!signInError) {
-        setTimeout(() => {
-          router.push('/dashboard/onboarding')
-          router.refresh()
-        }, 1800)
-      }
-    } catch {
-      setError(t.errors.connection)
-      setLoading(false)
     }
-  }
+    poll()
 
-  if (done) {
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [pendingId])
+
+  if (status === 'completed') {
     return (
       <div className="flex flex-col items-center gap-6 py-20 text-center">
         <div className="flex h-20 w-20 items-center justify-center rounded-full"
@@ -323,36 +235,126 @@ function CheckoutForm() {
           <Check size={36} className="text-white" />
         </div>
         <div>
-          <h2 className="text-3xl font-black text-white">{t.done.title}</h2>
-          <p className="mt-3 text-slate-400">
-            {t.done.sub1}<strong className="text-white">{form.company}</strong>{t.done.sub2}
-          </p>
-          <p className="mt-1 text-sm text-slate-500">{t.done.sub3}</p>
+          <h2 className="text-3xl font-black text-white">{t.finish.successTitle}</h2>
+          <p className="mt-3 text-slate-400">{t.finish.successSub1}{t.finish.successSub2}</p>
+          <p className="mt-1 text-sm text-slate-500">{t.finish.successSub3}</p>
         </div>
-        {paymentUrl && (
-          <div className="flex flex-col items-center gap-2">
-            <a
-              href={paymentUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 rounded-2xl border border-emerald-400/40 bg-emerald-400/10 px-6 py-3 text-sm font-black text-emerald-300 transition-all hover:bg-emerald-400/20"
-            >
-              <CreditCard size={14} />
-              {t.done.payNow}
-            </a>
-            <p className="max-w-xs text-xs text-slate-500">{t.done.payLater}</p>
-          </div>
-        )}
         <Link
-          href="/dashboard/onboarding"
+          href="/login"
           className="flex items-center gap-2 rounded-2xl px-8 py-4 text-sm font-black text-white"
           style={{ background: brandGradient, boxShadow: '0 6px 20px rgba(6,182,212,0.3)' }}
         >
-          {t.done.cta}
+          {t.finish.cta}
           <ArrowRight size={14} />
         </Link>
       </div>
     )
+  }
+
+  if (status === 'not_found' || status === 'expired') {
+    return (
+      <div className="flex flex-col items-center gap-6 py-20 text-center">
+        <h2 className="text-2xl font-black text-white">{t.finish.notFoundTitle}</h2>
+        <p className="max-w-sm text-sm text-slate-400">{t.finish.notFoundSub}</p>
+        <Link href="/checkout" className="text-sm font-bold text-cyan-400 hover:text-cyan-300">
+          {t.finish.backToCheckout}
+        </Link>
+      </div>
+    )
+  }
+
+  const stillWaitingAfterAWhile = elapsedMs > 20000
+  return (
+    <div className="flex flex-col items-center gap-6 py-20 text-center">
+      <Loader2 size={40} className="animate-spin text-cyan-400" />
+      <div>
+        <h2 className="text-2xl font-black text-white">
+          {stillWaitingAfterAWhile ? t.finish.stillPendingTitle : t.finish.waitingTitle}
+        </h2>
+        <p className="mt-2 max-w-sm text-sm text-slate-400">
+          {stillWaitingAfterAWhile ? t.finish.stillPendingSub : t.finish.waitingSub}
+        </p>
+      </div>
+      {stillWaitingAfterAWhile && (
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-slate-300 hover:bg-white/5"
+        >
+          <RefreshCw size={12} />
+          {t.finish.retry}
+        </button>
+      )}
+    </div>
+  )
+}
+
+function CheckoutForm() {
+  const params = useSearchParams()
+  const locale = useLocale()
+  const t: Copy = COPY[locale]
+
+  const planSlug = resolvePlan(params.get('plan'))
+  const pendingId = params.get('pending')
+  const canceled = params.get('canceled') === '1'
+
+  const [step, setStep] = useState<1 | 2>(1)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [termsAccepted, setTermsAccepted] = useState(false)
+
+  const [form, setForm] = useState({
+    company: '',
+    name: '',
+    email: '',
+    phone: '',
+  })
+
+  if (pendingId) {
+    return <FinishScreen pendingId={pendingId} t={t} />
+  }
+
+  if (planSlug === 'enterprise') {
+    return <EnterpriseContact t={t} />
+  }
+
+  const plan = t.plans[planSlug]
+  const price = planPrice(planSlug, locale)
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setForm(f => ({ ...f, [e.target.name]: e.target.value }))
+  }
+
+  function step1Valid() {
+    return form.company.trim() && form.name.trim() && form.email.includes('@') && termsAccepted
+  }
+
+  async function handleGoToPayment() {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/checkout/start-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...form,
+          plan: planSlug,
+          locale,
+          currency: currencyForLocale(locale),
+          termsAccepted,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.paymentUrl) {
+        setError(data.error ?? t.errors.generic)
+        setLoading(false)
+        return
+      }
+      window.location.href = data.paymentUrl
+    } catch {
+      setError(t.errors.connection)
+      setLoading(false)
+    }
   }
 
   return (
@@ -361,7 +363,7 @@ function CheckoutForm() {
       <div className="lg:col-span-3">
         {/* Etapas */}
         <div className="mb-8 flex items-center gap-3">
-          {[1, 2, 3].map(s => (
+          {[1, 2].map(s => (
             <div key={s} className="flex items-center gap-2">
               <div className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-black transition-all"
                 style={step >= s
@@ -372,151 +374,114 @@ function CheckoutForm() {
               <span className="text-xs font-semibold" style={{ color: step >= s ? '#cbd5e1' : '#64748b' }}>
                 {t.steps[s - 1]}
               </span>
-              {s < 3 && <div className="h-px w-8 bg-white/10" />}
+              {s < 2 && <div className="h-px w-8 bg-white/10" />}
             </div>
           ))}
         </div>
 
-        <form onSubmit={handleSubmit}>
-          {/* Passo 1 — dados + senha */}
-          {step === 1 && (
-            <div className="space-y-4">
-              <h2 className="text-xl font-black text-white">{t.account.title}</h2>
-              <p className="text-sm text-slate-500">{t.account.sub}</p>
+        {canceled && (
+          <div className="mb-6 rounded-xl px-4 py-3" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
+            <p className="text-sm font-bold text-red-300">{t.canceled.title}</p>
+            <p className="text-xs text-red-400/80">{t.canceled.sub}</p>
+          </div>
+        )}
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <Field label={t.account.company} name="company" value={form.company} onChange={handleChange} placeholder={t.account.companyPh} />
-                <Field label={t.account.name} name="name" value={form.name} onChange={handleChange} placeholder={t.account.namePh} />
-                <Field label={t.account.email} name="email" type="email" value={form.email} onChange={handleChange} placeholder={t.account.emailPh} />
-                <Field label={t.account.phone} name="phone" value={form.phone} onChange={handleChange} placeholder={t.account.phonePh} />
-                <Field label={t.account.password} name="password" type="password" value={form.password} onChange={handleChange} placeholder={t.account.passwordPh} />
+        {/* Passo 1 — dados + termos */}
+        {step === 1 && (
+          <div className="space-y-4">
+            <h2 className="text-xl font-black text-white">{t.account.title}</h2>
+            <p className="text-sm text-slate-500">{t.account.sub}</p>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label={t.account.company} name="company" value={form.company} onChange={handleChange} placeholder={t.account.companyPh} />
+              <Field label={t.account.name} name="name" value={form.name} onChange={handleChange} placeholder={t.account.namePh} />
+              <Field label={t.account.email} name="email" type="email" value={form.email} onChange={handleChange} placeholder={t.account.emailPh} />
+              <Field label={t.account.phone} name="phone" value={form.phone} onChange={handleChange} placeholder={t.account.phonePh} />
+            </div>
+
+            <label className="flex items-start gap-2.5 text-xs text-slate-400">
+              <input
+                type="checkbox"
+                checked={termsAccepted}
+                onChange={(e) => setTermsAccepted(e.target.checked)}
+                className="mt-0.5 h-4 w-4 flex-shrink-0 accent-cyan-500"
+              />
+              <span>
+                {t.account.agreePrefix}
+                <Link href="/terms" target="_blank" className="text-cyan-400 underline hover:text-cyan-300">
+                  {t.account.agreeTerms}
+                </Link>
+                {t.account.agreeMiddle}
+                <Link href="/privacy" target="_blank" className="text-cyan-400 underline hover:text-cyan-300">
+                  {t.account.agreePrivacy}
+                </Link>
+                {t.account.agreeSuffix}
+              </span>
+            </label>
+
+            <button
+              type="button"
+              onClick={() => step1Valid() && setStep(2)}
+              disabled={!step1Valid()}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl py-4 text-sm font-black text-white transition-all"
+              style={step1Valid()
+                ? { background: brandGradient, boxShadow: '0 6px 20px rgba(6,182,212,0.3)' }
+                : { background: 'rgba(255,255,255,0.06)', color: '#64748b', cursor: 'not-allowed' }}
+            >
+              {t.account.continue}
+              <ArrowRight size={14} />
+            </button>
+          </div>
+        )}
+
+        {/* Passo 2 — pagamento */}
+        {step === 2 && (
+          <div className="space-y-5">
+            <h2 className="text-xl font-black text-white">{t.payment.title}</h2>
+
+            <div className="space-y-3 rounded-2xl border border-white/10 p-5" style={{ background: 'rgba(255,255,255,0.03)' }}>
+              <Row label={t.account.company} value={form.company} />
+              <Row label={t.account.name} value={form.name} />
+              <Row label={t.account.email} value={form.email} />
+              <Row label={t.summary.plan} value={`Alizo ${plan.name}`} />
+              <div className="border-t border-white/10 pt-3">
+                <Row label={t.summary.total} value={`${formatPrice(price, locale)}/${locale === 'en' ? 'mo' : 'mês'}`} highlight />
               </div>
+            </div>
 
+            <div className="rounded-2xl p-5" style={{ background: 'rgba(6,182,212,0.06)', border: '1px solid rgba(6,182,212,0.2)' }}>
+              <p className="flex items-center gap-2 text-sm font-bold text-cyan-300">
+                <CreditCard size={14} /> {t.payment.boxTitle}
+              </p>
+              <p className="mt-1 text-xs text-slate-400">{t.payment.boxText}</p>
+            </div>
+
+            <p className="text-xs text-slate-600">{t.payment.trust}</p>
+
+            {error && (
+              <div className="rounded-xl px-4 py-3" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                <p className="text-sm text-red-400">{error}</p>
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button type="button" onClick={() => setStep(1)}
+                className="flex-1 rounded-2xl border border-white/10 py-3.5 text-sm font-bold text-slate-400 hover:bg-white/5">
+                {t.payment.back}
+              </button>
               <button
                 type="button"
-                onClick={() => step1Valid() && setStep(2)}
-                disabled={!step1Valid()}
-                className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl py-4 text-sm font-black text-white transition-all"
-                style={step1Valid()
-                  ? { background: brandGradient, boxShadow: '0 6px 20px rgba(6,182,212,0.3)' }
-                  : { background: 'rgba(255,255,255,0.06)', color: '#64748b', cursor: 'not-allowed' }}
+                onClick={handleGoToPayment}
+                disabled={loading}
+                className="flex flex-[2] items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+                style={{ background: brandGradient, boxShadow: '0 6px 20px rgba(6,182,212,0.3)' }}
               >
-                {t.account.continue}
-                <ArrowRight size={14} />
+                {loading ? <Loader2 size={16} className="animate-spin" /> : <Lock size={14} />}
+                {loading ? t.payment.submitting : t.payment.submit}
               </button>
             </div>
-          )}
-
-          {/* Passo 2 — pagamento */}
-          {step === 2 && (
-            <div className="space-y-5">
-              <h2 className="text-xl font-black text-white">{t.payment.title}</h2>
-
-              <div className={`grid gap-3 ${
-                paymentMethodCount === 1 ? 'grid-cols-1' : paymentMethodCount === 2 ? 'grid-cols-2' : 'grid-cols-3'
-              }`}>
-                {t.paymentMethods.map(m => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => setPayMethod(m.id)}
-                    className="flex flex-col items-center gap-1.5 rounded-2xl border p-4 transition-all"
-                    style={payMethod === m.id
-                      ? { border: '1px solid rgba(6,182,212,0.5)', background: 'rgba(6,182,212,0.1)' }
-                      : { border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.03)' }}
-                  >
-                    <span className="text-2xl">{m.flag}</span>
-                    <span className="text-xs font-black text-white">{m.label}</span>
-                    <span className="text-[10px] text-slate-500">{m.sub}</span>
-                  </button>
-                ))}
-              </div>
-
-              <div className="rounded-2xl p-5" style={{ background: 'rgba(6,182,212,0.06)', border: '1px solid rgba(6,182,212,0.2)' }}>
-                <p className="flex items-center gap-2 text-sm font-bold text-cyan-300">
-                  <CreditCard size={14} /> {t.payment.boxTitle}
-                </p>
-                <p className="mt-1 text-xs text-slate-400">
-                  {t.payment.boxText(t.methodInstruction[payMethod])}
-                </p>
-              </div>
-
-              <div className="flex gap-3">
-                <button type="button" onClick={() => setStep(1)}
-                  className="flex-1 rounded-2xl border border-white/10 py-3.5 text-sm font-bold text-slate-400 transition-colors hover:bg-white/5">
-                  {t.payment.back}
-                </button>
-                <button type="button" onClick={() => setStep(3)}
-                  className="flex-[2] rounded-2xl py-3.5 text-sm font-black text-white"
-                  style={{ background: brandGradient, boxShadow: '0 6px 20px rgba(6,182,212,0.3)' }}>
-                  {t.payment.review}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Passo 3 — confirmar */}
-          {step === 3 && (
-            <div className="space-y-5">
-              <h2 className="text-xl font-black text-white">{t.confirm.title}</h2>
-
-              <div className="space-y-3 rounded-2xl border border-white/10 p-5" style={{ background: 'rgba(255,255,255,0.03)' }}>
-                <Row label={t.confirm.company} value={form.company} />
-                <Row label={t.confirm.name} value={form.name} />
-                <Row label={t.confirm.email} value={form.email} />
-                <Row label={t.confirm.plan} value={`Alizo ${plan.name}`} />
-                <Row label={t.confirm.payment} value={t.methodLabel[payMethod]} />
-                <div className="border-t border-white/10 pt-3">
-                  <Row label={t.confirm.total} value={`${formatPrice(price, locale)}${t.confirm.perMonth}`} highlight />
-                </div>
-              </div>
-
-              <p className="text-xs text-slate-600">{t.confirm.trust}</p>
-
-              <label className="flex items-start gap-2.5 text-xs text-slate-400">
-                <input
-                  type="checkbox"
-                  checked={termsAccepted}
-                  onChange={(e) => setTermsAccepted(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 flex-shrink-0 accent-cyan-500"
-                />
-                <span>
-                  {t.confirm.agreePrefix}
-                  <Link href="/terms" target="_blank" className="text-cyan-400 underline hover:text-cyan-300">
-                    {t.confirm.agreeTerms}
-                  </Link>
-                  {t.confirm.agreeMiddle}
-                  <Link href="/privacy" target="_blank" className="text-cyan-400 underline hover:text-cyan-300">
-                    {t.confirm.agreePrivacy}
-                  </Link>
-                  {t.confirm.agreeSuffix}
-                </span>
-              </label>
-
-              {error && (
-                <div className="rounded-xl px-4 py-3" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
-                  <p className="text-sm text-red-400">{error}</p>
-                </div>
-              )}
-
-              <div className="flex gap-3">
-                <button type="button" onClick={() => setStep(2)}
-                  className="flex-1 rounded-2xl border border-white/10 py-3.5 text-sm font-bold text-slate-400 hover:bg-white/5">
-                  {t.confirm.back}
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading || !termsAccepted}
-                  className="flex flex-[2] items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
-                  style={{ background: brandGradient, boxShadow: '0 6px 20px rgba(6,182,212,0.3)' }}
-                >
-                  {loading ? <Loader2 size={16} className="animate-spin" /> : <Lock size={14} />}
-                  {loading ? t.confirm.submitting : t.confirm.submit}
-                </button>
-              </div>
-            </div>
-          )}
-        </form>
+          </div>
+        )}
       </div>
 
       {/* Direita — resumo */}

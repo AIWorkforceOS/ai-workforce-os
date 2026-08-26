@@ -60,6 +60,14 @@ export function createAsaasProvider(apiKey: string): PaymentProvider {
       }
 
       const nextDueDate = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+      // A Asaas rejeita items[].name acima de 30 caracteres — achado real
+      // (2026-08-26): input.description (ex.: "Assinatura Alizo — plano
+      // starter (1º mês)") sempre passava disso, então TODO checkout
+      // falhava e nenhum cliente jamais recebia link de pagamento. Nome
+      // dedicado e curto só pro item do checkout; description segue como
+      // está pra quem mais usa (e-mails etc).
+      const planLabel = input.plan.charAt(0).toUpperCase() + input.plan.slice(1)
+      const itemName = `Alizo ${planLabel}`.slice(0, 30)
       const checkoutRes = await asaasFetch('/checkouts', {
         customer: customerId,
         billingTypes: ['CREDIT_CARD'],
@@ -69,7 +77,7 @@ export function createAsaasProvider(apiKey: string): PaymentProvider {
           successUrl: input.successUrl ?? 'https://www.alizoai.com/dashboard?billing=success',
           cancelUrl: input.cancelUrl ?? 'https://www.alizoai.com/checkout?billing=canceled',
         },
-        items: [{ name: input.description, quantity: 1, value: input.amount }],
+        items: [{ name: itemName, quantity: 1, value: input.amount }],
         subscription: { cycle: 'MONTHLY', nextDueDate },
       })
       const checkoutId = checkoutRes.data?.id as string | undefined

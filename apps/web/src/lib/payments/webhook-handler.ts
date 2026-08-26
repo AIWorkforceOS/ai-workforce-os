@@ -2,6 +2,9 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { PaymentProvider, PaymentWebhookEvent } from './provider'
 import { logSystemEvent } from '../system-events'
 import type { Organization } from '../types'
+import { provisionOrgFromSignup } from '../checkout/provision'
+import { generateAccessLink } from '../auth/access-link'
+import { sendWelcomeEmail } from '../email'
 
 /**
  * Handler compartilhado de webhook de pagamento — usado pelos endpoints
@@ -35,6 +38,94 @@ const FINANCIAL_RECORD_STATUS_MAP: Partial<Record<PaymentWebhookEvent['type'], '
   canceled: 'cancelled',
   subscription_canceled: 'cancelled',
   refunded: 'cancelled',
+}
+
+type JustProvisioned = { email: string; name: string; company: string }
+
+/**
+ * Mudança de arquitetura (2026-08-26): o checkout não cria mais a conta
+ * antes de cobrar — ela só nasce aqui, quando o 1º pagamento é aprovado
+ * de verdade (payment_success), a partir de um pending_signups criado no
+ * início do checkout (ver app/api/checkout/start-payment). Sem pagamento
+ * aprovado, nenhuma organization/unit/user chega a existir.
+ */
+async function resolveOrCreateOrgFromPendingSignup(
+  supabase: SupabaseClient,
+  providerId: string,
+  event: PaymentWebhookEvent,
+): Promise<{ org: { id: string } | null; justProvisioned: JustProvisioned | null }> {
+  if (event.type !== 'payment_success') return { org: null, justProvisioned: null }
+
+  let pending: Record<string, unknown> | null = null
+  if (event.providerCustomerRef) {
+    const { data } = await supabase
+      .from('pending_signups')
+      .select('*')
+      .eq('provider', providerId)
+      .eq('provider_customer_ref', event.providerCustomerRef)
+      .maybeSingle()
+    pending = data
+  }
+  if (!pending && event.providerChargeRef) {
+    const { data } = await supabase
+      .from('pending_signups')
+      .select('*')
+      .eq('provider', providerId)
+      .eq('provider_charge_ref', event.providerChargeRef)
+      .maybeSingle()
+    pending = data
+  }
+  if (!pending) return { org: null, justProvisioned: null }
+
+  // Reentrega do mesmo webhook depois de já ter provisionado — usa a org
+  // que já existe, nunca provisiona de novo.
+  if (pending.status === 'completed' && pending.org_id) {
+    return { org: { id: pending.org_id as string }, justProvisioned: null }
+  }
+
+  const result = await provisionOrgFromSignup(supabase, {
+    company: pending.company as string,
+    name: pending.name as string,
+    email: pending.email as string,
+    phone: (pending.phone as string | null) ?? null,
+    plan: pending.plan as string,
+    currency: pending.currency as 'BRL' | 'USD',
+    amount: Number(pending.amount),
+    paymentMethod: pending.payment_method as string,
+    region: pending.region as 'BR' | 'US',
+    termsVersion: pending.terms_version as string,
+    privacyVersion: pending.privacy_version as string,
+    acceptIp: (pending.accept_ip as string | null) ?? null,
+  })
+  if (!result.ok) {
+    await logSystemEvent(supabase, {
+      level: 'error',
+      source: 'checkout',
+      eventType: 'pending_signup_provision_failed',
+      message: `Pagamento aprovado (${providerId}), mas não foi possível provisionar a conta: ${result.error}`,
+      metadata: { pendingSignupId: pending.id, email: pending.email, provider: providerId },
+    })
+    return { org: null, justProvisioned: null }
+  }
+
+  await supabase
+    .from('organizations')
+    .update({
+      billing_provider: providerId,
+      billing_provider_customer_ref: event.providerCustomerRef,
+      billing_provider_subscription_ref: event.providerChargeRef,
+    })
+    .eq('id', result.orgId)
+
+  await supabase
+    .from('pending_signups')
+    .update({ status: 'completed', org_id: result.orgId, completed_at: new Date().toISOString() })
+    .eq('id', pending.id)
+
+  return {
+    org: { id: result.orgId },
+    justProvisioned: { email: pending.email as string, name: pending.name as string, company: pending.company as string },
+  }
 }
 
 export async function handlePaymentWebhook(params: {
@@ -82,6 +173,16 @@ export async function handlePaymentWebhook(params: {
       .eq('billing_provider_subscription_ref', event.providerChargeRef)
       .maybeSingle()
     org = data
+  }
+
+  // Nenhuma org existente bate — pode ser o 1º pagamento de um cadastro
+  // que ainda não foi provisionado (pending_signups). Só então a conta
+  // nasce de verdade (ver comentário em resolveOrCreateOrgFromPendingSignup).
+  let justProvisioned: JustProvisioned | null = null
+  if (!org) {
+    const resolved = await resolveOrCreateOrgFromPendingSignup(supabase, provider.id, event)
+    org = resolved.org
+    justProvisioned = resolved.justProvisioned
   }
 
   await supabase.from('webhook_events').insert({
@@ -148,6 +249,33 @@ export async function handlePaymentWebhook(params: {
       orgId: org.id,
       metadata: { provider: provider.id },
     })
+  }
+
+  // Conta acabou de ser provisionada por este webhook — manda o e-mail de
+  // boas-vindas com link de primeiro acesso (sem senha em texto puro em
+  // lugar nenhum, mesmo padrão do admin criando conta pro cliente).
+  if (justProvisioned) {
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://www.alizoai.com').replace(/\/+$/, '')
+    const accessLink = await generateAccessLink(supabase, justProvisioned.email, `${appUrl}/auth/set-password`)
+    const welcomeResult = await sendWelcomeEmail({
+      to: justProvisioned.email,
+      name: justProvisioned.name,
+      companyName: justProvisioned.company,
+      setPasswordUrl: accessLink.ok ? accessLink.link : null,
+      paymentUrl: null,
+    })
+    if (!accessLink.ok || !welcomeResult.ok) {
+      await logSystemEvent(supabase, {
+        level: 'warning',
+        source: 'checkout',
+        eventType: 'welcome_email_failed',
+        message: `Conta de "${justProvisioned.company}" provisionada com sucesso após pagamento aprovado, mas ${
+          !accessLink.ok ? `o link de acesso falhou: ${accessLink.error}` : `o e-mail de boas-vindas falhou: ${welcomeResult.error ?? 'erro desconhecido'}`
+        }.`,
+        orgId: org.id,
+        metadata: { email: justProvisioned.email },
+      })
+    }
   }
 
   return { status: 200, body: { ok: true } }

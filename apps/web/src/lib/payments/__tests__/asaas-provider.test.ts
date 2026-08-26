@@ -161,6 +161,36 @@ describe('AsaasProvider — createCustomerAndCharge', () => {
     })
   })
 
+  it('regressão (2026-08-26): items[].name do checkout nunca passa de 30 caracteres — a Asaas rejeita acima disso e ANTES desse fix isso derrubava 100% dos checkouts, pra qualquer cliente, pois a description ("Assinatura Alizo — plano starter (1º mês)") sempre estourava o limite', async () => {
+    let checkoutBody: Record<string, unknown> | null = null
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const u = String(url)
+      if (u.includes('/customers')) return new Response(JSON.stringify({ id: 'cus_9' }), { status: 200 })
+      if (u.includes('/checkouts')) {
+        checkoutBody = JSON.parse(String(init?.body))
+        return new Response(JSON.stringify({ id: 'checkout_9', link: 'https://x/checkout_9' }), { status: 200 })
+      }
+      return new Response('{}', { status: 404 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const provider = createAsaasProvider('fake-key')
+    await provider.createCustomerAndCharge({
+      name: 'Maria',
+      email: 'maria@padaria.com',
+      phone: null,
+      plan: 'starter',
+      amount: 497,
+      currency: 'BRL',
+      paymentMethod: 'card',
+      description: 'Assinatura Alizo — plano starter (1º mês)',
+    })
+
+    const items = (checkoutBody as unknown as { items: Array<{ name: string }> }).items
+    expect(items[0]!.name.length).toBeLessThanOrEqual(30)
+    expect(items[0]!.name).toBe('Alizo Starter')
+  })
+
   it('retorna erro descritivo quando a API do Asaas rejeita o cliente', async () => {
     const fetchMock = vi.fn(async () =>
       new Response(JSON.stringify({ errors: [{ description: 'CPF/CNPJ inválido' }] }), { status: 400 }),

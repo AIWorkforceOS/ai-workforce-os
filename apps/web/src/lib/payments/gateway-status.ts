@@ -42,8 +42,9 @@ const PROVIDER_FACTORIES: Record<string, (credentials: Record<string, string>) =
  * Instancia o PaymentProvider real (Asaas/Stripe) pra região, lendo a
  * linha ativa com credenciais preenchidas em payment_gateway_settings.
  * Retorna null quando não há processadora pronta pra cobrar de verdade
- * (nunca lança) — quem chama trata isso como "cobrar depois", nunca
- * como motivo de bloquear o cadastro (ver app/api/checkout/complete).
+ * (nunca lança). Desde 2026-08-26 (ver app/api/checkout/start-payment),
+ * null aqui BLOQUEIA o cadastro — pagamento aprovado é pré-requisito
+ * pra conta existir, não uma tentativa best-effort depois.
  */
 export async function getPaymentProviderForRegion(
   service: SupabaseClient,

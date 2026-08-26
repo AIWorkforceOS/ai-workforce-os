@@ -9,6 +9,17 @@ function defaultFrom(): string | null {
   return domain ? `AI Workforce OS <alerts@${domain}>` : null
 }
 
+// Cabeçalho com logo pros e-mails que representam a marca de alguém — o
+// nosso (Alizo) por padrão, ou a do cliente quando a unidade já tem uma
+// (units.logo_url, mesmo campo usado no PDF de ordem de serviço) — pedido
+// do Vinicius (2026-08-26): admin vê a marca Alizo, cliente que já subiu
+// logo própria vê a dele nos e-mails que recebe.
+function emailBrandHeader(logoUrl?: string | null): string {
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://www.alizoai.com').replace(/\/+$/, '')
+  const src = logoUrl || `${appUrl}/branding/alizo-logo.png`
+  return `<img src="${src}" alt="" style="height:28px;display:block;margin-bottom:24px;" />`
+}
+
 type SendResult = { ok: boolean; error?: string }
 
 type EmailAttachment = { filename: string; content: string }
@@ -175,6 +186,43 @@ export async function sendPaymentGateBlockedEmail(params: {
 }
 
 /**
+ * Aviso ao dono da Alizo (super admin) quando o checkout self-service TEM
+ * processadora ativa pra região, mas a chamada de cobrança em si falhou
+ * (erro da API — diferente do sendPaymentGateBlockedEmail acima, que é
+ * "sem processadora nenhuma"). Achado real (2026-08-26): sem este e-mail,
+ * uma falha assim só ficava num system_events que ninguém olha — a conta
+ * fica em billing_status='trialing' pra sempre e o cliente nunca recebe
+ * link de pagamento, sem ninguém perceber. Mesmo padrão best-effort:
+ * nunca lança.
+ */
+export async function sendPaymentChargeFailedEmail(params: {
+  to: string
+  provider: string
+  region: 'BR' | 'US'
+  plan: string
+  name: string
+  email: string
+  phone: string | null
+  error: string
+}): Promise<SendResult> {
+  const from = defaultFrom()
+  if (!from) return { ok: false, error: 'EMAIL_FROM_DOMAIN não está configurada.' }
+
+  return sendEmail({
+    to: params.to,
+    from,
+    subject: `⚠️ Cobrança automática falhou no cadastro — ${escapeHtml(params.name)} (${params.region})`,
+    html: `
+      <p><strong>${escapeHtml(params.name)}</strong> se cadastrou no plano <strong>${escapeHtml(params.plan)}</strong> (região <strong>${params.region}</strong>) e a conta já está ativa, mas a tentativa de gerar a cobrança recorrente na ${escapeHtml(params.provider)} falhou:</p>
+      <p><strong>Erro:</strong> ${escapeHtml(params.error)}</p>
+      <p><strong>E-mail:</strong> ${escapeHtml(params.email)}</p>
+      ${params.phone ? `<p><strong>Telefone/WhatsApp:</strong> ${escapeHtml(params.phone)}</p>` : ''}
+      <p>Essa pessoa não recebeu nenhum link de pagamento e vai continuar com acesso liberado (billing_status=trialing) até isso ser resolvido manualmente. Verifique o motivo do erro e gere a cobrança à mão se necessário.</p>
+    `,
+  })
+}
+
+/**
  * E-mail genérico do Recruiter Employee (handoff, briefing de busca
  * externa, escalações de processo). Mesmo Resend/from dos demais.
  */
@@ -222,6 +270,8 @@ export async function sendWelcomeEmail(params: {
   /** Link de pagamento hospedado (Asaas invoiceUrl / Stripe Checkout Session) — presente só quando a cobrança automática deu certo no checkout (ver app/api/checkout/complete/route.ts). */
   paymentUrl?: string | null
   paymentMethod?: string | null
+  /** units.logo_url da unidade do destinatário, quando já existe — mostra a logo do próprio cliente em vez da Alizo. */
+  logoUrl?: string | null
 }): Promise<SendResult> {
   const from = defaultFrom()
   if (!from) return { ok: false, error: 'EMAIL_FROM_DOMAIN não está configurada.' }
@@ -247,6 +297,7 @@ export async function sendWelcomeEmail(params: {
     from,
     subject: `Bem-vindo à Alizo, ${params.companyName}!`,
     html: `
+      ${emailBrandHeader(params.logoUrl)}
       <p>${greeting}</p>
       <p>A conta da <strong>${params.companyName}</strong> já está pronta na Alizo — seu funcionário digital está a poucos passos de começar a atender.</p>
       ${cta}
