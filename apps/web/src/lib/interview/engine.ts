@@ -115,9 +115,12 @@ export const INTERVIEW_PLAYBOOKS: Record<InterviewAgentType, InterviewPlaybook> 
       'quem é o público-alvo que os posts devem atrair',
       'o que NUNCA deve aparecer ou ser dito nos posts (ex.: falar de concorrentes, citar preço, prometer resultado, temas sensíveis)',
       'existe alguma chamada para ação (call to action) padrão que os posts devem ter quando fizer sentido (ex.: "chama no WhatsApp", "visite nosso site", "agende pelo link da bio")',
+      'em que idioma os posts devem ser escritos — o padrão é o idioma da unidade, mas o dono pode pedir um idioma diferente (ex.: conteúdo em inglês para audiência internacional mesmo se o atendimento por WhatsApp for em português)',
     ],
     profileSchema:
-      '{"pilares_conteudo": string[], "plataformas": ("instagram"|"facebook")[], "frequencia_semanal": number, "tom_visual": string, "publico_alvo": string, "proibicoes": string[], "call_to_action_padrao": string, "observacoes": string[]}',
+      '{"pilares_conteudo": string[], "plataformas": ("instagram"|"facebook")[], "frequencia_semanal": number, "tom_visual": string, "publico_alvo": string, "proibicoes": string[], "call_to_action_padrao": string, "idioma_conteudo": "pt"|"en"|null, "observacoes": string[]}',
+    extraGuidance: () =>
+      'Sobre "idioma_conteudo": só preencha "pt" ou "en" quando o chefe pedir EXPLICITAMENTE um idioma diferente do padrão da unidade para os posts — deixe null quando ele não mencionar nada (o sistema usa o idioma padrão da unidade nesse caso). Esse campo manda em TUDO que for gerado depois — se o chefe corrigir isso mais tarde (ex.: num retreinamento pedindo "todos os posts agora em inglês"), atualize este mesmo campo, nunca deixe a instrução só em "observacoes".',
   },
   seo_specialist: {
     roleLabel: 'especialista em SEO',
@@ -244,8 +247,19 @@ export function buildInterviewerPrompt(params: {
   organizationProfile?: Record<string, unknown> | null
   /** Materiais da biblioteca (lib/attachments.ts) aplicáveis a este cargo — mesmo texto que o funcionário usa depois no trabalho real. */
   attachmentsContext?: string | null
+  /**
+   * true = sessão de RETREINAMENTO (funcionário já ativo, já entrevistado
+   * antes), não a entrevista de contratação original. Achado real do
+   * Vinicius (2026-08-27): o retreinamento ficava pedindo tudo de novo
+   * quando o chefe só queria acrescentar uma coisa. Com retrain=true, a
+   * primeira pergunta é sempre "do zero ou só ajustar" — e no modo
+   * "ajustar" (profile.retrain_mode==='add') os TÓPICOS OBRIGATÓRIOS somem
+   * inteiramente: registra a mudança, confirma se tem mais alguma coisa, e
+   * encerra. Sem isso, comportamento idêntico à entrevista original.
+   */
+  retrain?: boolean
 }): string {
-  const { config, unit, profile, finalAlreadyAsked, includeOrgIntake = false, verticalKey = null } = params
+  const { config, unit, profile, finalAlreadyAsked, includeOrgIntake = false, verticalKey = null, retrain = false } = params
   const orgBusinessContext = buildBusinessContext(params.organizationProfile)
   const playbook = INTERVIEW_PLAYBOOKS[config.agent_type as InterviewAgentType]
   const locale = unitDefaultLocale(unit)
@@ -258,9 +272,20 @@ export function buildInterviewerPrompt(params: {
     ...(verticalExtra?.extraTopics ?? []),
   ]
   const topics = allTopics.map((topic, i) => `${i + 1}) ${topic}`).join(' ')
+  const retrainMode = retrain ? (profile.retrain_mode === 'scratch' || profile.retrain_mode === 'add' ? profile.retrain_mode : null) : null
+  const isRetrainAddMode = retrain && retrainMode === 'add'
+
   return [
-    `Você é ${config.persona_name}, ${playbook.roleLabel} digital recém-contratado(a) pela unidade ${unit.name}${unit.region_city ? ` (${unit.region_city})` : ''}. Quando começar a trabalhar, sua função será ${playbook.mission}.`,
-    'AGORA você está na sua entrevista de contratação: quem fala com você é o seu novo chefe (dono ou gestor da empresa). Seu objetivo é aprender 100% sobre a empresa e sobre como ela quer que você trabalhe — fazendo as perguntas certas, melhor do que qualquer funcionário humano faria.',
+    `Você é ${config.persona_name}, ${playbook.roleLabel} digital ${retrain ? '' : 'recém-contratado(a) '}pela unidade ${unit.name}${unit.region_city ? ` (${unit.region_city})` : ''}. ${retrain ? 'Sua função é' : 'Quando começar a trabalhar, sua função será'} ${playbook.mission}.`,
+    retrain
+      ? 'AGORA é uma sessão de RETREINAMENTO: você já trabalha aqui e já foi treinado(a) antes (o perfil que você já aprendeu está mais abaixo) — quem fala com você é seu chefe, querendo atualizar ou completar seu treinamento, não repetir do zero.'
+      : 'AGORA você está na sua entrevista de contratação: quem fala com você é o seu novo chefe (dono ou gestor da empresa). Seu objetivo é aprender 100% sobre a empresa e sobre como ela quer que você trabalhe — fazendo as perguntas certas, melhor do que qualquer funcionário humano faria.',
+    retrain && !retrainMode
+      ? 'ANTES DE QUALQUER OUTRA COISA: se você ainda não perguntou nesta conversa, sua PRÓXIMA mensagem deve ser EXATAMENTE perguntar "Quer refazer todo o treinamento do zero, ou só ajustar/acrescentar alguma coisa no que eu já sei?" — nada mais nessa mensagem. Assim que o chefe responder (inclusive se ele já descrever direto o que quer mudar, sem responder à pergunta explicitamente — trate isso como "ajustar"), registre em profile_updates o campo "retrain_mode": "scratch" (quer refazer tudo) ou "retrain_mode": "add" (só ajustar/acrescentar) — sempre um dos dois, nunca fique sem decidir.'
+      : '',
+    isRetrainAddMode
+      ? 'MODO AJUSTAR (retrain_mode=add): o chefe só quer acrescentar/corrigir uma coisa específica, não refazer a entrevista. Registre a mudança que ele descrever nos campos certos do schema abaixo (ou em "observacoes" se não houver campo específico) — atualizando o valor antigo, nunca duplicando. NÃO pergunte sobre nenhum tópico que já esteja preenchido no perfil atual, e NÃO faça perguntas sobre assuntos que ele não mencionou. Ignore a seção de TÓPICOS OBRIGATÓRIOS abaixo neste modo — ela não se aplica aqui.'
+      : '',
     'COMO CONDUZIR: você faz as perguntas e o chefe responde. No máximo 2 perguntas por mensagem, começando pelas mais importantes. Adapte as próximas perguntas ao que já foi respondido: se uma resposta abrir um desdobramento importante (ex.: "vendemos 3 produtos"), aprofunde antes de mudar de assunto (pergunte preço e detalhe de cada um dos 3). Se uma resposta for vaga ou ambígua, peça UM esclarecimento objetivo antes de avançar.',
     `Seu tom é ${TONE_LABEL[config.persona_tone]}. ${interviewLanguageDirective(locale)} Mensagens curtas, sem markdown.`,
     includeOrgIntake
@@ -270,18 +295,23 @@ export function buildInterviewerPrompt(params: {
       ? `${orgBusinessContext} NÃO repita perguntas cuja resposta já esteja na ficha acima — use-a como ponto de partida e foque em aprofundar ou preencher o que ainda falta pro SEU cargo específico.`
       : '',
     params.attachmentsContext ?? '',
-    `TÓPICOS OBRIGATÓRIOS (todos precisam estar cobertos antes de encerrar): ${topics}`,
+    isRetrainAddMode ? '' : `TÓPICOS OBRIGATÓRIOS (todos precisam estar cobertos antes de encerrar): ${topics}`,
     'REGRA INEGOCIÁVEL DO ENCERRAMENTO:',
-    `- Quando (e somente quando) todos os tópicos obrigatórios estiverem cobertos, sua próxima mensagem deve ser a pergunta final: "${finalQuestionFor(locale)}" (pode adaptar as palavras, nunca o sentido) — e nela marque "asked_final_question": true.`,
+    isRetrainAddMode
+      ? `- Assim que registrar a mudança que o chefe pediu (sem precisar cobrir mais nada), sua próxima mensagem deve ser a pergunta final: "${finalQuestionFor(locale)}" (pode adaptar as palavras, nunca o sentido) — e nela marque "asked_final_question": true.`
+      : `- Quando (e somente quando) todos os tópicos obrigatórios estiverem cobertos, sua próxima mensagem deve ser a pergunta final: "${finalQuestionFor(locale)}" (pode adaptar as palavras, nunca o sentido) — e nela marque "asked_final_question": true.`,
     '- Se a resposta à pergunta final trouxer informação nova, registre no perfil, aprofunde se necessário e faça a pergunta final DE NOVO depois.',
-    '- Só marque "interview_complete": true quando o chefe responder à pergunta final indicando que não há mais nada a acrescentar. Nessa mensagem de encerramento, agradeça e diga que está pronto(a) para começar a trabalhar.',
+    '- Só marque "interview_complete": true quando o chefe responder à pergunta final indicando que não há mais nada a acrescentar. Nessa mensagem de encerramento, agradeça e diga que está pronto(a) para continuar trabalhando com a atualização.',
     finalAlreadyAsked
       ? 'ATENÇÃO: sua última mensagem JÁ FOI a pergunta final. Se a resposta do chefe não trouxe nada novo, encerre agora com "interview_complete": true; se trouxe, registre, aprofunde e refaça a pergunta final ao terminar.'
       : '',
-    `O QUE VOCÊ JÁ APRENDEU ATÉ AGORA (perfil coletado): ${JSON.stringify(profile)}`,
+    `O QUE VOCÊ JÁ ${retrain ? 'SABE (perfil atual, de antes deste retreinamento)' : 'APRENDEU ATÉ AGORA (perfil coletado)'}: ${JSON.stringify(profile)}`,
     'FORMATO DA RESPOSTA — responda SOMENTE um JSON válido no formato:',
     '{"message": "sua próxima mensagem para o chefe", "profile_updates": { apenas os campos aprendidos com a ÚLTIMA resposta dele }, "asked_final_question": boolean, "interview_complete": boolean}',
     `Schema do perfil (preencha nesses nomes de campo): ${playbook.profileSchema}.`,
+    retrain
+      ? 'Além desse schema, use o campo especial "retrain_mode" (fora do schema normal, só existe em retreinamento) com valor "scratch" ou "add" assim que decidir o modo desta sessão, conforme a regra no topo — sempre reenvie esse campo em profile_updates até a sessão terminar.'
+      : '',
     includeOrgIntake
       ? `Além desse schema, quando cobrir os tópicos 1 e 2 (e SOMENTE depois de o chefe confirmar o segmento), inclua também estes campos no profile_updates, usando EXATAMENTE estes nomes de campo (não troque por sinônimos nem por nomes mais naturais — outro sistema lê essas chaves literalmente): ${ORG_INTAKE_PROFILE_SCHEMA_FRAGMENT}.`
       : '',
@@ -489,9 +519,11 @@ export async function runInterviewTurn(params: {
   organization?: Organization | null
   /** Materiais da biblioteca aplicáveis a este cargo (lib/attachments.ts) — quem chama busca e monta a string, esta função só injeta. */
   attachmentsContext?: string | null
+  /** true = sessão de retreinamento (ver buildInterviewerPrompt) — repassado direto, sem lógica própria aqui. */
+  retrain?: boolean
   userMessage: string | null
 }): Promise<InterviewTurnResult> {
-  const { apiKey, config, unit, organization = null, attachmentsContext = null, userMessage } = params
+  const { apiKey, config, unit, organization = null, attachmentsContext = null, retrain = false, userMessage } = params
   if (!isInterviewAgentType(config.agent_type)) {
     throw new Error(`Tipo de agente sem entrevista de contratação: ${config.agent_type}`)
   }
@@ -508,7 +540,9 @@ export async function runInterviewTurn(params: {
   if (history.length === 0) {
     history.push({
       role: 'user',
-      content: '(o chefe acabou de te contratar e está pronto para a entrevista — apresente-se e comece)',
+      content: retrain
+        ? '(o chefe abriu uma sessão de retreinamento com você — pergunte se ele quer refazer tudo do zero ou só ajustar/acrescentar algo)'
+        : '(o chefe acabou de te contratar e está pronto para a entrevista — apresente-se e comece)',
     })
   }
 
@@ -538,6 +572,7 @@ export async function runInterviewTurn(params: {
       verticalKey,
       organizationProfile: organization?.business_profile,
       attachmentsContext,
+      retrain,
     }),
     history,
     maxTokens: 900,

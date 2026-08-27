@@ -628,3 +628,75 @@ describe('buildInterviewerPrompt — Ficha da Empresa e materiais já existentes
     expect(prompt).toContain('cardapio.pdf')
   })
 })
+
+describe('buildInterviewerPrompt — retreinamento (2026-08-27, achado real: ficava pedindo tudo de novo)', () => {
+  const unit = { name: 'Padaria Estrela', region_city: 'Campinas' } as Unit
+  const config = {
+    id: 'cfg-1',
+    unit_id: 'unit-1',
+    agent_type: 'content_specialist',
+    persona_name: 'Bia',
+    persona_tone: 'friendly',
+    daily_limit: 15,
+    active_hours: { start: '08:00', end: '18:00', days: [1, 2, 3, 4, 5] },
+    escalation_rules: { after_messages: 5, keywords: [] },
+    sectors: [],
+    is_active: true,
+    created_at: '',
+    updated_at: '',
+  } as AgentConfig
+  const existingProfile = {
+    pilares_conteudo: ['bastidores', 'dicas'],
+    plataformas: ['instagram'],
+    frequencia_semanal: 3,
+    tom_visual: 'cores quentes',
+    publico_alvo: 'famílias',
+    proibicoes: [],
+    call_to_action_padrao: 'chama no WhatsApp',
+  }
+
+  it('retrain=false (entrevista normal): mantém a moldura de contratação e o gate de tópicos obrigatórios', () => {
+    const prompt = buildInterviewerPrompt({ config, unit, profile: {}, finalAlreadyAsked: false })
+    expect(prompt).toContain('sua entrevista de contratação')
+    expect(prompt).toContain('TÓPICOS OBRIGATÓRIOS')
+    expect(prompt).not.toContain('RETREINAMENTO')
+  })
+
+  it('retrain=true sem retrain_mode ainda decidido: pergunta do zero ou ajustar ANTES de tudo, mesmo com o perfil já cheio', () => {
+    const prompt = buildInterviewerPrompt({ config, unit, profile: existingProfile, finalAlreadyAsked: false, retrain: true })
+    expect(prompt).toContain('RETREINAMENTO')
+    expect(prompt).toContain('refazer todo o treinamento do zero, ou só ajustar')
+    expect(prompt).toContain('retrain_mode')
+    expect(prompt).not.toContain('sua entrevista de contratação')
+  })
+
+  it('retrain_mode=add: NÃO exige tópicos obrigatórios e vai direto pra pergunta final depois de registrar a mudança — é a regressão real do Vinicius', () => {
+    const prompt = buildInterviewerPrompt({
+      config,
+      unit,
+      profile: { ...existingProfile, retrain_mode: 'add' },
+      finalAlreadyAsked: false,
+      retrain: true,
+    })
+    expect(prompt).toContain('MODO AJUSTAR')
+    expect(prompt).not.toContain('TÓPICOS OBRIGATÓRIOS (todos precisam estar cobertos')
+    expect(prompt).toContain('Assim que registrar a mudança que o chefe pediu (sem precisar cobrir mais nada)')
+  })
+
+  it('retrain_mode=scratch: volta a exigir todos os tópicos, igual a uma entrevista nova', () => {
+    const prompt = buildInterviewerPrompt({
+      config,
+      unit,
+      profile: { ...existingProfile, retrain_mode: 'scratch' },
+      finalAlreadyAsked: false,
+      retrain: true,
+    })
+    expect(prompt).toContain('TÓPICOS OBRIGATÓRIOS (todos precisam estar cobertos')
+    expect(prompt).not.toContain('MODO AJUSTAR')
+  })
+
+  it('regressão: o schema do Gestor de Conteúdo tem idioma_conteudo — "todos os posts em inglês" agora tem onde ser registrado como dado estruturado, não só em observações soltas', () => {
+    const prompt = buildInterviewerPrompt({ config, unit, profile: {}, finalAlreadyAsked: false })
+    expect(prompt).toContain('idioma_conteudo')
+  })
+})

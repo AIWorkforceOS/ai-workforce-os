@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bot, Check, GraduationCap, Loader2, Send } from 'lucide-react'
+import Link from 'next/link'
+import { ArrowRight, Bot, Check, GraduationCap, Loader2, Send } from 'lucide-react'
 import { brandGradient } from '@/components/ui/dashboard-ui'
 
 // Chat da entrevista de contratação: o funcionário digital entrevista o
@@ -214,14 +215,25 @@ export function InterviewChat({
             </div>
           )}
           {status === 'completed' && (
-            <div
-              className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-bold text-emerald-300"
-              style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)' }}
-            >
-              <Check size={14} />{' '}
-              {retrain
-                ? `Retreinamento concluído — ${personaName} atualizou o que sabe sobre a empresa.`
-                : `Entrevista concluída — ${personaName} aprendeu sua empresa e já está trabalhando.`}
+            <div className="flex flex-col gap-2">
+              <div
+                className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-bold text-emerald-300"
+                style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)' }}
+              >
+                <Check size={14} />{' '}
+                {retrain
+                  ? `Retreinamento concluído — ${personaName} atualizou o que sabe sobre a empresa.`
+                  : `Entrevista concluída — ${personaName} aprendeu sua empresa e já está trabalhando.`}
+              </div>
+              {retrain && (
+                <Link
+                  href={`/dashboard/equipe-digital/${configId}/testar`}
+                  className="flex items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-bold text-white transition-all hover:scale-[1.01]"
+                  style={{ background: brandGradient }}
+                >
+                  Testar agora com a atualização <ArrowRight size={12} />
+                </Link>
+              )}
             </div>
           )}
           <div ref={bottomRef} />

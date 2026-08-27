@@ -146,6 +146,29 @@ describe('buildCaptionSystemPrompt', () => {
     expect(prompt).toContain('escreva a legenda inteiramente em inglês')
   })
 
+  it('regressão (2026-08-27): idioma_conteudo no perfil do próprio Gestor de Conteúdo vence até o idioma padrão da unidade — achado real do Vinicius: pediu "todos os posts em inglês" num retreinamento e continuou saindo em português porque não existia onde essa instrução "grudar" como dado estruturado', () => {
+    const configWithEnglishContent = { ...config, business_profile: { ...config.business_profile, idioma_conteudo: 'en' } }
+    const prompt = buildCaptionSystemPrompt({
+      config: configWithEnglishContent,
+      unit, // unit sem default_conversation_language explícito (undefined) — sem o campo novo, cairia na detecção por texto (português)
+      organizationProfile: null,
+      platform: 'instagram',
+      pillar: null,
+    })
+    expect(prompt).toContain('escreva a legenda inteiramente em inglês')
+  })
+
+  it('sem idioma_conteudo definido, comportamento antigo intocado (idioma da unidade/detecção)', () => {
+    const prompt = buildCaptionSystemPrompt({
+      config, // business_profile sem idioma_conteudo
+      unit,
+      organizationProfile: { descricao_curta: 'Somos uma padaria de bairro, tradicional, com atendimento familiar.' },
+      platform: 'instagram',
+      pillar: null,
+    })
+    expect(prompt).toContain('escreva a legenda inteiramente em português')
+  })
+
   it('detecta português quando a ficha é predominantemente em português', () => {
     const prompt = buildCaptionSystemPrompt({
       config,

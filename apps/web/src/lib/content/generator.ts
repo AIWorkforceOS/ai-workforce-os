@@ -72,7 +72,17 @@ export function buildCaptionSystemPrompt(params: {
 }): string {
   const { config, unit, organizationProfile, platform, pillar, holiday, recentPosts, attachmentsContext } = params
   const businessContext = buildCombinedBusinessContext(organizationProfile, config.business_profile)
-  const detectedLanguage = resolveContentLanguage(unit.default_conversation_language, [organizationProfile, config.business_profile])
+  // idioma_conteudo (achado real, 2026-08-27): pedido explícito do dono na
+  // entrevista/retreinamento ("todos os posts em inglês") tem prioridade
+  // sobre o idioma padrão da unidade — sem isso, resolveContentLanguage
+  // nunca via essa instrução (ela ficava só em texto livre, que o
+  // detector de idioma nem lê) e o post saía sempre no idioma da unidade,
+  // ignorando o que foi pedido.
+  const explicitContentLanguage = (config.business_profile as Record<string, unknown> | null)?.idioma_conteudo
+  const detectedLanguage =
+    explicitContentLanguage === 'pt' || explicitContentLanguage === 'en'
+      ? explicitContentLanguage
+      : resolveContentLanguage(unit.default_conversation_language, [organizationProfile, config.business_profile])
   const brandKit = brandKitFrom(organizationProfile)
   const recentPostsContext = buildRecentPostsContext(recentPosts)
 

@@ -156,7 +156,7 @@ export async function POST(request: Request) {
 
   let result
   try {
-    result = await runInterviewTurn({ apiKey, config: configForTurn, unit, organization, attachmentsContext, userMessage: message })
+    result = await runInterviewTurn({ apiKey, config: configForTurn, unit, organization, attachmentsContext, retrain, userMessage: message })
   } catch (error) {
     console.error('[interview] OpenAI error:', error instanceof Error ? error.message : error)
     return NextResponse.json({ error: 'Não consegui gerar a próxima pergunta. Tente de novo.' }, { status: 502 })
