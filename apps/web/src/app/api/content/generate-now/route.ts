@@ -6,7 +6,15 @@ import { generateSinglePostForAccount } from '@/lib/content/single-post'
 import type { ContentPost, SocialAccount } from '@/lib/content/types'
 import type { AgentConfig, Unit } from '@/lib/types'
 
-export const maxDuration = 60
+// Achado real (2026-08-27, testado por hello@alizoai.com): 60s não é
+// suficiente pro pipeline completo de UM post (texto + imagem gpt-image-2
+// + composição de logo + upload + criação do container do Instagram +
+// espera de até ~20s pra Meta processar a mídia, ver
+// waitForMediaContainerReady em lib/content/meta-content.ts + publicação)
+// — timeout real em produção (Vercel Runtime Timeout Error). O gerador
+// semanal (generate-week/route.ts) já usa 280s pro MESMO trabalho por
+// post; 120s aqui dá folga de sobra pra um post só.
+export const maxDuration = 120
 
 /**
  * Botão "Criar conteúdo agora" (pedido do Vinicius, 2026-08-23): gera UM

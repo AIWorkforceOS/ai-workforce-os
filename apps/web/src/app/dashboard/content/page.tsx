@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import Link from 'next/link'
 import {
   Badge,
   Card,
@@ -20,7 +21,7 @@ import { holidaysInRange } from '@/lib/content/holidays'
 import { CONTENT_STATUS_LABEL, CONTENT_STATUS_VARIANT } from '@/lib/content/status-labels'
 import type { ContentPost, SocialAccount } from '@/lib/content/types'
 import type { AgentConfig, Unit } from '@/lib/types'
-import { ImageOff, Plus, Sparkles } from 'lucide-react'
+import { ImageOff, Paperclip, Plus, Sparkles } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -124,9 +125,17 @@ export default async function ContentPage() {
         title="Gestor de Conteúdo"
         subtitle="Ele gera posts com legenda e imagem para o Instagram e o Facebook — sozinho ou passando por sua aprovação, do jeito que você configurar."
         action={
-          <PrimaryButton href="/dashboard/content/connect" icon={<Plus size={14} />}>
-            Conectar conta
-          </PrimaryButton>
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/dashboard/equipe-digital/recursos?unit=${firstUnit?.id ?? ''}&employee=content_specialist`}
+              className="flex items-center gap-1.5 rounded-xl border border-white/10 px-3.5 py-2 text-xs font-bold text-slate-300 transition-colors hover:bg-white/5"
+            >
+              <Paperclip size={12} /> Anexar criativos de referência
+            </Link>
+            <PrimaryButton href="/dashboard/content/connect" icon={<Plus size={14} />}>
+              Conectar conta
+            </PrimaryButton>
+          </div>
         }
       />
 
