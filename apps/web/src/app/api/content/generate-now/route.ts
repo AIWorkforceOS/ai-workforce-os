@@ -13,8 +13,11 @@ import type { AgentConfig, Unit } from '@/lib/types'
 // waitForMediaContainerReady em lib/content/meta-content.ts + publicação)
 // — timeout real em produção (Vercel Runtime Timeout Error). O gerador
 // semanal (generate-week/route.ts) já usa 280s pro MESMO trabalho por
-// post; 120s aqui dá folga de sobra pra um post só.
-export const maxDuration = 120
+// post. Subido de 120 pra 180 em 2026-08-28 junto com o aumento de
+// MEDIA_TIMEOUT_MS (lib/openai.ts, 60s→90s) — 90s (imagem, pior caso) +
+// 30s (texto) + ~20s (espera do Instagram) + composição/upload/publicação
+// não cabiam mais nos 120s antigos.
+export const maxDuration = 180
 
 /**
  * Botão "Criar conteúdo agora" (pedido do Vinicius, 2026-08-23): gera UM

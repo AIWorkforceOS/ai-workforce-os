@@ -15,8 +15,15 @@ export function getOpenAIApiKey(): string | null {
 // interativos (resposta de chat, extração estruturada, visão, PDF,
 // embeddings); MEDIA_TIMEOUT_MS cobre geração de imagem/áudio, que já são
 // naturalmente mais lentas.
+//
+// Achado real em produção (2026-08-28, conta hello@alizoai.com): 60s não
+// bastava pra gpt-image-2 — "The operation was aborted due to timeout" se
+// repetiu em 2 dias seguidos no cron de Conteúdo/Social (system_events
+// content_specialist_run), derrubando a geração diária inteira quando a
+// API demorava um pouco mais que o normal. 90s dá folga real sem estourar
+// os orçamentos dos chamadores (generate-now: 180s; cron: 300s).
 const CHAT_TIMEOUT_MS = 30_000
-const MEDIA_TIMEOUT_MS = 60_000
+const MEDIA_TIMEOUT_MS = 90_000
 
 export type ChatMessage = { role: 'user' | 'assistant'; content: string }
 

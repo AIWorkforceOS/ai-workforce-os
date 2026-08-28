@@ -33,6 +33,13 @@ describe('buildCaptionSystemPrompt', () => {
     expect(prompt).toContain('bastidores')
   })
 
+  it('regressão (2026-08-28, conta AlizoAi): instrui variedade visual concreta, não só "não repita" — achado real: negócio sem produto físico caía sempre no mesmo clichê (escritório com telas)', () => {
+    const prompt = buildCaptionSystemPrompt({ config, unit, organizationProfile: null, platform: 'instagram', pillar: null })
+    expect(prompt).toContain('VARIEDADE VISUAL DE VERDADE')
+    expect(prompt).toContain('ilustração/composição gráfica abstrata')
+    expect(prompt).toContain('Nunca use o MESMO formato do post imediatamente anterior')
+  })
+
   it('usa Facebook quando a plataforma é facebook', () => {
     const prompt = buildCaptionSystemPrompt({
       config,

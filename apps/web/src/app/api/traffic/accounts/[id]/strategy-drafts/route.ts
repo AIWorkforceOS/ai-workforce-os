@@ -11,7 +11,12 @@ import { siteUrlFrom } from '@/lib/seo/planner'
 import type { AdAccount } from '@/lib/traffic/types'
 import type { Unit } from '@/lib/types'
 
-export const maxDuration = 90
+// Subido de 90 pra 180 em 2026-08-28 junto com o aumento de
+// MEDIA_TIMEOUT_MS (lib/openai.ts, 60s→90s, achado real de timeout no
+// Conteúdo/Social que se aplica a qualquer chamada de generateImage) —
+// esta rota gera estratégia (texto) + prompt de imagem (texto) + a
+// imagem em si (até 90s no pior caso) + upload, não cabia mais em 90s.
+export const maxDuration = 180
 
 /**
  * Gera uma campanha INTEIRA do zero (público, objetivo, texto, verba,

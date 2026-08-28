@@ -14,7 +14,10 @@ import {
 import { validateNewCampaignSpec } from '@/lib/traffic/spec-validation'
 import type { AdAccount, NewCampaignSpec } from '@/lib/traffic/types'
 
-export const maxDuration = 60
+// Subido de 60 pra 180 em 2026-08-28 — mesmo motivo do strategy-drafts
+// (MEDIA_TIMEOUT_MS 60s→90s, ver lib/openai.ts): prompt de imagem +
+// imagem em si + upload não cabiam mais em 60s.
+export const maxDuration = 180
 
 type Body = { spec?: Partial<NewCampaignSpec> }
 
