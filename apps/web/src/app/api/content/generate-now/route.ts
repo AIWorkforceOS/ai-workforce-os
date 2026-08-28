@@ -77,12 +77,15 @@ export async function POST(request: Request) {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
   const { data: recent } = await service
     .from('content_posts')
-    .select('platform, content_pillar, created_at, caption, image_prompt')
+    .select('platform, content_pillar, visual_angle, created_at, caption, image_prompt')
     .eq('social_account_id', account.id)
     .gte('created_at', sevenDaysAgo.toISOString())
     .order('created_at', { ascending: false })
     .limit(50)
-  const recentPosts = (recent ?? []) as Pick<ContentPost, 'platform' | 'content_pillar' | 'created_at' | 'caption' | 'image_prompt'>[]
+  const recentPosts = (recent ?? []) as Pick<
+    ContentPost,
+    'platform' | 'content_pillar' | 'visual_angle' | 'created_at' | 'caption' | 'image_prompt'
+  >[]
 
   const outcome = await generateSinglePostForAccount({
     supabase: service,

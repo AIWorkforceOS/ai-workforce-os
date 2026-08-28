@@ -120,6 +120,28 @@ describe('generateWeekPostsForAccount', () => {
     expect(db.content_posts).toHaveLength(2) // 1 pré-existente + 1 novo
   })
 
+  it('regressão (2026-08-28, conta AlizoAi): post rejeitado não bloqueia gerar de novo na mesma data ("já existe")', async () => {
+    const { mod, supabase, db } = await loadModule({
+      content_posts: [
+        {
+          id: 'rejected-1',
+          social_account_id: 'acc-1',
+          platform: 'instagram',
+          content_pillar: 'dicas',
+          scheduled_for: utc(2026, 9, 7).toISOString(),
+          status: 'rejected',
+          created_at: utc(2026, 9, 5).toISOString(),
+        },
+      ],
+    })
+    const dates = [utc(2026, 9, 7)]
+
+    const result = await mod.generateWeekPostsForAccount({ supabase, apiKey: 'k', config, unit, account, dates })
+
+    expect(result).toEqual({ created: 1, skipped: 0, errors: [] })
+    expect(db.content_posts).toHaveLength(2) // 1 rejeitado (mantido) + 1 novo
+  })
+
   it('sem nenhuma plataforma suportada pela conta, devolve erro e não gera nada', async () => {
     const { mod, supabase } = await loadModule({ content_posts: [] })
     const igOnlyConfig = { ...config, business_profile: { plataformas: ['instagram'] } } as AgentConfig

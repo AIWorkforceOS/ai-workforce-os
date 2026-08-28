@@ -60,6 +60,7 @@ export type ContentPost = {
   platform: SocialPlatform
   status: ContentPostStatus
   content_pillar: string | null
+  visual_angle: string | null
   caption: string
   image_prompt: string | null
   image_url: string | null

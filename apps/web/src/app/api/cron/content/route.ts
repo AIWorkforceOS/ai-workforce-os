@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { logSystemEvent } from '@/lib/system-events'
 import { getOpenAIApiKey } from '@/lib/openai'
-import { contentPlatformsFrom, nextWeekDates, postingDaysFrom, shouldGenerateToday, weeklyFrequencyFrom } from '@/lib/content/planner'
+import { QUOTA_STATUSES, contentPlatformsFrom, nextWeekDates, postingDaysFrom, shouldGenerateToday, weeklyFrequencyFrom } from '@/lib/content/planner'
 import { generateSinglePostForAccount } from '@/lib/content/single-post'
 import { publishDueScheduledPosts } from '@/lib/content/publisher'
 import { generateWeekPostsForAccount } from '@/lib/content/weekly-planner'
@@ -153,21 +153,23 @@ export async function GET(request: Request) {
 
       const { data: recent } = await supabase
         .from('content_posts')
-        .select('platform, content_pillar, status, created_at, scheduled_for, caption, image_prompt')
+        .select('platform, content_pillar, visual_angle, status, created_at, scheduled_for, caption, image_prompt')
         .eq('social_account_id', account.id)
         .gte('created_at', sevenDaysAgo.toISOString())
         .order('created_at', { ascending: false })
         .limit(50)
       const recentPosts = (recent ?? []) as Pick<
         ContentPost,
-        'platform' | 'content_pillar' | 'status' | 'created_at' | 'scheduled_for' | 'caption' | 'image_prompt'
+        'platform' | 'content_pillar' | 'visual_angle' | 'status' | 'created_at' | 'scheduled_for' | 'caption' | 'image_prompt'
       >[]
 
       // O planejamento semanal já pode ter coberto hoje (post com
       // scheduled_for = hoje) — não gera um segundo post avulso pro
-      // mesmo dia pra quem já usa o planejamento semanal.
+      // mesmo dia pra quem já usa o planejamento semanal. Mesmo achado
+      // real de 2026-08-28 do weekly-planner.ts: só conta se o post ainda
+      // ocupa a cota (rejeitado/com falha libera o dia de novo).
       const coveredByWeekPlan = recentPosts.some((post) => {
-        if (!post.scheduled_for) return false
+        if (!post.scheduled_for || !QUOTA_STATUSES.includes(post.status)) return false
         const scheduledAt = new Date(post.scheduled_for)
         return scheduledAt >= startOfDay && scheduledAt < endOfDay
       })

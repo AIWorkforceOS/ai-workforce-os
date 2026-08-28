@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  VISUAL_ANGLES,
   contentPillarsFrom,
   contentPlatformsFrom,
   currentWeekDates,
@@ -8,6 +9,7 @@ import {
   nextWeekDates,
   pickNextPillar,
   pickNextPlatform,
+  pickNextVisualAngle,
   postingDaysFrom,
   resolveWeekPlanDates,
   shouldGenerateToday,
@@ -142,6 +144,27 @@ describe('pickNextPillar', () => {
     // acha o "custo" (3º pilar) pelo menos uma vez logo nas primeiras rodadas — a versão antiga NUNCA o alcançava
     expect(picks.slice(0, 3)).toContain('custo')
     // nunca repete o pilar imediatamente anterior
+    for (let i = 1; i < picks.length; i++) expect(picks[i]).not.toBe(picks[i - 1])
+  })
+})
+
+describe('pickNextVisualAngle', () => {
+  it('sem histórico, devolve um dos ângulos válidos', () => {
+    const angle = pickNextVisualAngle([])
+    expect(VISUAL_ANGLES).toContain(angle)
+  })
+
+  it('regressão (2026-08-28, conta AlizoAi): rotaciona de verdade por todos os ângulos, nunca repete o imediatamente anterior — achado real: instrução em texto livre não impediu o modelo de repetir sempre o mesmo clichê visual', () => {
+    let recentPosts: { visual_angle: string | null; created_at: string }[] = []
+    const picks: string[] = []
+    for (let i = 0; i < VISUAL_ANGLES.length * 2; i++) {
+      const next = pickNextVisualAngle(recentPosts)
+      picks.push(next)
+      recentPosts = [{ visual_angle: next, created_at: new Date(2026, 7, 28 + i).toISOString() }, ...recentPosts]
+    }
+    // percorre todos os ângulos disponíveis dentro da primeira volta completa
+    expect(new Set(picks.slice(0, VISUAL_ANGLES.length))).toEqual(new Set(VISUAL_ANGLES))
+    // nunca repete o ângulo imediatamente anterior
     for (let i = 1; i < picks.length; i++) expect(picks[i]).not.toBe(picks[i - 1])
   })
 })

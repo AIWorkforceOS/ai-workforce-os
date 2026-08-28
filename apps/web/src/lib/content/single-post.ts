@@ -6,7 +6,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
 import { fetchActiveAttachments, buildAttachmentsContext } from '@/lib/attachments'
-import { contentPillarsFrom, contentPlatformsFrom, decidePublishAction, pickNextPillar, pickNextPlatform } from './planner'
+import { contentPillarsFrom, contentPlatformsFrom, decidePublishAction, pickNextPillar, pickNextPlatform, pickNextVisualAngle } from './planner'
 import { generatePostContent, generatePostImage, uploadGeneratedImage } from './generator'
 import { holidayOnDate } from './holidays'
 import { publishContentPost } from './publisher'
@@ -29,7 +29,7 @@ export async function generateSinglePostForAccount(params: {
   config: AgentConfig
   unit: Unit
   account: SocialAccount
-  recentPosts: Pick<ContentPost, 'platform' | 'content_pillar' | 'created_at' | 'caption' | 'image_prompt'>[]
+  recentPosts: Pick<ContentPost, 'platform' | 'content_pillar' | 'visual_angle' | 'created_at' | 'caption' | 'image_prompt'>[]
   scheduledFor?: Date | null
 }): Promise<SinglePostResult> {
   const { supabase, apiKey, config, unit, account, recentPosts, scheduledFor } = params
@@ -46,6 +46,7 @@ export async function generateSinglePostForAccount(params: {
   const pillars = contentPillarsFrom(profile)
   const platform = pickNextPlatform(supportedPlatforms, recentPosts)
   const pillar = pickNextPillar(pillars, recentPosts)
+  const visualAngle = pickNextVisualAngle(recentPosts)
   const organizationProfile = await fetchOrganizationBusinessProfile(supabase, unit.org_id)
   const attachments = await fetchActiveAttachments(supabase, unit, 'content_specialist')
   const attachmentsContext = buildAttachmentsContext(attachments)
@@ -65,6 +66,7 @@ export async function generateSinglePostForAccount(params: {
       holiday: holiday?.name ?? null,
       recentPosts: recentPostsContext,
       attachmentsContext,
+      visualAngle,
     })
     const logoUrl = (organizationProfile as { brand_kit?: { logo_url?: string | null } } | null)?.brand_kit?.logo_url ?? null
     const image = await generatePostImage({ apiKey, imagePrompt: content.imagePrompt, logoUrl })
@@ -80,6 +82,7 @@ export async function generateSinglePostForAccount(params: {
         platform,
         status: action === 'publish' ? 'approved' : 'pending_approval',
         content_pillar: pillar,
+        visual_angle: visualAngle,
         caption: content.caption,
         image_prompt: content.imagePrompt,
         image_url: imageUrl,

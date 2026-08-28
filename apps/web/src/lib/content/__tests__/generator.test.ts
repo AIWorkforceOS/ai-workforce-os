@@ -28,6 +28,7 @@ describe('buildCaptionSystemPrompt', () => {
       organizationProfile: null,
       platform: 'instagram',
       pillar: 'bastidores',
+      visualAngle: 'test visual angle',
     })
     expect(prompt).toContain('Instagram')
     expect(prompt).toContain('bastidores')
@@ -40,6 +41,7 @@ describe('buildCaptionSystemPrompt', () => {
       organizationProfile: null,
       platform: 'instagram',
       pillar: null,
+      visualAngle: 'test visual angle',
       recentPosts: [{ pillar: 'dor', caption: 'a'.repeat(200), imagePrompt: null }],
     })
     expect(prompt).toContain('REGRA DURA')
@@ -48,11 +50,17 @@ describe('buildCaptionSystemPrompt', () => {
     expect(prompt).toContain('a'.repeat(200))
   })
 
-  it('regressão (2026-08-28, conta AlizoAi): instrui variedade visual concreta, não só "não repita" — achado real: negócio sem produto físico caía sempre no mesmo clichê (escritório com telas)', () => {
-    const prompt = buildCaptionSystemPrompt({ config, unit, organizationProfile: null, platform: 'instagram', pillar: null })
-    expect(prompt).toContain('VARIEDADE VISUAL DE VERDADE')
-    expect(prompt).toContain('ilustração/composição gráfica abstrata')
-    expect(prompt).toContain('Nunca use o MESMO formato do post imediatamente anterior')
+  it('regressão (2026-08-28, conta AlizoAi): impõe o formato visual OBRIGATÓRIO decidido em código (pickNextVisualAngle), não deixa o modelo escolher livremente — achado real: pedir "varie o formato" por texto (2 tentativas) não bastou, o modelo continuava caindo no mesmo clichê visual', () => {
+    const prompt = buildCaptionSystemPrompt({
+      config,
+      unit,
+      organizationProfile: null,
+      platform: 'instagram',
+      pillar: null,
+      visualAngle: 'close-up extremo de um único objeto',
+    })
+    expect(prompt).toContain('FORMATO VISUAL OBRIGATÓRIO')
+    expect(prompt).toContain('close-up extremo de um único objeto')
   })
 
   it('usa Facebook quando a plataforma é facebook', () => {
@@ -62,6 +70,7 @@ describe('buildCaptionSystemPrompt', () => {
       organizationProfile: null,
       platform: 'facebook',
       pillar: null,
+      visualAngle: 'test visual angle',
     })
     expect(prompt).toContain('Facebook')
     expect(prompt).not.toContain('Instagram')
@@ -74,31 +83,32 @@ describe('buildCaptionSystemPrompt', () => {
       organizationProfile: { org_company_name: 'Limpeza Rápida' },
       platform: 'instagram',
       pillar: null,
+      visualAngle: 'test visual angle',
     })
     expect(prompt).toContain('Limpeza Rápida')
   })
 
   it('avisa para nunca inventar promoção/preço nem citar concorrentes', () => {
-    const prompt = buildCaptionSystemPrompt({ config, unit, organizationProfile: null, platform: 'instagram', pillar: null })
+    const prompt = buildCaptionSystemPrompt({ config, unit, organizationProfile: null, platform: 'instagram', pillar: null, visualAngle: 'test visual angle' })
     expect(prompt).toContain('Nunca invente promoção')
     expect(prompt).toContain('Nunca mencione concorrentes')
   })
 
   it('pede resposta em JSON com caption, image_prompt e reasoning', () => {
-    const prompt = buildCaptionSystemPrompt({ config, unit, organizationProfile: null, platform: 'instagram', pillar: null })
+    const prompt = buildCaptionSystemPrompt({ config, unit, organizationProfile: null, platform: 'instagram', pillar: null, visualAngle: 'test visual angle' })
     expect(prompt).toContain('"caption"')
     expect(prompt).toContain('"image_prompt"')
     expect(prompt).toContain('"reasoning"')
   })
 
   it('instrui a agir como gestor de conteúdo de verdade, não postar por postar (pedido do Vinicius, 2026-08-23)', () => {
-    const prompt = buildCaptionSystemPrompt({ config, unit, organizationProfile: null, platform: 'instagram', pillar: null })
+    const prompt = buildCaptionSystemPrompt({ config, unit, organizationProfile: null, platform: 'instagram', pillar: null, visualAngle: 'test visual angle' })
     expect(prompt).toContain('gestor de conteúdo de verdade')
     expect(prompt).toContain('gerar resultado de negócio de verdade')
   })
 
   it('sem posts recentes, não inclui a seção de contexto (nada pra evitar repetir ainda)', () => {
-    const prompt = buildCaptionSystemPrompt({ config, unit, organizationProfile: null, platform: 'instagram', pillar: null })
+    const prompt = buildCaptionSystemPrompt({ config, unit, organizationProfile: null, platform: 'instagram', pillar: null, visualAngle: 'test visual angle' })
     expect(prompt).not.toContain('POSTS RECENTES DESTA CONTA')
   })
 
@@ -109,6 +119,7 @@ describe('buildCaptionSystemPrompt', () => {
       organizationProfile: null,
       platform: 'instagram',
       pillar: 'dicas',
+      visualAngle: 'test visual angle',
       recentPosts: [
         { pillar: 'bastidores', caption: 'Nossa equipe em ação hoje cedo, preparando tudo para o dia.', imagePrompt: 'team cleaning an office lobby at sunrise' },
         { pillar: 'dicas', caption: 'Dica rápida: troque o pano de microfibra a cada 200 usos.', imagePrompt: null },
@@ -130,6 +141,7 @@ describe('buildCaptionSystemPrompt', () => {
       organizationProfile: null,
       platform: 'instagram',
       pillar: null,
+      visualAngle: 'test visual angle',
       recentPosts: [{ pillar: null, caption: longCaption, imagePrompt: null }],
     })
     expect(prompt).not.toContain(longCaption)
@@ -149,6 +161,7 @@ describe('buildCaptionSystemPrompt', () => {
       },
       platform: 'instagram',
       pillar: null,
+      visualAngle: 'test visual angle',
     })
     expect(prompt).toContain('escreva a legenda inteiramente em inglês')
   })
@@ -164,6 +177,7 @@ describe('buildCaptionSystemPrompt', () => {
       },
       platform: 'instagram',
       pillar: null,
+      visualAngle: 'test visual angle',
     })
     expect(prompt).toContain('escreva a legenda inteiramente em inglês')
   })
@@ -176,6 +190,7 @@ describe('buildCaptionSystemPrompt', () => {
       organizationProfile: null,
       platform: 'instagram',
       pillar: null,
+      visualAngle: 'test visual angle',
     })
     expect(prompt).toContain('escreva a legenda inteiramente em inglês')
   })
@@ -187,6 +202,7 @@ describe('buildCaptionSystemPrompt', () => {
       organizationProfile: { descricao_curta: 'Somos uma padaria de bairro, tradicional, com atendimento familiar.' },
       platform: 'instagram',
       pillar: null,
+      visualAngle: 'test visual angle',
     })
     expect(prompt).toContain('escreva a legenda inteiramente em português')
   })
@@ -198,6 +214,7 @@ describe('buildCaptionSystemPrompt', () => {
       organizationProfile: { descricao_curta: 'Somos uma empresa de limpeza residencial e comercial com atendimento personalizado e pontual.' },
       platform: 'instagram',
       pillar: null,
+      visualAngle: 'test visual angle',
     })
     expect(prompt).toContain('escreva a legenda inteiramente em português')
   })
@@ -209,23 +226,24 @@ describe('buildCaptionSystemPrompt', () => {
       organizationProfile: { brand_kit: { primary_color: '#1E40AF', secondary_color: '#10B981' } },
       platform: 'instagram',
       pillar: null,
+      visualAngle: 'test visual angle',
     })
     expect(prompt).toContain('#1E40AF')
     expect(prompt).toContain('#10B981')
   })
 
   it('não menciona paleta de marca quando não há brand_kit configurado', () => {
-    const prompt = buildCaptionSystemPrompt({ config, unit, organizationProfile: null, platform: 'instagram', pillar: null })
+    const prompt = buildCaptionSystemPrompt({ config, unit, organizationProfile: null, platform: 'instagram', pillar: null, visualAngle: 'test visual angle' })
     expect(prompt).not.toContain('Identidade visual da marca')
   })
 
   it('inclui a data comemorativa quando o post é planejado pra ela (planejamento semanal)', () => {
-    const prompt = buildCaptionSystemPrompt({ config, unit, organizationProfile: null, platform: 'instagram', pillar: null, holiday: 'Natal' })
+    const prompt = buildCaptionSystemPrompt({ config, unit, organizationProfile: null, platform: 'instagram', pillar: null, visualAngle: 'test visual angle', holiday: 'Natal' })
     expect(prompt).toContain('Data comemorativa: este post vai ao ar em "Natal"')
   })
 
   it('não menciona data comemorativa quando não há uma pro dia', () => {
-    const prompt = buildCaptionSystemPrompt({ config, unit, organizationProfile: null, platform: 'instagram', pillar: null })
+    const prompt = buildCaptionSystemPrompt({ config, unit, organizationProfile: null, platform: 'instagram', pillar: null, visualAngle: 'test visual angle' })
     expect(prompt).not.toContain('Data comemorativa')
   })
 })
@@ -238,6 +256,7 @@ describe('buildCaptionSystemPrompt — biblioteca de materiais (2026-08-26)', ()
       organizationProfile: null,
       platform: 'instagram',
       pillar: null,
+      visualAngle: 'test visual angle',
       attachmentsContext: 'MATERIAIS DISPONÍVEIS PARA ENVIAR: cardápio-padaria.pdf',
     })
     expect(prompt).toContain('MATERIAIS DISPONÍVEIS PARA ENVIAR')
@@ -245,7 +264,7 @@ describe('buildCaptionSystemPrompt — biblioteca de materiais (2026-08-26)', ()
   })
 
   it('sem attachmentsContext, não quebra (comportamento antigo intocado)', () => {
-    const prompt = buildCaptionSystemPrompt({ config, unit, organizationProfile: null, platform: 'instagram', pillar: null })
+    const prompt = buildCaptionSystemPrompt({ config, unit, organizationProfile: null, platform: 'instagram', pillar: null, visualAngle: 'test visual angle' })
     expect(prompt).not.toContain('MATERIAIS DISPONÍVEIS')
   })
 })

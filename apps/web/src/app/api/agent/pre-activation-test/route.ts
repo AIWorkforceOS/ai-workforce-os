@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getOpenAIApiKey } from '@/lib/openai'
 import { generatePostContent } from '@/lib/content/generator'
+import { pickNextVisualAngle } from '@/lib/content/planner'
 import { runSeoAudit } from '@/lib/seo/audit'
 import { siteUrlFrom } from '@/lib/seo/planner'
 import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
@@ -44,6 +45,7 @@ async function runContentTest(config: AgentConfig, unit: Unit, organizationProfi
       organizationProfile,
       platform: 'instagram',
       pillar: null,
+      visualAngle: pickNextVisualAngle([]),
     })
     return { ok: true as const, preview }
   } catch (error) {

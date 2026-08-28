@@ -82,8 +82,17 @@ export function buildCaptionSystemPrompt(params: {
   recentPosts?: RecentPostSummary[]
   /** Materiais da biblioteca aplicáveis a 'content_specialist' (lib/attachments.ts) — pedido do Vinicius (2026-08-26): criativos ruins por falta de referência real da empresa (cardápio, catálogo, identidade visual em PDF etc.), este era um dos 3 cargos que ainda não liam a biblioteca. */
   attachmentsContext?: string | null
+  /**
+   * Formato visual OBRIGATÓRIO da imagem deste post — decidido em código por
+   * pickNextVisualAngle (lib/content/planner.ts), não pelo modelo. Achado
+   * real (2026-08-28, conta AlizoAi): pedir "varie o formato" por texto
+   * livre não funcionou (mesma classe de bug do pickNextPillar antigo) — o
+   * modelo continuava caindo no mesmo clichê visual. Agora o ângulo já vem
+   * escolhido e só é imposto, igual pillar/platform.
+   */
+  visualAngle: string
 }): string {
-  const { config, unit, organizationProfile, platform, pillar, holiday, recentPosts, attachmentsContext } = params
+  const { config, unit, organizationProfile, platform, pillar, holiday, recentPosts, attachmentsContext, visualAngle } = params
   const businessContext = buildCombinedBusinessContext(organizationProfile, config.business_profile)
   // idioma_conteudo (achado real, 2026-08-27): pedido explícito do dono na
   // entrevista/retreinamento ("todos os posts em inglês") tem prioridade
@@ -105,13 +114,13 @@ export function buildCaptionSystemPrompt(params: {
     businessContext ??
       'Ainda não há uma ficha de negócio detalhada — escreva algo genérico, seguro e verdadeiro para uma empresa de serviços, sem inventar detalhes específicos.',
     'Aja como um gestor de conteúdo de verdade, não como quem posta por postar: antes de escrever, decida qual ângulo/formato (dica prática, resultado real com problema→solução, bastidores da equipe, prova social, pergunta pro público, educativo, autoridade no assunto etc.) tem mais chance de gerar resultado de negócio de verdade — leads qualificados, confiança, autoridade — para ESTE pilar e para o público-alvo descrito na ficha. Nunca gere um post genérico só para preencher a grade de publicação.',
-    // Achado real (2026-08-28, conta AlizoAi): pra negócio abstrato
-    // (ex.: SaaS/tecnologia, sem produto físico pra fotografar), o modelo
-    // sempre "caía" no mesmo clichê visual — escritório moderno com telas
-    // mostrando gráficos, em azul/turquesa — mesmo com a instrução de não
-    // repetir cena. Enumerar formatos concretos pra alternar de verdade
-    // funciona melhor do que só pedir "não repita".
-    'VARIEDADE VISUAL DE VERDADE (não só "não repetir a última cena" — alterne de propósito entre formatos diferentes a cada post, mesmo pra negócios sem produto físico): fotografia realista de pessoas/ambiente, ilustração/composição gráfica abstrata, close-up de um objeto/detalhe específico, peça no estilo infográfico/dado visual, cena minimalista com um único elemento em destaque, comparação antes/depois, ou um personagem/mascote em ação. Nunca use o MESMO formato do post imediatamente anterior (ver histórico abaixo) — se ele foi "escritório com telas", o de agora tem que ser outra coisa, não uma variação da mesma ideia.',
+    // Achado real (2026-08-28, conta AlizoAi): pedir por texto "varie o
+    // formato visual" (2 tentativas) não bastou — o modelo continuava
+    // caindo no mesmo clichê (robôs + telas de dashboard + azul/turquesa)
+    // post após post, mesmo com a instrução reforçada. O ângulo agora é
+    // DECIDIDO em código (pickNextVisualAngle, mesmo princípio do fix de
+    // pickNextPillar) e só imposto aqui — não é mais escolha livre do modelo.
+    `FORMATO VISUAL OBRIGATÓRIO deste post (não é sugestão — não use nenhum outro formato): ${visualAngle}. O image_prompt tem que descrever a cena seguindo EXATAMENTE esse formato.`,
     recentPostsContext,
     attachmentsContext || null,
     'A legenda deve soar humana, natural, sem parecer gerada por IA e sem clichês genéricos de marketing. Use no máximo 2 emojis, só se fizer sentido para o tom da marca.',
@@ -141,6 +150,7 @@ export async function generatePostContent(params: {
   holiday?: string | null
   recentPosts?: RecentPostSummary[]
   attachmentsContext?: string | null
+  visualAngle: string
 }): Promise<GeneratedPostContent> {
   const systemPrompt = buildCaptionSystemPrompt(params)
   const output = await generateStructuredReply<CaptionOutput>({

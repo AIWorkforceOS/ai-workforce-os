@@ -12,7 +12,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
 import { fetchActiveAttachments, buildAttachmentsContext } from '@/lib/attachments'
-import { contentPillarsFrom, contentPlatformsFrom, decidePublishAction, pickNextPillar, pickNextPlatform } from './planner'
+import { QUOTA_STATUSES, contentPillarsFrom, contentPlatformsFrom, decidePublishAction, pickNextPillar, pickNextPlatform, pickNextVisualAngle } from './planner'
 import { generatePostContent, generatePostImage, uploadGeneratedImage } from './generator'
 import { holidayOnDate } from './holidays'
 import type { ContentPost, SocialAccount, SocialPlatform } from './types'
@@ -59,26 +59,42 @@ export async function generateWeekPostsForAccount(params: {
   const historyStart = new Date(rangeStart.getTime() - 7 * 24 * 60 * 60 * 1000)
   const { data: existing } = await supabase
     .from('content_posts')
-    .select('platform, content_pillar, status, created_at, scheduled_for, caption, image_prompt')
+    .select('platform, content_pillar, visual_angle, status, created_at, scheduled_for, caption, image_prompt')
     .eq('social_account_id', account.id)
     .gte('created_at', historyStart.toISOString())
     .order('created_at', { ascending: false })
     .limit(100)
   const history = (existing ?? []) as Pick<
     ContentPost,
-    'platform' | 'content_pillar' | 'status' | 'created_at' | 'scheduled_for' | 'caption' | 'image_prompt'
+    'platform' | 'content_pillar' | 'visual_angle' | 'status' | 'created_at' | 'scheduled_for' | 'caption' | 'image_prompt'
   >[]
 
-  const alreadyScheduled = new Set(history.filter((p) => p.scheduled_for).map((p) => dateKey(new Date(p.scheduled_for!))))
+  // Achado real (2026-08-28, conta AlizoAi): isso contava QUALQUER post
+  // com aquela data, inclusive rejeitado/com falha — o Vinicius rejeitou
+  // os 3 posts repetidos e tentou gerar de novo, e a rota recusava dizendo
+  // "já existe" porque as linhas rejeitadas continuavam contando a cota do
+  // dia. Mesmo filtro de QUOTA_STATUSES já usado por shouldGenerateToday
+  // (fluxo avulso) — rejeitado/com falha libera o dia de novo.
+  const alreadyScheduled = new Set(
+    history
+      .filter((p) => p.scheduled_for && QUOTA_STATUSES.includes(p.status))
+      .map((p) => dateKey(new Date(p.scheduled_for!))),
+  )
 
   // Acumula o histórico + o que já foi gerado dentro deste mesmo lote, pra
   // pickNextPlatform/pickNextPillar continuarem alternando corretamente ao
   // longo da semana toda (não só olhando pro que já existia antes), e pra
   // dar contexto de "posts recentes" ao gerador dentro do próprio lote —
   // sem isso, o dia 2 da semana não saberia o que o dia 1 já publicou.
-  const runningHistory: Pick<ContentPost, 'platform' | 'content_pillar' | 'created_at' | 'caption' | 'image_prompt'>[] = history.map(
-    (p) => ({ platform: p.platform, content_pillar: p.content_pillar, created_at: p.created_at, caption: p.caption, image_prompt: p.image_prompt }),
-  )
+  const runningHistory: Pick<ContentPost, 'platform' | 'content_pillar' | 'visual_angle' | 'created_at' | 'caption' | 'image_prompt'>[] =
+    history.map((p) => ({
+      platform: p.platform,
+      content_pillar: p.content_pillar,
+      visual_angle: p.visual_angle,
+      created_at: p.created_at,
+      caption: p.caption,
+      image_prompt: p.image_prompt,
+    }))
 
   const logoUrl = (organizationProfile as { brand_kit?: { logo_url?: string | null } } | null)?.brand_kit?.logo_url ?? null
 
@@ -91,6 +107,7 @@ export async function generateWeekPostsForAccount(params: {
 
     const platform = pickNextPlatform(supportedPlatforms, runningHistory)
     const pillar = pickNextPillar(pillars, runningHistory)
+    const visualAngle = pickNextVisualAngle(runningHistory)
     const holiday = holidayOnDate(date)
     const recentPostsContext = [...runningHistory]
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
@@ -107,6 +124,7 @@ export async function generateWeekPostsForAccount(params: {
         holiday: holiday?.name ?? null,
         recentPosts: recentPostsContext,
         attachmentsContext,
+        visualAngle,
       })
       const image = await generatePostImage({ apiKey, imagePrompt: content.imagePrompt, logoUrl })
       const imageUrl = await uploadGeneratedImage({ supabase, unitId: unit.id, base64Image: image.base64Image })
@@ -124,6 +142,7 @@ export async function generateWeekPostsForAccount(params: {
           platform,
           status: action === 'publish' ? 'approved' : 'pending_approval',
           content_pillar: pillar,
+          visual_angle: visualAngle,
           caption: content.caption,
           image_prompt: content.imagePrompt,
           image_url: imageUrl,
@@ -140,6 +159,7 @@ export async function generateWeekPostsForAccount(params: {
       runningHistory.push({
         platform,
         content_pillar: pillar,
+        visual_angle: visualAngle,
         created_at: new Date().toISOString(),
         caption: content.caption,
         image_prompt: content.imagePrompt,

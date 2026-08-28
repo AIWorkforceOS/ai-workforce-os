@@ -10,7 +10,7 @@ const DEFAULT_WEEKLY_FREQUENCY = 3
 const DEFAULT_PLATFORMS: SocialPlatform[] = ['instagram', 'facebook']
 
 /** Status que "ocupam" a cota semanal — um post rejeitado ou que falhou não conta. */
-const QUOTA_STATUSES: ContentPostStatus[] = ['draft', 'pending_approval', 'approved', 'scheduled', 'published']
+export const QUOTA_STATUSES: ContentPostStatus[] = ['draft', 'pending_approval', 'approved', 'scheduled', 'published']
 
 export function decidePublishAction(mode: PublishingMode): 'publish' | 'queue' {
   return mode === 'autonomous' ? 'publish' : 'queue'
@@ -196,4 +196,44 @@ export function pickNextPillar(
   })
   const staleness = (pillar: string) => lastUsedRank.get(pillar) ?? Number.POSITIVE_INFINITY // nunca usado = mais "velho" que qualquer um já usado
   return [...pillars].sort((a, b) => staleness(b) - staleness(a))[0]!
+}
+
+/**
+ * Formatos/ângulos visuais concretos que a imagem de um post pode assumir —
+ * pedido do Vinicius (2026-08-28, conta AlizoAi): mesmo com a instrução em
+ * texto reforçada 2x pedindo "varie o formato visual", os criativos
+ * continuaram seguindo a mesma linha (robôs + telas de dashboard +
+ * azul/turquesa) post após post. Cada entrada é a instrução completa já
+ * pronta pra entrar no prompt de imagem — não é só um rótulo.
+ */
+export const VISUAL_ANGLES = [
+  'fotografia realista de pessoas de verdade em ação (equipe trabalhando, cliente sendo atendido) — sem elementos de tela/dashboard/tecnologia visíveis na cena',
+  'ilustração/composição gráfica abstrata com formas geométricas e cor sólida — sem nenhuma figura humana realista nem tela de computador',
+  'close-up extremo de um único objeto ou detalhe específico do negócio, enchendo o quadro inteiro — sem ambiente ao redor visível',
+  'peça no estilo infográfico: ícones simples + um número ou dado em destaque sobre fundo liso — sem foto nem cena realista',
+  'cena minimalista com um único elemento pequeno centralizado num fundo vazio e limpo — bastante espaço negativo',
+  'comparação lado a lado (split-screen) mostrando antes/depois ou dois cenários opostos',
+  'um personagem ilustrado (mascote, avatar cartoon) em ação numa situação do dia a dia do negócio — estilo desenho, não foto',
+] as const
+
+/**
+ * Escolhe o próximo ângulo visual, no mesmo espírito round-robin/LRU de
+ * pickNextPillar (que resolveu o mesmo tipo de bug pro pilar de conteúdo):
+ * o formato que ficou mais tempo sem ser usado vence, nunca repete o
+ * imediatamente anterior quando há alternativa. Deixar o modelo "escolher
+ * livremente" já foi tentado e não funcionou — precisa ser decidido em
+ * código, antes do prompt, e imposto como obrigatório.
+ */
+export function pickNextVisualAngle(recentPosts: Pick<ContentPost, 'visual_angle' | 'created_at'>[]): string {
+  const sortedByRecency = [...recentPosts].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  )
+  const lastUsedRank = new Map<string, number>()
+  sortedByRecency.forEach((post, index) => {
+    if (post.visual_angle && !lastUsedRank.has(post.visual_angle)) {
+      lastUsedRank.set(post.visual_angle, index)
+    }
+  })
+  const staleness = (angle: string) => lastUsedRank.get(angle) ?? Number.POSITIVE_INFINITY
+  return [...VISUAL_ANGLES].sort((a, b) => staleness(b) - staleness(a))[0]!
 }
