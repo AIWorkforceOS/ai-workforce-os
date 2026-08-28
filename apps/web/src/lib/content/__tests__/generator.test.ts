@@ -33,6 +33,21 @@ describe('buildCaptionSystemPrompt', () => {
     expect(prompt).toContain('bastidores')
   })
 
+  it('regressão (2026-08-28, conta AlizoAi): posts recentes vêm com mais texto da legenda (não só a 1ª frase) e a regra de não-repetição é explícita sobre ARGUMENTO, não só rótulo de pilar — achado real: 3 posts seguidos com pilares diferentes repetiram a mesma lógica reescrita com sinônimos', () => {
+    const prompt = buildCaptionSystemPrompt({
+      config,
+      unit,
+      organizationProfile: null,
+      platform: 'instagram',
+      pillar: null,
+      recentPosts: [{ pillar: 'dor', caption: 'a'.repeat(200), imagePrompt: null }],
+    })
+    expect(prompt).toContain('REGRA DURA')
+    expect(prompt).toContain('não só usar palavras diferentes pra dizer a mesma coisa')
+    // 200 chars de legenda de teste devem aparecer quase inteiros agora (truncamento subiu de 100 pra 220)
+    expect(prompt).toContain('a'.repeat(200))
+  })
+
   it('regressão (2026-08-28, conta AlizoAi): instrui variedade visual concreta, não só "não repita" — achado real: negócio sem produto físico caía sempre no mesmo clichê (escritório com telas)', () => {
     const prompt = buildCaptionSystemPrompt({ config, unit, organizationProfile: null, platform: 'instagram', pillar: null })
     expect(prompt).toContain('VARIEDADE VISUAL DE VERDADE')
@@ -100,7 +115,7 @@ describe('buildCaptionSystemPrompt', () => {
       ],
     })
     expect(prompt).toContain('POSTS RECENTES DESTA CONTA')
-    expect(prompt).toContain('não repita o mesmo tema, gancho ou cena/composição visual')
+    expect(prompt).toContain('REGRA DURA')
     expect(prompt).toContain('[bastidores]')
     expect(prompt).toContain('team cleaning an office lobby at sunrise')
     expect(prompt).toContain('[dicas]')
@@ -108,7 +123,7 @@ describe('buildCaptionSystemPrompt', () => {
   })
 
   it('trunca legendas/cenas longas do contexto de posts recentes', () => {
-    const longCaption = 'A'.repeat(200)
+    const longCaption = 'A'.repeat(400)
     const prompt = buildCaptionSystemPrompt({
       config,
       unit,

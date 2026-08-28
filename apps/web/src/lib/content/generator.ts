@@ -24,7 +24,12 @@ export type GeneratedPostContent = {
 export type RecentPostSummary = { pillar: string | null; caption: string; imagePrompt: string | null }
 
 const RECENT_POSTS_FOR_CONTEXT = 6
-const RECENT_TEXT_TRUNCATE = 100
+// Achado real (2026-08-28, conta AlizoAi): 100 chars só mostrava a
+// primeira frase de cada legenda — o suficiente pra existir contexto, mas
+// pouco pra o modelo perceber que o ARGUMENTO inteiro (não só a frase de
+// abertura) já tinha sido usado 2 posts atrás. Subido pra caber a ideia
+// completa de cada post recente.
+const RECENT_TEXT_TRUNCATE = 220
 
 function truncate(text: string, max: number): string {
   const trimmed = text.trim()
@@ -46,7 +51,15 @@ function buildRecentPostsContext(recentPosts: RecentPostSummary[] | undefined): 
     const imagePart = post.imagePrompt ? ` | cena: ${truncate(post.imagePrompt, RECENT_TEXT_TRUNCATE)}` : ''
     return `${i + 1}. ${pillarLabel} ${captionPart}${imagePart}`
   })
-  return `POSTS RECENTES DESTA CONTA (mais novo primeiro) — não repita o mesmo tema, gancho ou cena/composição visual de nenhum deles: ${items.join(' / ')}`
+  return [
+    `POSTS RECENTES DESTA CONTA (mais novo primeiro): ${items.join(' / ')}.`,
+    // Achado real (2026-08-28, conta AlizoAi): "não repita o mesmo tema"
+    // não bastou — o modelo trocava só o pilar/rótulo e mantinha o MESMO
+    // argumento ("ineficiência é o problema, funcionário digital 24/7 é a
+    // solução, chama no link da bio") reescrito com sinônimos, 3 posts
+    // seguidos. Trocar de pilar não conta como variar de verdade.
+    'REGRA DURA: o post de agora precisa argumentar uma coisa DIFERENTE dos posts acima, não só usar palavras diferentes pra dizer a mesma coisa — se os recentes já disseram "ineficiência é o problema, nós resolvemos, fale com a gente", este post NÃO pode repetir essa mesma lógica de novo, mesmo com um pilar diferente. Escolha um ângulo concreto que ainda não foi usado (ex.: um fato/dado específico, uma mini-história ou cenário, uma pergunta provocativa, um mito comum sendo desmentido, um "como funciona" passo a passo, uma comparação antes/depois, uma curiosidade, um bastidor da equipe) e uma estrutura de texto diferente da dos posts recentes (não repita "você sabia que" / "descubra como" se um post recente já abriu assim).',
+  ].join(' ')
 }
 
 function platformLabel(platform: SocialPlatform): string {

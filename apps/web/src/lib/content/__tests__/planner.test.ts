@@ -129,6 +129,21 @@ describe('pickNextPillar', () => {
     const next = pickNextPillar(['bastidores', 'dicas', 'depoimentos'], recentPosts)
     expect(next).not.toBe('bastidores')
   })
+
+  it('regressão (2026-08-28, conta AlizoAi): com 3+ pilares, roda de verdade em vez de ficar num ping-pong eterno entre só os 2 primeiros', () => {
+    const pillars = ['dor', 'solucao', 'custo']
+    let recentPosts: { content_pillar: string | null; created_at: string }[] = []
+    const picks: string[] = []
+    for (let i = 0; i < 6; i++) {
+      const next = pickNextPillar(pillars, recentPosts)!
+      picks.push(next)
+      recentPosts = [{ content_pillar: next, created_at: new Date(2026, 7, 28 + i).toISOString() }, ...recentPosts]
+    }
+    // acha o "custo" (3º pilar) pelo menos uma vez logo nas primeiras rodadas — a versão antiga NUNCA o alcançava
+    expect(picks.slice(0, 3)).toContain('custo')
+    // nunca repete o pilar imediatamente anterior
+    for (let i = 1; i < picks.length; i++) expect(picks[i]).not.toBe(picks[i - 1])
+  })
 })
 
 describe('postingDaysFrom', () => {

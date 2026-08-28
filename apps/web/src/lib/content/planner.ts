@@ -168,6 +168,15 @@ export function pickNextPlatform(
  * Escolhe o próximo pilar de conteúdo, evitando repetir o pilar do post
  * mais recente quando há mais de uma opção disponível.
  */
+/**
+ * Achado real em produção (2026-08-28, conta AlizoAi, 3 pilares
+ * configurados): a versão antiga só evitava repetir o pilar do post
+ * IMEDIATAMENTE anterior, sempre devolvendo `candidates[0]` — com 3+
+ * pilares isso trava num ping-pong eterno entre os 2 primeiros da lista
+ * (ex.: A→B→A→B→A...), o terceiro pilar NUNCA é escolhido. Agora é um
+ * round-robin de verdade: escolhe o pilar que ficou mais tempo sem ser
+ * usado (nunca usado conta como "mais tempo sem uso" de todos).
+ */
 export function pickNextPillar(
   pillars: string[],
   recentPosts: Pick<ContentPost, 'content_pillar' | 'created_at'>[],
@@ -175,10 +184,16 @@ export function pickNextPillar(
   if (pillars.length === 0) return null
   if (pillars.length === 1) return pillars[0]!
 
-  const mostRecent = [...recentPosts].sort(
+  const sortedByRecency = [...recentPosts].sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-  )[0]
-  const lastPillar = mostRecent?.content_pillar ?? null
-  const candidates = pillars.filter((pillar) => pillar !== lastPillar)
-  return candidates[0] ?? pillars[0]!
+  )
+  // Posição (0 = mais recente) da última vez que cada pilar foi usado — quanto maior, mais tempo sem aparecer.
+  const lastUsedRank = new Map<string, number>()
+  sortedByRecency.forEach((post, index) => {
+    if (post.content_pillar && !lastUsedRank.has(post.content_pillar)) {
+      lastUsedRank.set(post.content_pillar, index)
+    }
+  })
+  const staleness = (pillar: string) => lastUsedRank.get(pillar) ?? Number.POSITIVE_INFINITY // nunca usado = mais "velho" que qualquer um já usado
+  return [...pillars].sort((a, b) => staleness(b) - staleness(a))[0]!
 }
