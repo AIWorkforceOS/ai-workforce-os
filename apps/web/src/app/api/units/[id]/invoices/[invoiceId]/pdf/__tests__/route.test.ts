@@ -112,4 +112,15 @@ describe('GET /api/units/[id]/invoices/[invoiceId]/pdf', () => {
     const bytes = new Uint8Array(await res.arrayBuffer())
     expect(Buffer.from(bytes).toString()).toBe('%PDF-fake')
   })
+
+  it('regressão (2026-08-31): nunca deixa o navegador cachear o PDF — sem isso, editar a fatura e baixar de novo devolvia a versão antiga', async () => {
+    const { supabase } = createFakeSupabase({ units: [makeUnitRow()], invoices: [makeInvoiceRow()], customers: [makeCustomerRow()] })
+    Object.assign(supabase, { auth: { getUser: async () => ({ data: { user: { id: 'auth-1' } } }) } })
+    const { GET } = await loadRoute(supabase)
+
+    const res = await GET(new Request('http://localhost/api/units/unit-1/invoices/invoice-1/pdf'), {
+      params: Promise.resolve({ id: 'unit-1', invoiceId: 'invoice-1' }),
+    })
+    expect(res.headers.get('Cache-Control')).toBe('no-store, must-revalidate')
+  })
 })

@@ -2029,7 +2029,11 @@ export function ServiceOperationsPanel({
                         ) : (
                           <div className="flex flex-wrap gap-3 text-xs font-semibold">
                             <a
-                              href={`/api/units/${unitId}/invoices/${invoice.id}/pdf`}
+                              // ?v=updated_at (além do Cache-Control: no-store da própria rota,
+                              // achado real 2026-08-31): garante que a URL muda depois de editar
+                              // a fatura, então nenhum cache no meio do caminho (navegador,
+                              // extensão) consegue devolver o PDF de antes da edição.
+                              href={`/api/units/${unitId}/invoices/${invoice.id}/pdf?v=${encodeURIComponent(invoice.updated_at)}`}
                               className="text-slate-300 hover:text-white"
                             >
                               Baixar PDF

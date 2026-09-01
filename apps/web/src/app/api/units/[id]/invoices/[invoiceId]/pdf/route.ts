@@ -64,6 +64,12 @@ export async function GET(
     headers: {
       'Content-Type': 'application/pdf',
       'Content-Disposition': `attachment; filename="fatura-${safeNumber}.pdf"`,
+      // Achado real (2026-08-31): sem isso, o navegador reaproveitava o PDF
+      // baixado antes mesmo depois de editar a fatura (mesma URL = mesmo
+      // cache) — o PDF em si já é sempre gerado com os dados atuais do
+      // banco, o problema era só o cache do navegador reutilizando a
+      // resposta antiga.
+      'Cache-Control': 'no-store, must-revalidate',
     },
   })
 }
