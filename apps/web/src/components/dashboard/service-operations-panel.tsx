@@ -2028,6 +2028,12 @@ export function ServiceOperationsPanel({
                           </div>
                         ) : (
                           <div className="flex flex-wrap gap-3 text-xs font-semibold">
+                            <a
+                              href={`/api/units/${unitId}/invoices/${invoice.id}/pdf`}
+                              className="text-slate-300 hover:text-white"
+                            >
+                              Baixar PDF
+                            </a>
                             {isInvoiceEditable(invoice.status) && (
                               <button
                                 type="button"
