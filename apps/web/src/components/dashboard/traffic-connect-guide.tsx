@@ -20,7 +20,7 @@ function metaSteps(businessManagerId: string | null): Step[] {
     },
     {
       title: '3. Cole aqui e teste',
-      body: 'Cole o ID da conta no formulário ao lado e clique em "Testar e conectar". Se você preferir usar seu próprio token em vez do compartilhamento, abra "Avançado" no formulário.',
+      body: 'Cole o ID da conta no formulário ao lado e clique em "Testar e conectar". Se você preferir usar seu próprio token em vez do compartilhamento, abra "Avançado" no formulário. Se der erro de permissão na primeira tentativa, espere alguns minutos (o compartilhamento pode demorar pra propagar) e tente de novo antes de desconfiar que algo deu errado.',
     },
   ]
 }
@@ -58,7 +58,15 @@ export function TrafficConnectGuide({ businessManagerId }: { businessManagerId: 
 
   return (
     <Card className="p-5">
-      <p className="text-xs font-black uppercase tracking-widest text-slate-500">Passo a passo</p>
+      <p className="text-xs font-black uppercase tracking-widest text-slate-500">
+        {platform === 'meta' ? 'Método manual (alternativa)' : 'Passo a passo'}
+      </p>
+      {platform === 'meta' && (
+        <p className="mt-1 text-[11px] text-slate-500">
+          Normalmente basta clicar em &quot;Conectar com Facebook&quot; e fazer login — este passo a passo é só pra
+          quem prefere compartilhar a conta manualmente em vez de logar.
+        </p>
+      )}
       <div className="mt-3 flex gap-2">
         <button
           onClick={() => setPlatform('meta')}

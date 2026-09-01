@@ -93,6 +93,32 @@ export type AdAccount = {
   updated_at: string
 }
 
+/** Uma conta de anúncio candidata trazida por GET /me/adaccounts durante o login com Facebook (Login com Facebook pro Tráfego Pago, 2026-08-28). */
+export type OAuthCandidateAdAccount = {
+  id: string
+  name: string
+  currency: string
+  /** 1 = ACTIVE; ver developers.facebook.com/docs/marketing-api/reference/ad-account#fields */
+  account_status: number
+}
+
+/**
+ * traffic_oauth_sessions — só existe entre o callback do OAuth e a escolha
+ * da conta, quando o cliente administra mais de uma. Diferente de
+ * content_oauth_sessions (uma Página = um token próprio), aqui o MESMO
+ * token de usuário de longa duração dá acesso a qualquer uma das contas
+ * candidatas — por isso o token fica uma vez só na sessão, não por conta.
+ */
+export type TrafficOAuthSession = {
+  id: string
+  org_id: string
+  unit_id: string
+  access_token: string
+  accounts: OAuthCandidateAdAccount[]
+  expires_at: string
+  created_at: string
+}
+
 export type AdEntityLevel = 'campaign' | 'ad_set' | 'ad'
 
 /** Status normalizado entre plataformas (Meta usa ACTIVE/PAUSED; Google ENABLED/PAUSED). */

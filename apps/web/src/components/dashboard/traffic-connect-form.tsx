@@ -1,10 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { ChevronDown, ChevronUp, Eye, EyeOff, Loader2, CheckCircle2, MailQuestion } from 'lucide-react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { ChevronDown, ChevronUp, Eye, EyeOff, Loader2, CheckCircle2, MailQuestion, LogIn } from 'lucide-react'
 import { Badge, Card, CardHeader, Input, Label, Select, brandGradient } from '@/components/ui/dashboard-ui'
 import { MetaPartnerGuide } from '@/components/dashboard/meta-partner-guide'
+import { TrafficOAuthBanner } from '@/components/dashboard/traffic-oauth-account-picker'
 import type { AdAccount } from '@/lib/traffic/types'
 import type { Unit } from '@/lib/types'
 
@@ -12,6 +13,7 @@ const META_PARTNER_STEPS = [
   'Clique no botão abaixo pra abrir "Parceiros" nas configurações do seu negócio no Facebook.',
   'Clique em "Adicionar" → "Dar a um parceiro acesso às suas contas" e cole o ID acima.',
   'Escolha a conta de anúncio que você quer conectar e marque a permissão "Gerenciar campanhas".',
+  'Aguarde alguns minutos pra propagar — se o teste falhar na primeira tentativa, espere um pouco e clique em "Testar e conectar" de novo antes de desconfiar que algo deu errado.',
 ]
 
 type Platform = 'meta' | 'google'
@@ -56,17 +58,22 @@ export function TrafficConnectForm({
   units,
   accounts,
   businessManagerId,
+  oauthEnabled,
 }: {
   units: Unit[]
   accounts: AdAccount[]
   businessManagerId: string | null
+  /** true quando META_APP_ID + META_APP_SECRET + META_ADS_LOGIN_CONFIG_ID estão configurados — sem isso o login com Facebook não funciona. */
+  oauthEnabled: boolean
 }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [unitId, setUnitId] = useState(units[0]?.id ?? '')
   const [platform, setPlatform] = useState<Platform>('meta')
   const [externalAccountId, setExternalAccountId] = useState('')
   const [accessToken, setAccessToken] = useState('')
   const [metaAdvancedOpen, setMetaAdvancedOpen] = useState(false)
+  const [metaManualOpen, setMetaManualOpen] = useState(false)
   const [refreshToken, setRefreshToken] = useState('')
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [developerToken, setDeveloperToken] = useState('')
@@ -77,6 +84,9 @@ export function TrafficConnectForm({
   const [success, setSuccess] = useState<string | null>(null)
   const [inviteRequestBusy, setInviteRequestBusy] = useState(false)
   const [inviteRequested, setInviteRequested] = useState(false)
+
+  const oauthError = searchParams.get('oauth_error')
+  const oauthSuccess = searchParams.get('oauth_success')
 
   function resetPlatformFields() {
     setExternalAccountId('')
@@ -155,6 +165,8 @@ export function TrafficConnectForm({
 
   return (
     <div className="flex flex-col gap-5">
+      <TrafficOAuthBanner success={oauthSuccess} error={oauthError} />
+
       <Card className="p-6">
         <CardHeader eyebrow="conectar conta" title="Nova conta de anúncio" />
 
@@ -189,47 +201,83 @@ export function TrafficConnectForm({
 
           {platform === 'meta' ? (
             <>
-              <MetaPartnerGuide
-                businessManagerId={businessManagerId}
-                assetLabel="a conta de anúncio"
-                steps={META_PARTNER_STEPS}
-                openUrl="https://business.facebook.com/settings/partners"
-                openLabel="Abrir Parceiros no Facebook"
-              />
-              <div className="rounded-xl p-3.5" style={{ border: '1px solid rgba(6,182,212,0.25)', background: 'rgba(6,182,212,0.05)' }}>
-                <Label htmlFor="meta-account">Passo 2 de 2 — cole aqui o ID da SUA conta de anúncio</Label>
-                <Input id="meta-account" className="mt-1" value={externalAccountId} onChange={(e) => setExternalAccountId(e.target.value)} placeholder="act_1234567890 ou 1234567890" />
-                <p className="mt-1 text-[11px] text-slate-500">
-                  Não é o mesmo número do passo 1 (aquele é da Alizo). Pra achar o seu: abra o{' '}
-                  <a href="https://adsmanager.facebook.com/adsmanager/manage/accounts" target="_blank" rel="noopener noreferrer" className="font-semibold text-cyan-400 hover:underline">
-                    Gerenciador de Anúncios
-                  </a>{' '}
-                  — o ID aparece embaixo do nome da conta, no topo da página.
+              <p className="text-xs text-slate-400">
+                Clique no botão, faça login com a conta do Facebook da empresa e escolha a conta de anúncio — pronto,
+                sem colar ID nem mexer no Business Manager.
+              </p>
+
+              <a
+                href={unitId ? `/api/traffic/accounts/oauth/start?unit_id=${unitId}` : undefined}
+                aria-disabled={!unitId || !oauthEnabled}
+                onClick={(e) => {
+                  if (!unitId || !oauthEnabled) e.preventDefault()
+                }}
+                className="flex items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-black text-white transition-all hover:scale-[1.01] aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:scale-100"
+                style={{ background: 'linear-gradient(135deg, #1877F2, #0C63D4)', boxShadow: '0 4px 14px rgba(24,119,242,0.35)' }}
+              >
+                <LogIn size={16} />
+                Conectar com Facebook
+              </a>
+              {!oauthEnabled && (
+                <p className="text-[11px] text-amber-400">
+                  O login com Facebook pra anúncios ainda está sendo liberado — enquanto isso, use o método manual abaixo.
                 </p>
-              </div>
+              )}
 
               <button
                 type="button"
-                onClick={() => setMetaAdvancedOpen((v) => !v)}
+                onClick={() => setMetaManualOpen((v) => !v)}
                 className="flex items-center gap-1.5 self-start text-xs font-semibold text-slate-400 hover:text-slate-200"
               >
-                {metaAdvancedOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                Avançado: tenho meu próprio token de acesso
+                {metaManualOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                Prefiro o método manual (compartilhar como Parceiro)
               </button>
 
-              {metaAdvancedOpen && (
-                <div className="flex flex-col gap-3 rounded-xl p-3.5" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
-                  <p className="text-[11px] text-slate-500">
-                    Só preencha se você já tiver seu próprio token de usuário do sistema ou de página —
-                    do contrário deixe em branco que usamos a conta técnica da Alizo (passo do compartilhamento acima).
-                  </p>
-                  <div>
-                    <Label htmlFor="meta-token">Token de acesso</Label>
-                    <div className="mt-1">
-                      <SecretInput value={accessToken} onChange={setAccessToken} placeholder="EAAG..." />
-                    </div>
+              {metaManualOpen && (
+                <>
+                  <MetaPartnerGuide
+                    businessManagerId={businessManagerId}
+                    assetLabel="a conta de anúncio"
+                    steps={META_PARTNER_STEPS}
+                    openUrl="https://business.facebook.com/settings/partners"
+                    openLabel="Abrir Parceiros no Facebook"
+                  />
+                  <div className="rounded-xl p-3.5" style={{ border: '1px solid rgba(6,182,212,0.25)', background: 'rgba(6,182,212,0.05)' }}>
+                    <Label htmlFor="meta-account">Passo 2 de 2 — cole aqui o ID da SUA conta de anúncio</Label>
+                    <Input id="meta-account" className="mt-1" value={externalAccountId} onChange={(e) => setExternalAccountId(e.target.value)} placeholder="act_1234567890 ou 1234567890" />
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Não é o mesmo número do passo 1 (aquele é da Alizo). Pra achar o seu: abra o{' '}
+                      <a href="https://adsmanager.facebook.com/adsmanager/manage/accounts" target="_blank" rel="noopener noreferrer" className="font-semibold text-cyan-400 hover:underline">
+                        Gerenciador de Anúncios
+                      </a>{' '}
+                      — o ID aparece embaixo do nome da conta, no topo da página.
+                    </p>
                   </div>
-                </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setMetaAdvancedOpen((v) => !v)}
+                    className="flex items-center gap-1.5 self-start text-xs font-semibold text-slate-400 hover:text-slate-200"
+                  >
+                    {metaAdvancedOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                    Avançado: tenho meu próprio token de acesso
+                  </button>
+
+                  {metaAdvancedOpen && (
+                    <div className="flex flex-col gap-3 rounded-xl p-3.5" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
+                      <p className="text-[11px] text-slate-500">
+                        Só preencha se você já tiver seu próprio token de usuário do sistema ou de página —
+                        do contrário deixe em branco que usamos a conta técnica da Alizo (passo do compartilhamento acima).
+                      </p>
+                      <div>
+                        <Label htmlFor="meta-token">Token de acesso</Label>
+                        <div className="mt-1">
+                          <SecretInput value={accessToken} onChange={setAccessToken} placeholder="EAAG..." />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </>
           ) : (
@@ -301,15 +349,17 @@ export function TrafficConnectForm({
             </p>
           )}
 
-          <button
-            onClick={handleSubmit}
-            disabled={busy}
-            className="flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-black text-white disabled:opacity-60"
-            style={{ background: brandGradient, boxShadow: '0 4px 12px rgba(6,182,212,0.3)' }}
-          >
-            {busy && <Loader2 size={14} className="animate-spin" />}
-            {busy ? 'Testando conexão...' : 'Testar e conectar'}
-          </button>
+          {(platform === 'google' || metaManualOpen) && (
+            <button
+              onClick={handleSubmit}
+              disabled={busy}
+              className="flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-black text-white disabled:opacity-60"
+              style={{ background: brandGradient, boxShadow: '0 4px 12px rgba(6,182,212,0.3)' }}
+            >
+              {busy && <Loader2 size={14} className="animate-spin" />}
+              {busy ? 'Testando conexão...' : 'Testar e conectar'}
+            </button>
+          )}
         </div>
       </Card>
 

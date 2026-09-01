@@ -7,10 +7,20 @@
 
 export type IntegrationPlatform = 'meta' | 'google'
 
+// Achado real (2026-08-28): códigos 10/200 aparecem tanto quando o
+// cliente esqueceu de marcar "Gerenciar campanhas" quanto quando o
+// compartilhamento nem chegou a ser concluído (conta errada, Business
+// Manager errado, ou só falta propagar) — a chamada que valida a conexão
+// é uma leitura básica (nome/moeda), então QUALQUER acesso insuficiente
+// gera o mesmo erro. Mensagem ampliada pra cobrir as causas reais mais
+// prováveis em vez de apontar só uma.
+const META_PERMISSION_ERROR =
+  'Ainda não conseguimos acessar essa conta. As causas mais comuns: (1) o compartilhamento não foi concluído — confira se colou o ID certo da Alizo e selecionou a conta de anúncio certa; (2) esqueceu de marcar "Gerenciar campanhas"; (3) só falta propagar — pode levar alguns minutos, espere um pouco e clique em "Testar e conectar" de novo.'
+
 const META_ERROR_CODES: Record<number, string> = {
-  100: 'Não conseguimos acessar essa conta. Confirme se o compartilhamento como Parceiro do Business Manager da Alizo já foi concluído.',
-  10: 'Falta permissão nessa conta. Ao compartilhar como Parceiro, confirme que marcou "Gerenciar campanhas".',
-  200: 'Falta permissão nessa conta. Ao compartilhar como Parceiro, confirme que marcou "Gerenciar campanhas".',
+  100: META_PERMISSION_ERROR,
+  10: META_PERMISSION_ERROR,
+  200: META_PERMISSION_ERROR,
   190: 'O token de acesso informado é inválido ou expirou. Gere um novo token, ou deixe o campo em branco para usar o compartilhamento como Parceiro.',
   102: 'A sessão de acesso expirou. Tente novamente.',
   4: 'Muitas tentativas em pouco tempo. Aguarde alguns minutos e tente de novo.',

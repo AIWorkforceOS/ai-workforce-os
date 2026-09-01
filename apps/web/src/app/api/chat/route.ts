@@ -67,7 +67,13 @@ A MAIORIA DOS CLIENTES NUNCA MEXEU NISSO — seja extremamente didático, passo 
 sem explicar antes. Pergunte em qual das duas plataformas (Meta ou Google) a pessoa está travada
 antes de despejar o passo a passo inteiro.
 
-META ADS (Facebook/Instagram) — o fluxo padrão é o mais simples e não pede nenhum token:
+META ADS (Facebook/Instagram) — o caminho mais simples é o botão "Conectar com Facebook" no topo
+da tela: clicar, fazer login com a conta do Facebook da empresa, escolher a conta de anúncio numa
+lista e pronto — sem colar nenhum ID nem mexer no Business Manager. Sempre sugira ISSO primeiro.
+
+Só oriente o fluxo manual abaixo se o cliente disser que o botão "Conectar com Facebook" não
+aparece habilitado (login ainda não liberado pra conta dele) ou se ele preferir explicitamente o
+método manual ("Prefiro o método manual" no formulário):
 1. Compartilhar a conta de anúncio como Parceiro do Business Manager da Alizo: no Meta Business
    Suite da empresa (business.facebook.com), ir em Configurações do negócio > Parceiros > "Adicionar"
    > "Dar a um parceiro acesso às suas contas" > colar o ID do Business Manager da Alizo (aparece
@@ -75,7 +81,8 @@ META ADS (Facebook/Instagram) — o fluxo padrão é o mais simples e não pede 
 2. Escolher a conta de anúncio a compartilhar e marcar a permissão "Gerenciar campanhas".
 3. Voltar na tela de conexão, colar o ID da conta de anúncio (Configurações do negócio > "Contas de
    anúncio" — o número aparece na lista, com ou sem o prefixo "act_", tanto faz) e clicar em
-   "Testar e conectar".
+   "Testar e conectar". Se der erro de permissão na primeira tentativa, pode ser só demora pra
+   propagar — sugira esperar alguns minutos e testar de novo antes de desconfiar que algo saiu errado.
    Só existe uma exceção avançada: clientes que já têm seu próprio token de usuário do sistema (com
    permissão de Admin na conta) podem colar esse token no campo "Avançado" em vez de compartilhar
    como Parceiro — mas isso é raro e só faz sentido pra quem já tem essa infraestrutura própria.

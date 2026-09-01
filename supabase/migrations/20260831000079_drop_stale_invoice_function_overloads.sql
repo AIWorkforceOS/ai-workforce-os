@@ -1,0 +1,22 @@
+-- Bug real em produção (2026-08-31, achado pelo Vinicius): "Could not
+-- choose the best candidate function" ao gerar fatura. Causa raiz: a
+-- migration 052 (20260804000052_invoices_reference_month.sql) adicionou
+-- p_reference_month com `create or replace function` — mas em Postgres,
+-- CREATE OR REPLACE só substitui uma função de MESMA assinatura (mesma
+-- lista de tipos de parâmetro); acrescentar um parâmetro novo no fim muda
+-- a assinatura, então isso criou uma SEGUNDA função sobrecarregada em vez
+-- de substituir a primeira (o comentário da migration 052 estava errado
+-- sobre esse comportamento). Resultado: consolidate_invoices e
+-- generate_service_records_invoice ficaram com 2 versões cada uma
+-- (confirmado via pg_proc) — a antiga (sem p_reference_month) e a nova
+-- (com). Como o app sempre chama com argumentos nomeados e nunca passa
+-- p_reference_month (nem p_due_date/p_notes em alguns casos — ver
+-- service-operations-panel.tsx), o Postgres não consegue decidir entre as
+-- duas quando os parâmetros que faltam são preenchidos por DEFAULT em
+-- ambas — daí o erro de ambiguidade.
+--
+-- Fix: apagar as versões antigas (sem p_reference_month), mantendo só a
+-- versão atual (migration 054, que já deriva p_reference_month
+-- automaticamente quando omitido — exatamente o que o app espera).
+drop function if exists public.consolidate_invoices(p_unit_id uuid, p_customer_id uuid, p_invoice_ids uuid[], p_notes text);
+drop function if exists public.generate_service_records_invoice(p_unit_id uuid, p_customer_id uuid, p_service_record_ids uuid[], p_currency text, p_due_date date, p_notes text);
