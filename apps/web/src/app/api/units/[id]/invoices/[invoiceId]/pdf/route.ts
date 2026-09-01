@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { generateInvoicePdf } from '@/lib/invoices/pdf'
+import { withFreshConsolidatedDescriptions } from '@/lib/invoices/consolidated-items'
 import { unitDefaultLocale } from '@/lib/i18n/config'
 import type { Customer, Invoice, Unit } from '@/lib/types'
 
@@ -54,8 +55,9 @@ export async function GET(
     return NextResponse.json({ error: 'Cliente da fatura não encontrado.' }, { status: 404 })
   }
 
+  const freshInvoice = await withFreshConsolidatedDescriptions(supabase, invoice)
   const locale = unitDefaultLocale(unit)
-  const pdfBuffer = await generateInvoicePdf({ invoice, customer, unit, locale })
+  const pdfBuffer = await generateInvoicePdf({ invoice: freshInvoice, customer, unit, locale })
 
   const safeNumber = invoice.invoice_number.replace(/[^a-zA-Z0-9.\-_]/g, '_')
 

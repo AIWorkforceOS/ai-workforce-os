@@ -123,4 +123,26 @@ describe('GET /api/units/[id]/invoices/[invoiceId]/pdf', () => {
     })
     expect(res.headers.get('Cache-Control')).toBe('no-store, must-revalidate')
   })
+
+  it('regressão (2026-09-01): usa a descrição ATUAL do service_record em faturas consolidadas, não o snapshot antigo — achado real: editar a descrição de um serviço avulso depois de já faturado não aparecia no PDF', async () => {
+    const { supabase } = createFakeSupabase({
+      units: [makeUnitRow()],
+      invoices: [
+        makeInvoiceRow({
+          consolidated_items: [{ invoice_id: 'record-1', invoice_number: '25/08/2026', description: '157662', amount: 631.38, due_date: null }],
+        }),
+      ],
+      customers: [makeCustomerRow()],
+      service_records: [{ id: 'record-1', invoice_id: 'invoice-1', description: '157662 - Compra de Material' }],
+    })
+    Object.assign(supabase, { auth: { getUser: async () => ({ data: { user: { id: 'auth-1' } } }) } })
+    const { GET } = await loadRoute(supabase)
+
+    await GET(new Request('http://localhost/api/units/unit-1/invoices/invoice-1/pdf'), {
+      params: Promise.resolve({ id: 'unit-1', invoiceId: 'invoice-1' }),
+    })
+
+    const passedInvoice = (generateInvoicePdf.mock.calls[0] as unknown as [{ invoice: { consolidated_items: { description: string }[] } }])[0].invoice
+    expect(passedInvoice.consolidated_items[0]!.description).toBe('157662 - Compra de Material')
+  })
 })

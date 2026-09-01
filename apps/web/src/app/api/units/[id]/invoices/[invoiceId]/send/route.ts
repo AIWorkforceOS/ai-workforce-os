@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { sendInvoiceEmail } from '@/lib/email'
 import { generateInvoicePdf } from '@/lib/invoices/pdf'
+import { withFreshConsolidatedDescriptions } from '@/lib/invoices/consolidated-items'
 import { buildInvoiceMessageText, getMessagingChannel } from '@/lib/channels/messaging-channel'
 import { logSystemEvent } from '@/lib/system-events'
 import { unitDefaultLocale } from '@/lib/i18n/config'
@@ -74,6 +75,12 @@ export async function POST(
     )
   }
 
+  // Achado real (2026-09-01): consolidated_items é um snapshot congelado
+  // na consolidação — se o dono corrigir a descrição de um serviço avulso
+  // DEPOIS de já ter sido incluído numa fatura, o PDF/e-mail/WhatsApp
+  // continuavam mostrando o texto antigo. Ver lib/invoices/consolidated-items.ts.
+  const freshInvoice = await withFreshConsolidatedDescriptions(supabase, invoice)
+
   const locale = unitDefaultLocale(unit)
   const attempts: { channel: 'email' | 'phone'; ok: boolean; error?: string }[] = []
 
@@ -83,7 +90,7 @@ export async function POST(
     // por causa do anexo.
     let attachment: { filename: string; content: string } | null = null
     try {
-      const pdfBuffer = await generateInvoicePdf({ invoice, customer, unit, locale })
+      const pdfBuffer = await generateInvoicePdf({ invoice: freshInvoice, customer, unit, locale })
       attachment = { filename: `fatura-${invoice.invoice_number}.pdf`, content: pdfBuffer.toString('base64') }
     } catch (error) {
       await logSystemEvent(supabase, {
@@ -108,7 +115,7 @@ export async function POST(
       dueDate: invoice.due_date,
       paymentNotes: invoice.notes,
       locale,
-      consolidatedItems: invoice.consolidated_items,
+      consolidatedItems: freshInvoice.consolidated_items,
       // Resposta do cliente cai na caixa real da empresa (não no agente): fatura é assunto humano.
       replyTo: unit.email_reply_to,
       attachment,
@@ -130,7 +137,7 @@ export async function POST(
           dueDate: invoice.due_date,
           paymentNotes: invoice.notes,
           locale,
-          consolidatedItems: invoice.consolidated_items,
+          consolidatedItems: freshInvoice.consolidated_items,
         })
         await channel.sendMessage(customer.phone, text)
         attempts.push({ channel: 'phone', ok: true })
