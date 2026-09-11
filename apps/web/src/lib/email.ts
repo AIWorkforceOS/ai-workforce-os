@@ -223,6 +223,45 @@ export async function sendPaymentChargeFailedEmail(params: {
 }
 
 /**
+ * Aviso ao dono da unidade quando o WhatsApp de um funcionário digital cai
+ * (achado real, 2026-09-08: o WhatsApp da "Smarter Matriz" desconectou e
+ * ficou 4 dias sem receber NENHUMA mensagem, sem ninguém perceber — "o
+ * cliente não vai saber o que aconteceu e como resolver", pedido do
+ * Vinicius). Enquanto o WhatsApp está caído nenhuma mensagem chega — não
+ * dá pra avisar por WhatsApp mesmo, por isso é sempre por e-mail. Disparado
+ * pelo cron api/cron/whatsapp-health-check, nunca em tempo real (o produto
+ * ainda não tem cron de hora em hora).
+ */
+export async function sendWhatsappDisconnectedEmail(params: {
+  to: string
+  unitName: string
+  /** Rótulo do funcionário/canal afetado (ex.: "Recepcionista"), null = canal único/compartilhado da unidade. */
+  agentLabel: string | null
+  reconnectUrl: string
+}): Promise<SendResult> {
+  const from = defaultFrom()
+  if (!from) return { ok: false, error: 'EMAIL_FROM_DOMAIN não está configurada.' }
+
+  const canalLabel = params.agentLabel ? `o WhatsApp d${params.agentLabel.startsWith('R') ? 'a' : 'o'} ${params.agentLabel}` : 'o WhatsApp'
+
+  return sendEmail({
+    to: params.to,
+    from,
+    subject: `⚠️ WhatsApp desconectado — ${params.unitName}`,
+    html: `
+      <p>${canalLabel} da unidade <strong>${escapeHtml(params.unitName)}</strong> está desconectado.</p>
+      <p>Enquanto isso não for corrigido, <strong>nenhuma mensagem que chegar nesse número está sendo recebida</strong> — o funcionário digital não está ignorando ninguém, as mensagens simplesmente não estão chegando até ele.</p>
+      <p>Isso normalmente acontece quando o celular vinculado ficou sem internet, sem bateria, ou quando alguém removeu o WhatsApp da lista de "Dispositivos conectados" sem querer.</p>
+      <p><strong>Como resolver:</strong> abra o link abaixo e escaneie o QR code de novo com o mesmo celular — leva menos de 1 minuto.</p>
+      <div style="margin-top:20px;">
+        <a href="${escapeHtml(params.reconnectUrl)}" style="display:inline-block;padding:12px 24px;border-radius:8px;background:#0f172a;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;">Reconectar o WhatsApp</a>
+      </div>
+      <p style="margin-top:20px;">Se o link acima não funcionar ou o problema continuar depois de reconectar, fale com a gente: suporte@alizo.com.br</p>
+    `,
+  })
+}
+
+/**
  * E-mail genérico do Recruiter Employee (handoff, briefing de busca
  * externa, escalações de processo). Mesmo Resend/from dos demais.
  */

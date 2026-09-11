@@ -48,11 +48,22 @@ export async function publishContentPost(
 }
 
 /**
- * Publica todo post 'approved' cujo scheduled_for caia no dia informado
+ * Publica todo post 'approved' cujo scheduled_for já tenha chegado
  * (planejamento semanal, pedido do Vinicius 2026-08-23) — chamada uma vez
  * por execução do cron diário, além (não em vez) do fluxo avulso de hoje.
  * Idempotente: uma vez publicado (ou falho), o status sai de 'approved' e
  * o post não é pego de novo na próxima execução.
+ *
+ * Achado real (2026-09-08, conta AlizoAi): a versão antiga só pegava post
+ * agendado EXATAMENTE pra hoje (`gte(dayStart) e lt(dayEnd)`) — um post
+ * aprovado com scheduled_for de um dia em que o cron não rodou (ou que só
+ * foi aprovado depois da data agendada já ter passado) ficava 'approved'
+ * pra sempre, nunca mais era pego em nenhuma execução futura, porque
+ * "hoje" nunca mais bate com aquela data antiga. Contraria o próprio
+ * pedido do Vinicius: "uma vez aprovado não precisa de mais ação nenhuma
+ * humana, o funcionário posta sozinho" — sem filtro de início, agora
+ * pega QUALQUER post 'approved' com scheduled_for até o fim de hoje
+ * (agendado pra hoje OU atrasado), nunca deixa um post preso.
  */
 export async function publishDueScheduledPosts(
   supabase: SupabaseClient,
@@ -66,7 +77,6 @@ export async function publishDueScheduledPosts(
     .from('content_posts')
     .select('*')
     .eq('status', 'approved')
-    .gte('scheduled_for', dayStart.toISOString())
     .lt('scheduled_for', dayEnd.toISOString())
   const posts = (due ?? []) as ContentPost[]
 
