@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Card, brandGradient } from '@/components/ui/dashboard-ui'
+import { WhatsAppStatusButton } from './whatsapp-status-button'
 import { computeTrainingCompleteness } from '@/lib/interview/completeness'
 import { buildClonedAgentConfig } from '@/lib/interview/clone'
 import { pickDefaultUnit, unitHasWhatsapp, type UnitWhatsappChannelRow } from '@/lib/setup-status'
@@ -206,6 +207,7 @@ export function EmployeeCatalog({
           state={sdr?.is_active && whatsappConnected ? 'working' : sdr || whatsappConnected ? 'configuring' : 'available'}
           panelHref="/dashboard/agents"
           personaName={sdr?.persona_name ?? null}
+          whatsappAgentType="sdr"
           activation={{ agentType: 'sdr', config: sdr ?? null, unitId: selectedUnitId, askName: true, defaultName: 'Théo', cloneSources: cloneSourcesFor('sdr'), regionHint: selectedUnit?.region_city ?? null }}
           trainingScore={sdr ? computeTrainingCompleteness(sdr, verticalKey) : null}
           testConfigId={sdr?.id ?? null}
@@ -226,6 +228,7 @@ export function EmployeeCatalog({
           state={recruiter?.is_active ? (openJobs > 0 ? 'working' : 'configuring') : 'available'}
           panelHref="/dashboard/recruiter"
           personaName={recruiter?.persona_name ?? null}
+          whatsappAgentType="recruiter"
           activation={{ agentType: 'recruiter', config: recruiter ?? null, unitId: selectedUnitId, askName: true, defaultName: 'Rafa', cloneSources: cloneSourcesFor('recruiter'), regionHint: selectedUnit?.region_city ?? null }}
           trainingScore={recruiter ? computeTrainingCompleteness(recruiter, verticalKey) : null}
           testConfigId={recruiter?.id ?? null}
@@ -266,6 +269,7 @@ export function EmployeeCatalog({
           state={receptionist?.is_active ? (customers > 0 ? 'working' : 'configuring') : 'available'}
           panelHref="/dashboard/receptionist"
           personaName={receptionist?.persona_name ?? null}
+          whatsappAgentType="receptionist"
           activation={{ agentType: 'receptionist', config: receptionist ?? null, unitId: selectedUnitId, askName: true, defaultName: 'Ana', cloneSources: cloneSourcesFor('receptionist'), regionHint: selectedUnit?.region_city ?? null }}
           trainingScore={receptionist ? computeTrainingCompleteness(receptionist, verticalKey) : null}
           testConfigId={receptionist?.id ?? null}
@@ -358,6 +362,7 @@ function EmployeeCatalogCard({
   trainConfigId,
   lastTrainedAt,
   resourcesHref,
+  whatsappAgentType,
 }: {
   icon: typeof Bot
   name: string
@@ -378,6 +383,8 @@ function EmployeeCatalogCard({
   lastTrainedAt?: string | null
   /** link pra tela central de materiais (migration 062), já filtrado por unidade + este funcionário — independe de o funcionário já ter sido contratado, já que os materiais podem ser cadastrados com antecedência */
   resourcesHref: string
+  /** funcionário elegível a WhatsApp dedicado (sdr/recruiter/receptionist) — mostra status ao vivo + reconexão em um clique (pedido do Vinicius, 2026-09-11). Ausente = funcionário não usa WhatsApp (tráfego, conteúdo, SEO). */
+  whatsappAgentType?: 'sdr' | 'recruiter' | 'receptionist'
 }) {
   const stateMeta = STATE_META[state]
   const nextStep = steps.find((s) => !s.done)
@@ -422,6 +429,14 @@ function EmployeeCatalogCard({
           ))}
         </div>
       </div>
+
+      {whatsappAgentType && activation?.config?.is_active && (
+        <WhatsAppStatusButton
+          unitId={activation.unitId}
+          agentType={whatsappAgentType}
+          label={personaName ? `${personaName} · ${name}` : name}
+        />
+      )}
 
       <div className="mt-auto flex items-center gap-2">
         <Link
