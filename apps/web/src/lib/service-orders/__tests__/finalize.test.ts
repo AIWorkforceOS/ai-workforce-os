@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildServiceOrderUpdatePayload, isServiceOrderStatus } from '../finalize'
+import { buildServiceOrderUpdatePayload, buildPhotosOnlyUpdatePayload, isServiceOrderStatus } from '../finalize'
 
 describe('isServiceOrderStatus', () => {
   it('aceita só "completed" e "quote"', () => {
@@ -135,5 +135,33 @@ describe('buildServiceOrderUpdatePayload', () => {
     for (const key of forbidden) {
       expect(keys).not.toContain(key)
     }
+  })
+})
+
+describe('buildPhotosOnlyUpdatePayload', () => {
+  // Bug real (2026-09-15): o técnico tira foto "antes" ao chegar, mas só
+  // decide Finalizado/Cotação e assina no FIM do trabalho — o único
+  // caminho de salvar era o form inteiro (buildServiceOrderUpdatePayload),
+  // que exige status válido e, pra "completed", assinatura. A foto do
+  // início nunca conseguia ser salva sozinha.
+
+  it('sem fotos novas, rejeita (nada pra salvar)', () => {
+    const result = buildPhotosOnlyUpdatePayload([], [])
+    expect(result).toEqual({ ok: false, error: 'Nenhuma foto para salvar.' })
+  })
+
+  it('anexa as fotos novas às existentes — só esse campo no payload, sem tocar status/assinatura/material', () => {
+    const existing = [{ url: 'https://x/1.jpg', uploaded_at: '2026-08-01T10:00:00Z', kind: 'before' as const }]
+    const uploaded = [{ url: 'https://x/2.jpg', uploaded_at: '2026-09-15T10:00:00Z', kind: 'before' as const }]
+    const result = buildPhotosOnlyUpdatePayload(existing, uploaded)
+    expect(result).toEqual({ ok: true, payload: { service_order_photos: [...existing, ...uploaded] } })
+  })
+
+  it('nunca exige status válido ou assinatura — diferente de buildServiceOrderUpdatePayload', () => {
+    const uploaded = [{ url: 'https://x/2.jpg', uploaded_at: '2026-09-15T10:00:00Z', kind: 'before' as const }]
+    const result = buildPhotosOnlyUpdatePayload([], uploaded)
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('esperava sucesso')
+    expect(Object.keys(result.payload)).toEqual(['service_order_photos'])
   })
 })

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import type { PortalServiceOrderPhoto } from '@/lib/portal-funcionario/data'
-import { buildServiceOrderUpdatePayload } from '@/lib/service-orders/finalize'
+import { buildServiceOrderUpdatePayload, buildPhotosOnlyUpdatePayload } from '@/lib/service-orders/finalize'
 
 type AppointmentRow = {
   id: string
@@ -46,6 +46,13 @@ export async function PATCH(
     return NextResponse.json({ error: 'Requisição inválida.' }, { status: 400 })
   }
 
+  // Sem `status` no FormData = salvamento só de fotos (botão "Salvar fotos
+  // agora", separado do formulário de finalizar/cotar) — pedido real
+  // (2026-09-15): o técnico tira foto "antes" ao chegar, mas só decide
+  // Finalizado/Cotação e pega assinatura no FIM. Photos-only pula toda a
+  // validação de status/assinatura, que não se aplica aqui.
+  const photosOnly = formData.get('status') === null
+
   const finalizeInput = {
     status: formData.get('status'),
     signedBy: formData.get('signedBy'),
@@ -55,9 +62,11 @@ export async function PATCH(
     hoursNeeded: formData.get('hoursNeeded'),
   }
   // Validação cedo (antes de subir fotos) — evita gastar upload num payload que já vai ser rejeitado.
-  const earlyCheck = buildServiceOrderUpdatePayload(finalizeInput, [], [])
-  if (!earlyCheck.ok) {
-    return NextResponse.json({ error: earlyCheck.error }, { status: 400 })
+  if (!photosOnly) {
+    const earlyCheck = buildServiceOrderUpdatePayload(finalizeInput, [], [])
+    if (!earlyCheck.ok) {
+      return NextResponse.json({ error: earlyCheck.error }, { status: 400 })
+    }
   }
 
   // A linha só existe pra quem a RLS deixa ver (o próprio técnico, via
@@ -135,13 +144,15 @@ export async function PATCH(
     uploadedSignatureUrl = signaturePublicUrl.publicUrl
   }
 
-  const finalCheck = buildServiceOrderUpdatePayload(
-    finalizeInput,
-    appointment.service_order_photos ?? [],
-    uploadedPhotos,
-    appointment.service_order_signature_url ?? null,
-    uploadedSignatureUrl,
-  )
+  const finalCheck = photosOnly
+    ? buildPhotosOnlyUpdatePayload(appointment.service_order_photos ?? [], uploadedPhotos)
+    : buildServiceOrderUpdatePayload(
+        finalizeInput,
+        appointment.service_order_photos ?? [],
+        uploadedPhotos,
+        appointment.service_order_signature_url ?? null,
+        uploadedSignatureUrl,
+      )
   if (!finalCheck.ok) {
     return NextResponse.json({ error: finalCheck.error }, { status: 400 })
   }

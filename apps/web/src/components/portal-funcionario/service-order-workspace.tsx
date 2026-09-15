@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
-import { Camera, CheckCircle2, Clock, Download, PenLine, Receipt, ShoppingCart, X } from 'lucide-react'
+import { Camera, CheckCircle2, Clock, Download, PenLine, Receipt, ShoppingCart, Upload, X } from 'lucide-react'
 import { Input, Label, Textarea } from '@/components/ui/dashboard-ui'
 import type { PortalAppointment } from '@/lib/portal-funcionario/data'
 import { SignaturePad } from './signature-pad'
@@ -100,6 +100,46 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
 
   function removeMaterialPhoto(index: number) {
     setMaterialPhotos((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  /**
+   * Salva só as fotos de uma seção, sem passar pelo formulário de
+   * finalizar/cotar (sem "status" no FormData → rota trata como
+   * photos-only, ver service-order/route.ts) — pedido real
+   * (2026-09-15): o técnico tira foto "antes" ao chegar, mas só decide
+   * Finalizado/Cotação e assina no FIM. Sem isso, a foto do início
+   * nunca tinha como ser salva sozinha.
+   */
+  type PhotoSection = 'before' | 'after' | 'material'
+  const [savingSection, setSavingSection] = useState<PhotoSection | null>(null)
+  const [sectionError, setSectionError] = useState<{ section: PhotoSection; message: string } | null>(null)
+  const [sectionSuccess, setSectionSuccess] = useState<PhotoSection | null>(null)
+
+  async function handleSavePhotosNow(section: PhotoSection, fieldName: string, files: File[], clear: () => void) {
+    if (files.length === 0) return
+    setSavingSection(section)
+    setSectionError(null)
+    setSectionSuccess(null)
+    const formData = new FormData()
+    for (const photo of files) formData.append(fieldName, photo)
+    try {
+      const response = await fetch(`/api/units/${appt.unit_id}/appointments/${appt.id}/service-order`, {
+        method: 'PATCH',
+        body: formData,
+      })
+      const data = await response.json().catch(() => null)
+      if (!response.ok || !data?.appointment) {
+        setSectionError({ section, message: data?.error ?? 'Não foi possível salvar as fotos.' })
+        return
+      }
+      setAppt((prev) => ({ ...prev, ...(data.appointment as ServiceOrderPatch) }))
+      clear()
+      setSectionSuccess(section)
+    } catch {
+      setSectionError({ section, message: 'Não foi possível salvar as fotos. Verifique sua conexão e tente novamente.' })
+    } finally {
+      setSavingSection(null)
+    }
   }
 
   const beforePhotoPreviews = useFilePreviews(photosBefore)
@@ -356,12 +396,26 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
           className="text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:font-bold file:text-slate-200"
         />
         {photosBefore.length > 0 && (
-          <p className="flex items-center gap-1 text-xs text-slate-400">
-            <Camera size={12} />
-            {photosBefore.length} nova{photosBefore.length === 1 ? '' : 's'} foto{photosBefore.length === 1 ? '' : 's'} selecionada
-            {photosBefore.length === 1 ? '' : 's'}
-          </p>
+          <>
+            <p className="flex items-center gap-1 text-xs text-slate-400">
+              <Camera size={12} />
+              {photosBefore.length} nova{photosBefore.length === 1 ? '' : 's'} foto{photosBefore.length === 1 ? '' : 's'} selecionada
+              {photosBefore.length === 1 ? '' : 's'}
+            </p>
+            <button
+              type="button"
+              disabled={savingSection === 'before'}
+              onClick={() => handleSavePhotosNow('before', 'photosBefore', photosBefore, () => setPhotosBefore([]))}
+              className="flex w-fit items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-cyan-300 transition-colors hover:text-cyan-200 disabled:opacity-50"
+              style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.25)' }}
+            >
+              <Upload size={13} />
+              {savingSection === 'before' ? 'Salvando…' : 'Salvar estas fotos agora'}
+            </button>
+          </>
         )}
+        {sectionSuccess === 'before' && <p className="text-xs font-semibold text-emerald-400">Fotos salvas.</p>}
+        {sectionError?.section === 'before' && <p className="text-xs text-red-400">{sectionError.message}</p>}
       </div>
 
       <div className="flex flex-col gap-2">
@@ -408,12 +462,26 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
           className="text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:font-bold file:text-slate-200"
         />
         {photosAfter.length > 0 && (
-          <p className="flex items-center gap-1 text-xs text-slate-400">
-            <Camera size={12} />
-            {photosAfter.length} nova{photosAfter.length === 1 ? '' : 's'} foto{photosAfter.length === 1 ? '' : 's'} selecionada
-            {photosAfter.length === 1 ? '' : 's'}
-          </p>
+          <>
+            <p className="flex items-center gap-1 text-xs text-slate-400">
+              <Camera size={12} />
+              {photosAfter.length} nova{photosAfter.length === 1 ? '' : 's'} foto{photosAfter.length === 1 ? '' : 's'} selecionada
+              {photosAfter.length === 1 ? '' : 's'}
+            </p>
+            <button
+              type="button"
+              disabled={savingSection === 'after'}
+              onClick={() => handleSavePhotosNow('after', 'photosAfter', photosAfter, () => setPhotosAfter([]))}
+              className="flex w-fit items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-cyan-300 transition-colors hover:text-cyan-200 disabled:opacity-50"
+              style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.25)' }}
+            >
+              <Upload size={13} />
+              {savingSection === 'after' ? 'Salvando…' : 'Salvar estas fotos agora'}
+            </button>
+          </>
         )}
+        {sectionSuccess === 'after' && <p className="text-xs font-semibold text-emerald-400">Fotos salvas.</p>}
+        {sectionError?.section === 'after' && <p className="text-xs text-red-400">{sectionError.message}</p>}
       </div>
 
       {savedUnclassifiedPhotos.length > 0 && (
@@ -490,6 +558,20 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
           onChange={handleMaterialPhotosChange}
           className="hidden"
         />
+        {materialPhotos.length > 0 && (
+          <button
+            type="button"
+            disabled={savingSection === 'material'}
+            onClick={() => handleSavePhotosNow('material', 'materialPhotos', materialPhotos, () => setMaterialPhotos([]))}
+            className="flex w-fit items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-emerald-300 transition-colors hover:text-emerald-200 disabled:opacity-50"
+            style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)' }}
+          >
+            <Upload size={13} />
+            {savingSection === 'material' ? 'Salvando…' : 'Salvar estas fotos agora'}
+          </button>
+        )}
+        {sectionSuccess === 'material' && <p className="text-xs font-semibold text-emerald-400">Fotos salvas.</p>}
+        {sectionError?.section === 'material' && <p className="text-xs text-red-400">{sectionError.message}</p>}
       </div>
 
       <a

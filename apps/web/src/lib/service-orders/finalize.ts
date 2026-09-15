@@ -98,3 +98,23 @@ export function buildServiceOrderUpdatePayload(
 
   return { ok: true, payload }
 }
+
+/**
+ * Salvar SÓ fotos, sem passar pelo fluxo de finalizar/cotar — pedido
+ * real (2026-09-15): o técnico tira foto "antes" assim que chega, mas
+ * só decide Finalizado/Cotação e pega a assinatura no FIM do trabalho.
+ * Como o único jeito de salvar era o formulário inteiro (que exige
+ * status + assinatura pra "Finalizado"), a foto tirada no início nunca
+ * conseguia ser salva sozinha — o técnico ficava bloqueado, achando
+ * que o upload de foto tinha bugado. Não mexe em status/assinatura/
+ * material, só acrescenta às fotos já existentes (nunca substitui).
+ */
+export function buildPhotosOnlyUpdatePayload(
+  existingPhotos: PortalServiceOrderPhoto[],
+  uploadedPhotos: PortalServiceOrderPhoto[],
+): ServiceOrderFinalizeResult {
+  if (uploadedPhotos.length === 0) {
+    return { ok: false, error: 'Nenhuma foto para salvar.' }
+  }
+  return { ok: true, payload: { service_order_photos: [...existingPhotos, ...uploadedPhotos] } }
+}
