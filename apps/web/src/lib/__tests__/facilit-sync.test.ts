@@ -42,11 +42,17 @@ describe('syncFacilitOrdersForUnit', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.setSystemTime(NOW)
+    // Sem OPENAI_API_KEY: summarizeFacilitOrderForTechnician nunca chega a
+    // chamar fetch, então não interfere no mock de fetch usado pra
+    // simular a Facil-IT (login/orders) nestes testes — resumo por IA é
+    // coberto à parte em facilit-summary.test.ts.
+    vi.stubEnv('OPENAI_API_KEY', '')
   })
 
   afterEach(() => {
     global.fetch = originalFetch
     vi.useRealTimers()
+    vi.unstubAllEnvs()
   })
 
   it('cria o appointment real na Agenda pra uma ordem nova, sem técnico atribuído', async () => {

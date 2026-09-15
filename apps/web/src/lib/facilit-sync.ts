@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { facilitLogin, fetchFacilitOrders, mapFacilitOrder, filterOrdersForTodayAndTomorrow, FacilitAuthError, type MappedFacilitOrder } from './facilit'
 import { buildFacilitAppointmentInsertRow, FACILIT_CUSTOMER_COMPANY_NAME } from './facilit-appointment'
+import { summarizeFacilitOrderForTechnician } from './facilit-summary'
 import { logSystemEvent } from './system-events'
 import type { Unit } from './types'
 
@@ -59,6 +60,14 @@ async function resolveFacilitCustomer(
  * ordem em sync futuro não mexe no appointment que o admin já pode ter
  * atribuído/reagendado (mesmo espírito do que já valia pro
  * assigned_employee_id antes desta migration).
+ *
+ * Antes de criar, pede pra IA um resumo em português + dicas pro
+ * técnico (summarizeFacilitOrderForTechnician) — pedido do Vinicius,
+ * 2026-09-15. O texto original em inglês nunca é tocado (vai intacto
+ * pra service_order_scope_en, é o que o cliente vê na loja); o resumo
+ * é só um apoio a mais em service_order_summary_pt, já visível pro
+ * técnico no Portal do Funcionário. Falha na IA nunca bloqueia o
+ * import — o appointment é criado do mesmo jeito, só sem o resumo.
  */
 async function ensureAppointmentForOrder(
   supabase: SupabaseClient,
@@ -69,7 +78,8 @@ async function ensureAppointmentForOrder(
   const customer = await resolveFacilitCustomer(supabase, unit)
   if (!customer) return
 
-  const insertRow = buildFacilitAppointmentInsertRow({ order, customer, timezone: unit.timezone })
+  const summaryPt = await summarizeFacilitOrderForTechnician(order)
+  const insertRow = buildFacilitAppointmentInsertRow({ order, customer, timezone: unit.timezone, summaryPt })
   const { data: appointment, error } = await supabase.from('appointments').insert(insertRow).select('id').single()
   if (error || !appointment) return
 

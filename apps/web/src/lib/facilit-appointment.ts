@@ -37,6 +37,9 @@ export type FacilitAppointmentInsertRow = {
   service_order_order_type: string | null
   service_order_location_name: string | null
   service_order_location_phone: string | null
+  /** Escopo ORIGINAL em inglês, intacto como a Facil-IT mandou — é o que o cliente vê na loja quando o técnico chega. */
+  service_order_scope_en: string | null
+  /** Resumo + dicas em português gerado por IA pro técnico (lib/facilit-summary.ts) — apoio a mais, nunca substitui o texto original em inglês. */
   service_order_summary_pt: string | null
 }
 
@@ -48,13 +51,18 @@ export type FacilitAppointmentInsertRow = {
  * sempre placeholder), a Facil-IT já manda data E hora reais da visita
  * — usa isso direto como starts_at, é informação real, não um
  * placeholder a esconder.
+ *
+ * `summaryPt` vem de fora (gerado por IA antes de chamar esta função,
+ * ver summarizeFacilitOrderForTechnician em lib/facilit-summary.ts) —
+ * esta função continua pura/síncrona, sem I/O.
  */
 export function buildFacilitAppointmentInsertRow(params: {
   order: MappedFacilitOrder
   customer: { id: string; unitId: string; orgId: string }
   timezone: string
+  summaryPt: string | null
 }): FacilitAppointmentInsertRow {
-  const { order, customer } = params
+  const { order, customer, summaryPt } = params
   const startsAtDate = order.visit_date ? new Date(order.visit_date) : new Date()
   const startsAt = startsAtDate.toISOString()
   const endsAt = new Date(startsAtDate.getTime() + DEFAULT_DURATION_MINUTES * 60000).toISOString()
@@ -70,7 +78,7 @@ export function buildFacilitAppointmentInsertRow(params: {
     status: 'scheduled',
     source: FACILIT_SYNC_SOURCE,
     address: buildAddress(order),
-    notes: order.scope,
+    notes: summaryPt ?? order.scope,
     service_order_requested_date: requestedDate,
     service_order_number: order.facilit_order_number,
     service_order_client_po: order.client_po ?? order.po_number,
@@ -78,7 +86,8 @@ export function buildFacilitAppointmentInsertRow(params: {
     service_order_order_type: order.order_type,
     service_order_location_name: order.company,
     service_order_location_phone: order.phone,
-    service_order_summary_pt: order.scope,
+    service_order_scope_en: order.scope,
+    service_order_summary_pt: summaryPt,
   }
 }
 
