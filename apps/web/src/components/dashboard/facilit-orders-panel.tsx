@@ -98,10 +98,11 @@ export function FacilitOrdersPanel({
         setError(data.error ?? 'Erro ao buscar ordens.')
         return
       }
+      const foundSuffix = typeof data.found === 'number' ? ` (${data.found} no total retornadas pela Facil-IT nesta busca)` : ''
       setSyncMessage(
         data.imported > 0
-          ? `${data.imported} ${data.imported === 1 ? 'ordem importada' : 'ordens importadas'} pra Agenda.`
-          : 'Nenhuma ordem nova de hoje/amanhã encontrada.',
+          ? `${data.imported} ${data.imported === 1 ? 'ordem importada' : 'ordens importadas'} pra Agenda.${foundSuffix}`
+          : `Nenhuma ordem nova de hoje/amanhã encontrada.${foundSuffix}`,
       )
       setSyncSkipped((data.skipped ?? []) as FacilitSyncSkip[])
       setCredential((prev) => (prev ? { ...prev, last_synced_at: new Date().toISOString(), last_sync_error: null } : prev))

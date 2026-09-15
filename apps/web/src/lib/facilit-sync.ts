@@ -29,7 +29,13 @@ export type FacilitSyncSkip = {
   reason: FacilitSyncSkipReason
   detail?: string
 }
-export type FacilitSyncResult = { imported: number; error: string | null; skipped: FacilitSyncSkip[] }
+export type FacilitSyncResult = {
+  /** Total de ordens que a API da Facil-IT devolveu nesta chamada, de qualquer data — serve pra conferir na hora se a API já veio incompleta (antes de qualquer filtro nosso). */
+  found: number
+  imported: number
+  error: string | null
+  skipped: FacilitSyncSkip[]
+}
 
 /**
  * Cliente "360 Service Provider" da unidade — cria na primeira vez,
@@ -223,7 +229,7 @@ export async function syncFacilitOrdersForUnit(
       })
     }
 
-    return { imported, error: null, skipped }
+    return { found: rawOrders.length, imported, error: null, skipped }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Erro desconhecido ao sincronizar com a Facil-IT.'
     const isAuthError = error instanceof FacilitAuthError
@@ -238,6 +244,6 @@ export async function syncFacilitOrdersForUnit(
       unitId: unit.id,
     })
 
-    return { imported: 0, error: message, skipped: [] }
+    return { found: 0, imported: 0, error: message, skipped: [] }
   }
 }

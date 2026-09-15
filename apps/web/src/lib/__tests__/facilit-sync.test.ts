@@ -74,7 +74,7 @@ describe('syncFacilitOrdersForUnit', () => {
 
     const result = await syncFacilitOrdersForUnit(supabase, makeUnit(), makeCredential())
 
-    expect(result).toEqual({ imported: 1, error: null, skipped: [] })
+    expect(result).toEqual({ found: 1, imported: 1, error: null, skipped: [] })
     expect(db.appointments).toHaveLength(1)
     expect(db.appointments?.[0]).toMatchObject({
       unit_id: 'unit-1',
@@ -170,6 +170,7 @@ describe('syncFacilitOrdersForUnit', () => {
 
     const result = await syncFacilitOrdersForUnit(supabase, makeUnit(), makeCredential())
 
+    expect(result.found).toBe(3)
     expect(result.imported).toBe(1)
     expect(result.skipped).toHaveLength(2)
     expect(result.skipped).toEqual(

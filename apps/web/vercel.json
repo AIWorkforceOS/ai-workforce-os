@@ -59,7 +59,11 @@
     },
     {
       "path": "/api/cron/facilit-sync",
-      "schedule": "0 18 * * *"
+      "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron/facilit-sync",
+      "schedule": "0 22 * * *"
     }
   ]
 }

@@ -44,7 +44,7 @@ describe('POST /api/units/[id]/facilit/sync', () => {
   })
 
   it('sincroniza e devolve o total importado', async () => {
-    syncFacilitOrdersForUnit.mockResolvedValue({ imported: 2, error: null, skipped: [] })
+    syncFacilitOrdersForUnit.mockResolvedValue({ found: 2, imported: 2, error: null, skipped: [] })
     const { supabase } = authedSupabase({
       units: [{ id: 'unit-1', org_id: 'org-1', timezone: 'America/Phoenix' }],
       facilit_credentials: [{ id: 'cred-1', unit_id: 'unit-1', org_id: 'org-1', client_code: 'CC1', username: 'u', password: 'p', is_active: true }],
@@ -55,7 +55,7 @@ describe('POST /api/units/[id]/facilit/sync', () => {
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(body).toEqual({ ok: true, imported: 2, skipped: [] })
+    expect(body).toEqual({ ok: true, found: 2, imported: 2, skipped: [] })
   })
 
   it('502 quando o sync falha (ex.: login rejeitado)', async () => {
