@@ -67,10 +67,16 @@ export default async function ServiceOrderWorkspacePage({
           {new Date(appointment.starts_at).toLocaleString(locale, { dateStyle: 'short', timeStyle: 'short' })}
         </p>
         {appointment.address && (
-          <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-400">
+          <a
+            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(appointment.address)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1 flex items-center gap-1.5 text-xs text-slate-400 hover:text-cyan-400 hover:underline"
+            title="Abrir no Google Maps"
+          >
             <MapPin size={12} />
             {appointment.address}
-          </p>
+          </a>
         )}
         {appointment.service_order_summary_pt && <p className="mt-3 text-sm text-slate-300">{appointment.service_order_summary_pt}</p>}
         {appointment.service_order_scope_en && (

@@ -7,6 +7,7 @@ import { isExtractableAttachment } from '@/lib/service-orders/extraction'
 import { downloadFile } from '@/lib/download-file'
 import { Badge, Card, Input, Label, Textarea, type BadgeVariant } from '@/components/ui/dashboard-ui'
 import type { AppointmentWithRelations } from '@/components/dashboard/calendar-view'
+import { QuoteBuilderPanel } from '@/components/service-orders/quote-builder-panel'
 
 const FILE_MAX_BYTES = 15 * 1024 * 1024
 const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
@@ -538,6 +539,29 @@ export function ServiceOrderAttachModal({
             </div>
 
             <TechnicianReportSection unitId={unitId} appointment={appointment} />
+
+            {appointment.service_order_status === 'quote' && (
+              <div className="flex flex-col gap-3 rounded-xl p-4" style={{ background: 'rgba(129,140,248,0.06)', border: '1px solid rgba(129,140,248,0.18)' }}>
+                <span className="text-[11px] font-black uppercase tracking-wider text-indigo-300">Cotação (gerada por IA)</span>
+                <QuoteBuilderPanel
+                  order={{
+                    id: appointment.id,
+                    orderNumber: appointment.service_order_number,
+                    locationName: appointment.service_order_location_name,
+                    address: appointment.address,
+                    materialDescription: appointment.service_order_material_description,
+                    materialValue: appointment.service_order_material_value,
+                    hoursNeeded: appointment.service_order_hours_needed,
+                    partPurchaseLink: appointment.service_order_part_purchase_link,
+                    photoUrls: appointment.service_order_photos.map((p) => p.url),
+                    quoteDescriptionEn: appointment.service_order_quote_description_en,
+                    quoteDescriptionPt: appointment.service_order_quote_description_pt,
+                  }}
+                  generateUrl={`/api/units/${unitId}/appointments/${appointment.id}/service-order/quote`}
+                  locale="pt"
+                />
+              </div>
+            )}
 
             {fileUrl && !success && (
               <button

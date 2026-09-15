@@ -25,12 +25,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ app
 
   const { data } = await supabase
     .from('appointments')
-    .select('id, service_order_material_description, customers!inner(client_company)')
+    .select(
+      'id, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_part_purchase_link, service_order_location_name, service_order_number, customers!inner(client_company)',
+    )
     .eq('id', appointmentId)
     .eq('customers.client_company', appUser.clientCompany)
     .maybeSingle()
 
-  const order = data as { id: string; service_order_material_description: string | null } | null
+  const order = data as {
+    id: string
+    service_order_material_description: string | null
+    service_order_material_value: number | null
+    service_order_hours_needed: number | null
+    service_order_part_purchase_link: string | null
+    service_order_location_name: string | null
+    service_order_number: string | null
+  } | null
   if (!order) {
     return NextResponse.json({ error: 'Order not found.' }, { status: 404 })
   }
@@ -38,7 +48,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ app
     return NextResponse.json({ error: 'The technician has not left any notes about what is needed yet.' }, { status: 400 })
   }
 
-  const quote = await composeClientQuoteDescription(order.service_order_material_description)
+  const quote = await composeClientQuoteDescription({
+    technicianNotes: order.service_order_material_description,
+    locationName: order.service_order_location_name,
+    orderNumber: order.service_order_number,
+    materialValue: order.service_order_material_value,
+    hoursNeeded: order.service_order_hours_needed,
+    partPurchaseLink: order.service_order_part_purchase_link,
+  })
   if (!quote) {
     return NextResponse.json({ error: 'Could not generate the quote right now. Try again in a moment.' }, { status: 502 })
   }
