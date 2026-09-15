@@ -51,11 +51,18 @@ describe('getVisibleNavGroups', () => {
 
     expect(flatItems.some((i) => i.href === '/dashboard/units/unit-123/operacao')).toBe(true)
     expect(flatItems.some((i) => i.href === '/dashboard/units/unit-123/agenda/calendario')).toBe(true)
+    expect(flatItems.some((i) => i.href === '/dashboard/units/unit-123/facilit')).toBe(true)
 
     // hrefs genéricos (hub multi-unidade) não devem sobrar quando há unitId
     expect(flatItems.some((i) => i.href === '/dashboard/units')).toBe(false)
     expect(flatItems.some((i) => i.href === '/dashboard/operacao')).toBe(false)
     expect(flatItems.some((i) => i.href === '/dashboard/agenda')).toBe(false)
+    expect(flatItems.some((i) => i.href === '/dashboard/facilit')).toBe(false)
+  })
+
+  it('Facil-IT (360) aparece no menu de Agenda e Operação pra qualquer admin (hub multi-unidade sem unitId)', () => {
+    const hrefs = allHrefs(getVisibleNavGroups({ role: 'admin' }))
+    expect(hrefs).toContain('/dashboard/facilit')
   })
 
   it('Conteúdo e SEO aparecem no menu de Marketing (deixam de ser rotas órfãs)', () => {

@@ -20,6 +20,7 @@ import {
   Smartphone,
   ClipboardList,
   CalendarDays,
+  Link2,
   Mail,
   FileText,
   Search,
@@ -79,6 +80,7 @@ export const navGroups: { label: Record<Locale, string>; items: NavItem[] }[] = 
     items: [
       { href: '/dashboard/agenda', label: { pt: 'Agenda', en: 'Schedule' }, icon: CalendarDays, fullManagementOnly: true },
       { href: '/dashboard/operacao', label: { pt: 'Operação de serviços', en: 'Service operations' }, icon: ClipboardList },
+      { href: '/dashboard/facilit', label: { pt: 'Facil-IT (360)', en: 'Facil-IT (360)' }, icon: Link2 },
     ],
   },
   {
@@ -155,6 +157,9 @@ export function getVisibleNavGroups({
           }
           if (item.href === '/dashboard/agenda' && unitId) {
             return { ...item, href: `/dashboard/units/${unitId}/agenda/calendario` }
+          }
+          if (item.href === '/dashboard/facilit' && unitId) {
+            return { ...item, href: `/dashboard/units/${unitId}/facilit` }
           }
           return item
         }),
