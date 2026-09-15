@@ -12,6 +12,7 @@ import { BulkServiceOrderImportModal } from '@/components/dashboard/bulk-service
 import { Badge, Card, StatusPill, type BadgeVariant } from '@/components/ui/dashboard-ui'
 import { computeSuggestedPay } from '@/lib/service-pay'
 import { CLIENT_PORTAL_SOURCE } from '@/lib/portal-360/constants'
+import { FACILIT_SYNC_SOURCE } from '@/lib/facilit-appointment'
 import type {
   Appointment,
   AppointmentStatus,
@@ -96,9 +97,15 @@ function formatTimeRange(startsAt: string, endsAt: string, timezone: string): st
   return `${fmt(startsAt)}–${fmt(endsAt)}`
 }
 
-/** appointment sem employee_id + source=CLIENT_PORTAL_SOURCE = pedido feito pela 360 pelo Portal 360, ainda sem profissional/horário atribuído pelo admin (migration 061) — starts_at nessas linhas é só placeholder, nunca mostrar como horário real. */
+/**
+ * appointment sem employee_id ainda pendente de atribuição pelo admin:
+ * ou veio do Portal 360 (migration 061 — starts_at é só placeholder,
+ * nunca mostrar como horário real) ou do sync automático da Facil-IT
+ * (migration 081 — aí starts_at já É a visita real informada pela
+ * Facil-IT, pode mostrar normalmente).
+ */
 function isPendingAssignment(appointment: Pick<Appointment, 'employee_id' | 'source'>): boolean {
-  return !appointment.employee_id && appointment.source === CLIENT_PORTAL_SOURCE
+  return !appointment.employee_id && (appointment.source === CLIENT_PORTAL_SOURCE || appointment.source === FACILIT_SYNC_SOURCE)
 }
 
 function formatRequestedDate(dateStr: string | null): string {
@@ -383,7 +390,9 @@ export function CalendarView({
                         <div className="flex items-center gap-2">
                           {pendingAssignment ? (
                             <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: 'rgba(245,158,11,0.15)', color: '#fbbf24' }}>
-                              360 requested · {formatRequestedDate(appointment.service_order_requested_date)} · No technician assigned yet
+                              {appointment.source === FACILIT_SYNC_SOURCE
+                                ? `Facil-IT · ${formatTimeRange(appointment.starts_at, appointment.ends_at, timezone)} · Sem técnico atribuído`
+                                : `360 requested · ${formatRequestedDate(appointment.service_order_requested_date)} · No technician assigned yet`}
                             </span>
                           ) : (
                             <>

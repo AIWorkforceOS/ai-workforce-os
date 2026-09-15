@@ -1,11 +1,14 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { createFakeSupabase } from './fake-supabase'
 import { syncFacilitOrdersForUnit, type FacilitCredentialRow } from '../facilit-sync'
+import { FACILIT_SYNC_SOURCE, FACILIT_CUSTOMER_COMPANY_NAME } from '../facilit-appointment'
 import type { Unit } from '../types'
 
-// Sync Facil-IT → facilit_work_orders (Mawi Pro, 2026-09-10): login novo a
-// cada chamada (nunca cacheia token), upsert por (unit_id, número da
-// ordem), nunca sobrescreve o técnico já atribuído numa ordem existente.
+// Sync Facil-IT → Agenda (revisado 2026-09-15, pedido do Vinicius: "vai
+// direto para a agenda e o cliente consegue designar o trabalho para o
+// técnico responsável"): login novo a cada chamada, upsert de dedup em
+// facilit_work_orders, e — pra ordem nova — cria o appointment real na
+// Agenda (employee_id null, o admin atribui pela tela normal).
 
 function makeUnit(overrides: Partial<Unit> = {}): Unit {
   return {
@@ -46,14 +49,46 @@ describe('syncFacilitOrdersForUnit', () => {
     vi.useRealTimers()
   })
 
-  it('importa as ordens de hoje/amanhã e atualiza last_synced_at', async () => {
+  it('cria o appointment real na Agenda pra uma ordem nova, sem técnico atribuído', async () => {
+    global.fetch = vi.fn(async (url: unknown) => {
+      const u = String(url)
+      if (u.includes('/Login')) return new Response(JSON.stringify({ token: 'tok-123' }), { status: 200 })
+      return new Response(
+        JSON.stringify([{ orderNumber: '158725-01', company: 'Walgreens', address1: 'Rua X', visitDate: '2026-09-10T20:00:00Z' }]),
+        { status: 200 },
+      )
+    }) as typeof fetch
+
+    const { supabase, db } = createFakeSupabase({
+      facilit_credentials: [makeCredential()],
+      facilit_work_orders: [],
+      customers: [],
+      appointments: [],
+    })
+
+    const result = await syncFacilitOrdersForUnit(supabase, makeUnit(), makeCredential())
+
+    expect(result).toEqual({ imported: 1, error: null })
+    expect(db.appointments).toHaveLength(1)
+    expect(db.appointments?.[0]).toMatchObject({
+      unit_id: 'unit-1',
+      org_id: 'org-1',
+      employee_id: null,
+      status: 'scheduled',
+      source: FACILIT_SYNC_SOURCE,
+      service_order_number: '158725-01',
+    })
+    expect(db.facilit_work_orders?.[0]?.appointment_id).toBe(db.appointments?.[0]?.id)
+  })
+
+  it('reaproveita o mesmo cliente "360 Service Provider" da unidade em vez de criar um novo por ordem', async () => {
     global.fetch = vi.fn(async (url: unknown) => {
       const u = String(url)
       if (u.includes('/Login')) return new Response(JSON.stringify({ token: 'tok-123' }), { status: 200 })
       return new Response(
         JSON.stringify([
-          { orderNumber: '158725-01', company: 'Walgreens', visitDate: '2026-09-10T20:00:00Z' },
-          { orderNumber: '999999-01', company: 'Fora do prazo', visitDate: '2026-09-20T20:00:00Z' },
+          { orderNumber: '1', company: 'Loja A', visitDate: '2026-09-10T20:00:00Z' },
+          { orderNumber: '2', company: 'Loja B', visitDate: '2026-09-10T21:00:00Z' },
         ]),
         { status: 200 },
       )
@@ -62,18 +97,19 @@ describe('syncFacilitOrdersForUnit', () => {
     const { supabase, db } = createFakeSupabase({
       facilit_credentials: [makeCredential()],
       facilit_work_orders: [],
+      customers: [],
+      appointments: [],
     })
 
-    const result = await syncFacilitOrdersForUnit(supabase, makeUnit(), makeCredential())
+    await syncFacilitOrdersForUnit(supabase, makeUnit(), makeCredential())
 
-    expect(result).toEqual({ imported: 1, error: null })
-    expect(db.facilit_work_orders).toHaveLength(1)
-    expect(db.facilit_work_orders?.[0]).toMatchObject({ facilit_order_number: '158725-01', company: 'Walgreens' })
-    expect(db.facilit_credentials?.[0]?.last_synced_at).toBeTruthy()
-    expect(db.facilit_credentials?.[0]?.last_sync_error).toBeNull()
+    const facilitCustomers = (db.customers ?? []).filter((c) => c.client_company === FACILIT_CUSTOMER_COMPANY_NAME)
+    expect(facilitCustomers).toHaveLength(1)
+    expect(db.appointments).toHaveLength(2)
+    expect(db.appointments?.every((a) => a.customer_id === facilitCustomers[0]?.id)).toBe(true)
   })
 
-  it('reimportar a mesma ordem atualiza os dados mas não mexe em assigned_employee_id já definido', async () => {
+  it('reimportar a mesma ordem não cria um segundo appointment nem mexe no que já existe', async () => {
     global.fetch = vi.fn(async (url: unknown) => {
       const u = String(url)
       if (u.includes('/Login')) return new Response(JSON.stringify({ token: 'tok-123' }), { status: 200 })
@@ -91,15 +127,18 @@ describe('syncFacilitOrdersForUnit', () => {
           unit_id: 'unit-1',
           facilit_order_number: '158725-01',
           status: 'Scheduled',
-          assigned_employee_id: 'emp-1',
+          appointment_id: 'appt-existing',
         },
       ],
+      customers: [],
+      appointments: [{ id: 'appt-existing', unit_id: 'unit-1', org_id: 'org-1', employee_id: 'emp-1', status: 'confirmed' }],
     })
 
     await syncFacilitOrdersForUnit(supabase, makeUnit(), makeCredential())
 
-    expect(db.facilit_work_orders).toHaveLength(1)
-    expect(db.facilit_work_orders?.[0]).toMatchObject({ status: 'In Progress', assigned_employee_id: 'emp-1' })
+    expect(db.appointments).toHaveLength(1)
+    expect(db.appointments?.[0]).toMatchObject({ employee_id: 'emp-1', status: 'confirmed' })
+    expect(db.facilit_work_orders?.[0]).toMatchObject({ status: 'In Progress', appointment_id: 'appt-existing' })
   })
 
   it('login falhando grava last_sync_error e loga facilit_sync_auth_failed, sem lançar', async () => {

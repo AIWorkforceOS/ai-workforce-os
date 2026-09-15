@@ -1,6 +1,8 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
+import { CalendarDays } from 'lucide-react'
 import { Card } from '@/components/ui/dashboard-ui'
 
 export type FacilitCredentialStatus = {
@@ -11,61 +13,37 @@ export type FacilitCredentialStatus = {
   last_sync_error: string | null
 } | null
 
-export type FacilitWorkOrderRow = {
-  id: string
-  facilit_order_number: string
-  po_number: string | null
-  company: string | null
-  address1: string | null
-  city: string | null
-  state: string | null
-  category: string | null
-  order_type: string | null
-  priority: string | null
-  status: string | null
-  visit_date: string | null
-  assigned_employee_id: string | null
-}
-
-type Technician = { id: string; name: string }
-
-function formatVisitDate(iso: string | null): string {
-  if (!iso) return '—'
-  try {
-    return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(iso))
-  } catch {
-    return iso
-  }
+function formatSyncedAt(iso: string | null): string {
+  if (!iso) return 'ainda não'
+  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(iso))
 }
 
 /**
- * Ordens do dia/dia seguinte importadas da Facil-IT (integração Mawi Pro,
- * 2026-09-10) — credencial (Client Code/Login/Senha) fica sempre nesta
- * tela, nunca no chat: é o próprio usuário que digita aqui, e a senha
- * nunca volta pro navegador depois de salva (GET só devolve client_code/
- * username, ver /api/units/[id]/facilit/credentials).
+ * Credenciais + sync da Facil-IT (integração Mawi Pro, 2026-09-10;
+ * revisada 2026-09-15 — as ordens agora vão direto pra Agenda real em
+ * vez de uma lista própria aqui, ver facilit-sync.ts). Client Code/
+ * Login/Senha ficam sempre nesta tela, nunca no chat: é o próprio
+ * usuário que digita aqui, e a senha nunca volta pro navegador depois
+ * de salva (GET só devolve client_code/username).
  */
 export function FacilitOrdersPanel({
   unitId,
   initialCredential,
-  initialOrders,
-  technicians,
+  agendaHref,
 }: {
   unitId: string
   initialCredential: FacilitCredentialStatus
-  initialOrders: FacilitWorkOrderRow[]
-  technicians: Technician[]
+  agendaHref: string
 }) {
   const [credential, setCredential] = useState(initialCredential)
-  const [orders, setOrders] = useState(initialOrders)
   const [showCredentialForm, setShowCredentialForm] = useState(!initialCredential)
   const [clientCode, setClientCode] = useState('')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [savingCredential, setSavingCredential] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  const [syncMessage, setSyncMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [assigning, setAssigning] = useState<string | null>(null)
 
   async function handleSaveCredential(e: React.FormEvent) {
     e.preventDefault()
@@ -95,6 +73,7 @@ export function FacilitOrdersPanel({
   async function handleSyncNow() {
     setSyncing(true)
     setError(null)
+    setSyncMessage(null)
     try {
       const res = await fetch(`/api/units/${unitId}/facilit/sync`, { method: 'POST' })
       const data = await res.json()
@@ -102,11 +81,12 @@ export function FacilitOrdersPanel({
         setError(data.error ?? 'Erro ao buscar ordens.')
         return
       }
-      const ordersRes = await fetch(`/api/units/${unitId}/facilit/orders`)
-      if (ordersRes.ok) {
-        const ordersData = await ordersRes.json()
-        setOrders(ordersData.orders ?? [])
-      }
+      setSyncMessage(
+        data.imported > 0
+          ? `${data.imported} ${data.imported === 1 ? 'ordem importada' : 'ordens importadas'} pra Agenda.`
+          : 'Nenhuma ordem nova de hoje/amanhã encontrada.',
+      )
+      setCredential((prev) => (prev ? { ...prev, last_synced_at: new Date().toISOString(), last_sync_error: null } : prev))
     } catch {
       setError('Não foi possível buscar as ordens agora.')
     } finally {
@@ -114,37 +94,14 @@ export function FacilitOrdersPanel({
     }
   }
 
-  async function handleAssign(orderId: string, employeeId: string) {
-    setAssigning(orderId)
-    setError(null)
-    const previous = orders
-    setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, assigned_employee_id: employeeId || null } : o)))
-    try {
-      const res = await fetch(`/api/units/${unitId}/facilit/orders/${orderId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ employeeId: employeeId || null }),
-      })
-      if (!res.ok) {
-        setOrders(previous)
-        const data = await res.json().catch(() => null)
-        setError(data?.error ?? 'Erro ao atribuir técnico.')
-      }
-    } catch {
-      setOrders(previous)
-      setError('Não foi possível atribuir o técnico.')
-    } finally {
-      setAssigning(null)
-    }
-  }
-
   return (
     <Card className="flex w-full flex-col gap-4 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-bold text-white">Facil-IT — Ordens de serviço (360)</h2>
+          <h2 className="text-sm font-bold text-white">Facil-IT (360)</h2>
           <p className="mt-1 text-sm text-slate-400">
-            Ordens de hoje e amanhã importadas automaticamente todos os dias. Escolha o técnico responsável por cada uma.
+            Todos os dias, as ordens de hoje e amanhã são importadas automaticamente pra Agenda — é lá que você escolhe o
+            técnico e confirma o horário de cada uma.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -169,9 +126,10 @@ export function FacilitOrdersPanel({
       </div>
 
       {error && <p className="text-sm text-red-400">{error}</p>}
+      {syncMessage && <p className="text-sm text-emerald-400">{syncMessage}</p>}
 
       {credential?.last_sync_error && (
-        <p className="text-xs text-amber-400">Última tentativa falhou: {credential.last_sync_error}</p>
+        <p className="text-xs text-amber-400">Última tentativa automática falhou: {credential.last_sync_error}</p>
       )}
 
       {showCredentialForm && (
@@ -226,54 +184,20 @@ export function FacilitOrdersPanel({
         <p className="text-sm text-slate-500">Cadastre suas credenciais da Facil-IT pra começar a importar as ordens.</p>
       )}
 
-      {credential && orders.length === 0 && (
-        <p className="text-sm text-slate-500">Nenhuma ordem de hoje ou amanhã encontrada ainda. Use &quot;Buscar agora&quot; ou aguarde a busca automática diária.</p>
-      )}
-
-      {orders.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="text-xs uppercase tracking-wide text-slate-500">
-                <th className="pb-2 pr-3">PO#</th>
-                <th className="pb-2 pr-3">Local</th>
-                <th className="pb-2 pr-3">Categoria</th>
-                <th className="pb-2 pr-3">Visita</th>
-                <th className="pb-2 pr-3">Status</th>
-                <th className="pb-2 pr-3">Técnico</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map((order) => (
-                <tr key={order.id} className="border-t" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-                  <td className="py-2 pr-3 font-mono text-xs text-slate-300">{order.po_number ?? order.facilit_order_number}</td>
-                  <td className="py-2 pr-3">
-                    <p className="font-semibold text-white">{order.company ?? '—'}</p>
-                    <p className="text-xs text-slate-500">{[order.address1, order.city, order.state].filter(Boolean).join(', ')}</p>
-                  </td>
-                  <td className="py-2 pr-3 text-slate-300">{[order.category, order.order_type].filter(Boolean).join(' · ') || '—'}</td>
-                  <td className="py-2 pr-3 text-slate-300">{formatVisitDate(order.visit_date)}</td>
-                  <td className="py-2 pr-3 text-slate-300">{order.status ?? '—'}</td>
-                  <td className="py-2 pr-3">
-                    <select
-                      value={order.assigned_employee_id ?? ''}
-                      disabled={assigning === order.id}
-                      onChange={(e) => handleAssign(order.id, e.target.value)}
-                      className="rounded-lg bg-[#0b0f1a] px-2 py-1.5 text-xs text-white"
-                      style={{ border: '1px solid rgba(255,255,255,0.08)' }}
-                    >
-                      <option value="">Sem técnico</option>
-                      {technicians.map((tech) => (
-                        <option key={tech.id} value={tech.id}>
-                          {tech.name}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {credential && (
+        <div
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl p-4"
+          style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
+        >
+          <p className="text-xs text-slate-400">Última busca: {formatSyncedAt(credential.last_synced_at)}</p>
+          <Link
+            href={agendaHref}
+            className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
+            style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
+          >
+            <CalendarDays size={13} />
+            Ver na Agenda
+          </Link>
         </div>
       )}
     </Card>

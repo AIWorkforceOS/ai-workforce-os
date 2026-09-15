@@ -7,9 +7,11 @@ import type { Unit } from '@/lib/types'
 export const dynamic = 'force-dynamic'
 
 /**
- * Ordens de serviço da Facil-IT/360 pra essa unidade (integração Mawi Pro,
- * 2026-09-10). Ver facilit-orders-panel.tsx pro fluxo de credenciais/sync/
- * atribuição de técnico.
+ * Credenciais + sync da Facil-IT/360 pra essa unidade (integração Mawi
+ * Pro, 2026-09-10, revisada 2026-09-15). As ordens importadas vão
+ * direto pra Agenda de verdade (`appointments`, ver facilit-sync.ts +
+ * migration 081) — o cliente atribui técnico e confirma horário pela
+ * própria tela de agenda (mesmo fluxo do Portal 360), não aqui.
  */
 export default async function UnitFacilitPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -19,35 +21,20 @@ export default async function UnitFacilitPage({ params }: { params: Promise<{ id
   if (!unit) notFound()
   const unitRow = unit as Unit
 
-  const [{ data: credential }, { data: orders }, { data: technicians }] = await Promise.all([
-    supabase
-      .from('facilit_credentials')
-      .select('client_code, username, is_active, last_synced_at, last_sync_error')
-      .eq('unit_id', id)
-      .maybeSingle(),
-    supabase
-      .from('facilit_work_orders')
-      .select(
-        'id, facilit_order_number, po_number, company, address1, city, state, category, order_type, priority, status, visit_date, assigned_employee_id',
-      )
-      .eq('unit_id', id)
-      .order('visit_date', { ascending: true }),
-    supabase.from('employees').select('id, name').eq('unit_id', id).eq('role', 'technician').eq('is_active', true).order('name'),
-  ])
+  const { data: credential } = await supabase
+    .from('facilit_credentials')
+    .select('client_code, username, is_active, last_synced_at, last_sync_error')
+    .eq('unit_id', id)
+    .maybeSingle()
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         eyebrow="facil-it"
         title={`Facil-IT — ${unitRow.name}`}
-        subtitle="Ordens de serviço do dia e do dia seguinte, importadas automaticamente da rede 360."
+        subtitle="Conecta com a Facil-IT e importa as ordens do dia e do dia seguinte direto pra Agenda."
       />
-      <FacilitOrdersPanel
-        unitId={unitRow.id}
-        initialCredential={credential ?? null}
-        initialOrders={orders ?? []}
-        technicians={technicians ?? []}
-      />
+      <FacilitOrdersPanel unitId={unitRow.id} initialCredential={credential ?? null} agendaHref={`/dashboard/units/${unitRow.id}/agenda/calendario`} />
     </div>
   )
 }
