@@ -18,7 +18,14 @@ function formatSyncedAt(iso: string | null): string {
   return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(iso))
 }
 
-type FacilitSyncSkip = { orderNumber: string | null; company: string | null; reason: string; detail?: string }
+type FacilitSyncSkip = {
+  orderNumber: string | null
+  poNumber: string | null
+  clientPo: string | null
+  company: string | null
+  reason: string
+  detail?: string
+}
 
 const SKIP_REASON_LABEL: Record<string, string> = {
   sem_numero_ordem: 'sem número de ordem identificável',
@@ -28,7 +35,7 @@ const SKIP_REASON_LABEL: Record<string, string> = {
 
 function formatSkip(skip: FacilitSyncSkip): string {
   const label = SKIP_REASON_LABEL[skip.reason] ?? skip.reason
-  const who = skip.orderNumber ? `Ordem ${skip.orderNumber}` : 'Uma ordem'
+  const who = skip.poNumber ? `PO ${skip.poNumber}` : skip.orderNumber ? `Ordem ${skip.orderNumber}` : 'Uma ordem'
   const company = skip.company ? ` (${skip.company})` : ''
   return `${who}${company}: ${label}${skip.detail ? ` — ${skip.detail}` : ''}`
 }

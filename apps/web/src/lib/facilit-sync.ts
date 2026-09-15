@@ -25,6 +25,9 @@ export type FacilitCredentialRow = {
 export type FacilitSyncSkipReason = 'sem_numero_ordem' | 'fora_de_hoje_amanha' | 'falha_ao_salvar'
 export type FacilitSyncSkip = {
   orderNumber: string | null
+  /** Vendor PO# / Client PO# — é isso que aparece como "número da ordem" na tela do app da Facil-IT, não o `orderNumber` interno. */
+  poNumber: string | null
+  clientPo: string | null
   company: string | null
   reason: FacilitSyncSkipReason
   detail?: string
@@ -140,6 +143,8 @@ export async function syncFacilitOrdersForUnit(
       } else {
         skipped.push({
           orderNumber: raw.orderNumber !== undefined && raw.orderNumber !== null ? String(raw.orderNumber) : null,
+          poNumber: raw.poNumber ?? null,
+          clientPo: raw.clientPO ?? raw.clientPoNumber ?? null,
           company: raw.company ?? null,
           reason: 'sem_numero_ordem',
         })
@@ -152,6 +157,8 @@ export async function syncFacilitOrdersForUnit(
       if (!dueOrderNumbers.has(order.facilit_order_number)) {
         skipped.push({
           orderNumber: order.facilit_order_number,
+          poNumber: order.po_number,
+          clientPo: order.client_po,
           company: order.company,
           reason: 'fora_de_hoje_amanha',
           detail: order.visit_date ? `visita em ${order.visit_date}` : 'sem data de visita reconhecida',
@@ -197,6 +204,8 @@ export async function syncFacilitOrdersForUnit(
       if (error || !workOrder) {
         skipped.push({
           orderNumber: order.facilit_order_number,
+          poNumber: order.po_number,
+          clientPo: order.client_po,
           company: order.company,
           reason: 'falha_ao_salvar',
           detail: error?.message,
@@ -222,7 +231,10 @@ export async function syncFacilitOrdersForUnit(
         source: 'cron',
         eventType: 'facilit_sync_orders_skipped',
         message: `Sync da Facil-IT (unidade "${unit.name}"): ${rawOrders.length} ordem(ns) recebida(s) da API, ${imported} importada(s), ${skipped.length} ignorada(s) — ${skipped
-          .map((s) => `${s.orderNumber ?? '(sem nº)'}${s.company ? ` "${s.company}"` : ''}: ${s.reason}${s.detail ? ` (${s.detail})` : ''}`)
+          .map(
+            (s) =>
+              `PO ${s.poNumber ?? '(sem PO)'}${s.orderNumber ? ` / ordem interna ${s.orderNumber}` : ''}${s.company ? ` "${s.company}"` : ''}: ${s.reason}${s.detail ? ` (${s.detail})` : ''}`,
+          )
           .join('; ')}`,
         orgId: unit.org_id,
         unitId: unit.id,
