@@ -15,7 +15,21 @@ export type FacilitCredentialRow = {
   is_active: boolean
 }
 
-export type FacilitSyncResult = { imported: number; error: string | null }
+/**
+ * Motivo de uma ordem NÃO ter virado appointment nesta sync — sem isso o
+ * drop é silencioso (mapFacilitOrder e filterOrdersForTodayAndTomorrow só
+ * excluem, nunca lançam erro). Descoberto em produção (Mawi Pro,
+ * 2026-09-15): de 5 ordens reais só 4 entraram, sem nenhum sinal de qual
+ * ficou de fora ou por quê.
+ */
+export type FacilitSyncSkipReason = 'sem_numero_ordem' | 'fora_de_hoje_amanha' | 'falha_ao_salvar'
+export type FacilitSyncSkip = {
+  orderNumber: string | null
+  company: string | null
+  reason: FacilitSyncSkipReason
+  detail?: string
+}
+export type FacilitSyncResult = { imported: number; error: string | null; skipped: FacilitSyncSkip[] }
 
 /**
  * Cliente "360 Service Provider" da unidade — cria na primeira vez,
@@ -110,8 +124,34 @@ export async function syncFacilitOrdersForUnit(
       password: credential.password,
     })
     const rawOrders = await fetchFacilitOrders(session)
-    const mapped = rawOrders.map(mapFacilitOrder).filter((o): o is NonNullable<typeof o> => o !== null)
+
+    const skipped: FacilitSyncSkip[] = []
+    const mapped: MappedFacilitOrder[] = []
+    for (const raw of rawOrders) {
+      const order = mapFacilitOrder(raw)
+      if (order) {
+        mapped.push(order)
+      } else {
+        skipped.push({
+          orderNumber: raw.orderNumber !== undefined && raw.orderNumber !== null ? String(raw.orderNumber) : null,
+          company: raw.company ?? null,
+          reason: 'sem_numero_ordem',
+        })
+      }
+    }
+
     const due = filterOrdersForTodayAndTomorrow(mapped, unit.timezone)
+    const dueOrderNumbers = new Set(due.map((o) => o.facilit_order_number))
+    for (const order of mapped) {
+      if (!dueOrderNumbers.has(order.facilit_order_number)) {
+        skipped.push({
+          orderNumber: order.facilit_order_number,
+          company: order.company,
+          reason: 'fora_de_hoje_amanha',
+          detail: order.visit_date ? `visita em ${order.visit_date}` : 'sem data de visita reconhecida',
+        })
+      }
+    }
 
     let imported = 0
     for (const order of due) {
@@ -148,7 +188,15 @@ export async function syncFacilitOrdersForUnit(
         .select('id, appointment_id')
         .single()
 
-      if (error || !workOrder) continue
+      if (error || !workOrder) {
+        skipped.push({
+          orderNumber: order.facilit_order_number,
+          company: order.company,
+          reason: 'falha_ao_salvar',
+          detail: error?.message,
+        })
+        continue
+      }
       imported += 1
 
       const row = workOrder as { id: string; appointment_id: string | null }
@@ -162,7 +210,20 @@ export async function syncFacilitOrdersForUnit(
       .update({ last_synced_at: new Date().toISOString(), last_sync_error: null })
       .eq('id', credential.id)
 
-    return { imported, error: null }
+    if (skipped.length > 0) {
+      await logSystemEvent(supabase, {
+        level: 'warning',
+        source: 'cron',
+        eventType: 'facilit_sync_orders_skipped',
+        message: `Sync da Facil-IT (unidade "${unit.name}"): ${rawOrders.length} ordem(ns) recebida(s) da API, ${imported} importada(s), ${skipped.length} ignorada(s) — ${skipped
+          .map((s) => `${s.orderNumber ?? '(sem nº)'}${s.company ? ` "${s.company}"` : ''}: ${s.reason}${s.detail ? ` (${s.detail})` : ''}`)
+          .join('; ')}`,
+        orgId: unit.org_id,
+        unitId: unit.id,
+      })
+    }
+
+    return { imported, error: null, skipped }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Erro desconhecido ao sincronizar com a Facil-IT.'
     const isAuthError = error instanceof FacilitAuthError
@@ -177,6 +238,6 @@ export async function syncFacilitOrdersForUnit(
       unitId: unit.id,
     })
 
-    return { imported: 0, error: message }
+    return { imported: 0, error: message, skipped: [] }
   }
 }

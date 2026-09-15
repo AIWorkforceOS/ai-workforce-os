@@ -36,5 +36,5 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   if (result.error) {
     return NextResponse.json({ error: result.error }, { status: 502 })
   }
-  return NextResponse.json({ ok: true, imported: result.imported })
+  return NextResponse.json({ ok: true, imported: result.imported, skipped: result.skipped })
 }

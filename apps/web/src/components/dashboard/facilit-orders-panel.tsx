@@ -18,6 +18,21 @@ function formatSyncedAt(iso: string | null): string {
   return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(iso))
 }
 
+type FacilitSyncSkip = { orderNumber: string | null; company: string | null; reason: string; detail?: string }
+
+const SKIP_REASON_LABEL: Record<string, string> = {
+  sem_numero_ordem: 'sem número de ordem identificável',
+  fora_de_hoje_amanha: 'não é de hoje nem de amanhã',
+  falha_ao_salvar: 'falha ao salvar',
+}
+
+function formatSkip(skip: FacilitSyncSkip): string {
+  const label = SKIP_REASON_LABEL[skip.reason] ?? skip.reason
+  const who = skip.orderNumber ? `Ordem ${skip.orderNumber}` : 'Uma ordem'
+  const company = skip.company ? ` (${skip.company})` : ''
+  return `${who}${company}: ${label}${skip.detail ? ` — ${skip.detail}` : ''}`
+}
+
 /**
  * Credenciais + sync da Facil-IT (integração Mawi Pro, 2026-09-10;
  * revisada 2026-09-15 — as ordens agora vão direto pra Agenda real em
@@ -43,6 +58,7 @@ export function FacilitOrdersPanel({
   const [savingCredential, setSavingCredential] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncMessage, setSyncMessage] = useState<string | null>(null)
+  const [syncSkipped, setSyncSkipped] = useState<FacilitSyncSkip[]>([])
   const [error, setError] = useState<string | null>(null)
 
   async function handleSaveCredential(e: React.FormEvent) {
@@ -74,6 +90,7 @@ export function FacilitOrdersPanel({
     setSyncing(true)
     setError(null)
     setSyncMessage(null)
+    setSyncSkipped([])
     try {
       const res = await fetch(`/api/units/${unitId}/facilit/sync`, { method: 'POST' })
       const data = await res.json()
@@ -86,6 +103,7 @@ export function FacilitOrdersPanel({
           ? `${data.imported} ${data.imported === 1 ? 'ordem importada' : 'ordens importadas'} pra Agenda.`
           : 'Nenhuma ordem nova de hoje/amanhã encontrada.',
       )
+      setSyncSkipped((data.skipped ?? []) as FacilitSyncSkip[])
       setCredential((prev) => (prev ? { ...prev, last_synced_at: new Date().toISOString(), last_sync_error: null } : prev))
     } catch {
       setError('Não foi possível buscar as ordens agora.')
@@ -127,6 +145,19 @@ export function FacilitOrdersPanel({
 
       {error && <p className="text-sm text-red-400">{error}</p>}
       {syncMessage && <p className="text-sm text-emerald-400">{syncMessage}</p>}
+      {syncSkipped.length > 0 && (
+        <div
+          className="flex flex-col gap-1 rounded-xl px-3.5 py-3 text-xs text-amber-300"
+          style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.25)' }}
+        >
+          <p className="font-bold">
+            {syncSkipped.length === 1 ? '1 ordem não entrou na Agenda:' : `${syncSkipped.length} ordens não entraram na Agenda:`}
+          </p>
+          {syncSkipped.map((skip, i) => (
+            <p key={i}>{formatSkip(skip)}</p>
+          ))}
+        </div>
+      )}
 
       {credential?.last_sync_error && (
         <p className="text-xs text-amber-400">Última tentativa automática falhou: {credential.last_sync_error}</p>

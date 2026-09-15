@@ -528,6 +528,29 @@ export function AppointmentFormModal({
           </div>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            {mode === 'reschedule' && (appointment?.service_order_summary_pt || appointment?.service_order_scope_en) && (
+              <div
+                className="flex flex-col gap-3 rounded-xl px-3.5 py-3"
+                style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.25)' }}
+              >
+                <span className="text-[11px] font-black uppercase tracking-wider text-amber-300">
+                  Descrição da ordem — leia antes de atribuir o profissional
+                </span>
+                {appointment.service_order_summary_pt && (
+                  <div className="flex flex-col gap-1">
+                    <Label>Resumo em português (para o técnico)</Label>
+                    <p className="whitespace-pre-wrap text-sm text-slate-200">{appointment.service_order_summary_pt}</p>
+                  </div>
+                )}
+                {appointment.service_order_scope_en && (
+                  <div className="flex flex-col gap-1">
+                    <Label>Scope of Work (inglês — original da ordem)</Label>
+                    <p className="whitespace-pre-wrap text-sm text-slate-400">{appointment.service_order_scope_en}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
                 <Label>Serviço *</Label>
