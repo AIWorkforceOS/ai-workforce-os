@@ -73,6 +73,12 @@ export default async function ServiceOrderWorkspacePage({
           </p>
         )}
         {appointment.service_order_summary_pt && <p className="mt-3 text-sm text-slate-300">{appointment.service_order_summary_pt}</p>}
+        {appointment.service_order_scope_en && (
+          <div className="mt-3 rounded-xl px-3 py-2.5" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Descrição original (inglês) — pra mostrar ao gerente</p>
+            <p className="mt-1 whitespace-pre-wrap text-sm text-slate-300">{appointment.service_order_scope_en}</p>
+          </div>
+        )}
         {appointment.service_order_file_url && (
           <a
             href={appointment.service_order_file_url}
