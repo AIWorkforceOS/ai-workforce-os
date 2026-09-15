@@ -60,7 +60,9 @@ describe('syncFacilitOrdersForUnit', () => {
       const u = String(url)
       if (u.includes('/devices')) return new Response(JSON.stringify({ token: 'tok-123' }), { status: 200 })
       return new Response(
-        JSON.stringify([{ orderNumber: '158725-01', company: 'Walgreens', address1: 'Rua X', visitDate: '2026-09-10T20:00:00Z' }]),
+        JSON.stringify([
+          { orderNumber: '6184945', poNumber: '158725-01', company: 'Walgreens', address1: 'Rua X', visitDate: '2026-09-10T20:00:00Z' },
+        ]),
         { status: 200 },
       )
     }) as typeof fetch
@@ -82,6 +84,7 @@ describe('syncFacilitOrdersForUnit', () => {
       employee_id: null,
       status: 'scheduled',
       source: FACILIT_SYNC_SOURCE,
+      // service_order_number precisa ser o PO# (poNumber), nunca o ID interno (orderNumber/facilit_order_number) — bug real 2026-09-15.
       service_order_number: '158725-01',
     })
     expect(db.facilit_work_orders?.[0]?.appointment_id).toBe(db.appointments?.[0]?.id)

@@ -11,9 +11,14 @@ import type { MappedFacilitOrder } from '../facilit'
 
 function makeOrder(overrides: Partial<MappedFacilitOrder> = {}): MappedFacilitOrder {
   return {
-    facilit_order_number: '158725-01',
-    po_number: '211996-01',
-    client_po: null,
+    // ID interno da Facil-IT (dedup em facilit_work_orders) — nunca no
+    // formato "PO #" que o cliente reconhece. Fixture antiga usava um
+    // valor com cara de PO# pra este campo, mascarando o bug de
+    // 2026-09-15 em que service_order_number virava este ID em vez do
+    // po_number de verdade.
+    facilit_order_number: '6184945',
+    po_number: '158725-01',
+    client_po: '211996-01',
     company: 'Walgreen Drug Store #03049',
     address1: '4965 W Bell Rd',
     address2: null,
@@ -62,9 +67,10 @@ describe('buildFacilitAppointmentInsertRow', () => {
     expect(build().address).toBe('4965 W Bell Rd, Glendale, AZ, 85308')
   })
 
-  it('leva os dados da ordem pros campos service_order_*', () => {
+  it('leva os dados da ordem pros campos service_order_* — número exibido é o PO# (po_number), nunca o ID interno da Facil-IT', () => {
     const row = build()
     expect(row.service_order_number).toBe('158725-01')
+    expect(row.service_order_client_po).toBe('211996-01')
     expect(row.service_order_priority).toBe('Low')
     expect(row.service_order_order_type).toBe('Door Bell')
     expect(row.service_order_location_name).toBe('Walgreen Drug Store #03049')
@@ -93,6 +99,19 @@ describe('buildFacilitAppointmentInsertRow', () => {
     const row = build(makeOrder(), null)
     expect(row.service_order_summary_pt).toBeNull()
     expect(row.notes).toBe('Doorbell not working.')
+  })
+
+  it('bug real 2026-09-15: número mostrado ao técnico/no PDF (service_order_number) é o po_number, client_po nunca vira fallback dele', () => {
+    const row = build(makeOrder({ po_number: '158088-01', client_po: '212778-01', facilit_order_number: '6166511' }))
+    expect(row.service_order_number).toBe('158088-01')
+    expect(row.service_order_client_po).toBe('212778-01')
+    expect(row.service_order_number).not.toBe('6166511')
+  })
+
+  it('sem client_po nenhum (raro), service_order_client_po fica null — nunca herda o po_number como fallback (campos distintos)', () => {
+    const row = build(makeOrder({ po_number: '158088-01', client_po: null }))
+    expect(row.service_order_number).toBe('158088-01')
+    expect(row.service_order_client_po).toBeNull()
   })
 
   it('exporta o nome do cliente genérico usado — mesmo já usado pelo Portal 360', () => {
