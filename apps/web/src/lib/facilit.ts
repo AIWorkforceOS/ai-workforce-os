@@ -136,6 +136,25 @@ function parseFacilitDate(value: string | undefined): string | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
 }
 
+/**
+ * `visitDate` confirmado em produção (Mawi Pro, 2026-09-15) como hora
+ * LOCAL do Arizona mandada sem conversão nenhuma pra UTC, mas lida pelo
+ * `parseFacilitDate` acima como se já fosse UTC — uma ordem marcada pro
+ * dia 15 no app da Facil-IT (01:00 no valor bruto) caía no dia 14 na
+ * nossa Agenda, porque 01:00 "UTC" vira 18:00 do dia anterior no fuso do
+ * Arizona. America/Phoenix não observa horário de verão (offset -7 fixo
+ * o ano todo), então a correção é uma soma direta, sem precisar de
+ * biblioteca de fuso: reinterpreta os mesmos dígitos que vieram como
+ * hora do Arizona e soma 7h pra achar o instante UTC verdadeiro.
+ */
+const FACILIT_VISIT_LOCAL_OFFSET_HOURS = 7
+
+function parseFacilitVisitDate(value: string | undefined): string | null {
+  const naive = parseFacilitDate(value)
+  if (!naive) return null
+  return new Date(new Date(naive).getTime() + FACILIT_VISIT_LOCAL_OFFSET_HOURS * 60 * 60 * 1000).toISOString()
+}
+
 function parseCoordinate(value: number | string | undefined): number | null {
   if (value === undefined || value === null || value === '') return null
   const n = typeof value === 'number' ? value : Number(value)
@@ -162,7 +181,7 @@ export function mapFacilitOrder(raw: FacilitRawOrder): MappedFacilitOrder | null
     priority: raw.priority ?? null,
     status: raw.status ?? null,
     requested_at: parseFacilitDate(raw.inputDate),
-    visit_date: parseFacilitDate(raw.visitDate),
+    visit_date: parseFacilitVisitDate(raw.visitDate),
     latitude: parseCoordinate(raw.latitude),
     longitude: parseCoordinate(raw.longitude),
     scope: raw.scope ?? null,

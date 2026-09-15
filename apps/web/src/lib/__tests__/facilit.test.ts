@@ -133,7 +133,8 @@ describe('mapFacilitOrder', () => {
       order_type: 'Door Bell',
       priority: 'Low',
       status: 'Scheduled',
-      visit_date: '2026-09-14T16:00:00.000Z',
+      // visitDate vem em hora LOCAL do Arizona sem offset — mapFacilitOrder soma 7h pra achar o instante UTC verdadeiro (ver parseFacilitVisitDate).
+      visit_date: '2026-09-14T23:00:00.000Z',
       latitude: 33.64,
       longitude: -112.2,
     })
@@ -146,6 +147,20 @@ describe('mapFacilitOrder', () => {
   it('data não reconhecida vira null, sem lançar erro', () => {
     const mapped = mapFacilitOrder({ orderNumber: '1', visitDate: 'não é uma data' })
     expect(mapped?.visit_date).toBeNull()
+  })
+
+  it('reinterpreta visitDate como hora local do Arizona (bug real: ordem marcada pro dia 15 no app da Facil-IT caía no dia 14 na nossa Agenda)', () => {
+    // PO 158088-01 (Walgreen Drug Store): a Facil-IT manda "2026-09-15T01:00:00.000Z",
+    // que é 1h da manhã do dia 15 NO ARIZONA — não 01:00 UTC. Sem a correção,
+    // isso virava 2026-09-14T18:00 (dia 14) ao converter pro fuso da unidade.
+    const mapped = mapFacilitOrder({ orderNumber: '6166511', poNumber: '158088-01', visitDate: '2026-09-15T01:00:00.000Z' })
+    expect(mapped?.visit_date).toBe('2026-09-15T08:00:00.000Z')
+    // 08:00 UTC - 7h (America/Phoenix, sem horário de verão) = 01:00 do dia 15 — bate com o app da Facil-IT.
+    const phoenixHour = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Phoenix', hour: '2-digit', hourCycle: 'h23', day: '2-digit' }).formatToParts(
+      new Date(mapped!.visit_date!),
+    )
+    expect(phoenixHour.find((p) => p.type === 'day')?.value).toBe('15')
+    expect(phoenixHour.find((p) => p.type === 'hour')?.value).toBe('01')
   })
 })
 
