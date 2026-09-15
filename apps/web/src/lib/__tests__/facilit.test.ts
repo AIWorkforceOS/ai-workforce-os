@@ -27,10 +27,36 @@ describe('facilitLogin', () => {
     expect(session).toEqual({ token: 'tok-123', clientCode: 'CC1', username: 'user1' })
   })
 
+  it('faz login em /devices — descoberto por engenharia reversa (o método "Login" do app posta ali, não em /Login)', async () => {
+    let calledUrl = ''
+    global.fetch = vi.fn(async (url: unknown) => {
+      calledUrl = String(url)
+      return new Response(JSON.stringify({ token: 'tok-123' }), { status: 200 })
+    }) as typeof fetch
+
+    await facilitLogin({ clientCode: 'CC1', username: 'user1', password: 'secret' })
+
+    expect(calledUrl).toBe('https://tech.facilit.fm/MobileAppApi/api/devices')
+  })
+
+  it('aceita o token vindo como AuthCode (nome de campo alternativo)', async () => {
+    global.fetch = vi.fn(async () => new Response(JSON.stringify({ AuthCode: 'auth-code-456' }), { status: 200 })) as typeof fetch
+
+    const session = await facilitLogin({ clientCode: 'CC1', username: 'user1', password: 'secret' })
+
+    expect(session.token).toBe('auth-code-456')
+  })
+
   it('lança FacilitAuthError quando o status não é ok', async () => {
     global.fetch = vi.fn(async () => new Response('', { status: 401 })) as typeof fetch
 
     await expect(facilitLogin({ clientCode: 'CC1', username: 'user1', password: 'wrong' })).rejects.toBeInstanceOf(FacilitAuthError)
+  })
+
+  it('inclui o corpo da resposta na mensagem de erro, pra facilitar diagnóstico (ex.: 404 de endpoint errado vs. credencial errada)', async () => {
+    global.fetch = vi.fn(async () => new Response('{"error":"Not Found"}', { status: 404 })) as typeof fetch
+
+    await expect(facilitLogin({ clientCode: 'CC1', username: 'user1', password: 'secret' })).rejects.toThrow(/Not Found/)
   })
 
   it('lança FacilitAuthError quando a resposta não tem token', async () => {

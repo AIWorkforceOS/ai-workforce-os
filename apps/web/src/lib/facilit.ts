@@ -27,20 +27,30 @@ export type FacilitSession = {
 
 export class FacilitAuthError extends Error {}
 
+/**
+ * Endpoint de login descoberto por engenharia reversa do app (2026-09-10):
+ * o método "Login" do app na verdade faz POST pra /devices — mesmo
+ * endpoint já confirmado real por GET durante a reconexão original
+ * (devolvia dado, não 404). Provável login-com-registro-de-aparelho
+ * combinado num só request, padrão comum em apps mobile.
+ */
 export async function facilitLogin(creds: FacilitCredentials): Promise<FacilitSession> {
-  const res = await fetch(`${FACILIT_BASE_URL}/Login`, {
+  const res = await fetch(`${FACILIT_BASE_URL}/devices`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/plain, */*' },
     body: JSON.stringify({ ClientCode: creds.clientCode, UserName: creds.username, Password: creds.password }),
   })
   if (!res.ok) {
-    throw new FacilitAuthError(`Login na Facil-IT falhou (status ${res.status}) — verifique Client Code/usuário/senha.`)
+    const bodyText = await res.text().catch(() => '')
+    const detail = bodyText ? ` Resposta do servidor: ${bodyText.slice(0, 300)}` : ''
+    throw new FacilitAuthError(`Login na Facil-IT falhou (status ${res.status}) — verifique Client Code/usuário/senha.${detail}`)
   }
-  const data = (await res.json().catch(() => null)) as { token?: string } | null
-  if (!data?.token) {
+  const data = (await res.json().catch(() => null)) as { token?: string; AuthCode?: string; authCode?: string; Token?: string } | null
+  const token = data?.token ?? data?.AuthCode ?? data?.authCode ?? data?.Token
+  if (!token) {
     throw new FacilitAuthError('Login na Facil-IT não retornou um token válido.')
   }
-  return { token: data.token, clientCode: creds.clientCode, username: creds.username }
+  return { token, clientCode: creds.clientCode, username: creds.username }
 }
 
 /** Payload cru de uma ordem de serviço como a API da Facil-IT devolve — só os campos que usamos. */

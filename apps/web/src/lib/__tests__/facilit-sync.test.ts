@@ -58,7 +58,7 @@ describe('syncFacilitOrdersForUnit', () => {
   it('cria o appointment real na Agenda pra uma ordem nova, sem técnico atribuído', async () => {
     global.fetch = vi.fn(async (url: unknown) => {
       const u = String(url)
-      if (u.includes('/Login')) return new Response(JSON.stringify({ token: 'tok-123' }), { status: 200 })
+      if (u.includes('/devices')) return new Response(JSON.stringify({ token: 'tok-123' }), { status: 200 })
       return new Response(
         JSON.stringify([{ orderNumber: '158725-01', company: 'Walgreens', address1: 'Rua X', visitDate: '2026-09-10T20:00:00Z' }]),
         { status: 200 },
@@ -90,7 +90,7 @@ describe('syncFacilitOrdersForUnit', () => {
   it('reaproveita o mesmo cliente "360 Service Provider" da unidade em vez de criar um novo por ordem', async () => {
     global.fetch = vi.fn(async (url: unknown) => {
       const u = String(url)
-      if (u.includes('/Login')) return new Response(JSON.stringify({ token: 'tok-123' }), { status: 200 })
+      if (u.includes('/devices')) return new Response(JSON.stringify({ token: 'tok-123' }), { status: 200 })
       return new Response(
         JSON.stringify([
           { orderNumber: '1', company: 'Loja A', visitDate: '2026-09-10T20:00:00Z' },
@@ -118,7 +118,7 @@ describe('syncFacilitOrdersForUnit', () => {
   it('reimportar a mesma ordem não cria um segundo appointment nem mexe no que já existe', async () => {
     global.fetch = vi.fn(async (url: unknown) => {
       const u = String(url)
-      if (u.includes('/Login')) return new Response(JSON.stringify({ token: 'tok-123' }), { status: 200 })
+      if (u.includes('/devices')) return new Response(JSON.stringify({ token: 'tok-123' }), { status: 200 })
       return new Response(JSON.stringify([{ orderNumber: '158725-01', status: 'In Progress', visitDate: '2026-09-10T20:00:00Z' }]), {
         status: 200,
       })
