@@ -7,6 +7,7 @@ import { fetchClientOrderById, type ClientPortalOrderStatus } from '@/lib/portal
 import { Badge, Card, PageHeader, type BadgeVariant } from '@/components/ui/dashboard-ui'
 import { PhotoGallery } from '@/components/portal-360/photo-gallery'
 import { DownloadOriginalButton } from '@/components/portal-360/download-original-button'
+import { QuoteBuilder } from '@/components/portal-360/quote-builder'
 
 const STATUS_LABEL: Record<ClientPortalOrderStatus, string> = {
   pending_assignment: 'Pending scheduling',
@@ -120,6 +121,13 @@ export default async function Portal360OrderPage({ params }: { params: Promise<{
         <p className="mb-4 text-[11px] font-black uppercase tracking-wider text-slate-400">Photos</p>
         <PhotoGallery photos={order.photos} />
       </Card>
+
+      {order.status === 'quote' && (
+        <Card>
+          <p className="mb-4 text-[11px] font-black uppercase tracking-wider text-slate-400">Quote</p>
+          <QuoteBuilder order={order} />
+        </Card>
+      )}
     </div>
   )
 }

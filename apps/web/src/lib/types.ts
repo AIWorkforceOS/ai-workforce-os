@@ -439,6 +439,9 @@ export type Appointment = {
   service_order_material_value: number | null
   /** Estimativa de horas, preenchível independente do status (migration 057). */
   service_order_hours_needed: number | null
+  /** Cotação estruturada por IA (migration 082, Portal 360) a partir de service_order_material_description — inglês vai pro cliente final, português é só conferência interna da 360. */
+  service_order_quote_description_en: string | null
+  service_order_quote_description_pt: string | null
   /** kind ausente/'service' = foto do atendimento sem distinção antes/depois (fotos salvas antes da migration 061); 'before'/'after' = escolhido pelo técnico no Portal do Funcionário (Portal 360 agrupa por isso); 'material_invoice' = nota fiscal de compra de material. Campo dentro do jsonb, sem migration nova. */
   service_order_photos: { url: string; uploaded_at: string; kind?: 'before' | 'after' | 'service' | 'material_invoice' }[]
   /** Dia (sem hora) pedido pela 360 ao anexar pelo Portal 360 (migration 061) — null fora desse fluxo. Ver comentário da coluna no banco. */

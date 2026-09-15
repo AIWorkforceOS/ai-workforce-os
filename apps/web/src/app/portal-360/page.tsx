@@ -36,14 +36,43 @@ function orderDateLabel(order: ClientPortalOrder): string {
 // ordem nova e voltar pra lista pode mostrar dado desatualizado (Data Cache do Next).
 export const dynamic = 'force-dynamic'
 
-export default async function Portal360Page() {
+type PortalTab = 'agenda' | 'completed'
+
+const AGENDA_STATUSES: ClientPortalOrderStatus[] = ['pending_assignment', 'scheduled']
+const COMPLETED_STATUSES: ClientPortalOrderStatus[] = ['quote', 'completed', 'cancelled']
+
+/** Cotação primeiro (precisa de ação), depois concluído, depois cancelado — pedido do Vinicius: "muito organizado para acelerar o trabalho de quem está no office". */
+const COMPLETED_TAB_ORDER: Record<ClientPortalOrderStatus, number> = {
+  pending_assignment: 0,
+  scheduled: 0,
+  quote: 0,
+  completed: 1,
+  cancelled: 2,
+}
+
+/**
+ * Duas abas — pedido do Vinicius (2026-09-15): "além de ver toda a agenda
+ * de serviços que ainda irá ser feito", e "tem que ser tudo muito
+ * organizado para acelerar o trabalho de quem está no office". Uma lista
+ * só (ordenada por created_at) misturava trabalho futuro com passado.
+ */
+export default async function Portal360Page({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const appUser = await getAppUser()
   if (!appUser || appUser.role !== 'client' || !appUser.clientCompany) {
     return null
   }
 
+  const { tab: tabParam } = await searchParams
+  const tab: PortalTab = tabParam === 'completed' ? 'completed' : 'agenda'
+
   const supabase = createServiceClient()
-  const orders = supabase ? await fetchClientOrders(supabase, appUser.clientCompany) : []
+  const allOrders = supabase ? await fetchClientOrders(supabase, appUser.clientCompany) : []
+
+  const agendaOrders = allOrders.filter((o) => AGENDA_STATUSES.includes(o.status))
+  const completedOrders = allOrders
+    .filter((o) => COMPLETED_STATUSES.includes(o.status))
+    .sort((a, b) => COMPLETED_TAB_ORDER[a.status] - COMPLETED_TAB_ORDER[b.status] || b.startsAt.localeCompare(a.startsAt))
+  const orders = tab === 'agenda' ? agendaOrders : completedOrders
 
   return (
     <div className="flex flex-col gap-5">
@@ -58,12 +87,31 @@ export default async function Portal360Page() {
         }
       />
 
+      <div className="flex w-fit gap-1 rounded-xl p-1" style={{ background: 'rgba(255,255,255,0.04)' }}>
+        <Link
+          href="/portal-360?tab=agenda"
+          className="rounded-lg px-4 py-2 text-xs font-bold transition-colors"
+          style={tab === 'agenda' ? { background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', color: 'white' } : { color: '#94a3b8' }}
+        >
+          Agenda ({agendaOrders.length})
+        </Link>
+        <Link
+          href="/portal-360?tab=completed"
+          className="rounded-lg px-4 py-2 text-xs font-bold transition-colors"
+          style={tab === 'completed' ? { background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', color: 'white' } : { color: '#94a3b8' }}
+        >
+          Completed ({completedOrders.length})
+        </Link>
+      </div>
+
       {orders.length === 0 ? (
         <Card>
           <EmptyState
             icon={<ClipboardList size={22} className="text-white" />}
-            title="No orders yet"
-            subtitle="Attach your first service order to get started."
+            title={tab === 'agenda' ? 'Nothing scheduled' : 'Nothing completed yet'}
+            subtitle={
+              tab === 'agenda' ? 'Attach a new order to get started.' : 'Completed and quoted orders will show up here.'
+            }
             actionHref="/portal-360/new"
             actionLabel="Attach order"
           />
