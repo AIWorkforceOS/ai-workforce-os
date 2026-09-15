@@ -8,7 +8,6 @@ import { addDays } from '@/lib/calendar-dates'
 import { buildRecurringOccurrences, WEEKDAY_ORDER, type RecurrenceType } from '@/lib/scheduling/recurrence'
 import type { ServiceRecurrence } from '@/lib/scheduling/service-recurrence'
 import { isExtractableAttachment } from '@/lib/service-orders/extraction'
-import { FACILIT_SYNC_SOURCE } from '@/lib/facilit-appointment'
 import { Card, Input, Label, Select, Textarea } from '@/components/ui/dashboard-ui'
 import type { SchedulingSettings, Service, Employee, Weekday, WeeklySchedule } from '@/lib/types'
 import type { AppointmentWithRelations } from '@/components/dashboard/calendar-view'
@@ -87,14 +86,6 @@ export function AppointmentFormModal({
   const [slots, setSlots] = useState<AvailableSlot[]>([])
   const [selectedSlot, setSelectedSlot] = useState<AvailableSlot | null>(null)
   const [loadingSlots, setLoadingSlots] = useState(false)
-
-  // Ordem da Facil-IT ainda sem técnico: o horário já é a visita real
-  // marcada pelo cliente (lib/facilit-appointment.ts), não um placeholder
-  // pra escolher — passar pela grade de slots (presa ao horário comercial
-  // da unidade) bloqueava QUALQUER atribuição sempre que a visita cai fora
-  // do expediente. Aqui só se confere se o técnico escolhido está livre
-  // exatamente nesse intervalo; o admin não reagenda por aqui.
-  const isFacilitPendingAssignment = mode === 'reschedule' && !appointment?.employee_id && appointment?.source === FACILIT_SYNC_SOURCE
 
   const [customerQuery, setCustomerQuery] = useState('')
   const [customerResults, setCustomerResults] = useState<CustomerOption[]>([])
@@ -192,22 +183,6 @@ export function AppointmentFormModal({
         (a) => mode !== 'reschedule' || a.id !== appointment?.id
       )
 
-      if (isFacilitPendingAssignment && appointment) {
-        const apptStartMs = new Date(appointment.starts_at).getTime()
-        const apptEndMs = new Date(appointment.ends_at).getTime()
-        const conflict = existingAppointments.some((a) => {
-          if (a.status === 'cancelled' || a.status === 'no_show') return false
-          const startMs = new Date(a.starts_at).getTime()
-          const endMs = new Date(a.ends_at).getTime()
-          return apptStartMs < endMs && startMs < apptEndMs
-        })
-        const fixedSlot = { starts_at: appointment.starts_at, ends_at: appointment.ends_at }
-        setSlots(conflict ? [] : [fixedSlot])
-        setSelectedSlot(conflict ? null : fixedSlot)
-        setLoadingSlots(false)
-        return
-      }
-
       const result = getAvailableSlots({
         date,
         timezone,
@@ -226,7 +201,7 @@ export function AppointmentFormModal({
     return () => {
       cancelled = true
     }
-  }, [serviceId, employeeId, date, isFacilitPendingAssignment, appointment])
+  }, [serviceId, employeeId, date])
 
   useEffect(() => {
     if (mode !== 'create') return
@@ -599,82 +574,53 @@ export function AppointmentFormModal({
               </div>
             </div>
 
-            {!isFacilitPendingAssignment && (
-              <div className="flex flex-col gap-1.5">
-                <Label>Data *</Label>
-                <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
-              </div>
-            )}
+            <div className="flex flex-col gap-1.5">
+              <Label>Data *</Label>
+              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+            </div>
 
-            {isFacilitPendingAssignment ? (
-              <div className="flex flex-col gap-1.5">
-                <Label>Horário da visita (Facil-IT) *</Label>
-                {loadingSlots ? (
-                  <p className="text-sm text-slate-500">Conferindo disponibilidade do profissional…</p>
-                ) : selectedSlot ? (
-                  <p
-                    className="rounded-xl px-3.5 py-2.5 text-sm font-semibold text-white"
-                    style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
-                  >
-                    {new Date(selectedSlot.starts_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', timeZone: timezone })}
-                    {' · '}
-                    {formatSlotTime(selectedSlot.starts_at)}
-                    {' – '}
-                    {formatSlotTime(selectedSlot.ends_at)}
-                  </p>
-                ) : (
-                  <p className="text-sm text-amber-400">
-                    Este profissional já tem outro atendimento nesse horário — escolha outro profissional.
-                  </p>
-                )}
-                <p className="text-xs text-slate-500">
-                  Horário informado pela Facil-IT — não muda por aqui, só a atribuição do profissional.
-                </p>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-1.5">
-                <Label>Horário *</Label>
-                {loadingSlots ? (
-                  <p className="text-sm text-slate-500">Calculando horários livres…</p>
-                ) : slots.length === 0 ? (
-                  <div className="flex flex-col items-start gap-2">
-                    <p className="text-sm text-slate-500">Nenhum horário livre neste dia para este serviço/profissional.</p>
-                    {waitlistAdded ? (
-                      <p className="text-sm font-semibold text-emerald-400">Adicionado à lista de espera.</p>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={addingToWaitlist}
-                        onClick={handleAddToWaitlist}
-                        className="rounded-lg px-3 py-1.5 text-xs font-bold text-cyan-400 transition-colors hover:text-cyan-300 disabled:opacity-40"
-                        style={{ border: '1px solid rgba(6,182,212,0.3)' }}
-                      >
-                        {addingToWaitlist ? 'Adicionando…' : 'Adicionar à lista de espera'}
-                      </button>
-                    )}
-                    {waitlistError && <p className="text-sm text-red-400">{waitlistError}</p>}
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {slots.map((slot) => (
-                      <button
-                        key={slot.starts_at}
-                        type="button"
-                        onClick={() => setSelectedSlot(slot)}
-                        className="rounded-lg px-3 py-1.5 text-xs font-bold transition-colors"
-                        style={
-                          selectedSlot?.starts_at === slot.starts_at
-                            ? { background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', color: 'white' }
-                            : { background: 'rgba(255,255,255,0.05)', color: '#cbd5e1', border: '1px solid rgba(255,255,255,0.08)' }
-                        }
-                      >
-                        {formatSlotTime(slot.starts_at)}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+            <div className="flex flex-col gap-1.5">
+              <Label>Horário *</Label>
+              {loadingSlots ? (
+                <p className="text-sm text-slate-500">Calculando horários livres…</p>
+              ) : slots.length === 0 ? (
+                <div className="flex flex-col items-start gap-2">
+                  <p className="text-sm text-slate-500">Nenhum horário livre neste dia para este serviço/profissional.</p>
+                  {waitlistAdded ? (
+                    <p className="text-sm font-semibold text-emerald-400">Adicionado à lista de espera.</p>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={addingToWaitlist}
+                      onClick={handleAddToWaitlist}
+                      className="rounded-lg px-3 py-1.5 text-xs font-bold text-cyan-400 transition-colors hover:text-cyan-300 disabled:opacity-40"
+                      style={{ border: '1px solid rgba(6,182,212,0.3)' }}
+                    >
+                      {addingToWaitlist ? 'Adicionando…' : 'Adicionar à lista de espera'}
+                    </button>
+                  )}
+                  {waitlistError && <p className="text-sm text-red-400">{waitlistError}</p>}
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {slots.map((slot) => (
+                    <button
+                      key={slot.starts_at}
+                      type="button"
+                      onClick={() => setSelectedSlot(slot)}
+                      className="rounded-lg px-3 py-1.5 text-xs font-bold transition-colors"
+                      style={
+                        selectedSlot?.starts_at === slot.starts_at
+                          ? { background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', color: 'white' }
+                          : { background: 'rgba(255,255,255,0.05)', color: '#cbd5e1', border: '1px solid rgba(255,255,255,0.08)' }
+                      }
+                    >
+                      {formatSlotTime(slot.starts_at)}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {mode === 'create' && (
               <div className="flex flex-col gap-1.5">
