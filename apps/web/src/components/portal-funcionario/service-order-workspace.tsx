@@ -4,7 +4,13 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'r
 import { Camera, CheckCircle2, Clock, Download, PenLine, Receipt, ShoppingCart, Upload, X } from 'lucide-react'
 import { Input, Label, Textarea } from '@/components/ui/dashboard-ui'
 import type { PortalAppointment } from '@/lib/portal-funcionario/data'
+import { addPendingSave, type StoredFile } from '@/lib/portal-funcionario/offline-store'
 import { SignaturePad } from './signature-pad'
+
+/** File → StoredFile (mesmo Blob, só junto do nome/tipo) — o que a fila offline guarda. */
+function toStoredFile(file: File): StoredFile {
+  return { blob: file, name: file.name, type: file.type }
+}
 
 /** Gera (e revoga ao trocar/desmontar) URLs de preview locais pros arquivos ainda não enviados — evita recriar um object URL novo a cada render. */
 function useFilePreviews(files: File[]): string[] {
@@ -66,6 +72,7 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const [savedOffline, setSavedOffline] = useState(false)
   const beforeFileInputRef = useRef<HTMLInputElement>(null)
   const afterFileInputRef = useRef<HTMLInputElement>(null)
   const materialFileInputRef = useRef<HTMLInputElement>(null)
@@ -114,12 +121,14 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
   const [savingSection, setSavingSection] = useState<PhotoSection | null>(null)
   const [sectionError, setSectionError] = useState<{ section: PhotoSection; message: string } | null>(null)
   const [sectionSuccess, setSectionSuccess] = useState<PhotoSection | null>(null)
+  const [sectionOffline, setSectionOffline] = useState<PhotoSection | null>(null)
 
   async function handleSavePhotosNow(section: PhotoSection, fieldName: string, files: File[], clear: () => void) {
     if (files.length === 0) return
     setSavingSection(section)
     setSectionError(null)
     setSectionSuccess(null)
+    setSectionOffline(null)
     const formData = new FormData()
     for (const photo of files) formData.append(fieldName, photo)
     try {
@@ -136,7 +145,21 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
       clear()
       setSectionSuccess(section)
     } catch {
-      setSectionError({ section, message: 'Não foi possível salvar as fotos. Verifique sua conexão e tente novamente.' })
+      // Sem internet no momento: guarda localmente em vez de perder as fotos —
+      // pedido do Vinicius (2026-09-15). A sincronização automática (ver
+      // OfflineSyncManager no layout) reenvia sozinha quando a conexão voltar.
+      const savedLocally = await addPendingSave({
+        unitId: appt.unit_id,
+        appointmentId: appt.id,
+        fields: {},
+        files: { [fieldName]: files.map(toStoredFile) },
+      })
+      if (savedLocally) {
+        clear()
+        setSectionOffline(section)
+      } else {
+        setSectionError({ section, message: 'Não foi possível salvar as fotos. Verifique sua conexão e tente novamente.' })
+      }
     } finally {
       setSavingSection(null)
     }
@@ -155,6 +178,7 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
     event.preventDefault()
     setError(null)
     setSuccess(false)
+    setSavedOffline(false)
 
     if (status === 'completed' && !signedBy.trim()) {
       setError('Informe o nome de quem assinou para finalizar.')
@@ -165,19 +189,33 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
       return
     }
 
+    const fields = {
+      status,
+      signedBy: signedBy.trim(),
+      partPurchaseLink: status === 'quote' ? partPurchaseLink.trim() : '',
+      materialDescription: status === 'quote' ? materialDescription.trim() : '',
+      materialValue: status === 'quote' ? materialValue.trim() : '',
+      hoursNeeded: hoursNeeded.trim(),
+    }
+    const signatureFile = signatureDataUrl
+      ? new File([await dataUrlToBlob(signatureDataUrl)], 'assinatura.png', { type: 'image/png' })
+      : null
+
     const formData = new FormData()
-    formData.set('status', status)
-    formData.set('signedBy', signedBy.trim())
-    formData.set('partPurchaseLink', status === 'quote' ? partPurchaseLink.trim() : '')
-    formData.set('materialDescription', status === 'quote' ? materialDescription.trim() : '')
-    formData.set('materialValue', status === 'quote' ? materialValue.trim() : '')
-    formData.set('hoursNeeded', hoursNeeded.trim())
+    for (const [key, value] of Object.entries(fields)) formData.set(key, value)
     for (const photo of photosBefore) formData.append('photosBefore', photo)
     for (const photo of photosAfter) formData.append('photosAfter', photo)
     for (const photo of materialPhotos) formData.append('materialPhotos', photo)
-    if (signatureDataUrl) {
-      const signatureBlob = await dataUrlToBlob(signatureDataUrl)
-      formData.set('signature', new File([signatureBlob], 'assinatura.png', { type: 'image/png' }))
+    if (signatureFile) formData.set('signature', signatureFile)
+
+    function clearForm() {
+      setPhotosBefore([])
+      setPhotosAfter([])
+      setMaterialPhotos([])
+      setSignatureDataUrl(null)
+      if (beforeFileInputRef.current) beforeFileInputRef.current.value = ''
+      if (afterFileInputRef.current) afterFileInputRef.current.value = ''
+      if (materialFileInputRef.current) materialFileInputRef.current.value = ''
     }
 
     setSubmitting(true)
@@ -194,15 +232,26 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
       const patch = data.appointment as ServiceOrderPatch
       setAppt((prev) => ({ ...prev, ...patch }))
       setSuccess(true)
-      setPhotosBefore([])
-      setPhotosAfter([])
-      setMaterialPhotos([])
-      setSignatureDataUrl(null)
-      if (beforeFileInputRef.current) beforeFileInputRef.current.value = ''
-      if (afterFileInputRef.current) afterFileInputRef.current.value = ''
-      if (materialFileInputRef.current) materialFileInputRef.current.value = ''
+      clearForm()
     } catch {
-      setError('Não foi possível salvar. Verifique sua conexão e tente novamente.')
+      // Sem internet no momento: guarda localmente (fotos + assinatura + campos
+      // preenchidos) em vez de perder o trabalho — pedido do Vinicius
+      // (2026-09-15). A sincronização automática (OfflineSyncManager no
+      // layout) reenvia sozinha assim que a conexão voltar, mesmo que o
+      // técnico já tenha saído desta tela.
+      const files: Record<string, StoredFile[]> = {}
+      if (photosBefore.length > 0) files.photosBefore = photosBefore.map(toStoredFile)
+      if (photosAfter.length > 0) files.photosAfter = photosAfter.map(toStoredFile)
+      if (materialPhotos.length > 0) files.materialPhotos = materialPhotos.map(toStoredFile)
+      if (signatureFile) files.signature = [toStoredFile(signatureFile)]
+
+      const savedLocally = await addPendingSave({ unitId: appt.unit_id, appointmentId: appt.id, fields, files })
+      if (savedLocally) {
+        clearForm()
+        setSavedOffline(true)
+      } else {
+        setError('Não foi possível salvar. Verifique sua conexão e tente novamente.')
+      }
     } finally {
       setSubmitting(false)
     }
@@ -415,6 +464,9 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
           </>
         )}
         {sectionSuccess === 'before' && <p className="text-xs font-semibold text-emerald-400">Fotos salvas.</p>}
+        {sectionOffline === 'before' && (
+          <p className="text-xs font-semibold text-amber-400">Sem internet — já salvamos no aparelho, vai enviar sozinho depois.</p>
+        )}
         {sectionError?.section === 'before' && <p className="text-xs text-red-400">{sectionError.message}</p>}
       </div>
 
@@ -481,6 +533,9 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
           </>
         )}
         {sectionSuccess === 'after' && <p className="text-xs font-semibold text-emerald-400">Fotos salvas.</p>}
+        {sectionOffline === 'after' && (
+          <p className="text-xs font-semibold text-amber-400">Sem internet — já salvamos no aparelho, vai enviar sozinho depois.</p>
+        )}
         {sectionError?.section === 'after' && <p className="text-xs text-red-400">{sectionError.message}</p>}
       </div>
 
@@ -571,6 +626,9 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
           </button>
         )}
         {sectionSuccess === 'material' && <p className="text-xs font-semibold text-emerald-400">Fotos salvas.</p>}
+        {sectionOffline === 'material' && (
+          <p className="text-xs font-semibold text-amber-400">Sem internet — já salvamos no aparelho, vai enviar sozinho depois.</p>
+        )}
         {sectionError?.section === 'material' && <p className="text-xs text-red-400">{sectionError.message}</p>}
       </div>
 
@@ -591,6 +649,12 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
       >
         {error && <p className="text-xs text-red-400">{error}</p>}
         {success && <p className="text-xs font-semibold text-emerald-400">Salvo com sucesso.</p>}
+        {savedOffline && (
+          <p className="text-xs font-semibold text-amber-400">
+            Sem internet agora — já salvamos tudo (fotos e assinatura) no seu aparelho. Vai enviar sozinho assim que a conexão voltar,
+            nada foi perdido.
+          </p>
+        )}
         <button
           type="submit"
           disabled={submitting}

@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getAppUser } from '@/lib/app-user'
 import { SignOutButton } from '@/components/dashboard/sign-out-button'
+import { OfflineSyncManager } from '@/components/portal-funcionario/offline-sync-manager'
 
 export default async function PortalFuncionarioLayout({ children }: { children: ReactNode }) {
   const supabase = await createClient()
@@ -83,6 +84,8 @@ export default async function PortalFuncionarioLayout({ children }: { children: 
       >
         <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6">{children}</div>
       </main>
+
+      <OfflineSyncManager />
     </div>
   )
 }
