@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { syncFacilitOrdersForUnit, type FacilitCredentialRow } from '@/lib/facilit-sync'
 import { logSystemEvent } from '@/lib/system-events'
+import { fetchOrganizationFacilitEnabled } from '@/lib/organizations'
 import type { Unit } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -43,6 +44,9 @@ export async function GET(request: Request) {
   for (const credential of rows) {
     const { data: unit } = await supabase.from('units').select('*').eq('id', credential.unit_id).single()
     if (!unit) continue
+    // Defesa em profundidade: a integração é específica da Mawi Pro (migration 083) — mesmo que
+    // uma credencial exista pra outra org (não devia, já que a criação também é bloqueada), pula.
+    if (!(await fetchOrganizationFacilitEnabled(supabase, (unit as Unit).org_id))) continue
 
     const result = await syncFacilitOrdersForUnit(supabase, unit as Unit, credential)
     synced += 1

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { syncFacilitOrdersForUnit, type FacilitCredentialRow } from '@/lib/facilit-sync'
+import { fetchOrganizationFacilitEnabled } from '@/lib/organizations'
 import type { Unit } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -24,6 +25,10 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
   if (!unit) {
     return NextResponse.json({ error: 'Unidade não encontrada.' }, { status: 404 })
+  }
+  const facilitEnabled = await fetchOrganizationFacilitEnabled(supabase, (unit as Unit).org_id)
+  if (!facilitEnabled) {
+    return NextResponse.json({ error: 'Integração não disponível para esta unidade.' }, { status: 404 })
   }
   if (!credential) {
     return NextResponse.json(

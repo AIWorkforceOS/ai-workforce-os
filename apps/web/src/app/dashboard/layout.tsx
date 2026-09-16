@@ -2,12 +2,13 @@ import type { ReactNode } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getAppUser, ROLE_LABEL, type AppRole } from '@/lib/app-user'
-import { fetchOrganizationManagementMode } from '@/lib/organizations'
+import { fetchOrganizationManagementMode, fetchOrganizationFacilitEnabled } from '@/lib/organizations'
 import { getLocale } from '@/lib/i18n/server'
 import { Sidebar } from '@/components/dashboard/sidebar'
 import { MobileSidebar } from '@/components/dashboard/mobile-sidebar'
 import { SignOutButton } from '@/components/dashboard/sign-out-button'
 import { KaiLauncher } from '@/components/dashboard/kai-launcher'
+import { OfflineSyncManager } from '@/components/portal-funcionario/offline-sync-manager'
 
 const ROLE_LABEL_EN: Record<AppRole, string> = {
   super_admin: 'Super Admin',
@@ -82,12 +83,14 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const initials = email.split('@')[0]?.slice(0, 2).toUpperCase() ?? 'AW'
   // Modo de uso da org (migration 032): full_management muda a navegação.
   const managementMode = await fetchOrganizationManagementMode(supabase, appUser.orgId)
+  // Facil-IT (360) é específico da Mawi Pro (migration 083) — nunca aparece pra outra organização.
+  const facilitEnabled = await fetchOrganizationFacilitEnabled(supabase, appUser.orgId)
 
   return (
     <div className="flex h-dvh overflow-hidden" style={{ background: '#0a0f1e' }}>
       {/* Sidebar fixa — só em desktop; em mobile vira drawer (MobileSidebar no header) */}
       <div className="hidden flex-shrink-0 lg:flex">
-        <Sidebar userEmail={email} role={appUser.role} unitId={appUser.unitId} managementMode={managementMode} />
+        <Sidebar userEmail={email} role={appUser.role} unitId={appUser.unitId} managementMode={managementMode} facilitEnabled={facilitEnabled} />
       </div>
 
       <div className="flex flex-1 flex-col overflow-hidden">
@@ -103,7 +106,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           }}
         >
           <div className="flex items-center gap-2">
-            <MobileSidebar userEmail={email} role={appUser.role} unitId={appUser.unitId} managementMode={managementMode} />
+            <MobileSidebar userEmail={email} role={appUser.role} unitId={appUser.unitId} managementMode={managementMode} facilitEnabled={facilitEnabled} />
             <img src="/branding/alizo-icon.png" alt="Alizo" className="h-6 w-auto" />
             <p className="text-[14px] font-black tracking-tight text-white">alizo</p>
             <span style={{ color: 'rgba(255,255,255,0.2)' }}>/</span>
@@ -168,6 +171,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
 
       {/* Kai acessível de qualquer tela do dashboard — painéis dedicados (onboarding, connect) continuam além deste */}
       {!appUser.isSuperAdmin && <KaiLauncher />}
+      <OfflineSyncManager />
     </div>
   )
 }

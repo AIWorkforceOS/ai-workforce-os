@@ -31,6 +31,8 @@ describe('GET /api/units/[id]/facilit/credentials', () => {
     // consegue verificar a ausência da senha aqui; só confirma os campos
     // esperados chegam.
     const { supabase } = authedSupabase({
+      units: [{ id: 'unit-1', org_id: 'org-1' }],
+      organizations: [{ id: 'org-1', facilit_integration_enabled: true }],
       facilit_credentials: [
         { id: 'cred-1', unit_id: 'unit-1', org_id: 'org-1', client_code: 'CC1', username: 'user1', password: 'segredo', is_active: true },
       ],
@@ -44,12 +46,26 @@ describe('GET /api/units/[id]/facilit/credentials', () => {
   })
 
   it('sem credencial cadastrada devolve null', async () => {
-    const { supabase } = authedSupabase({})
+    const { supabase } = authedSupabase({
+      units: [{ id: 'unit-1', org_id: 'org-1' }],
+      organizations: [{ id: 'org-1', facilit_integration_enabled: true }],
+    })
     const { GET } = await loadRoute(supabase)
 
     const res = await GET(new Request('http://localhost'), { params: Promise.resolve({ id: 'unit-1' }) })
     const body = await res.json()
     expect(body.credential).toBeNull()
+  })
+
+  it('org sem a integração habilitada: 404, mesmo com sessão válida', async () => {
+    const { supabase } = authedSupabase({
+      units: [{ id: 'unit-1', org_id: 'org-1' }],
+      organizations: [{ id: 'org-1', facilit_integration_enabled: false }],
+    })
+    const { GET } = await loadRoute(supabase)
+
+    const res = await GET(new Request('http://localhost'), { params: Promise.resolve({ id: 'unit-1' }) })
+    expect(res.status).toBe(404)
   })
 })
 
@@ -70,7 +86,10 @@ describe('POST /api/units/[id]/facilit/credentials', () => {
   })
 
   it('400 quando falta algum campo', async () => {
-    const { supabase } = authedSupabase({ units: [{ id: 'unit-1', org_id: 'org-1' }] })
+    const { supabase } = authedSupabase({
+      units: [{ id: 'unit-1', org_id: 'org-1' }],
+      organizations: [{ id: 'org-1', facilit_integration_enabled: true }],
+    })
     const { POST } = await loadRoute(supabase)
 
     const res = await POST(makeRequest({ clientCode: '', username: 'u', password: 'p' }), { params: Promise.resolve({ id: 'unit-1' }) })
@@ -78,7 +97,10 @@ describe('POST /api/units/[id]/facilit/credentials', () => {
   })
 
   it('salva a credencial nova', async () => {
-    const { supabase, db } = authedSupabase({ units: [{ id: 'unit-1', org_id: 'org-1' }] })
+    const { supabase, db } = authedSupabase({
+      units: [{ id: 'unit-1', org_id: 'org-1' }],
+      organizations: [{ id: 'org-1', facilit_integration_enabled: true }],
+    })
     const { POST } = await loadRoute(supabase)
 
     const res = await POST(makeRequest({ clientCode: 'CC1', username: 'user1', password: 'secret' }), { params: Promise.resolve({ id: 'unit-1' }) })
@@ -89,6 +111,7 @@ describe('POST /api/units/[id]/facilit/credentials', () => {
   it('trocar credenciais atualiza a linha existente (upsert por unit_id)', async () => {
     const { supabase, db } = authedSupabase({
       units: [{ id: 'unit-1', org_id: 'org-1' }],
+      organizations: [{ id: 'org-1', facilit_integration_enabled: true }],
       facilit_credentials: [{ id: 'cred-1', unit_id: 'unit-1', org_id: 'org-1', client_code: 'OLD', username: 'old', password: 'old-pass', is_active: true }],
     })
     const { POST } = await loadRoute(supabase)
@@ -97,5 +120,17 @@ describe('POST /api/units/[id]/facilit/credentials', () => {
 
     expect(db.facilit_credentials).toHaveLength(1)
     expect(db.facilit_credentials?.[0]).toMatchObject({ client_code: 'NEW', username: 'new', password: 'new-pass' })
+  })
+
+  it('org sem a integração habilitada: 404, não salva nada', async () => {
+    const { supabase, db } = authedSupabase({
+      units: [{ id: 'unit-1', org_id: 'org-1' }],
+      organizations: [{ id: 'org-1', facilit_integration_enabled: false }],
+    })
+    const { POST } = await loadRoute(supabase)
+
+    const res = await POST(makeRequest({ clientCode: 'CC1', username: 'user1', password: 'secret' }), { params: Promise.resolve({ id: 'unit-1' }) })
+    expect(res.status).toBe(404)
+    expect(db.facilit_credentials ?? []).toHaveLength(0)
   })
 })

@@ -1,5 +1,7 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { getAppUser } from '@/lib/app-user'
+import { fetchOrganizationFacilitEnabled } from '@/lib/organizations'
 import { PageHeader } from '@/components/ui/dashboard-ui'
 import { FacilitOrdersPanel } from '@/components/dashboard/facilit-orders-panel'
 import type { Unit } from '@/lib/types'
@@ -16,6 +18,11 @@ export const dynamic = 'force-dynamic'
 export default async function UnitFacilitPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
+
+  // Integração específica da Mawi Pro (migration 083) — some pra qualquer outra organização, mesmo por URL direta.
+  const appUser = await getAppUser()
+  const facilitEnabled = await fetchOrganizationFacilitEnabled(supabase, appUser?.orgId)
+  if (!facilitEnabled) notFound()
 
   const { data: unit } = await supabase.from('units').select('*').eq('id', id).single()
   if (!unit) notFound()

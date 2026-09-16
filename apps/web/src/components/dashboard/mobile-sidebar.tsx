@@ -17,11 +17,13 @@ export function MobileSidebar({
   role = 'admin',
   unitId = null,
   managementMode = 'digital_employees',
+  facilitEnabled = false,
 }: {
   userEmail: string
   role?: string
   unitId?: string | null
   managementMode?: ManagementMode
+  facilitEnabled?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
@@ -65,7 +67,14 @@ export function MobileSidebar({
 
           {/* Painel do drawer */}
           <div className="absolute inset-y-0 left-0 w-64" style={{ boxShadow: '8px 0 24px rgba(0,0,0,0.5)' }}>
-            <Sidebar userEmail={userEmail} role={role} unitId={unitId} managementMode={managementMode} onNavigate={() => setOpen(false)} />
+            <Sidebar
+              userEmail={userEmail}
+              role={role}
+              unitId={unitId}
+              managementMode={managementMode}
+              facilitEnabled={facilitEnabled}
+              onNavigate={() => setOpen(false)}
+            />
           </div>
 
           <button

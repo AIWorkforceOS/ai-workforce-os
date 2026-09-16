@@ -57,6 +57,7 @@ describe('GET /api/cron/facilit-sync', () => {
     const { supabase } = createFakeSupabase({
       facilit_credentials: [makeCredential()],
       units: [makeUnitRow()],
+      organizations: [{ id: 'org-1', facilit_integration_enabled: true }],
     })
     const { GET } = await loadRoute(supabase)
 
@@ -65,6 +66,21 @@ describe('GET /api/cron/facilit-sync', () => {
 
     expect(body).toEqual({ ok: true, synced: 1, imported: 3, errors: 0 })
     expect(syncFacilitOrdersForUnit).toHaveBeenCalledTimes(1)
+  })
+
+  it('pula unidades de organizações sem a integração habilitada (defesa em profundidade — a criação da credencial já é bloqueada)', async () => {
+    const { supabase } = createFakeSupabase({
+      facilit_credentials: [makeCredential()],
+      units: [makeUnitRow()],
+      organizations: [{ id: 'org-1', facilit_integration_enabled: false }],
+    })
+    const { GET } = await loadRoute(supabase)
+
+    const res = await GET(makeRequest())
+    const body = await res.json()
+
+    expect(body).toEqual({ ok: true, synced: 0, imported: 0, errors: 0 })
+    expect(syncFacilitOrdersForUnit).not.toHaveBeenCalled()
   })
 
   it('ignora credenciais inativas', async () => {
@@ -86,6 +102,7 @@ describe('GET /api/cron/facilit-sync', () => {
     const { supabase } = createFakeSupabase({
       facilit_credentials: [makeCredential()],
       units: [makeUnitRow()],
+      organizations: [{ id: 'org-1', facilit_integration_enabled: true }],
     })
     const { GET } = await loadRoute(supabase)
 

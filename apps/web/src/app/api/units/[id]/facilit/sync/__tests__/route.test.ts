@@ -35,7 +35,10 @@ describe('POST /api/units/[id]/facilit/sync', () => {
   })
 
   it('400 sem credencial cadastrada', async () => {
-    const { supabase } = authedSupabase({ units: [{ id: 'unit-1', org_id: 'org-1', timezone: 'America/Phoenix' }] })
+    const { supabase } = authedSupabase({
+      units: [{ id: 'unit-1', org_id: 'org-1', timezone: 'America/Phoenix' }],
+      organizations: [{ id: 'org-1', facilit_integration_enabled: true }],
+    })
     const { POST } = await loadRoute(supabase)
 
     const res = await POST(new Request('http://localhost', { method: 'POST' }), { params: Promise.resolve({ id: 'unit-1' }) })
@@ -47,6 +50,7 @@ describe('POST /api/units/[id]/facilit/sync', () => {
     syncFacilitOrdersForUnit.mockResolvedValue({ found: 2, imported: 2, error: null, skipped: [] })
     const { supabase } = authedSupabase({
       units: [{ id: 'unit-1', org_id: 'org-1', timezone: 'America/Phoenix' }],
+      organizations: [{ id: 'org-1', facilit_integration_enabled: true }],
       facilit_credentials: [{ id: 'cred-1', unit_id: 'unit-1', org_id: 'org-1', client_code: 'CC1', username: 'u', password: 'p', is_active: true }],
     })
     const { POST } = await loadRoute(supabase)
@@ -62,11 +66,25 @@ describe('POST /api/units/[id]/facilit/sync', () => {
     syncFacilitOrdersForUnit.mockResolvedValue({ imported: 0, error: 'Login na Facil-IT falhou' })
     const { supabase } = authedSupabase({
       units: [{ id: 'unit-1', org_id: 'org-1', timezone: 'America/Phoenix' }],
+      organizations: [{ id: 'org-1', facilit_integration_enabled: true }],
       facilit_credentials: [{ id: 'cred-1', unit_id: 'unit-1', org_id: 'org-1', client_code: 'CC1', username: 'u', password: 'p', is_active: true }],
     })
     const { POST } = await loadRoute(supabase)
 
     const res = await POST(new Request('http://localhost', { method: 'POST' }), { params: Promise.resolve({ id: 'unit-1' }) })
     expect(res.status).toBe(502)
+  })
+
+  it('org sem a integração habilitada: 404, mesmo com credencial cadastrada', async () => {
+    const { supabase } = authedSupabase({
+      units: [{ id: 'unit-1', org_id: 'org-1', timezone: 'America/Phoenix' }],
+      organizations: [{ id: 'org-1', facilit_integration_enabled: false }],
+      facilit_credentials: [{ id: 'cred-1', unit_id: 'unit-1', org_id: 'org-1', client_code: 'CC1', username: 'u', password: 'p', is_active: true }],
+    })
+    const { POST } = await loadRoute(supabase)
+
+    const res = await POST(new Request('http://localhost', { method: 'POST' }), { params: Promise.resolve({ id: 'unit-1' }) })
+    expect(res.status).toBe(404)
+    expect(syncFacilitOrdersForUnit).not.toHaveBeenCalled()
   })
 })

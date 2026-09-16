@@ -654,6 +654,8 @@ export type Organization = {
   owner_email: string | null
   /** true só para organizações clientes/franquias da Smarter Estágios — controla se o sourcing usa a API de parceiros da Smarter (lib/recruiter/smarter-api.ts). */
   is_smarter_partner: boolean
+  /** true só pra Mawi Pro (migration 083) — libera o item de menu e as telas/rotas da integração Facil-IT (360), específica desse cliente. */
+  facilit_integration_enabled: boolean
   /** Chave do segmento de negócio (ver lib/verticals/catalog.ts), migration 025. Null = ainda não definido. */
   vertical_key: string | null
   /** Como o cliente usa o Alizo (migration 032), escolhido na configuração guiada. Null = não escolheu ainda (tratado como digital_employees). */

@@ -38,6 +38,8 @@ export type NavItem = {
   superOnly?: boolean
   /** visível apenas quando organizations.management_mode = 'full_management' */
   fullManagementOnly?: boolean
+  /** visível apenas quando organizations.facilit_integration_enabled = true (Mawi Pro, migration 083) — integração específica desse cliente */
+  facilitOnly?: boolean
 }
 
 // Arquitetura de navegação por OBJETIVO do usuário, não por tipo de
@@ -80,7 +82,7 @@ export const navGroups: { label: Record<Locale, string>; items: NavItem[] }[] = 
     items: [
       { href: '/dashboard/agenda', label: { pt: 'Agenda', en: 'Schedule' }, icon: CalendarDays, fullManagementOnly: true },
       { href: '/dashboard/operacao', label: { pt: 'Operação de serviços', en: 'Service operations' }, icon: ClipboardList },
-      { href: '/dashboard/facilit', label: { pt: 'Facil-IT (360)', en: 'Facil-IT (360)' }, icon: Link2 },
+      { href: '/dashboard/facilit', label: { pt: 'Facil-IT (360)', en: 'Facil-IT (360)' }, icon: Link2, facilitOnly: true },
     ],
   },
   {
@@ -133,10 +135,13 @@ export function getVisibleNavGroups({
   role = 'admin',
   unitId = null,
   managementMode = 'digital_employees',
+  facilitEnabled = false,
 }: {
   role?: string
   unitId?: string | null
   managementMode?: ManagementMode
+  /** organizations.facilit_integration_enabled (migration 083) — só Mawi Pro por enquanto */
+  facilitEnabled?: boolean
 }): { label: Record<Locale, string>; items: NavItem[] }[] {
   const isSuperAdmin = role === 'super_admin'
   const fullManagement = managementMode === 'full_management' && !isSuperAdmin
@@ -145,7 +150,12 @@ export function getVisibleNavGroups({
     .map((group) => ({
       ...group,
       items: group.items
-        .filter((item) => (isSuperAdmin || !item.superOnly) && (fullManagement || !item.fullManagementOnly))
+        .filter(
+          (item) =>
+            (isSuperAdmin || !item.superOnly) &&
+            (fullManagement || !item.fullManagementOnly) &&
+            (facilitEnabled || !item.facilitOnly),
+        )
         .map((item) => {
           // Dono de unidade não gerencia a lista de unidades — vai direto pra sua
           if (item.href === '/dashboard/units' && unitId) {

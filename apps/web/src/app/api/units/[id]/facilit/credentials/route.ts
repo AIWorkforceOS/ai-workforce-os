@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { fetchOrganizationFacilitEnabled } from '@/lib/organizations'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,6 +21,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   } = await supabase.auth.getUser()
   if (!user) {
     return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 })
+  }
+
+  const { data: unit } = await supabase.from('units').select('org_id').eq('id', id).single()
+  const facilitEnabled = await fetchOrganizationFacilitEnabled(supabase, unit?.org_id)
+  if (!facilitEnabled) {
+    return NextResponse.json({ error: 'Integração não disponível para esta unidade.' }, { status: 404 })
   }
 
   const { data } = await supabase
@@ -45,6 +52,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const { data: unit } = await supabase.from('units').select('id, org_id').eq('id', id).single()
   if (!unit?.org_id) {
     return NextResponse.json({ error: 'Unidade não encontrada.' }, { status: 404 })
+  }
+  const facilitEnabled = await fetchOrganizationFacilitEnabled(supabase, unit.org_id)
+  if (!facilitEnabled) {
+    return NextResponse.json({ error: 'Integração não disponível para esta unidade.' }, { status: 404 })
   }
 
   const body = await request.json().catch(() => null)

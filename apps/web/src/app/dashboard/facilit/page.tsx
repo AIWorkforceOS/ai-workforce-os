@@ -1,8 +1,9 @@
 import Link from 'next/link'
-import { redirect } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { Link2, MapPin } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { getAppUser } from '@/lib/app-user'
+import { fetchOrganizationFacilitEnabled } from '@/lib/organizations'
 import { Card, EmptyState, PageHeader } from '@/components/ui/dashboard-ui'
 
 type UnitRow = {
@@ -21,11 +22,16 @@ type UnitRow = {
  */
 export default async function FacilitHubPage() {
   const appUser = await getAppUser()
+
+  const supabase = await createClient()
+  // Integração específica da Mawi Pro (migration 083) — some pra qualquer outra organização, mesmo por URL direta.
+  const facilitEnabled = await fetchOrganizationFacilitEnabled(supabase, appUser?.orgId)
+  if (!facilitEnabled) notFound()
+
   if (appUser?.unitId) {
     redirect(`/dashboard/units/${appUser.unitId}/facilit`)
   }
 
-  const supabase = await createClient()
   const { data } = await supabase
     .from('units')
     .select('id, name, region_city, region_state, organizations(name)')

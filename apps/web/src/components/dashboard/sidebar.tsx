@@ -19,6 +19,7 @@ export function Sidebar({
   role = 'admin',
   unitId = null,
   managementMode = 'digital_employees',
+  facilitEnabled = false,
   onNavigate,
 }: {
   userEmail: string
@@ -27,6 +28,8 @@ export function Sidebar({
   unitId?: string | null
   /** organizations.management_mode efetivo — full_management libera Clientes/Agenda além do que todo modo já tem */
   managementMode?: ManagementMode
+  /** organizations.facilit_integration_enabled (migration 083) — só Mawi Pro por enquanto */
+  facilitEnabled?: boolean
   /** chamado ao clicar num link — usado pelo drawer mobile pra fechar */
   onNavigate?: () => void
 }) {
@@ -34,7 +37,7 @@ export function Sidebar({
   const router = useRouter()
   const locale = useLocale()
 
-  const visibleGroups = getVisibleNavGroups({ role, unitId, managementMode })
+  const visibleGroups = getVisibleNavGroups({ role, unitId, managementMode, facilitEnabled })
 
   async function handleSignOut() {
     const supabase = createClient()

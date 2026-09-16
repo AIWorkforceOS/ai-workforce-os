@@ -42,7 +42,7 @@ describe('getVisibleNavGroups', () => {
   })
 
   it('dono de unidade (unitId setado) recebe hrefs escopados à própria unidade', () => {
-    const groups = getVisibleNavGroups({ role: 'admin', managementMode: 'full_management', unitId: 'unit-123' })
+    const groups = getVisibleNavGroups({ role: 'admin', managementMode: 'full_management', unitId: 'unit-123', facilitEnabled: true })
     const flatItems = groups.flatMap((g) => g.items)
 
     const units = flatItems.find((i) => i.href === '/dashboard/units/unit-123')
@@ -60,9 +60,19 @@ describe('getVisibleNavGroups', () => {
     expect(flatItems.some((i) => i.href === '/dashboard/facilit')).toBe(false)
   })
 
-  it('Facil-IT (360) aparece no menu de Agenda e Operação pra qualquer admin (hub multi-unidade sem unitId)', () => {
+  it('Facil-IT (360) é específico da Mawi Pro — some do menu de qualquer outra organização por padrão', () => {
     const hrefs = allHrefs(getVisibleNavGroups({ role: 'admin' }))
+    expect(hrefs).not.toContain('/dashboard/facilit')
+  })
+
+  it('Facil-IT (360) aparece só quando organizations.facilit_integration_enabled = true', () => {
+    const hrefs = allHrefs(getVisibleNavGroups({ role: 'admin', facilitEnabled: true }))
     expect(hrefs).toContain('/dashboard/facilit')
+  })
+
+  it('Facil-IT (360) some mesmo com unitId + facilitEnabled=false (dono de unidade de outra org)', () => {
+    const hrefs = allHrefs(getVisibleNavGroups({ role: 'admin', unitId: 'unit-123', facilitEnabled: false }))
+    expect(hrefs).not.toContain('/dashboard/units/unit-123/facilit')
   })
 
   it('Conteúdo e SEO aparecem no menu de Marketing (deixam de ser rotas órfãs)', () => {

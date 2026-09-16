@@ -49,6 +49,23 @@ export async function fetchOrganizationManagementMode(
 }
 
 /**
+ * Busca organizations.facilit_integration_enabled (migration 083) —
+ * integração com a Facil-IT é específica do cliente Mawi Pro, não deve
+ * aparecer pra nenhuma outra organização. Best-effort no mesmo espírito
+ * das funções acima: org sem coluna ainda (migration não aplicada),
+ * erro ou org inexistente caem em `false` — nunca lança, e "escondido
+ * por padrão" é o lado seguro de um feature flag deste tipo.
+ */
+export async function fetchOrganizationFacilitEnabled(
+  supabase: SupabaseClient,
+  orgId: string | null | undefined,
+): Promise<boolean> {
+  if (!orgId) return false
+  const { data } = await supabase.from('organizations').select('facilit_integration_enabled').eq('id', orgId).maybeSingle()
+  return (data as { facilit_integration_enabled?: boolean | null } | null)?.facilit_integration_enabled ?? false
+}
+
+/**
  * Busca a Ficha da Empresa compartilhada (organizations.business_profile,
  * migration 025) para compor os prompts dos 4 funcionários digitais junto
  * com a ficha específica de cada um (ver buildCombinedBusinessContext em
