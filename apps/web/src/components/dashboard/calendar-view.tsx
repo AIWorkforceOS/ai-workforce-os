@@ -13,7 +13,7 @@ import { BulkServiceOrderImportModal } from '@/components/dashboard/bulk-service
 import { Badge, Card, StatusPill, type BadgeVariant } from '@/components/ui/dashboard-ui'
 import { CLIENT_PORTAL_SOURCE } from '@/lib/portal-360/constants'
 import { FACILIT_SYNC_SOURCE } from '@/lib/facilit-appointment'
-import { effectiveDisplayStatus } from '@/lib/scheduling/appointment-display-status'
+import { effectiveDisplayStatus, type EffectiveDisplayStatus } from '@/lib/scheduling/appointment-display-status'
 import type {
   Appointment,
   AppointmentStatus,
@@ -36,20 +36,22 @@ type ModalState =
   | { mode: 'service-order'; appointment: AppointmentWithRelations }
   | { mode: 'bulk-import' }
 
-const STATUS_VARIANT: Record<AppointmentStatus, BadgeVariant> = {
+const STATUS_VARIANT: Record<EffectiveDisplayStatus, BadgeVariant> = {
   scheduled: 'cyan',
   confirmed: 'blue',
   completed: 'green',
   cancelled: 'slate',
   no_show: 'red',
+  quote: 'purple',
 }
 
-const STATUS_LABEL: Record<AppointmentStatus, string> = {
+const STATUS_LABEL: Record<EffectiveDisplayStatus, string> = {
   scheduled: 'Agendado',
   confirmed: 'Confirmado',
   completed: 'Concluído',
   cancelled: 'Cancelado',
   no_show: 'Faltou',
+  quote: 'Cotação',
 }
 
 const ACTIVE_STATUSES: AppointmentStatus[] = ['scheduled', 'confirmed']
