@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { facilitLogin, fetchFacilitOrders, mapFacilitOrder, filterOrdersForTodayAndTomorrow, FacilitAuthError, type MappedFacilitOrder } from './facilit'
+import { facilitLogin, fetchFacilitOrders, mapFacilitOrder, filterOutPastOrders, FacilitAuthError, type MappedFacilitOrder } from './facilit'
 import { buildFacilitAppointmentInsertRow, FACILIT_CUSTOMER_COMPANY_NAME } from './facilit-appointment'
 import { summarizeFacilitOrderForTechnician } from './facilit-summary'
 import { logSystemEvent } from './system-events'
@@ -17,12 +17,14 @@ export type FacilitCredentialRow = {
 
 /**
  * Motivo de uma ordem NÃO ter virado appointment nesta sync — sem isso o
- * drop é silencioso (mapFacilitOrder e filterOrdersForTodayAndTomorrow só
- * excluem, nunca lançam erro). Descoberto em produção (Mawi Pro,
- * 2026-09-15): de 5 ordens reais só 4 entraram, sem nenhum sinal de qual
- * ficou de fora ou por quê.
+ * drop é silencioso (mapFacilitOrder e filterOutPastOrders só excluem,
+ * nunca lançam erro). Descoberto em produção (Mawi Pro, 2026-09-15): de
+ * 5 ordens reais só 4 entraram, sem nenhum sinal de qual ficou de fora
+ * ou por quê. `ordem_do_passado` é o único motivo de data hoje (antes
+ * era "fora de hoje/amanhã" — revisado a pedido do Vinicius, 2026-09-16:
+ * qualquer data futura entra, só o passado fica de fora).
  */
-export type FacilitSyncSkipReason = 'sem_numero_ordem' | 'fora_de_hoje_amanha' | 'falha_ao_salvar'
+export type FacilitSyncSkipReason = 'sem_numero_ordem' | 'ordem_do_passado' | 'falha_ao_salvar'
 export type FacilitSyncSkip = {
   orderNumber: string | null
   /** Vendor PO# / Client PO# — é isso que aparece como "número da ordem" na tela do app da Facil-IT, não o `orderNumber` interno. */
@@ -166,7 +168,7 @@ export async function syncFacilitOrdersForUnit(
       }
     }
 
-    const due = filterOrdersForTodayAndTomorrow(mapped, unit.timezone)
+    const due = filterOutPastOrders(mapped, unit.timezone)
     const dueOrderNumbers = new Set(due.map((o) => o.facilit_order_number))
     for (const order of mapped) {
       if (!dueOrderNumbers.has(order.facilit_order_number)) {
@@ -175,7 +177,7 @@ export async function syncFacilitOrdersForUnit(
           poNumber: order.po_number,
           clientPo: order.client_po,
           company: order.company,
-          reason: 'fora_de_hoje_amanha',
+          reason: 'ordem_do_passado',
           detail: order.visit_date ? `visita em ${order.visit_date}` : 'sem data de visita reconhecida',
         })
       }

@@ -190,19 +190,25 @@ export function mapFacilitOrder(raw: FacilitRawOrder): MappedFacilitOrder | null
 }
 
 /**
- * Só hoje + amanhã no fuso da unidade — o pedido foi "buscar as ordens do
- * dia e dia seguinte", não o histórico inteiro. Ordem sem visit_date
- * reconhecido fica de fora (não tem como saber se é "hoje").
+ * Hoje em diante, sem limite superior — revisado a pedido do Vinicius
+ * (2026-09-16): "todas as ordens com datas futuras ele precisa puxar,
+ * apenas as com datas passadas [não]". Antes só trazia hoje+amanhã (o
+ * pedido original, "buscar as ordens do dia e dia seguinte"), mas uma
+ * ordem marcada pra 2 semanas na frente também precisa entrar — e
+ * entra já agendada na Agenda pra data real da visita (buildFacilitAppointmentInsertRow
+ * usa order.visit_date direto, nunca força "hoje"). Só ordem do
+ * PASSADO ou sem visit_date reconhecido fica de fora — reimportar uma
+ * ordem já trazida antes continua não duplicando nada (dedup por
+ * unit_id+facilit_order_number em facilit_work_orders, ver
+ * facilit-sync.ts), então isso roda toda sincronização sem medo de
+ * trazer histórico repetido.
  */
-export function filterOrdersForTodayAndTomorrow(orders: MappedFacilitOrder[], timezone: string): MappedFacilitOrder[] {
+export function filterOutPastOrders(orders: MappedFacilitOrder[], timezone: string): MappedFacilitOrder[] {
   const today = todayInTimezone(timezone)
-  const tomorrowDate = new Date(`${today}T12:00:00Z`)
-  tomorrowDate.setUTCDate(tomorrowDate.getUTCDate() + 1)
-  const tomorrowStr = tomorrowDate.toISOString().slice(0, 10)
 
   return orders.filter((order) => {
     if (!order.visit_date) return false
     const visitDay = new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(new Date(order.visit_date))
-    return visitDay === today || visitDay === tomorrowStr
+    return visitDay >= today
   })
 }

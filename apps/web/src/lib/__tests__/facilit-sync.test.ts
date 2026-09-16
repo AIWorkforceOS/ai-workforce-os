@@ -186,14 +186,14 @@ describe('syncFacilitOrdersForUnit', () => {
     expect(db.facilit_work_orders?.[0]).toMatchObject({ status: 'In Progress', appointment_id: 'appt-existing' })
   })
 
-  it('ordem sem orderNumber ou fora de hoje/amanhã aparece em `skipped` em vez de sumir sem explicação (bug real: 5 ordens na Facil-IT, só 4 chegaram na Agenda)', async () => {
+  it('ordem sem orderNumber ou do passado aparece em `skipped` em vez de sumir sem explicação (bug real: 5 ordens na Facil-IT, só 4 chegaram na Agenda)', async () => {
     global.fetch = vi.fn(async (url: unknown) => {
       const u = String(url)
       if (u.includes('/devices')) return new Response(JSON.stringify({ token: 'tok-123' }), { status: 200 })
       return new Response(
         JSON.stringify([
           { orderNumber: '1', company: 'Loja A', visitDate: '2026-09-10T20:00:00Z' }, // hoje — entra
-          { orderNumber: '2', company: 'Loja B', visitDate: '2026-09-20T20:00:00Z' }, // fora do range — some
+          { orderNumber: '2', company: 'Loja B', visitDate: '2026-09-05T20:00:00Z' }, // já passou — some
           { company: 'Loja C, sem número de ordem' }, // sem orderNumber — some
         ]),
         { status: 200 },
@@ -214,7 +214,7 @@ describe('syncFacilitOrdersForUnit', () => {
     expect(result.skipped).toHaveLength(2)
     expect(result.skipped).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ orderNumber: '2', reason: 'fora_de_hoje_amanha' }),
+        expect.objectContaining({ orderNumber: '2', reason: 'ordem_do_passado' }),
         expect.objectContaining({ orderNumber: null, company: 'Loja C, sem número de ordem', reason: 'sem_numero_ordem' }),
       ]),
     )

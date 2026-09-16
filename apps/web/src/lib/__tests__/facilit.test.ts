@@ -3,7 +3,7 @@ import {
   facilitLogin,
   fetchFacilitOrders,
   mapFacilitOrder,
-  filterOrdersForTodayAndTomorrow,
+  filterOutPastOrders,
   FacilitAuthError,
   type MappedFacilitOrder,
 } from '../facilit'
@@ -164,7 +164,7 @@ describe('mapFacilitOrder', () => {
   })
 })
 
-describe('filterOrdersForTodayAndTomorrow', () => {
+describe('filterOutPastOrders', () => {
   const TZ = 'America/Phoenix' // sem DST, deixa o teste estável
 
   function order(visitDate: string | null): MappedFacilitOrder {
@@ -192,22 +192,27 @@ describe('filterOrdersForTodayAndTomorrow', () => {
     }
   }
 
-  it('mantém ordens de hoje e amanhã, descarta o resto', () => {
+  // Revisado a pedido do Vinicius (2026-09-16): "todas as ordens com datas
+  // futuras ele precisa puxar, apenas as com datas passadas [não]" — antes
+  // só trazia hoje+amanhã; agora traz hoje em diante, sem limite superior,
+  // e só descarta o passado.
+  it('mantém hoje e qualquer data futura (mesmo semanas na frente), descarta só o passado e datas não reconhecidas', () => {
     const now = new Date('2026-09-10T18:00:00Z') // 11h da manhã em Phoenix
     vi.useFakeTimers()
     vi.setSystemTime(now)
 
     const orders = [
-      order('2026-09-10T20:00:00Z'), // hoje
-      order('2026-09-11T20:00:00Z'), // amanhã
-      order('2026-09-12T20:00:00Z'), // depois de amanhã — fora
+      order('2026-09-10T20:00:00Z'), // hoje — entra
+      order('2026-09-11T20:00:00Z'), // amanhã — entra
+      order('2026-09-12T20:00:00Z'), // depois de amanhã — entra (antes ficava de fora)
+      order('2026-09-24T20:00:00Z'), // 2 semanas na frente — entra
       order('2026-09-09T20:00:00Z'), // ontem — fora
       order(null), // sem data — fora
     ]
 
-    const result = filterOrdersForTodayAndTomorrow(orders, TZ)
+    const result = filterOutPastOrders(orders, TZ)
 
-    expect(result).toHaveLength(2)
+    expect(result).toHaveLength(4)
     vi.useRealTimers()
   })
 })

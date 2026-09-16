@@ -29,7 +29,7 @@ type FacilitSyncSkip = {
 
 const SKIP_REASON_LABEL: Record<string, string> = {
   sem_numero_ordem: 'sem número de ordem identificável',
-  fora_de_hoje_amanha: 'não é de hoje nem de amanhã',
+  ordem_do_passado: 'data da visita já passou',
   falha_ao_salvar: 'falha ao salvar',
 }
 
