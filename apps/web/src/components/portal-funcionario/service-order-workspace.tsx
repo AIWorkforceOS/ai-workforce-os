@@ -52,7 +52,14 @@ async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
  * (lib/service-orders/finalize.ts) — este componente só reorganiza a
  * UI num fluxo de tela única, não muda a regra de negócio.
  */
-export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppointment }) {
+export function ServiceOrderWorkspace({
+  appointment,
+  onSaved,
+}: {
+  appointment: PortalAppointment
+  /** chamado depois de um salvamento confirmado no servidor (não nas fotos-only nem no fallback offline) — pedido do Vinicius (2026-09-16): admin também usa este componente (via ServiceOrderAttachModal) e precisa que a lista da Agenda atualize ao fechar. */
+  onSaved?: () => void
+}) {
   const [appt, setAppt] = useState(appointment)
   const [signedBy, setSignedBy] = useState(appt.service_order_signed_by ?? '')
   const [status, setStatus] = useState<'completed' | 'quote'>(appt.service_order_status === 'quote' ? 'quote' : 'completed')
@@ -144,6 +151,7 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
       setAppt((prev) => ({ ...prev, ...(data.appointment as ServiceOrderPatch) }))
       clear()
       setSectionSuccess(section)
+      onSaved?.()
     } catch {
       // Sem internet no momento: guarda localmente em vez de perder as fotos —
       // pedido do Vinicius (2026-09-15). A sincronização automática (ver
@@ -233,6 +241,7 @@ export function ServiceOrderWorkspace({ appointment }: { appointment: PortalAppo
       setAppt((prev) => ({ ...prev, ...patch }))
       setSuccess(true)
       clearForm()
+      onSaved?.()
     } catch {
       // Sem internet no momento: guarda localmente (fotos + assinatura + campos
       // preenchidos) em vez de perder o trabalho — pedido do Vinicius

@@ -8,6 +8,8 @@ import { downloadFile } from '@/lib/download-file'
 import { Badge, Card, Input, Label, Textarea, type BadgeVariant } from '@/components/ui/dashboard-ui'
 import type { AppointmentWithRelations } from '@/components/dashboard/calendar-view'
 import { QuoteBuilderPanel } from '@/components/service-orders/quote-builder-panel'
+import { ServiceOrderWorkspace } from '@/components/portal-funcionario/service-order-workspace'
+import type { PortalAppointment } from '@/lib/portal-funcionario/data'
 
 const FILE_MAX_BYTES = 15 * 1024 * 1024
 const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
@@ -26,6 +28,45 @@ const SERVICE_ORDER_STATUS_VARIANT: Record<string, BadgeVariant> = {
 
 function formatCurrencyBrl(value: number): string {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
+/**
+ * Adapta AppointmentWithRelations (formato do painel do admin) pro
+ * shape que ServiceOrderWorkspace espera (PortalAppointment, formato
+ * do Portal do Funcionário) — pedido do Vinicius (2026-09-16): "o
+ * painel admin também deve conseguir concluir uma ordem... igual o
+ * técnico". Reaproveita o componente inteiro (assinatura, fotos,
+ * orçamento) em vez de duplicar esse formulário — mesma rota PATCH já
+ * autoriza admin normalmente (RLS appointments_write cobre qualquer
+ * coluna pra is_org_admin(), mais ampla que a policy do funcionário).
+ */
+function toPortalAppointment(appointment: AppointmentWithRelations): PortalAppointment {
+  return {
+    id: appointment.id,
+    unit_id: appointment.unit_id,
+    starts_at: appointment.starts_at,
+    ends_at: appointment.ends_at,
+    status: appointment.status,
+    address: appointment.address,
+    notes: appointment.notes,
+    customers: appointment.customer ? { name: appointment.customer.name } : null,
+    services: appointment.service ? { name: appointment.service.name } : null,
+    service_order_number: appointment.service_order_number,
+    service_order_file_url: appointment.service_order_file_url,
+    service_order_file_name: appointment.service_order_file_name,
+    service_order_summary_pt: appointment.service_order_summary_pt,
+    service_order_scope_en: appointment.service_order_scope_en,
+    service_order_status: appointment.service_order_status,
+    service_order_signed_by: appointment.service_order_signed_by,
+    service_order_signed_at: appointment.service_order_signed_at,
+    service_order_location_name: appointment.service_order_location_name,
+    service_order_signature_url: appointment.service_order_signature_url,
+    service_order_part_purchase_link: appointment.service_order_part_purchase_link,
+    service_order_material_description: appointment.service_order_material_description,
+    service_order_material_value: appointment.service_order_material_value,
+    service_order_hours_needed: appointment.service_order_hours_needed,
+    service_order_photos: appointment.service_order_photos,
+  }
 }
 
 /** Botão pequeno de baixar — usado em cima de cada anexo (foto, assinatura, arquivo original) pro admin conseguir salvar tudo localmente, não só visualizar. */
@@ -232,6 +273,7 @@ export function ServiceOrderAttachModal({
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const [showExecute, setShowExecute] = useState(false)
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const selected = event.target.files?.[0]
@@ -539,6 +581,27 @@ export function ServiceOrderAttachModal({
             </div>
 
             <TechnicianReportSection unitId={unitId} appointment={appointment} />
+
+            <div className="flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={() => setShowExecute((v) => !v)}
+                className="flex w-fit items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-indigo-300 transition-colors hover:text-indigo-200"
+                style={{ background: 'rgba(129,140,248,0.08)', border: '1px solid rgba(129,140,248,0.25)' }}
+              >
+                <UserCheck size={13} />
+                {showExecute ? 'Ocultar execução da ordem' : 'Executar esta ordem (assinatura, fotos, orçamento)'}
+              </button>
+              {showExecute && (
+                <div className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  <p className="mb-3 text-xs text-slate-400">
+                    Mesmo formulário do técnico no Portal do Funcionário — use quando você (o admin) precisar coletar a
+                    assinatura do gerente, tirar as fotos ou preencher o orçamento em vez do técnico.
+                  </p>
+                  <ServiceOrderWorkspace appointment={toPortalAppointment(appointment)} onSaved={onSaved} />
+                </div>
+              )}
+            </div>
 
             {appointment.service_order_status === 'quote' && (
               <div className="flex flex-col gap-3 rounded-xl p-4" style={{ background: 'rgba(129,140,248,0.06)', border: '1px solid rgba(129,140,248,0.18)' }}>
