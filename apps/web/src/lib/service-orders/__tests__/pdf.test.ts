@@ -239,7 +239,7 @@ describe('generateServiceOrderPdf — Sign Off Sheet fixo', () => {
     expect(raw).not.toContain('Maria Gerente')
   })
 
-  it('embute a imagem da assinatura quando o download funciona', async () => {
+  it('embute a imagem da assinatura quando o download funciona, e acrescenta a 2ª página só com a assinatura', async () => {
     readFileSyncMock.mockImplementation(() => {
       throw new Error('ENOENT')
     })
@@ -248,6 +248,35 @@ describe('generateServiceOrderPdf — Sign Off Sheet fixo', () => {
       appointment: { ...baseAppointment, service_order_signature_url: 'https://example.com/assinatura.png' },
     })
     expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+    const reloaded = await PDFDocument.load(buffer)
+    // Pedido do Vinicius (2026-09-16): 2ª página extra, só com a assinatura, pra anexar em outro documento.
+    expect(reloaded.getPageCount()).toBe(2)
+  })
+
+  it('a página extra da assinatura fica 100% em branco (sem cabeçalho, rodapé ou numeração)', async () => {
+    readFileSyncMock.mockImplementation(() => {
+      throw new Error('ENOENT')
+    })
+    stubFetchWithPng(makeSolidPng(300, 100))
+    const buffer = await generateServiceOrderPdf({
+      appointment: { ...baseAppointment, service_order_signature_url: 'https://example.com/assinatura.png' },
+    })
+    const reloaded = await PDFDocument.load(buffer)
+    expect(reloaded.getPageCount()).toBe(2)
+    const raw = extractStreamText(buffer)
+    // "Page 1 of 1" (não "of 2") confirma que o rodapé de numeração só passou pela página 1 — a
+    // página extra da assinatura nunca entra no array `pages` usado pro loop do rodapé.
+    expect(raw).toContain('Page 1 of 1')
+    expect(raw).not.toContain('Page 2 of')
+  })
+
+  it('sem assinatura nenhuma, não cria a página extra (nada pra mostrar nela)', async () => {
+    readFileSyncMock.mockImplementation(() => {
+      throw new Error('ENOENT')
+    })
+    const buffer = await generateServiceOrderPdf({
+      appointment: { ...baseAppointment, service_order_signature_url: null },
+    })
     const reloaded = await PDFDocument.load(buffer)
     expect(reloaded.getPageCount()).toBe(1)
   })

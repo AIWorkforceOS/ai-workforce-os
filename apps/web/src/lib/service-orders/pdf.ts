@@ -402,6 +402,25 @@ export async function generateServiceOrderPdf(params: { appointment: ServiceOrde
     drawRight(p, `Page ${i + 1} of ${pages.length}`, font, 7.5, MUTED, CONTENT_RIGHT, OUTER_MARGIN + 14)
   })
 
+  // ---------------------------------------------------------------
+  // PÁGINA EXTRA, só a assinatura — pedido do Vinicius (2026-09-16):
+  // "algumas ordens precisamos colocar essa assinatura em outro
+  // documento para enviar para o cliente final". Página 100% em branco
+  // (sem cabeçalho, sem rodapé, sem numeração — por isso fica de fora
+  // do array `pages` usado no loop do rodapé acima), só com a imagem
+  // centralizada, maior que na página 1 pra facilitar recortar/anexar.
+  // Sem assinatura, não tem o que essa página mostraria — nem é criada.
+  // ---------------------------------------------------------------
+  if (signatureImage) {
+    const sigPage = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+    const maxW = PAGE_WIDTH - MARGIN * 2
+    const maxH = 260
+    const scale = Math.min(maxW / signatureImage.width, maxH / signatureImage.height, 2)
+    const w = signatureImage.width * scale
+    const h = signatureImage.height * scale
+    sigPage.drawImage(signatureImage, { x: (PAGE_WIDTH - w) / 2, y: (PAGE_HEIGHT - h) / 2, width: w, height: h })
+  }
+
   const bytes = await doc.save()
   return Buffer.from(bytes)
 }
