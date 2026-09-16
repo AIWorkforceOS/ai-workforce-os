@@ -1,16 +1,16 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { CalendarPlus, ClipboardList, MapPin, Trash2, Upload } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { localDateString, zonedTimeToUtc } from '@/lib/slot-engine'
 import { addDays } from '@/lib/calendar-dates'
-import { nextOccurrenceAfter, RECURRENCE_PILL_LABEL, type RecurrenceType } from '@/lib/scheduling/recurrence'
+import { RECURRENCE_PILL_LABEL } from '@/lib/scheduling/recurrence'
 import { AppointmentFormModal } from '@/components/dashboard/appointment-form-modal'
 import { ServiceOrderAttachModal } from '@/components/dashboard/service-order-attach-modal'
 import { BulkServiceOrderImportModal } from '@/components/dashboard/bulk-service-order-import-modal'
 import { Badge, Card, StatusPill, type BadgeVariant } from '@/components/ui/dashboard-ui'
-import { computeSuggestedPay } from '@/lib/service-pay'
 import { CLIENT_PORTAL_SOURCE } from '@/lib/portal-360/constants'
 import { FACILIT_SYNC_SOURCE } from '@/lib/facilit-appointment'
 import { effectiveDisplayStatus } from '@/lib/scheduling/appointment-display-status'
@@ -140,6 +140,7 @@ export function CalendarView({
 }) {
   const [appointments, setAppointments] = useState<AppointmentWithRelations[]>(initialAppointments)
   const [modal, setModal] = useState<ModalState | null>(null)
+  const router = useRouter()
   const [busyId, setBusyId] = useState<string | null>(null)
   const [rowError, setRowError] = useState<string | null>(null)
 
@@ -233,82 +234,17 @@ export function CalendarView({
   }
 
   /**
-   * Concluir = o serviço aconteceu. Além do status, lança o registro em
-   * service_records (valor cobrado = preço do serviço; valor a pagar =
-   * default do profissional) — a base da folha operacional na tela
-   * Operação. O índice único por appointment_id garante que concluir
-   * duas vezes nunca duplica o lançamento.
+   * Concluir = o serviço aconteceu, e fechar isso sempre envolve decidir
+   * quem atendeu de fato, quanto cobrar e quanto pagar — pedido do
+   * Vinicius (2026-09-16): em vez de lançar tudo sozinho (sugestão
+   * automática, sem revisão), "Concluir" leva pra Operação com o
+   * formulário já preenchido (técnico, valores sugeridos, nº da ordem
+   * na descrição) pra revisar/ajustar antes de confirmar — é lá que
+   * status/service_records/recorrência de fato são gravados (ver
+   * handleRecordSubmit em service-operations-panel.tsx).
    */
-  async function handleComplete(appointment: AppointmentWithRelations) {
-    if (!window.confirm(`Concluir o atendimento de ${appointment.customer?.name ?? 'cliente'}? O serviço será lançado na Operação.`)) return
-    setRowError(null)
-    setBusyId(appointment.id)
-    const supabase = createClient()
-    const { error } = await supabase.from('appointments').update({ status: 'completed' }).eq('id', appointment.id)
-    if (error) {
-      setBusyId(null)
-      setRowError('Não foi possível concluir o atendimento.')
-      return
-    }
-
-    if (orgId) {
-      const service = services.find((s) => s.id === appointment.service_id) ?? null
-      const employee = employees.find((e) => e.id === appointment.employee_id) ?? null
-      // Valor combinado do atendimento (custom_fields.price) sobrepõe o preço
-      // de tabela do serviço — é o que vale pro financeiro.
-      const customPrice = Number((appointment.custom_fields as { price?: unknown } | null)?.price)
-      const amountCharged = Number.isFinite(customPrice) && customPrice > 0 ? customPrice : service?.price ?? null
-      const durationMinutes = Math.round(
-        (new Date(appointment.ends_at).getTime() - new Date(appointment.starts_at).getTime()) / 60000
-      )
-      // Falha aqui não desfaz a conclusão: o registro pode ser lançado manualmente na Operação
-      // (e o caso esperado de erro é o índice único, quando o registro já existe).
-      await supabase.from('service_records').insert({
-        org_id: orgId,
-        unit_id: unitId,
-        appointment_id: appointment.id,
-        employee_id: appointment.employee_id,
-        customer_id: appointment.customer_id,
-        service_id: appointment.service_id,
-        service_date: localDateString(new Date(appointment.starts_at), timezone),
-        amount_charged: amountCharged,
-        amount_due: computeSuggestedPay({ employee, amountCharged, durationMinutes }),
-      })
-
-      // Série semanal em uso não acaba: cada conclusão pendura +1 semana no
-      // fim da série (best-effort — se falhar, a série só para de crescer,
-      // e as 12 semanas geradas na criação continuam valendo).
-      if (appointment.recurrence_group_id) {
-        const { data: lastRows } = await supabase
-          .from('appointments')
-          .select('starts_at, ends_at')
-          .eq('recurrence_group_id', appointment.recurrence_group_id)
-          .neq('status', 'cancelled')
-          .order('starts_at', { ascending: false })
-          .limit(1)
-        const last = (lastRows ?? [])[0] as { starts_at: string; ends_at: string } | undefined
-        if (last && appointment.recurrence) {
-          const next = nextOccurrenceAfter(last, timezone, appointment.recurrence as RecurrenceType)
-          await supabase.from('appointments').insert({
-            org_id: orgId,
-            unit_id: unitId,
-            customer_id: appointment.customer_id,
-            service_id: appointment.service_id,
-            employee_id: appointment.employee_id,
-            address: appointment.address,
-            notes: appointment.notes,
-            custom_fields: appointment.custom_fields ?? {},
-            recurrence: appointment.recurrence,
-            recurrence_group_id: appointment.recurrence_group_id,
-            recurrence_days: appointment.recurrence_days,
-            ...next,
-          })
-        }
-      }
-    }
-
-    setBusyId(null)
-    await reload()
+  function handleComplete(appointment: AppointmentWithRelations) {
+    router.push(`/dashboard/units/${unitId}/operacao?completeAppointment=${appointment.id}`)
   }
 
   async function handleOnMyWay(appointment: AppointmentWithRelations) {

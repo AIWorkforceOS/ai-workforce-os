@@ -1,8 +1,10 @@
 'use client'
 
-import { useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { computeSuggestedPay, round2 } from '@/lib/service-pay'
+import { nextOccurrenceAfter, type RecurrenceType } from '@/lib/scheduling/recurrence'
 import { normalizeServiceRecurrence, projectedMonthlyRevenue } from '@/lib/scheduling/service-recurrence'
 import { defaultDateForMonth, todayInTimezone } from '@/lib/service-operations-month'
 import { isInvoiceOverdue } from '@/lib/invoice-status'
@@ -81,6 +83,31 @@ type RecordFormState = {
 
 type RecordEditFormState = RecordFormState
 
+/**
+ * "Concluir" na Agenda (calendar-view.tsx) não lança mais o serviço
+ * sozinho — leva pra aqui com o formulário pré-preenchido (técnico,
+ * valores sugeridos, nº da ordem na descrição) pra revisar antes de
+ * confirmar. Ver page.tsx (busca o agendamento e monta este objeto) e
+ * handleRecordSubmit abaixo (grava appointment_id + conclui o
+ * agendamento + estende a recorrência, só quando presente).
+ */
+export type PendingAppointmentCompletion = {
+  appointmentId: string
+  employeeId: string | null
+  customerId: string | null
+  serviceId: string | null
+  serviceDate: string
+  description: string
+  amountCharged: number | null
+  amountDue: number | null
+  address: string | null
+  notes: string | null
+  customFields: Record<string, unknown>
+  recurrence: RecurrenceType | null
+  recurrenceGroupId: string | null
+  recurrenceDays: string[] | null
+}
+
 type InvoiceFormState = {
   customer_id: string
   description: string
@@ -154,6 +181,7 @@ export function ServiceOperationsPanel({
   initialInvoices,
   initialPayments,
   initialBilling,
+  pendingCompletion = null,
 }: {
   unitId: string
   orgId: string
@@ -174,7 +202,10 @@ export function ServiceOperationsPanel({
   /** ledger de pagamentos parciais dos lançamentos acima (migration 055) */
   initialPayments: ServiceRecordPayment[]
   initialBilling: BillingIdentity
+  /** veio de "Concluir" na Agenda (?completeAppointment=), ver page.tsx */
+  pendingCompletion?: PendingAppointmentCompletion | null
 }) {
+  const router = useRouter()
   const intlLocale = currency === 'USD' ? 'en-US' : 'pt-BR'
   const fmtMoney = (value: number | null) =>
     value === null ? '—' : value.toLocaleString(intlLocale, { style: 'currency', currency })
@@ -198,9 +229,31 @@ export function ServiceOperationsPanel({
     amount_charged: '',
     amount_due: '',
   }
-  const [recordForm, setRecordForm] = useState<RecordFormState>(emptyRecordForm)
+  const [recordForm, setRecordForm] = useState<RecordFormState>(() =>
+    pendingCompletion
+      ? {
+          service_date: pendingCompletion.serviceDate,
+          employee_id: pendingCompletion.employeeId ?? employees[0]?.id ?? '',
+          customer_id: pendingCompletion.customerId ?? '',
+          service_id: pendingCompletion.serviceId ?? '',
+          description: pendingCompletion.description,
+          amount_charged: pendingCompletion.amountCharged != null ? String(pendingCompletion.amountCharged) : '',
+          amount_due: pendingCompletion.amountDue != null ? String(pendingCompletion.amountDue) : '',
+        }
+      : emptyRecordForm,
+  )
   /** true depois que o usuário mexeu manualmente no valor a pagar — a sugestão automática para de sobrescrever */
   const [amountDueTouched, setAmountDueTouched] = useState(false)
+  /** presente = veio de "Concluir" na Agenda — ao lançar, também conclui o agendamento e estende a recorrência (ver handleRecordSubmit). */
+  const [activeCompletion, setActiveCompletion] = useState<PendingAppointmentCompletion | null>(pendingCompletion)
+  const [completionDone, setCompletionDone] = useState(false)
+  const completionFormRef = useRef<HTMLFormElement>(null)
+
+  // Chega com o formulário já preenchido — leva o admin direto pra ele,
+  // sem precisar rolar a tela pra achar "Lançar serviço executado".
+  useEffect(() => {
+    if (pendingCompletion) completionFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [pendingCompletion])
   const [recordBusy, setRecordBusy] = useState(false)
   const [recordError, setRecordError] = useState<string | null>(null)
   const [recordRowBusyId, setRecordRowBusyId] = useState<string | null>(null)
@@ -257,6 +310,10 @@ export function ServiceOperationsPanel({
       .insert({
         org_id: orgId,
         unit_id: unitId,
+        // presente = este lançamento fecha um "Concluir" vindo da Agenda —
+        // o índice único por appointment_id garante que concluir duas vezes
+        // nunca duplica o lançamento.
+        appointment_id: activeCompletion?.appointmentId ?? null,
         employee_id: recordForm.employee_id,
         customer_id: recordForm.customer_id || null,
         service_id: recordForm.service_id || null,
@@ -275,6 +332,46 @@ export function ServiceOperationsPanel({
     setRecords((prev) => [data as unknown as ServiceRecordWithRelations, ...prev])
     setRecordForm(emptyRecordForm)
     setAmountDueTouched(false)
+
+    if (activeCompletion) {
+      await supabase.from('appointments').update({ status: 'completed' }).eq('id', activeCompletion.appointmentId)
+
+      // Série semanal em uso não acaba: cada conclusão pendura +1 semana no
+      // fim da série (best-effort — se falhar, a série só para de crescer,
+      // e as semanas já geradas continuam valendo). Mesma lógica que já
+      // existia em calendar-view.tsx handleComplete, só que agora roda daqui.
+      if (activeCompletion.recurrenceGroupId) {
+        const { data: lastRows } = await supabase
+          .from('appointments')
+          .select('starts_at, ends_at')
+          .eq('recurrence_group_id', activeCompletion.recurrenceGroupId)
+          .neq('status', 'cancelled')
+          .order('starts_at', { ascending: false })
+          .limit(1)
+        const last = (lastRows ?? [])[0] as { starts_at: string; ends_at: string } | undefined
+        if (last && activeCompletion.recurrence) {
+          const next = nextOccurrenceAfter(last, timezone, activeCompletion.recurrence)
+          await supabase.from('appointments').insert({
+            org_id: orgId,
+            unit_id: unitId,
+            customer_id: recordForm.customer_id || null,
+            service_id: recordForm.service_id || null,
+            employee_id: recordForm.employee_id || null,
+            address: activeCompletion.address,
+            notes: activeCompletion.notes,
+            custom_fields: activeCompletion.customFields,
+            recurrence: activeCompletion.recurrence,
+            recurrence_group_id: activeCompletion.recurrenceGroupId,
+            recurrence_days: activeCompletion.recurrenceDays,
+            ...next,
+          })
+        }
+      }
+
+      setActiveCompletion(null)
+      setCompletionDone(true)
+      router.replace(`/dashboard/units/${unitId}/operacao`)
+    }
   }
 
   /** Recarrega o ledger de um lançamento direto do banco (fonte de verdade do histórico) depois de registrar pagamento/estorno. */
@@ -1195,7 +1292,28 @@ export function ServiceOperationsPanel({
           </div>
         )}
 
-        <form onSubmit={handleRecordSubmit}>
+        {activeCompletion && (
+          <div
+            className="rounded-xl p-4"
+            style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)' }}
+          >
+            <p className="text-sm font-bold text-amber-300">Confirmando a conclusão deste atendimento</p>
+            <p className="mt-1 text-xs text-slate-400">
+              Revise o profissional e os valores abaixo antes de lançar — confirmar aqui também marca o agendamento
+              como concluído na Agenda.
+            </p>
+          </div>
+        )}
+        {completionDone && (
+          <div
+            className="rounded-xl p-4 text-sm font-bold text-emerald-300"
+            style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)' }}
+          >
+            Atendimento concluído e lançado na Operação.
+          </div>
+        )}
+
+        <form ref={completionFormRef} onSubmit={handleRecordSubmit}>
           <FormSection title="Lançar serviço executado">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div className="flex flex-col gap-1.5">

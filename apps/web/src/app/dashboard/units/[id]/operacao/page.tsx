@@ -6,8 +6,12 @@ import { PageHeader } from '@/components/ui/dashboard-ui'
 import { ServiceOperationsPanel } from '@/components/dashboard/service-operations-panel'
 import type {
   InvoiceWithRelations,
+  PendingAppointmentCompletion,
   ServiceRecordWithRelations,
 } from '@/components/dashboard/service-operations-panel'
+import { computeSuggestedPay } from '@/lib/service-pay'
+import { localDateString } from '@/lib/slot-engine'
+import type { RecurrenceType } from '@/lib/scheduling/recurrence'
 import type { ServiceRecordPayment } from '@/lib/types'
 import { unitDefaultLocale } from '@/lib/i18n/config'
 import {
@@ -39,10 +43,10 @@ export default async function UnitOperationsPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ month?: string }>
+  searchParams: Promise<{ month?: string; completeAppointment?: string }>
 }) {
   const { id } = await params
-  const { month: monthParam } = await searchParams
+  const { month: monthParam, completeAppointment: completeAppointmentId } = await searchParams
   const supabase = await createClient()
 
   const { data: unit } = await supabase.from('units').select('*').eq('id', id).single()
@@ -72,6 +76,48 @@ export default async function UnitOperationsPage({
     supabase.from('customers').select('id, name, email, phone, address, custom_fields').eq('unit_id', id).eq('status', 'active').order('name').limit(500),
     fetchOperationsData(supabase, id, selectedMonth, isAllMonths),
   ])
+
+  // Veio de "Concluir" na Agenda (?completeAppointment=) — pedido do
+  // Vinicius (2026-09-16): em vez de lançar sozinho, busca o agendamento
+  // e pré-preenche o formulário (técnico, valores sugeridos, nº da ordem
+  // na descrição) pra revisar antes de confirmar. Reaproveita a mesma
+  // conta que já valia em calendar-view.tsx handleComplete.
+  let pendingCompletion: PendingAppointmentCompletion | null = null
+  if (completeAppointmentId) {
+    const { data: apptRow } = await supabase
+      .from('appointments')
+      .select(
+        'id, employee_id, customer_id, service_id, starts_at, ends_at, custom_fields, service_order_number, recurrence, recurrence_group_id, recurrence_days, address, notes',
+      )
+      .eq('id', completeAppointmentId)
+      .eq('unit_id', id)
+      .maybeSingle()
+
+    if (apptRow) {
+      const service = (services ?? []).find((s) => s.id === apptRow.service_id) ?? null
+      const employee = (employees ?? []).find((e) => e.id === apptRow.employee_id) ?? null
+      // Valor combinado do atendimento (custom_fields.price) sobrepõe o preço de tabela do serviço.
+      const customPrice = Number((apptRow.custom_fields as { price?: unknown } | null)?.price)
+      const amountCharged = Number.isFinite(customPrice) && customPrice > 0 ? customPrice : service?.price ?? null
+      const durationMinutes = Math.round((new Date(apptRow.ends_at).getTime() - new Date(apptRow.starts_at).getTime()) / 60000)
+      pendingCompletion = {
+        appointmentId: apptRow.id,
+        employeeId: apptRow.employee_id,
+        customerId: apptRow.customer_id,
+        serviceId: apptRow.service_id,
+        serviceDate: localDateString(new Date(apptRow.starts_at), unitRow.timezone),
+        description: apptRow.service_order_number ? `Ordem Nº ${apptRow.service_order_number}` : '',
+        amountCharged,
+        amountDue: computeSuggestedPay({ employee, amountCharged, durationMinutes }),
+        address: apptRow.address,
+        notes: apptRow.notes,
+        customFields: (apptRow.custom_fields as Record<string, unknown>) ?? {},
+        recurrence: apptRow.recurrence as RecurrenceType | null,
+        recurrenceGroupId: apptRow.recurrence_group_id,
+        recurrenceDays: apptRow.recurrence_days,
+      }
+    }
+  }
 
   // Mês atual (padrão da tela) veio vazio — em vez de parecer que os dados
   // sumiram, sugere direto o mês mais recente que realmente tem histórico.
@@ -256,6 +302,7 @@ export default async function UnitOperationsPage({
             billing_payment_instructions: unitRow.billing_payment_instructions,
             logo_url: unitRow.logo_url,
           }}
+          pendingCompletion={pendingCompletion}
         />
       ) : (
         <p className="text-sm text-amber-400">
