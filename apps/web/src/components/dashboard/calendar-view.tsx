@@ -13,6 +13,7 @@ import { Badge, Card, StatusPill, type BadgeVariant } from '@/components/ui/dash
 import { computeSuggestedPay } from '@/lib/service-pay'
 import { CLIENT_PORTAL_SOURCE } from '@/lib/portal-360/constants'
 import { FACILIT_SYNC_SOURCE } from '@/lib/facilit-appointment'
+import { effectiveDisplayStatus } from '@/lib/scheduling/appointment-display-status'
 import type {
   Appointment,
   AppointmentStatus,
@@ -399,8 +400,8 @@ export function CalendarView({
                               <span className="text-sm font-semibold text-white">
                                 {formatTimeRange(appointment.starts_at, appointment.ends_at, timezone)}
                               </span>
-                              <StatusPill variant={STATUS_VARIANT[appointment.status]}>
-                                {STATUS_LABEL[appointment.status]}
+                              <StatusPill variant={STATUS_VARIANT[effectiveDisplayStatus(appointment)]}>
+                                {STATUS_LABEL[effectiveDisplayStatus(appointment)]}
                               </StatusPill>
                             </>
                           )}
