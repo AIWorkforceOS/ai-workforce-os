@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib'
+import { PDFDocument, PDFName, PDFString, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib'
 
 /**
  * Gerador do PDF baixável da ordem de serviço — reproduz um MODELO
@@ -69,6 +69,31 @@ function drawRight(page: PDFPage, text: string, font: PDFFont, size: number, col
 function drawCenter(page: PDFPage, text: string, font: PDFFont, size: number, color: ReturnType<typeof rgb>, centerX: number, y: number) {
   const width = font.widthOfTextAtSize(text, size)
   page.drawText(text, { x: centerX - width / 2, y, size, font, color })
+}
+
+/**
+ * Link clicável de verdade (anotação PDF, não só texto colorido) — pdf-lib
+ * não tem um helper de alto nível pra isso, é o jeito documentado de
+ * anexar uma ação de URI numa área da página. Pedido do Vinicius
+ * (2026-09-16): "o link clicável em cima do PDF da peça recomendada
+ * pelo técnico" na página de cotação.
+ */
+function addLinkAnnotation(page: PDFPage, url: string, rect: { x: number; y: number; width: number; height: number }) {
+  const context = page.doc.context
+  const linkDict = context.obj({
+    Type: 'Annot',
+    Subtype: 'Link',
+    Rect: [rect.x, rect.y, rect.x + rect.width, rect.y + rect.height],
+    Border: [0, 0, 0],
+    A: { Type: 'Action', S: 'URI', URI: PDFString.of(url) },
+  })
+  const linkRef = context.register(linkDict)
+  const existingAnnots = page.node.Annots()
+  if (existingAnnots) {
+    existingAnnots.push(linkRef)
+  } else {
+    page.node.set(PDFName.of('Annots'), context.obj([linkRef]))
+  }
 }
 
 /** Formata como DD/MM/AAAA — pedido explícito pro campo "Date" do bloco de assinatura. */
@@ -141,8 +166,99 @@ type ServiceOrderPdfAppointment = {
   service_order_signed_by: string | null
   service_order_signed_at: string | null
   service_order_signature_url: string | null
+  /** Distinto do status do agendamento (appointments.status) — 'quote' aqui é o que decide se a página 3 (cotação) existe. */
+  service_order_status: 'pending' | 'completed' | 'quote'
+  service_order_material_description: string | null
+  service_order_material_value: number | null
+  service_order_hours_needed: number | null
+  service_order_part_purchase_link: string | null
+  /** Cotação estruturada por IA (migration 082) — inglês vai pro cliente final, português é conferência interna. Página 3 cai pro texto cru (material_description) se a IA nunca rodou. */
+  service_order_quote_description_en: string | null
+  service_order_quote_description_pt: string | null
   address: string | null
   starts_at: string
+}
+
+const QUOTE_LINK_COLOR = rgb(0.09, 0.45, 0.82)
+
+/**
+ * Página 3, só quando a ordem é COTAÇÃO — pedido do Vinicius
+ * (2026-09-16): "todas informações da cotação, inclusive o link
+ * clicável em cima do PDF da peça recomendada pelo técnico", "precisa
+ * ser nas duas versões, tanto português e inglês com a página
+ * dividida". Metade de cima em inglês (o que vai pro cliente final),
+ * metade de baixo em português (conferência interna) — cada metade é
+ * autossuficiente (repete material/custo/horas/link), então qualquer
+ * uma pode ser mostrada isolada se precisar recortar. Cai pro texto
+ * cru (service_order_material_description) quando a IA nunca gerou a
+ * cotação (service_order_quote_description_en/pt nulos) — a página
+ * ainda existe e é útil, só não fica "polida".
+ */
+function drawQuotePage(doc: PDFDocument, a: ServiceOrderPdfAppointment, font: PDFFont, bold: PDFFont): void {
+  const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
+  const halfY = PAGE_HEIGHT / 2
+
+  function drawHalf(opts: { top: number; bottom: number; heading: string; body: string | null; noBodyLabel: string; linkLabel: string }) {
+    let y = opts.top
+    page.drawText(opts.heading, { x: MARGIN, y, size: 13, font: bold, color: DARK })
+    y -= 10
+    page.drawLine({ start: { x: MARGIN, y }, end: { x: CONTENT_RIGHT, y }, thickness: 1, color: LINE })
+    y -= 22
+
+    if (opts.body) {
+      for (const line of wrapText(opts.body, font, 10.5, CONTENT_WIDTH)) {
+        if (y < opts.bottom + 46) break // segurança: nunca deixa o texto vazar pra fora da própria metade
+        page.drawText(line, { x: MARGIN, y, size: 10.5, font, color: DARK })
+        y -= 15
+      }
+    } else {
+      page.drawText(opts.noBodyLabel, { x: MARGIN, y, size: 10, font, color: MUTED })
+      y -= 20
+    }
+
+    y -= 8
+    const facts = [
+      a.service_order_material_value != null ? `$ ${a.service_order_material_value.toFixed(2)}` : null,
+      a.service_order_hours_needed != null ? `${a.service_order_hours_needed}h` : null,
+    ].filter((f): f is string => f !== null)
+    if (facts.length > 0 && y > opts.bottom + 20) {
+      page.drawText(facts.join('   ·   '), { x: MARGIN, y, size: 10, font: bold, color: DARK })
+      y -= 18
+    }
+
+    if (a.service_order_part_purchase_link && y > opts.bottom + 14) {
+      const linkWidth = bold.widthOfTextAtSize(opts.linkLabel, 10)
+      page.drawText(opts.linkLabel, { x: MARGIN, y, size: 10, font: bold, color: QUOTE_LINK_COLOR })
+      page.drawLine({ start: { x: MARGIN, y: y - 2 }, end: { x: MARGIN + linkWidth, y: y - 2 }, thickness: 1, color: QUOTE_LINK_COLOR })
+      addLinkAnnotation(page, a.service_order_part_purchase_link, { x: MARGIN, y: y - 4, width: linkWidth, height: 13 })
+    }
+  }
+
+  drawHalf({
+    top: PAGE_HEIGHT - OUTER_MARGIN - 34,
+    bottom: halfY + 12,
+    heading: 'QUOTE (ENGLISH) — for the client',
+    body: a.service_order_quote_description_en ?? a.service_order_material_description,
+    noBodyLabel: 'No quote description available.',
+    linkLabel: 'View recommended part ->',
+  })
+
+  page.drawLine({
+    start: { x: OUTER_MARGIN, y: halfY },
+    end: { x: PAGE_WIDTH - OUTER_MARGIN, y: halfY },
+    thickness: 1,
+    color: BORDER,
+    dashArray: [4, 3],
+  })
+
+  drawHalf({
+    top: halfY - 22,
+    bottom: OUTER_MARGIN + 20,
+    heading: 'COTAÇÃO (PORTUGUÊS) — uso interno',
+    body: a.service_order_quote_description_pt ?? a.service_order_material_description,
+    noBodyLabel: 'Nenhuma cotação disponível.',
+    linkLabel: 'Ver peça recomendada ->',
+  })
 }
 
 function addPage(doc: PDFDocument): { page: PDFPage; y: number } {
@@ -419,6 +535,15 @@ export async function generateServiceOrderPdf(params: { appointment: ServiceOrde
     const w = signatureImage.width * scale
     const h = signatureImage.height * scale
     sigPage.drawImage(signatureImage, { x: (PAGE_WIDTH - w) / 2, y: (PAGE_HEIGHT - h) / 2, width: w, height: h })
+  }
+
+  // ---------------------------------------------------------------
+  // PÁGINA 3, só quando é COTAÇÃO — ver drawQuotePage. Mesma lógica de
+  // ficar fora do array `pages`/rodapé: é conteúdo extra pra levar pro
+  // cliente/escritório, não faz parte da numeração do documento oficial.
+  // ---------------------------------------------------------------
+  if (a.service_order_status === 'quote') {
+    drawQuotePage(doc, a, font, bold)
   }
 
   const bytes = await doc.save()

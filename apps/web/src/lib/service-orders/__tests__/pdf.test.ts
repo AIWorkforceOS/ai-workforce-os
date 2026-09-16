@@ -1,6 +1,6 @@
 import { deflateSync, inflateSync } from 'node:zlib'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { PDFDocument } from 'pdf-lib'
+import { PDFDict, PDFDocument, PDFName } from 'pdf-lib'
 import { generateServiceOrderPdf } from '../pdf'
 
 const readFileSyncMock = vi.fn()
@@ -126,6 +126,13 @@ const baseAppointment = {
   service_order_signed_by: 'Maria Gerente',
   service_order_signed_at: '2026-08-06T14:00:00.000Z',
   service_order_signature_url: null as string | null,
+  service_order_status: 'completed' as 'pending' | 'completed' | 'quote',
+  service_order_material_description: null as string | null,
+  service_order_material_value: null as number | null,
+  service_order_hours_needed: null as number | null,
+  service_order_part_purchase_link: null as string | null,
+  service_order_quote_description_en: null as string | null,
+  service_order_quote_description_pt: null as string | null,
   address: '123 Desert Rd, Phoenix, AZ',
   starts_at: '2026-08-06T13:00:00.000Z',
 }
@@ -279,6 +286,125 @@ describe('generateServiceOrderPdf — Sign Off Sheet fixo', () => {
     })
     const reloaded = await PDFDocument.load(buffer)
     expect(reloaded.getPageCount()).toBe(1)
+  })
+
+  describe('página 3 — cotação (pedido do Vinicius, 2026-09-16)', () => {
+    it('ordem de cotação sem assinatura: 2 páginas (normal + cotação, sem a página de assinatura)', async () => {
+      readFileSyncMock.mockImplementation(() => {
+        throw new Error('ENOENT')
+      })
+      const buffer = await generateServiceOrderPdf({
+        appointment: {
+          ...baseAppointment,
+          service_order_status: 'quote',
+          service_order_signed_by: null,
+          service_order_signed_at: null,
+          service_order_signature_url: null,
+          service_order_quote_description_en: 'The main door lock is broken and needs replacement.',
+          service_order_quote_description_pt: 'A fechadura da porta principal está quebrada e precisa ser substituída.',
+        },
+      })
+      const reloaded = await PDFDocument.load(buffer)
+      expect(reloaded.getPageCount()).toBe(2)
+      const raw = extractStreamText(buffer)
+      expect(raw).toContain('QUOTE (ENGLISH)')
+      expect(raw).toContain('The main door lock is broken and needs replacement.')
+      expect(raw).toContain('COTAÇÃO (PORTUGUÊS)')
+      expect(raw).toContain('A fechadura da porta principal está quebrada e precisa ser substituída.')
+    })
+
+    it('ordem de cotação com assinatura: 3 páginas (normal, assinatura, cotação, nessa ordem)', async () => {
+      readFileSyncMock.mockImplementation(() => {
+        throw new Error('ENOENT')
+      })
+      stubFetchWithPng(TINY_PNG)
+      const buffer = await generateServiceOrderPdf({
+        appointment: {
+          ...baseAppointment,
+          service_order_status: 'quote',
+          service_order_signature_url: 'https://example.com/assinatura.png',
+          service_order_quote_description_en: 'Needs a new lock.',
+          service_order_quote_description_pt: 'Precisa de uma fechadura nova.',
+        },
+      })
+      const reloaded = await PDFDocument.load(buffer)
+      expect(reloaded.getPageCount()).toBe(3)
+    })
+
+    it('sem status quote, nunca cria a 3ª página — mesmo que os campos de cotação estejam preenchidos', async () => {
+      readFileSyncMock.mockImplementation(() => {
+        throw new Error('ENOENT')
+      })
+      const buffer = await generateServiceOrderPdf({
+        appointment: {
+          ...baseAppointment,
+          service_order_status: 'completed',
+          service_order_quote_description_en: 'Needs a new lock.',
+          service_order_quote_description_pt: 'Precisa de uma fechadura nova.',
+        },
+      })
+      const reloaded = await PDFDocument.load(buffer)
+      expect(reloaded.getPageCount()).toBe(1)
+    })
+
+    it('sem cotação gerada por IA, cai pro texto cru (material_description) em vez de ficar vazio', async () => {
+      readFileSyncMock.mockImplementation(() => {
+        throw new Error('ENOENT')
+      })
+      const buffer = await generateServiceOrderPdf({
+        appointment: {
+          ...baseAppointment,
+          service_order_status: 'quote',
+          service_order_quote_description_en: null,
+          service_order_quote_description_pt: null,
+          service_order_material_description: 'Fechadura da porta quebrada, precisa trocar.',
+        },
+      })
+      const raw = extractStreamText(buffer)
+      expect(raw).toContain('Fechadura da porta quebrada, precisa trocar.')
+    })
+
+    it('mostra custo/horas e um link clicável de verdade (anotação PDF) pra peça recomendada', async () => {
+      readFileSyncMock.mockImplementation(() => {
+        throw new Error('ENOENT')
+      })
+      const buffer = await generateServiceOrderPdf({
+        appointment: {
+          ...baseAppointment,
+          service_order_status: 'quote',
+          service_order_quote_description_en: 'Needs a new lock.',
+          service_order_quote_description_pt: 'Precisa de uma fechadura nova.',
+          service_order_material_value: 45.9,
+          service_order_hours_needed: 2,
+          service_order_part_purchase_link: 'https://loja.com/fechadura-modelo-x',
+        },
+      })
+      const raw = extractStreamText(buffer)
+      expect(raw).toContain('45.90')
+      expect(raw).toContain('2h')
+      // O link em si vira uma anotação PDF (não é texto simples, pode até ficar comprimido
+      // num ObjStm) — recarrega o PDF e confere a URI de verdade dentro da anotação /Link.
+      const reloaded = await PDFDocument.load(buffer)
+      const uris = reloaded
+        .getPages()
+        .flatMap((p) => {
+          const annots = p.node.Annots()
+          if (!annots) return []
+          const refs: string[] = []
+          for (let i = 0; i < annots.size(); i++) {
+            const annot = annots.lookup(i)
+            if (annot instanceof PDFDict) {
+              const action = annot.lookup(PDFName.of('A'))
+              if (action instanceof PDFDict) {
+                const uri = action.lookup(PDFName.of('URI'))
+                if (uri) refs.push(uri.toString())
+              }
+            }
+          }
+          return refs
+        })
+      expect(uris.some((u) => u.includes('loja.com/fechadura-modelo-x'))).toBe(true)
+    })
   })
 
   it('desenha a assinatura bem maior que antes (largura limitada pela linha, aspecto 3:1)', async () => {

@@ -104,14 +104,14 @@ export default async function Portal360OrderPage({ params }: { params: Promise<{
 
         <div className="mt-5 flex flex-wrap gap-2 border-t pt-4" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
           {order.fileUrl && <DownloadOriginalButton url={order.fileUrl} filename={order.fileName ?? 'service-order'} />}
-          {order.status === 'completed' && (
+          {(order.status === 'completed' || order.status === 'quote') && (
             <a
               href={`/api/portal-360/orders/${order.id}/pdf`}
               className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-white transition-colors"
               style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)' }}
             >
               <Download size={13} />
-              Download signed PDF
+              {order.status === 'quote' ? 'Download PDF (with quote)' : 'Download signed PDF'}
             </a>
           )}
         </div>

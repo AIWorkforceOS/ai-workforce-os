@@ -16,6 +16,13 @@ type ServiceOrderPdfRow = {
   service_order_signed_by: string | null
   service_order_signed_at: string | null
   service_order_signature_url: string | null
+  service_order_status: 'pending' | 'completed' | 'quote'
+  service_order_material_description: string | null
+  service_order_material_value: number | null
+  service_order_hours_needed: number | null
+  service_order_part_purchase_link: string | null
+  service_order_quote_description_en: string | null
+  service_order_quote_description_pt: string | null
   address: string | null
   starts_at: string
 }
@@ -47,7 +54,7 @@ export async function GET(
   const { data } = await supabase
     .from('appointments')
     .select(
-      'service_order_number, service_order_client_po, service_order_priority, service_order_order_type, service_order_ivr_pin, service_order_location_name, service_order_location_phone, service_order_issuer_name, service_order_issuer_email, service_order_scope_en, service_order_signed_by, service_order_signed_at, service_order_signature_url, address, starts_at',
+      'service_order_number, service_order_client_po, service_order_priority, service_order_order_type, service_order_ivr_pin, service_order_location_name, service_order_location_phone, service_order_issuer_name, service_order_issuer_email, service_order_scope_en, service_order_signed_by, service_order_signed_at, service_order_signature_url, service_order_status, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_part_purchase_link, service_order_quote_description_en, service_order_quote_description_pt, address, starts_at',
     )
     .eq('id', appointmentId)
     .eq('unit_id', unitId)
