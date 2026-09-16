@@ -45,6 +45,19 @@ export type FacilitSyncResult = {
  * reaproveita depois (mesmo padrão de resolveClientTargetCustomer do
  * Portal 360, mas keyed por unit_id em vez de client_company sozinho,
  * já que aqui não existe login do cliente externo, só o sync).
+ *
+ * Bug real (2026-09-16, achado com o Vinicius): sem `.order().limit(1)`,
+ * um `.maybeSingle()` sozinho ERRA quando existe mais de uma linha
+ * correspondente (PostgREST recusa "múltiplas linhas" pra esse método)
+ * — e o erro fica silencioso aqui (só `data` é desestruturado, nunca
+ * `error`), então `existing` vira null e a função cria MAIS um cliente
+ * novo. Isso se autoalimenta: uma vez que 2 linhas existem (aconteceu
+ * por uma corrida entre dois syncs simultâneos), toda sync seguinte
+ * nunca mais encontra "exatamente uma" e cria outra — em poucos dias
+ * a unidade acumulou 17 clientes "360 Service Provider" duplicados.
+ * `.order(...).limit(1)` (mesmo padrão já usado em
+ * resolveClientTargetCustomer, lib/portal-360/data.ts) nunca erra desse
+ * jeito — sempre pega a mais antiga entre quantas existirem.
  */
 async function resolveFacilitCustomer(
   supabase: SupabaseClient,
@@ -55,6 +68,8 @@ async function resolveFacilitCustomer(
     .select('id')
     .eq('unit_id', unit.id)
     .eq('client_company', FACILIT_CUSTOMER_COMPANY_NAME)
+    .order('created_at', { ascending: true })
+    .limit(1)
     .maybeSingle()
 
   if (existing) return { id: (existing as { id: string }).id, unitId: unit.id, orgId: unit.org_id! }

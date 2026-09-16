@@ -118,6 +118,42 @@ describe('syncFacilitOrdersForUnit', () => {
     expect(db.appointments?.every((a) => a.customer_id === facilitCustomers[0]?.id)).toBe(true)
   })
 
+  it('bug real 2026-09-16: mesmo já existindo duplicatas de "360 Service Provider" (de uma corrida anterior), a sync usa uma delas e nunca cria uma terceira', async () => {
+    // resolveFacilitCustomer usava `.maybeSingle()` sem `.order().limit(1)` —
+    // no Postgres/PostgREST de verdade isso ERRA quando há >1 linha
+    // correspondente (erro engolido em silêncio aqui, só `data` era lido),
+    // fazendo a função tratar "existing" como null e criar mais um cliente
+    // a cada sync. Em produção (Mawi Pro) isso gerou 17 clientes
+    // duplicados em ~1 mês. O fake-supabase não reproduz esse erro de
+    // múltiplas linhas do `.maybeSingle()` (sempre devolve a primeira
+    // linha, sem checar quantidade) — este teste não prova a regressão
+    // do erro em si, mas documenta o comportamento esperado: dado que já
+    // existem duplicatas, a sync deve reaproveitar uma delas, nunca criar
+    // mais uma.
+    global.fetch = vi.fn(async (url: unknown) => {
+      const u = String(url)
+      if (u.includes('/devices')) return new Response(JSON.stringify({ token: 'tok-123' }), { status: 200 })
+      return new Response(JSON.stringify([{ orderNumber: '1', company: 'Loja A', visitDate: '2026-09-10T20:00:00Z' }]), { status: 200 })
+    }) as typeof fetch
+
+    const { supabase, db } = createFakeSupabase({
+      facilit_credentials: [makeCredential()],
+      facilit_work_orders: [],
+      customers: [
+        { id: 'dup-1', unit_id: 'unit-1', org_id: 'org-1', name: '360 Service Provider', client_company: FACILIT_CUSTOMER_COMPANY_NAME },
+        { id: 'dup-2', unit_id: 'unit-1', org_id: 'org-1', name: '360 Service Provider', client_company: FACILIT_CUSTOMER_COMPANY_NAME },
+      ],
+      appointments: [],
+    })
+
+    await syncFacilitOrdersForUnit(supabase, makeUnit(), makeCredential())
+
+    const facilitCustomers = (db.customers ?? []).filter((c) => c.client_company === FACILIT_CUSTOMER_COMPANY_NAME)
+    expect(facilitCustomers).toHaveLength(2)
+    expect(db.appointments).toHaveLength(1)
+    expect(['dup-1', 'dup-2']).toContain(db.appointments?.[0]?.customer_id)
+  })
+
   it('reimportar a mesma ordem não cria um segundo appointment nem mexe no que já existe', async () => {
     global.fetch = vi.fn(async (url: unknown) => {
       const u = String(url)
