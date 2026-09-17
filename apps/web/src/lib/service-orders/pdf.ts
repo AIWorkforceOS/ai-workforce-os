@@ -189,10 +189,15 @@ const QUOTE_LINK_COLOR = rgb(0.09, 0.45, 0.82)
  * dividida". Metade de cima em inglês (o que vai pro cliente final),
  * metade de baixo em português (conferência interna) — cada metade é
  * autossuficiente (repete material/custo/horas/link), então qualquer
- * uma pode ser mostrada isolada se precisar recortar. Cai pro texto
- * cru (service_order_material_description) quando a IA nunca gerou a
- * cotação (service_order_quote_description_en/pt nulos) — a página
- * ainda existe e é útil, só não fica "polida".
+ * uma pode ser mostrada isolada se precisar recortar. A metade em
+ * PORTUGUÊS cai pro texto cru (service_order_material_description)
+ * quando a IA nunca gerou a cotação — a página ainda existe e é útil
+ * pro escritório, só não fica "polida". A metade em INGLÊS (a que vai
+ * pro cliente final) NUNCA cai pro texto cru: ele está em português, e
+ * mostrar isso como se fosse a seção em inglês é o bug real que gerou o
+ * pedido urgente do Vinicius (2026-09-17) — "a página deveria sair em
+ * inglês mas saiu em português". Sem a cotação da IA, a metade em
+ * inglês mostra o aviso de "ainda não gerada" em vez do texto errado.
  */
 function drawQuotePage(doc: PDFDocument, a: ServiceOrderPdfAppointment, font: PDFFont, bold: PDFFont): void {
   const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT])
@@ -238,8 +243,10 @@ function drawQuotePage(doc: PDFDocument, a: ServiceOrderPdfAppointment, font: PD
     top: PAGE_HEIGHT - OUTER_MARGIN - 34,
     bottom: halfY + 12,
     heading: 'QUOTE (ENGLISH) — for the client',
-    body: a.service_order_quote_description_en ?? a.service_order_material_description,
-    noBodyLabel: 'No quote description available.',
+    // Nunca cai pro texto cru do técnico aqui — ele está em português, e mostrar
+    // isso como se fosse a seção em inglês é justamente o bug que não pode se repetir.
+    body: a.service_order_quote_description_en,
+    noBodyLabel: 'Quote not generated yet — click "Generate quote with AI" first.',
     linkLabel: 'View recommended part ->',
   })
 

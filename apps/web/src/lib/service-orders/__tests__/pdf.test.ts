@@ -347,7 +347,7 @@ describe('generateServiceOrderPdf — Sign Off Sheet fixo', () => {
       expect(reloaded.getPageCount()).toBe(1)
     })
 
-    it('sem cotação gerada por IA, cai pro texto cru (material_description) em vez de ficar vazio', async () => {
+    it('sem cotação gerada por IA, a metade PORTUGUÊS cai pro texto cru do técnico em vez de ficar vazia', async () => {
       readFileSyncMock.mockImplementation(() => {
         throw new Error('ENOENT')
       })
@@ -362,6 +362,29 @@ describe('generateServiceOrderPdf — Sign Off Sheet fixo', () => {
       })
       const raw = extractStreamText(buffer)
       expect(raw).toContain('Fechadura da porta quebrada, precisa trocar.')
+    })
+
+    it('sem cotação gerada por IA, a metade INGLÊS (a que vai pro cliente) NUNCA mostra o texto cru em português — achado real 2026-09-17', async () => {
+      readFileSyncMock.mockImplementation(() => {
+        throw new Error('ENOENT')
+      })
+      const buffer = await generateServiceOrderPdf({
+        appointment: {
+          ...baseAppointment,
+          service_order_status: 'quote',
+          service_order_quote_description_en: null,
+          service_order_quote_description_pt: null,
+          service_order_material_description: 'Fechadura da porta quebrada, precisa trocar.',
+        },
+      })
+      const raw = extractStreamText(buffer)
+      expect(raw).toContain('Quote not generated yet')
+      // A ordem no stream de texto (topo = inglês, embaixo = português) prova que o texto
+      // cru só aparece DEPOIS do aviso em inglês, nunca no lugar dele.
+      const noticeIndex = raw.indexOf('Quote not generated yet')
+      const rawNotesIndex = raw.indexOf('Fechadura da porta quebrada')
+      expect(noticeIndex).toBeGreaterThanOrEqual(0)
+      expect(rawNotesIndex).toBeGreaterThan(noticeIndex)
     })
 
     it('mostra custo/horas e um link clicável de verdade (anotação PDF) pra peça recomendada', async () => {
