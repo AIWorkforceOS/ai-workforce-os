@@ -44,7 +44,7 @@ describe('composeClientQuoteDescription', () => {
     })
   })
 
-  it('leva local, PO#, custo, horas e link do material pro contexto enviado à IA', async () => {
+  it('leva custo, horas e link do material pro contexto enviado à IA', async () => {
     vi.stubEnv('OPENAI_API_KEY', 'sk-test')
     const fetchMock = mockFetchOnce(chatCompletionBody({ quote_en: 'x', quote_pt: 'y' }))
 
@@ -60,11 +60,29 @@ describe('composeClientQuoteDescription', () => {
     const call = fetchMock.mock.calls[0]!
     const requestBody = JSON.parse((call[1] as RequestInit).body as string)
     const userMessage = requestBody.messages.find((m: { role: string }) => m.role === 'user').content
-    expect(userMessage).toContain('Walgreens #03049')
-    expect(userMessage).toContain('158088-01')
     expect(userMessage).toContain('45.90')
     expect(userMessage).toContain('2h')
     expect(userMessage).toContain('https://loja.com/fechadura')
+  })
+
+  it('NUNCA leva o nome do local/cliente pro contexto da IA — pedido do Vinicius (2026-09-17): o modelo não pode se dirigir a ninguém pelo nome, e a forma segura de garantir isso é nem deixar o nome visível pra ele', async () => {
+    vi.stubEnv('OPENAI_API_KEY', 'sk-test')
+    const fetchMock = mockFetchOnce(chatCompletionBody({ quote_en: 'x', quote_pt: 'y' }))
+
+    await composeClientQuoteDescription({
+      technicianNotes: 'precisa trocar a fechadura',
+      locationName: 'Walgreens #03049',
+      orderNumber: '158088-01',
+    })
+
+    const call = fetchMock.mock.calls[0]!
+    const requestBody = JSON.parse((call[1] as RequestInit).body as string)
+    const userMessage = requestBody.messages.find((m: { role: string }) => m.role === 'user').content
+    expect(userMessage).not.toContain('Walgreens')
+    expect(userMessage).not.toContain('158088-01')
+
+    const systemMessage = requestBody.messages.find((m: { role: string }) => m.role === 'system').content
+    expect(systemMessage).toMatch(/NUNCA se dirija a ninguém/i)
   })
 
   it('anotação vazia não chama a IA e devolve null', async () => {
