@@ -171,6 +171,21 @@ export function CalendarView({
   const canBook = !!orgId && services.length > 0 && employees.length > 0
   const isFiltering = statusFilter !== 'all' || orderQuery.trim() !== ''
 
+  /**
+   * Bug real (2026-09-17, achado do Vinicius): trocar de semana (link
+   * "Semana anterior/Próxima semana", que só muda o `?start=` da URL)
+   * buscava os agendamentos certos no servidor, mas o `useState`
+   * abaixo só usa `initialAppointments` como valor INICIAL — numa
+   * navegação client-side o componente não desmonta, então o estado
+   * antigo ficava preso até um F5 de verdade remontar o componente do
+   * zero. Sincroniza sempre que o servidor mandar um array novo (só
+   * acontece de fato numa navegação real, nunca por causa de estado
+   * puramente local como digitar no filtro ou abrir um modal).
+   */
+  useEffect(() => {
+    setAppointments(initialAppointments)
+  }, [initialAppointments])
+
   /** Busca por nº da ordem/status, SEM limite de data — ignora a semana visível de propósito, pra achar ordens antigas (ver comentário de STATUS_FILTER_OPTIONS acima). */
   async function runSearch(): Promise<AppointmentWithRelations[]> {
     const supabase = createClient()
