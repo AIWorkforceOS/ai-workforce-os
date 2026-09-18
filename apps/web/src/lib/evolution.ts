@@ -388,6 +388,41 @@ export async function connectInstance(config: EvolutionUnitConfig) {
 }
 
 /**
+ * Força um reset completo da instância (apaga e recria do zero) —
+ * ignora de propósito o safeguard de connectInstance (que só recria em
+ * 404, pra nunca destruir uma sessão válida por engano). Ação EXPLÍCITA
+ * do usuário via botão dedicado ("Recriar conexão do zero"), nunca
+ * automática: existe pra destravar uma sessão corrompida na própria
+ * Evolution API/Baileys, onde o QR continua aparecendo normalmente a
+ * cada tentativa mas o pareamento nunca conclui — mesmo com o número
+ * funcionando normalmente no WhatsApp em si (achado do Vinicius,
+ * 2026-09-17: "Ana" Recepcionista da Smarter Matriz, número confirmado
+ * saudável, só a conexão com a Evolution API que nunca pega). Delete +
+ * create é destrutivo (perde a sessão pareada atual pra valer), por
+ * isso só deve ser usado depois que reconectar normalmente já foi
+ * tentado e não resolveu.
+ */
+export async function forceReconnectInstance(config: EvolutionUnitConfig) {
+  try {
+    await evolutionFetch(config, `/instance/delete/${config.instanceName}`, { method: 'DELETE' })
+  } catch (error) {
+    // 404 = instância já não existia — exatamente o estado que queremos antes de recriar, segue normal.
+    if (!(error instanceof EvolutionApiError) || error.status !== 404) throw error
+  }
+
+  await evolutionFetch(config, '/instance/create', {
+    method: 'POST',
+    body: JSON.stringify({
+      instanceName: config.instanceName,
+      qrcode: true,
+      integration: 'WHATSAPP-BAILEYS',
+    }),
+  })
+  await ensureWebhookConfigured(config)
+  return evolutionFetch(config, `/instance/connect/${config.instanceName}`)
+}
+
+/**
  * Registra na Evolution API a URL do nosso webhook de mensagens
  * (/api/webhooks/whatsapp) para esta instância — sem isso, a Evolution API
  * nunca sabe pra onde mandar as mensagens recebidas e o funcionário digital

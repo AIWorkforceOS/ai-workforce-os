@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getInstanceStatus, sendWhatsAppMessage, type EvolutionUnitConfig } from '@/lib/evolution'
+import { forceReconnectInstance, getInstanceStatus, sendWhatsAppMessage, type EvolutionUnitConfig } from '@/lib/evolution'
 
 // Cobre a auditoria de bloqueio do WhatsApp (2026-07-30): antes deste fix,
 // evolutionFetch chamava `fetch` sem nenhum timeout — uma Evolution API que
@@ -70,5 +70,63 @@ describe('evolutionFetch — timeout', () => {
     await getInstanceStatus(config)
 
     expect(capturedSignal).toBeInstanceOf(AbortSignal)
+  })
+})
+
+// forceReconnectInstance (2026-09-17, pedido do Vinicius): "Conectar" normal
+// (connectInstance) só recria a instância em 404 de propósito, pra nunca
+// destruir uma sessão válida sem querer — mas isso deixa uma sessão
+// genuinamente corrompida (QR aparece, escanear nunca completa, mesmo com o
+// número funcionando normalmente no WhatsApp) sem nenhum jeito de recuperar
+// pela tela. forceReconnectInstance é o botão de último recurso: apaga e
+// recria do zero, sempre, ação explícita do usuário.
+describe('forceReconnectInstance', () => {
+  it('apaga, recria e reconecta a instância, nessa ordem', async () => {
+    const calls: { url: string; method?: string }[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        calls.push({ url, method: init?.method })
+        if (url.includes('/instance/connect/')) {
+          return new Response(JSON.stringify({ base64: 'data:image/png;base64,abc' }), { status: 200 })
+        }
+        return new Response(JSON.stringify({}), { status: 200 })
+      }),
+    )
+
+    await forceReconnectInstance(config)
+
+    expect(calls.map((c) => `${c.method ?? 'GET'} ${c.url}`)).toEqual([
+      `DELETE https://evolution.example.com/instance/delete/${config.instanceName}`,
+      `POST https://evolution.example.com/instance/create`,
+      `GET https://evolution.example.com/instance/connect/${config.instanceName}`,
+    ])
+  })
+
+  it('instância que já não existia (404 no delete) não impede recriar — segue pra criar normalmente', async () => {
+    const calls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        calls.push(url)
+        if ((init?.method ?? 'GET') === 'DELETE') return new Response(JSON.stringify({ message: 'not found' }), { status: 404 })
+        return new Response(JSON.stringify({}), { status: 200 })
+      }),
+    )
+
+    await expect(forceReconnectInstance(config)).resolves.not.toThrow()
+    expect(calls.some((u) => u.includes('/instance/create'))).toBe(true)
+  })
+
+  it('qualquer outra falha ao apagar (não 404) propaga o erro — nunca segue pra recriar às cegas', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        if ((init?.method ?? 'GET') === 'DELETE') return new Response(JSON.stringify({ message: 'erro interno' }), { status: 500 })
+        return new Response(JSON.stringify({}), { status: 200 })
+      }),
+    )
+
+    await expect(forceReconnectInstance(config)).rejects.toThrow('erro interno')
   })
 })

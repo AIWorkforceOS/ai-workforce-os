@@ -38,6 +38,7 @@ export function WhatsAppConnection({
   const [qrCode, setQrCode] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [connectAttempted, setConnectAttempted] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const statusUrl = `/api/units/${unitId}/whatsapp/status${agentType ? `?agentType=${encodeURIComponent(agentType)}` : ''}`
@@ -96,9 +97,51 @@ export function WhatsAppConnection({
       }
       setQrCode(data.qrCode ?? null)
       setStatus('connecting')
+      setConnectAttempted(true)
       startPolling()
     } catch {
       setError('Não foi possível iniciar a conexão.')
+    }
+    setBusy(false)
+  }
+
+  /**
+   * Último recurso — pedido do Vinicius (2026-09-17): "Conectar" normal
+   * pode ficar mostrando QR válido sem NUNCA completar o pareamento
+   * (mesmo com o número funcionando normalmente no WhatsApp), porque a
+   * instância na Evolution API em si pode estar numa sessão corrompida
+   * que "Conectar" nunca recria automaticamente de propósito (ver
+   * connectInstance em lib/evolution.ts). Apaga e recria a instância do
+   * zero — perde qualquer sessão pareada de verdade, por isso pede
+   * confirmação.
+   */
+  async function handleForceReconnect() {
+    if (
+      !window.confirm(
+        'Isso apaga a conexão atual na Evolution API e cria uma nova do zero — só use se "Conectar" já mostrou o QR e escanear não funcionou. Continuar?',
+      )
+    ) {
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/units/${unitId}/whatsapp/force-reconnect`, {
+        method: 'POST',
+        headers: agentType ? { 'Content-Type': 'application/json' } : undefined,
+        body: agentType ? JSON.stringify({ agentType }) : undefined,
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setError(data.error ?? 'Erro ao recriar a conexão.')
+        setBusy(false)
+        return
+      }
+      setQrCode(data.qrCode ?? null)
+      setStatus('connecting')
+      startPolling()
+    } catch {
+      setError('Não foi possível recriar a conexão.')
     }
     setBusy(false)
   }
@@ -171,6 +214,17 @@ export function WhatsAppConnection({
             style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
           >
             {busy ? 'Gerando QR Code...' : 'Conectar'}
+          </button>
+        )}
+        {connectAttempted && status !== 'open' && (
+          <button
+            onClick={handleForceReconnect}
+            disabled={busy}
+            title="Apaga e recria a conexão do zero na Evolution API — use se o QR já apareceu e escanear não funcionou."
+            className="rounded-xl px-4 py-2 text-sm font-semibold text-amber-300 transition-colors hover:bg-white/5 disabled:opacity-50"
+            style={{ border: '1px solid rgba(245,158,11,0.3)' }}
+          >
+            {busy ? 'Recriando...' : 'Recriar conexão do zero'}
           </button>
         )}
         {status === 'open' && (
