@@ -366,10 +366,10 @@ export async function syncWhatsappPhoneIfConnected(
  * o antiabuso do WhatsApp associa a automação suspeita, então evitar
  * recriações desnecessárias reduz esse risco.
  */
-export async function connectInstance(config: EvolutionUnitConfig) {
+export async function connectInstance(config: EvolutionUnitConfig, logContext?: WebhookLogContext) {
   try {
     const result = await evolutionFetch(config, `/instance/connect/${config.instanceName}`)
-    await ensureWebhookConfigured(config)
+    await ensureWebhookConfigured(config, logContext)
     return result
   } catch (error) {
     if (!(error instanceof EvolutionApiError) || error.status !== 404) throw error
@@ -382,7 +382,7 @@ export async function connectInstance(config: EvolutionUnitConfig) {
         integration: 'WHATSAPP-BAILEYS',
       }),
     })
-    await ensureWebhookConfigured(config)
+    await ensureWebhookConfigured(config, logContext)
     return evolutionFetch(config, `/instance/connect/${config.instanceName}`)
   }
 }
@@ -402,7 +402,7 @@ export async function connectInstance(config: EvolutionUnitConfig) {
  * isso só deve ser usado depois que reconectar normalmente já foi
  * tentado e não resolveu.
  */
-export async function forceReconnectInstance(config: EvolutionUnitConfig) {
+export async function forceReconnectInstance(config: EvolutionUnitConfig, logContext?: WebhookLogContext) {
   try {
     await evolutionFetch(config, `/instance/delete/${config.instanceName}`, { method: 'DELETE' })
   } catch (error) {
@@ -418,7 +418,7 @@ export async function forceReconnectInstance(config: EvolutionUnitConfig) {
       integration: 'WHATSAPP-BAILEYS',
     }),
   })
-  await ensureWebhookConfigured(config)
+  await ensureWebhookConfigured(config, logContext)
   return evolutionFetch(config, `/instance/connect/${config.instanceName}`)
 }
 
@@ -439,9 +439,25 @@ export async function forceReconnectInstance(config: EvolutionUnitConfig) {
  * confirmado contra o servidor real de produção (mesma ressalva de
  * sendWhatsAppDocument).
  */
-export async function ensureWebhookConfigured(config: EvolutionUnitConfig): Promise<void> {
+/** Contexto pra logar falha de verdade em system_events (visível no painel), não só console.error (só aparece no log serverless, ninguém vê). */
+export type WebhookLogContext = { supabase: SupabaseClient; orgId: string | null; unitId: string }
+
+/**
+ * Achado real (2026-09-18, "Ana conectou mas não respondeu nenhuma
+ * mensagem"): esta função sempre foi best-effort e engolia qualquer
+ * erro só em console.error — invisível pra sempre, ninguém no time via.
+ * `forceReconnectInstance` (2026-09-17) foi o primeiro caminho de código
+ * que de fato APAGA o webhook já configurado de uma instância (via
+ * `/instance/delete`) e depende 100% desta função pra recriar — se a
+ * chamada falhar silenciosamente contra o servidor real (contrato nunca
+ * confirmado em produção, ver comentário acima), a instância fica
+ * conectada no WhatsApp mas sem NENHUM jeito de nos avisar que alguém
+ * escreveu. Agora loga a falha em system_events quando `logContext` é
+ * passado, pra parar de ser invisível.
+ */
+export async function ensureWebhookConfigured(config: EvolutionUnitConfig, logContext?: WebhookLogContext): Promise<boolean> {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL
-  if (!appUrl) return
+  if (!appUrl) return false
 
   const webhookUrl = `${appUrl.replace(/\/+$/, '')}/api/webhooks/whatsapp`
 
@@ -457,10 +473,21 @@ export async function ensureWebhookConfigured(config: EvolutionUnitConfig): Prom
         },
       }),
     })
+    return true
   } catch (error) {
-    console.error(
-      `[evolution] falha ao configurar webhook da instância "${config.instanceName}": ${error instanceof Error ? error.message : String(error)}`,
-    )
+    const message = `Falha ao configurar o webhook de mensagens da instância "${config.instanceName}" — mensagens recebidas por esse número podem não chegar até o funcionário digital: ${error instanceof Error ? error.message : String(error)}`
+    console.error(`[evolution] ${message}`)
+    if (logContext) {
+      await logSystemEvent(logContext.supabase, {
+        level: 'error',
+        source: 'evolution',
+        eventType: 'whatsapp_webhook_configure_failed',
+        message,
+        orgId: logContext.orgId,
+        unitId: logContext.unitId,
+      })
+    }
+    return false
   }
 }
 

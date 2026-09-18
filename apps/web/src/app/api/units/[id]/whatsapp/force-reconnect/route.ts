@@ -42,7 +42,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   try {
-    const data = await forceReconnectInstance(config)
+    const data = await forceReconnectInstance(config, { supabase, orgId: unitRow.org_id, unitId: unitRow.id })
     const qrCode = data?.base64 ?? data?.qrcode?.base64 ?? null
     const pairingCode = data?.pairingCode ?? data?.qrcode?.pairingCode ?? null
     return NextResponse.json({ qrCode, pairingCode })

@@ -30,11 +30,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
   try {
     const status = await getInstanceStatus(channel.config)
+    let webhookOk: boolean | null = null
     if (status === 'open') {
       await syncWhatsappPhoneIfConnected(supabase, unitRow, channel)
-      await ensureWebhookConfigured(channel.config)
+      webhookOk = await ensureWebhookConfigured(channel.config, { supabase, orgId: unitRow.org_id, unitId: unitRow.id })
     }
-    return NextResponse.json({ status })
+    return NextResponse.json({ status, webhookOk })
   } catch (error) {
     return NextResponse.json(
       { status: 'error', error: error instanceof Error ? error.message : 'Erro desconhecido' },

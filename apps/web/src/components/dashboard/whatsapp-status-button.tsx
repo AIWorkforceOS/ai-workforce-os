@@ -35,6 +35,7 @@ const STATUS_STYLE: Record<Status, { bg: string; color: string }> = {
  */
 export function WhatsAppStatusButton({ unitId, agentType, label }: { unitId: string; agentType: string; label: string }) {
   const [status, setStatus] = useState<Status>('loading')
+  const [webhookOk, setWebhookOk] = useState<boolean | null>(null)
   const [expanded, setExpanded] = useState(false)
   const fetchedRef = useRef(false)
 
@@ -45,7 +46,10 @@ export function WhatsAppStatusButton({ unitId, agentType, label }: { unitId: str
     fetch(`/api/units/${unitId}/whatsapp/status?agentType=${encodeURIComponent(agentType)}`)
       .then((res) => res.json())
       .then((data) => {
-        if (!cancelled) setStatus((data.status as Status) ?? 'error')
+        if (!cancelled) {
+          setStatus((data.status as Status) ?? 'error')
+          setWebhookOk(typeof data.webhookOk === 'boolean' ? data.webhookOk : null)
+        }
       })
       .catch(() => {
         if (!cancelled) setStatus('error')
@@ -55,7 +59,10 @@ export function WhatsAppStatusButton({ unitId, agentType, label }: { unitId: str
     }
   }, [unitId, agentType])
 
-  const needsAttention = status === 'close' || status === 'error'
+  // Conectado no WhatsApp não garante que as mensagens chegam até nós — ver
+  // comentário em whatsapp-connection.tsx (achado real, 2026-09-18).
+  const webhookBroken = status === 'open' && webhookOk === false
+  const needsAttention = status === 'close' || status === 'error' || webhookBroken
 
   return (
     <div>
@@ -63,13 +70,13 @@ export function WhatsAppStatusButton({ unitId, agentType, label }: { unitId: str
         type="button"
         onClick={() => setExpanded((v) => !v)}
         className="flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-[11px] font-bold transition-colors hover:brightness-110"
-        style={{ background: STATUS_STYLE[status].bg, color: STATUS_STYLE[status].color }}
+        style={webhookBroken ? STATUS_STYLE.close : STATUS_STYLE[status]}
       >
         <span className="flex items-center gap-1.5">
           <MessageCircle size={12} />
-          {STATUS_LABEL[status]}
+          {webhookBroken ? 'Conectado, mas sem receber mensagens' : STATUS_LABEL[status]}
         </span>
-        <span>{needsAttention ? 'Reconectar →' : expanded ? 'Ocultar' : 'Ver'}</span>
+        <span>{needsAttention ? (webhookBroken ? 'Ver →' : 'Reconectar →') : expanded ? 'Ocultar' : 'Ver'}</span>
       </button>
       {expanded && (
         <div className="mt-2">

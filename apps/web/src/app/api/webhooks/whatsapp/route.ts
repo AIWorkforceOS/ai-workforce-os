@@ -284,9 +284,23 @@ export async function POST(request: Request) {
   const resolution = await resolveWhatsappChannelByInstanceName(supabase, instanceName)
 
   if (!resolution) {
-    console.error(
-      `[webhook_whatsapp] mensagem recebida para instância "${instanceName}" mas nenhuma unidade corresponde a ela — verifique unit_whatsapp_channels/units.evolution_instance_name.`,
-    )
+    // Achado real (2026-09-18): "Ana conectou, mas não respondeu nenhuma
+    // mensagem" — este caminho só logava em console.error (visível só no
+    // log serverless, ninguém no time via). Uma mensagem chegou de verdade
+    // pra Evolution API (prova que ela está conectada) mas não bate com
+    // nenhuma linha de unit_whatsapp_channels/units.evolution_instance_name
+    // — sinal de webhook mal configurado ou instância órfã, não deve ficar
+    // invisível em system_events.
+    const message = `Mensagem recebida para instância "${instanceName}" mas nenhuma unidade corresponde a ela — verifique unit_whatsapp_channels/units.evolution_instance_name.`
+    console.error(`[webhook_whatsapp] ${message}`)
+    await logSystemEvent(supabase, {
+      level: 'error',
+      source: 'evolution',
+      eventType: 'whatsapp_webhook_instance_not_found',
+      message,
+      orgId: null,
+      unitId: null,
+    })
     return NextResponse.json({ error: 'Unidade não encontrada para esta instância.' }, { status: 404 })
   }
 

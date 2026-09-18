@@ -53,7 +53,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   try {
-    const data = await connectInstance(config)
+    const data = await connectInstance(config, { supabase, orgId: unitRow.org_id, unitId: unitRow.id })
     const qrCode = data?.base64 ?? data?.qrcode?.base64 ?? null
     const pairingCode = data?.pairingCode ?? data?.qrcode?.pairingCode ?? null
     return NextResponse.json({ qrCode, pairingCode })

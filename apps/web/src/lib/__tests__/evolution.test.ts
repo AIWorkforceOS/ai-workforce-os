@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { forceReconnectInstance, getInstanceStatus, sendWhatsAppMessage, type EvolutionUnitConfig } from '@/lib/evolution'
+import { ensureWebhookConfigured, forceReconnectInstance, getInstanceStatus, sendWhatsAppMessage, type EvolutionUnitConfig } from '@/lib/evolution'
+import { createFakeSupabase } from './fake-supabase'
 
 // Cobre a auditoria de bloqueio do WhatsApp (2026-07-30): antes deste fix,
 // evolutionFetch chamava `fetch` sem nenhum timeout — uma Evolution API que
@@ -128,5 +129,63 @@ describe('forceReconnectInstance', () => {
     )
 
     await expect(forceReconnectInstance(config)).rejects.toThrow('erro interno')
+  })
+})
+
+// ensureWebhookConfigured (achado real, 2026-09-18): "Ana conectou, mas
+// não respondeu nenhuma mensagem" — esta função sempre foi best-effort e
+// engolia qualquer falha só em console.error (ninguém via). Agora loga em
+// system_events quando um logContext é passado, pra parar de ser invisível
+// — especialmente importante porque forceReconnectInstance (2026-09-17)
+// apaga o webhook já configurado de uma instância e depende 100% desta
+// função pra recriar.
+describe('ensureWebhookConfigured', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('sucesso: devolve true, não loga nada em system_events', async () => {
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://app.example.com')
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({}), { status: 200 })))
+    const { supabase, db } = createFakeSupabase()
+
+    const ok = await ensureWebhookConfigured(config, { supabase, orgId: 'org-1', unitId: 'unit-1' })
+
+    expect(ok).toBe(true)
+    expect(db.system_events ?? []).toHaveLength(0)
+  })
+
+  it('falha do servidor: devolve false E grava o erro em system_events (antes ficava só no console, invisível)', async () => {
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://app.example.com')
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ message: 'endpoint não existe' }), { status: 404 })))
+    const { supabase, db } = createFakeSupabase()
+
+    const ok = await ensureWebhookConfigured(config, { supabase, orgId: 'org-1', unitId: 'unit-1' })
+
+    expect(ok).toBe(false)
+    expect(db.system_events).toHaveLength(1)
+    const event = db.system_events![0]!
+    expect(event.level).toBe('error')
+    expect(event.event_type).toBe('whatsapp_webhook_configure_failed')
+    expect(event.unit_id).toBe('unit-1')
+    expect(String(event.message)).toContain(config.instanceName)
+  })
+
+  it('sem logContext (chamadas antigas continuam funcionando): falha não lança, só devolve false', async () => {
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://app.example.com')
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({}), { status: 500 })))
+
+    await expect(ensureWebhookConfigured(config)).resolves.toBe(false)
+  })
+
+  it('sem NEXT_PUBLIC_APP_URL configurada, nem tenta — devolve false sem chamar a Evolution API', async () => {
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', '')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const ok = await ensureWebhookConfigured(config)
+
+    expect(ok).toBe(false)
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

@@ -39,6 +39,12 @@ export function WhatsAppConnection({
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [connectAttempted, setConnectAttempted] = useState(false)
+  // Achado real (2026-09-18): "conectado" no WhatsApp não significa que as
+  // mensagens chegam até nós — o webhook (que avisa a gente de mensagem
+  // nova) pode falhar em silêncio (ver ensureWebhookConfigured em
+  // lib/evolution.ts). webhookOk===false é essa falha real confirmada pelo
+  // servidor, não um erro nosso — por isso mostra aviso à parte do "Conectado".
+  const [webhookOk, setWebhookOk] = useState<boolean | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const statusUrl = `/api/units/${unitId}/whatsapp/status${agentType ? `?agentType=${encodeURIComponent(agentType)}` : ''}`
@@ -53,6 +59,7 @@ export function WhatsAppConnection({
         return data.status as Status
       }
       setStatus(data.status as Status)
+      setWebhookOk(typeof data.webhookOk === 'boolean' ? data.webhookOk : null)
       setError(null)
       return data.status as Status
     } catch {
@@ -186,6 +193,13 @@ export function WhatsAppConnection({
       </div>
 
       {error && <p className="text-sm text-red-400">{error}</p>}
+
+      {status === 'open' && webhookOk === false && (
+        <p className="rounded-xl px-3.5 py-2.5 text-sm text-amber-300" style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)' }}>
+          Conectado, mas o aviso de mensagem nova não está configurado no servidor — mensagens recebidas podem não
+          chegar até o funcionário digital. Fale com o suporte técnico.
+        </p>
+      )}
 
       {status === 'not_configured' && (
         <p className="text-sm text-slate-500">
