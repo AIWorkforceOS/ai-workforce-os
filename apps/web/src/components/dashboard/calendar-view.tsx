@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CalendarPlus, ClipboardList, MapPin, Trash2, Upload } from 'lucide-react'
+import { CalendarPlus, ClipboardList, MapPin, Search, Trash2, Upload, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { localDateString, zonedTimeToUtc } from '@/lib/slot-engine'
 import { addDays } from '@/lib/calendar-dates'
@@ -10,7 +10,7 @@ import { RECURRENCE_PILL_LABEL } from '@/lib/scheduling/recurrence'
 import { AppointmentFormModal } from '@/components/dashboard/appointment-form-modal'
 import { ServiceOrderAttachModal } from '@/components/dashboard/service-order-attach-modal'
 import { BulkServiceOrderImportModal } from '@/components/dashboard/bulk-service-order-import-modal'
-import { Badge, Card, StatusPill, type BadgeVariant } from '@/components/ui/dashboard-ui'
+import { Badge, Card, Input, Select, StatusPill, type BadgeVariant } from '@/components/ui/dashboard-ui'
 import { CLIENT_PORTAL_SOURCE } from '@/lib/portal-360/constants'
 import { FACILIT_SYNC_SOURCE } from '@/lib/facilit-appointment'
 import { effectiveDisplayStatus, type EffectiveDisplayStatus } from '@/lib/scheduling/appointment-display-status'
@@ -61,6 +61,24 @@ const SERVICE_ORDER_STATUS_LABEL: Record<string, string> = {
   completed: 'Ordem finalizada',
   quote: 'Ordem em cotação',
 }
+
+/**
+ * Filtro por status + nº da ordem — pedido do Vinicius (2026-09-17):
+ * "as ordens antigas não podem sumir da agenda", principalmente as em
+ * cotação, que ficam de pé indefinidamente até serem aprovadas pelo
+ * cliente (podem ser de semanas atrás). Sem isso, a única forma de
+ * achar uma ordem antiga era navegar semana por semana no calendário —
+ * e ordens de cotação muitas vezes nem têm uma data real associada
+ * (starts_at é placeholder quando vieram do Portal 360).
+ */
+type ServiceOrderStatusFilter = 'all' | 'pending' | 'completed' | 'quote'
+
+const STATUS_FILTER_OPTIONS: { value: ServiceOrderStatusFilter; label: string }[] = [
+  { value: 'all', label: 'Todos os status' },
+  { value: 'quote', label: 'Cotação' },
+  { value: 'completed', label: 'Finalizado' },
+  { value: 'pending', label: 'Pendente' },
+]
 
 const SERVICE_ORDER_STATUS_VARIANT: Record<string, BadgeVariant> = {
   pending: 'amber',
@@ -145,10 +163,35 @@ export function CalendarView({
   const router = useRouter()
   const [busyId, setBusyId] = useState<string | null>(null)
   const [rowError, setRowError] = useState<string | null>(null)
+  const [statusFilter, setStatusFilter] = useState<ServiceOrderStatusFilter>('all')
+  const [orderQuery, setOrderQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<AppointmentWithRelations[]>([])
+  const [searching, setSearching] = useState(false)
 
   const canBook = !!orgId && services.length > 0 && employees.length > 0
+  const isFiltering = statusFilter !== 'all' || orderQuery.trim() !== ''
+
+  /** Busca por nº da ordem/status, SEM limite de data — ignora a semana visível de propósito, pra achar ordens antigas (ver comentário de STATUS_FILTER_OPTIONS acima). */
+  async function runSearch(): Promise<AppointmentWithRelations[]> {
+    const supabase = createClient()
+    let query = supabase
+      .from('appointments')
+      .select('*, customer:customers(id,name,phone), service:services(id,name), employee:employees(id,name)')
+      .eq('unit_id', unitId)
+      .not('service_order_number', 'is', null)
+      .order('starts_at', { ascending: false })
+      .limit(100)
+    if (statusFilter !== 'all') query = query.eq('service_order_status', statusFilter)
+    const trimmedQuery = orderQuery.trim()
+    if (trimmedQuery) query = query.ilike('service_order_number', `%${trimmedQuery}%`)
+    const { data } = await query
+    const fresh = (data ?? []) as unknown as AppointmentWithRelations[]
+    setSearchResults(fresh)
+    return fresh
+  }
 
   async function reload() {
+    if (isFiltering) return runSearch()
     const supabase = createClient()
     const rangeStartUtc = zonedTimeToUtc(weekDates[0]!, '00:00', timezone).toISOString()
     const rangeEndUtc = zonedTimeToUtc(addDays(weekDates[weekDates.length - 1]!, 1), '00:00', timezone).toISOString()
@@ -163,6 +206,24 @@ export function CalendarView({
     setAppointments(fresh)
     return fresh
   }
+
+  // Debounce de 300ms pro campo de texto — evita 1 query por tecla digitada.
+  useEffect(() => {
+    if (!isFiltering) {
+      setSearchResults([])
+      return
+    }
+    setSearching(true)
+    const timeout = setTimeout(() => {
+      void runSearch().finally(() => setSearching(false))
+    }, 300)
+    return () => clearTimeout(timeout)
+  }, [isFiltering, statusFilter, orderQuery])
+
+  const displayedAppointments = isFiltering ? searchResults : appointments
+  const displayedDates = isFiltering
+    ? Array.from(new Set(displayedAppointments.map((a) => localDateString(new Date(a.starts_at), timezone)))).sort().reverse()
+    : weekDates
 
   /**
    * Hard-delete de verdade: apaga o agendamento inteiro (não só limpa
@@ -267,7 +328,39 @@ export function CalendarView({
     <div className="flex flex-col gap-4">
       {rowError && <p className="text-sm text-red-400">{rowError}</p>}
 
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+            <Input
+              value={orderQuery}
+              onChange={(e) => setOrderQuery(e.target.value)}
+              placeholder="Buscar por nº da ordem"
+              className="py-1.5 pl-8 text-xs"
+              style={{ width: 200 }}
+            />
+          </div>
+          <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as ServiceOrderStatusFilter)} className="py-1.5 text-xs" style={{ width: 160 }}>
+            {STATUS_FILTER_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </Select>
+          {isFiltering && (
+            <button
+              type="button"
+              onClick={() => {
+                setOrderQuery('')
+                setStatusFilter('all')
+              }}
+              className="flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-slate-200"
+            >
+              <X size={12} />
+              Limpar filtro
+            </button>
+          )}
+        </div>
         <button
           type="button"
           disabled={!canBook}
@@ -280,8 +373,20 @@ export function CalendarView({
         </button>
       </div>
 
-      {weekDates.map((date) => {
-        const dayAppointments = appointments
+      {isFiltering && (
+        <p className="text-xs text-slate-500">
+          {searching
+            ? 'Buscando…'
+            : `A busca ignora a semana selecionada — mostra qualquer ordem de qualquer data que combine (até 100 resultados).`}
+        </p>
+      )}
+
+      {isFiltering && !searching && displayedAppointments.length === 0 && (
+        <Card className="px-5 py-4 text-sm text-slate-500">Nenhuma ordem encontrada com esse filtro.</Card>
+      )}
+
+      {displayedDates.map((date) => {
+        const dayAppointments = displayedAppointments
           .filter((a) => localDateString(new Date(a.starts_at), timezone) === date)
           .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
         const isToday = date === todayLocal
@@ -296,6 +401,7 @@ export function CalendarView({
                 <h2 className="text-sm font-bold text-white">{formatDayHeader(date)}</h2>
                 {isToday && <StatusPill variant="cyan">Hoje</StatusPill>}
               </div>
+              {!isFiltering && (
               <button
                 type="button"
                 disabled={!canBook}
@@ -306,6 +412,7 @@ export function CalendarView({
                 <CalendarPlus size={13} />
                 Agendar
               </button>
+              )}
             </div>
 
             {dayAppointments.length === 0 ? (
