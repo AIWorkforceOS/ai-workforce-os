@@ -30,6 +30,9 @@ import {
 import { TrafficDecisionActions } from '@/components/dashboard/traffic-decision-actions'
 import { TrafficCreativeDraftActions } from '@/components/dashboard/traffic-creative-draft-actions'
 import { TrafficStrategyGenerateButton } from '@/components/dashboard/traffic-strategy-generate-button'
+import { EmployeeHubGate } from '@/components/dashboard/employee-hub-gate'
+import { EmployeeHubTabs } from '@/components/dashboard/employee-hub-tabs'
+import { resolveEmployeeHub } from '@/lib/dashboard/employee-hub'
 import { BarChart3, ClipboardList, ImageIcon, Plus, Sparkles, TrendingUp } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
@@ -123,7 +126,7 @@ export default async function TrafficPage() {
 
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
-  const [accountsRes, entitiesRes, snapshotsRes, decisionsRes, actionsRes, reportsRes, creativeDraftsRes] =
+  const [accountsRes, entitiesRes, snapshotsRes, decisionsRes, actionsRes, reportsRes, creativeDraftsRes, hub] =
     await Promise.all([
       supabase.from('ad_accounts').select('*').order('created_at', { ascending: false }),
       supabase
@@ -151,6 +154,7 @@ export default async function TrafficPage() {
         .eq('status', 'pending_approval')
         .order('created_at', { ascending: false })
         .limit(20),
+      resolveEmployeeHub(supabase, 'traffic_specialist'),
     ])
 
   const accounts = (accountsRes.data ?? []) as AdAccount[]
@@ -193,6 +197,16 @@ export default async function TrafficPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <EmployeeHubTabs
+        agentType="traffic_specialist"
+        unitId={hub.unitId}
+        configId={hub.configId}
+        panelHref="/dashboard/traffic"
+        whatsappEligible={false}
+        connectHref="/dashboard/traffic/connect"
+      />
+      <EmployeeHubGate agentType="traffic_specialist" hired={hub.hired} active={hub.active} />
+
       <PageHeader
         eyebrow="funcionário digital"
         title="Especialista em Tráfego Pago"

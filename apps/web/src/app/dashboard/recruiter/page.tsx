@@ -16,6 +16,9 @@ import {
   Th,
   Tr,
 } from '@/components/ui/dashboard-ui'
+import { EmployeeHubGate } from '@/components/dashboard/employee-hub-gate'
+import { EmployeeHubTabs } from '@/components/dashboard/employee-hub-tabs'
+import { resolveEmployeeHub } from '@/lib/dashboard/employee-hub'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,10 +29,11 @@ function daysBetween(a: string, b: string): number {
 export default async function RecruiterDashboardPage() {
   const supabase = await createClient()
 
-  const [{ data: jobsData }, { data: jcData }, { data: unitsData }] = await Promise.all([
+  const [{ data: jobsData }, { data: jcData }, { data: unitsData }, hub] = await Promise.all([
     supabase.from('job_openings').select('*').order('created_at', { ascending: false }),
     supabase.from('job_candidates').select('id, job_id, stage, ai_score, presented_at, screened_at'),
     supabase.from('units').select('id, name'),
+    resolveEmployeeHub(supabase, 'recruiter'),
   ])
 
   const jobs = ((jobsData as JobOpening[] | null) ?? [])
@@ -120,6 +124,9 @@ export default async function RecruiterDashboardPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <EmployeeHubTabs agentType="recruiter" unitId={hub.unitId} configId={hub.configId} panelHref="/dashboard/recruiter" whatsappEligible />
+      <EmployeeHubGate agentType="recruiter" hired={hub.hired} active={hub.active} />
+
       <PageHeader
         eyebrow="equipe digital"
         title="Recrutador digital"

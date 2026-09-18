@@ -18,13 +18,13 @@ import {
   Sparkles,
   CreditCard,
   Smartphone,
-  ClipboardList,
   CalendarDays,
   Link2,
   Mail,
   FileText,
   Search,
   PieChart,
+  Camera,
 } from 'lucide-react'
 import type { Locale } from '@/lib/i18n/config'
 import type { ManagementMode } from '@/lib/types'
@@ -42,10 +42,22 @@ export type NavItem = {
   facilitOnly?: boolean
 }
 
-// Arquitetura de navegação por OBJETIVO do usuário, não por tipo de
-// funcionário digital que produz o dado — ex.: a página do Recrutador vive em
-// "Pessoas e Recrutamento" ao lado da equipe humana, não agrupada com Tráfego
-// só porque ambos são "agentes IA". Ver docs/ux-audit-fase1-2026-08-19.md §2.
+// Arquitetura de navegação por FUNCIONÁRIO DIGITAL, não por objetivo do
+// usuário (arquitetura anterior, Fase 2/2026-08-20 — ver
+// docs/ux-audit-fase1-2026-08-19.md §2) — pedido direto do Vinicius
+// (2026-09-18): "o Sistema Alizo tem muita coisa no menu lateral... fica
+// didático... precisamos deixar apenas o que de fato importa". Só o que é
+// mais usado no dia a dia fica em destaque (Início, Funcionários, Agenda,
+// Financeiro); o resto do sistema (Configurações, Clientes/Conversas,
+// itens só de super_admin etc.) desce pros grupos finais, sem sumir do
+// menu — só deixa de competir por atenção com o que importa mais.
+//
+// Cada funcionário aqui leva direto pro MESMO "painel" que
+// employee-catalog.tsx já usa como panelHref — a barra de abas
+// (EmployeeHubTabs, ver as 6 páginas em app/dashboard/{agents,recruiter,
+// receptionist,traffic,content,seo}/page.tsx) é quem dá acesso, dali, a
+// configurar/treinar/testar/conexões/materiais — não precisa de item de
+// menu separado pra cada uma dessas ações.
 //
 // Fica num .ts separado (não no sidebar.tsx) de propósito: o vitest deste
 // repo não tem transform de JSX configurado (tsconfig usa jsx:"preserve",
@@ -57,72 +69,57 @@ export const navGroups: { label: Record<Locale, string>; items: NavItem[] }[] = 
     label: { pt: 'Início', en: 'Home' },
     items: [
       { href: '/dashboard', label: { pt: 'Visão geral', en: 'Overview' }, icon: LayoutDashboard, exact: true },
-      { href: '/dashboard/onboarding', label: { pt: 'Primeiros passos', en: 'Getting started' }, icon: Rocket },
-      { href: '/dashboard/organizations', label: { pt: 'Clientes (empresas)', en: 'Clients (companies)' }, icon: Building2, superOnly: true },
+      { href: '/dashboard/onboarding', label: { pt: 'Treinamento guiado', en: 'Guided training' }, icon: Rocket },
     ],
   },
   {
-    label: { pt: 'Caixa de Entrada', en: 'Inbox' },
+    label: { pt: 'Funcionários', en: 'Employees' },
     items: [
-      { href: '/dashboard/conversations', label: { pt: 'Conversas', en: 'Conversations' }, icon: MessageSquare },
+      { href: '/dashboard/agents', label: { pt: 'Vendas', en: 'Sales' }, icon: Bot },
+      { href: '/dashboard/recruiter', label: { pt: 'RH (Recrutador)', en: 'HR (Recruiter)' }, icon: Briefcase },
+      { href: '/dashboard/receptionist', label: { pt: 'Recepção', en: 'Receptionist' }, icon: Headset },
+      { href: '/dashboard/content', label: { pt: 'Gestor de Conteúdo', en: 'Content Manager' }, icon: Camera },
+      { href: '/dashboard/traffic', label: { pt: 'Tráfego pago', en: 'Paid ads' }, icon: Megaphone },
+      { href: '/dashboard/seo', label: { pt: 'SEO', en: 'SEO' }, icon: Search },
     ],
   },
   {
-    label: { pt: 'Clientes e Vendas', en: 'Customers & Sales' },
-    items: [
-      { href: '/dashboard/receptionist/customers', label: { pt: 'Clientes', en: 'Customers' }, icon: Users, fullManagementOnly: true },
-      { href: '/dashboard/crm', label: { pt: 'Funil de vendas', en: 'Sales pipeline' }, icon: Kanban },
-      { href: '/dashboard/leads', label: { pt: 'Contatos (leads)', en: 'Contacts (leads)' }, icon: UserCircle },
-      { href: '/dashboard/receptionist', label: { pt: 'AI Receptionist', en: 'AI Receptionist' }, icon: Headset },
-      { href: '/dashboard/agents', label: { pt: 'AI Sales Representative', en: 'AI Sales Representative' }, icon: Bot },
-    ],
-  },
-  {
-    label: { pt: 'Agenda e Operação', en: 'Schedule & Operations' },
+    label: { pt: 'Agenda', en: 'Schedule' },
     items: [
       { href: '/dashboard/agenda', label: { pt: 'Agenda', en: 'Schedule' }, icon: CalendarDays, fullManagementOnly: true },
-      { href: '/dashboard/operacao', label: { pt: 'Operação de serviços', en: 'Service operations' }, icon: ClipboardList },
-      { href: '/dashboard/facilit', label: { pt: 'Facil-IT (360)', en: 'Facil-IT (360)' }, icon: Link2, facilitOnly: true },
     ],
   },
   {
-    label: { pt: 'Pessoas e Recrutamento', en: 'People & Recruiting' },
+    label: { pt: 'Financeiro', en: 'Finance' },
     items: [
-      { href: '/dashboard/employees', label: { pt: 'Equipe (pessoas)', en: 'Team (people)' }, icon: Users },
-      { href: '/dashboard/recruiter', label: { pt: 'Recrutador (RH)', en: 'Recruiter (HR)' }, icon: Briefcase },
+      { href: '/dashboard/operacao', label: { pt: 'Financeiro', en: 'Finance' }, icon: Wallet },
     ],
   },
   {
-    label: { pt: 'Marketing', en: 'Marketing' },
+    label: { pt: 'Clientes e Conversas', en: 'Customers & Conversations' },
     items: [
-      { href: '/dashboard/traffic', label: { pt: 'Tráfego pago', en: 'Paid ads' }, icon: Megaphone },
-      { href: '/dashboard/content', label: { pt: 'Gestor de Conteúdo', en: 'Content Manager' }, icon: FileText },
-      { href: '/dashboard/seo', label: { pt: 'SEO', en: 'SEO' }, icon: Search },
-      { href: '/dashboard/email-marketing', label: { pt: 'E-mail marketing', en: 'Email marketing' }, icon: Mail },
+      { href: '/dashboard/conversations', label: { pt: 'Caixa de Entrada', en: 'Inbox' }, icon: MessageSquare },
+      { href: '/dashboard/crm', label: { pt: 'Funil de vendas', en: 'Sales pipeline' }, icon: Kanban },
+      { href: '/dashboard/leads', label: { pt: 'Contatos (leads)', en: 'Contacts (leads)' }, icon: UserCircle },
+      { href: '/dashboard/receptionist/customers', label: { pt: 'Clientes', en: 'Customers' }, icon: Users, fullManagementOnly: true },
     ],
   },
   {
-    label: { pt: 'Equipe Digital', en: 'Digital Team' },
+    label: { pt: 'Sistema', en: 'System' },
     items: [
       { href: '/dashboard/equipe-digital', label: { pt: 'Contratar & ativar', en: 'Hire & activate' }, icon: Sparkles },
-    ],
-  },
-  {
-    label: { pt: 'Relatórios', en: 'Reports' },
-    items: [
+      { href: '/dashboard/employees', label: { pt: 'Equipe (pessoas)', en: 'Team (people)' }, icon: Users },
       { href: '/dashboard/results', label: { pt: 'Resultados', en: 'Results' }, icon: TrendingUp },
-      { href: '/dashboard/financial', label: { pt: 'Cobranças', en: 'Billing' }, icon: Wallet, superOnly: true },
-      { href: '/dashboard/sales', label: { pt: 'Vendas Alizo', en: 'Alizo sales' }, icon: ShoppingCart, exact: true, superOnly: true },
-      { href: '/dashboard/sales/payments', label: { pt: 'Pagamentos (setup)', en: 'Payments (setup)' }, icon: CreditCard, superOnly: true },
-      { href: '/dashboard/sales/financeiro', label: { pt: 'DRE (interno Alizo)', en: 'P&L (Alizo internal)' }, icon: PieChart, superOnly: true },
-    ],
-  },
-  {
-    label: { pt: 'Configurações', en: 'Settings' },
-    items: [
+      { href: '/dashboard/email-marketing', label: { pt: 'E-mail marketing', en: 'Email marketing' }, icon: Mail },
+      { href: '/dashboard/facilit', label: { pt: 'Facil-IT (360)', en: 'Facil-IT (360)' }, icon: Link2, facilitOnly: true },
       { href: '/dashboard/settings', label: { pt: 'Configurações gerais', en: 'General settings' }, icon: Settings },
       { href: '/dashboard/units', label: { pt: 'Unidades', en: 'Units' }, icon: MapPin },
       { href: '/dashboard/messaging/connect', label: { pt: 'Canal de mensagens (SMS)', en: 'Messaging channel (SMS)' }, icon: Smartphone },
+      { href: '/dashboard/organizations', label: { pt: 'Clientes (empresas)', en: 'Clients (companies)' }, icon: Building2, superOnly: true },
+      { href: '/dashboard/financial', label: { pt: 'Cobranças', en: 'Billing' }, icon: FileText, superOnly: true },
+      { href: '/dashboard/sales', label: { pt: 'Vendas Alizo', en: 'Alizo sales' }, icon: ShoppingCart, exact: true, superOnly: true },
+      { href: '/dashboard/sales/payments', label: { pt: 'Pagamentos (setup)', en: 'Payments (setup)' }, icon: CreditCard, superOnly: true },
+      { href: '/dashboard/sales/financeiro', label: { pt: 'DRE (interno Alizo)', en: 'P&L (Alizo internal)' }, icon: PieChart, superOnly: true },
     ],
   },
 ]

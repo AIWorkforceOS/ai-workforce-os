@@ -16,6 +16,9 @@ import { ContentPostActions } from '@/components/dashboard/content-post-actions'
 import { ContentWeekActions } from '@/components/dashboard/content-week-actions'
 import { ContentWeekView } from '@/components/dashboard/content-week-view'
 import { BrandKitForm, type BrandKitValue } from '@/components/dashboard/brand-kit-form'
+import { EmployeeHubGate } from '@/components/dashboard/employee-hub-gate'
+import { EmployeeHubTabs } from '@/components/dashboard/employee-hub-tabs'
+import { resolveEmployeeHub } from '@/lib/dashboard/employee-hub'
 import { fullWeekDates, postingDaysFrom } from '@/lib/content/planner'
 import { holidaysInRange } from '@/lib/content/holidays'
 import { CONTENT_STATUS_LABEL, CONTENT_STATUS_VARIANT } from '@/lib/content/status-labels'
@@ -86,7 +89,7 @@ export default async function ContentPage() {
   const calendarStart = thisWeek[0]!.toISOString()
   const calendarEnd = new Date(nextWeek[6]!.getTime() + 24 * 60 * 60 * 1000).toISOString()
 
-  const [accountsRes, postsRes, calendarRes] = await Promise.all([
+  const [accountsRes, postsRes, calendarRes, hub] = await Promise.all([
     supabase.from('social_accounts').select('*').order('created_at', { ascending: false }),
     supabase
       .from('content_posts')
@@ -100,6 +103,7 @@ export default async function ContentPage() {
       .from('content_posts')
       .select('*')
       .or(`and(scheduled_for.gte.${calendarStart},scheduled_for.lt.${calendarEnd}),and(scheduled_for.is.null,created_at.gte.${calendarStart},created_at.lt.${calendarEnd})`),
+    resolveEmployeeHub(supabase, 'content_specialist'),
   ])
 
   const accounts = (accountsRes.data ?? []) as SocialAccount[]
@@ -120,6 +124,16 @@ export default async function ContentPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <EmployeeHubTabs
+        agentType="content_specialist"
+        unitId={hub.unitId}
+        configId={hub.configId}
+        panelHref="/dashboard/content"
+        whatsappEligible={false}
+        connectHref="/dashboard/content/connect"
+      />
+      <EmployeeHubGate agentType="content_specialist" hired={hub.hired} active={hub.active} />
+
       <PageHeader
         eyebrow="funcionário digital"
         title="Gestor de Conteúdo"

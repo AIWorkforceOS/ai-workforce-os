@@ -1,6 +1,9 @@
 import { Headset, TrendingUp, UserPlus, Users } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { Badge, type BadgeVariant, Card, EmptyState, PageHeader, PrimaryButton } from '@/components/ui/dashboard-ui'
+import { EmployeeHubGate } from '@/components/dashboard/employee-hub-gate'
+import { EmployeeHubTabs } from '@/components/dashboard/employee-hub-tabs'
+import { resolveEmployeeHub } from '@/lib/dashboard/employee-hub'
 import type { Appointment, Customer } from '@/lib/types'
 import { getAppUser } from '@/lib/app-user'
 import { fetchOrganizationVerticalKey } from '@/lib/organizations'
@@ -104,6 +107,7 @@ function computeVerticalKpis(
 export default async function ReceptionistHomePage() {
   const supabase = await createClient()
   const appUser = await getAppUser()
+  const hub = await resolveEmployeeHub(supabase, 'receptionist')
   const verticalKey = await fetchOrganizationVerticalKey(supabase, appUser?.orgId)
   const term = getCustomerTerm(verticalKey, 'pt')
   const termPlural = getCustomerTerm(verticalKey, 'pt', { plural: true })
@@ -135,6 +139,9 @@ export default async function ReceptionistHomePage() {
   if (rows.length === 0) {
     return (
       <div className="flex flex-col gap-6">
+        <EmployeeHubTabs agentType="receptionist" unitId={hub.unitId} configId={hub.configId} panelHref="/dashboard/receptionist" whatsappEligible />
+        <EmployeeHubGate agentType="receptionist" hired={hub.hired} active={hub.active} />
+
         <PageHeader eyebrow="ai receptionist" title="AI Receptionist" subtitle={`Organiza o atendimento e mantém o cadastro de ${termPlural.toLowerCase()} em dia.`} />
         <Card>
           <EmptyState
@@ -171,6 +178,9 @@ export default async function ReceptionistHomePage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <EmployeeHubTabs agentType="receptionist" unitId={hub.unitId} configId={hub.configId} panelHref="/dashboard/receptionist" whatsappEligible />
+      <EmployeeHubGate agentType="receptionist" hired={hub.hired} active={hub.active} />
+
       <PageHeader
         eyebrow="ai receptionist"
         title="AI Receptionist"

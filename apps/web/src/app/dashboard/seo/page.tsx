@@ -19,6 +19,9 @@ import { SeoGbpChecklist } from '@/components/dashboard/seo-gbp-checklist'
 import { SeoKeywordTracker, type TrackedKeywordRow } from '@/components/dashboard/seo-keyword-tracker'
 import { SeoAuditRunButton } from '@/components/dashboard/seo-audit-run-button'
 import { SeoGscOAuthBanner, SeoGscRefreshButton, SeoGscSitePicker } from '@/components/dashboard/seo-gsc-site-picker'
+import { EmployeeHubGate } from '@/components/dashboard/employee-hub-gate'
+import { EmployeeHubTabs } from '@/components/dashboard/employee-hub-tabs'
+import { resolveEmployeeHub } from '@/lib/dashboard/employee-hub'
 import { GBP_CHECKLIST_ITEMS } from '@/lib/seo/gbp-checklist'
 import { getSerpApiKey } from '@/lib/seo/rank-tracking'
 import { getGoogleSearchConsoleCredentials } from '@/lib/seo/search-console-oauth'
@@ -72,6 +75,7 @@ export default async function SeoPage({
   if (!primaryUnit) {
     return (
       <div className="flex flex-col gap-6">
+        <EmployeeHubTabs agentType="seo_specialist" unitId={null} configId={null} panelHref="/dashboard/seo" whatsappEligible={false} />
         <PageHeader eyebrow="funcionário digital" title="Especialista em SEO" subtitle="Crie uma unidade primeiro para contratar este funcionário." />
       </div>
     )
@@ -86,6 +90,7 @@ export default async function SeoPage({
     { data: gscAccountRow },
     { data: gscSnapshots },
     gscOauthSession,
+    hub,
   ] = await Promise.all([
     supabase.from('agent_configs').select('*').eq('unit_id', primaryUnit.id).eq('agent_type', 'seo_specialist').maybeSingle(),
     supabase.from('seo_audits').select('*').eq('unit_id', primaryUnit.id).order('created_at', { ascending: false }).limit(1),
@@ -97,6 +102,7 @@ export default async function SeoPage({
     oauthSessionId
       ? supabase.from('seo_gsc_oauth_sessions').select('*').eq('id', oauthSessionId).maybeSingle()
       : Promise.resolve({ data: null }),
+    resolveEmployeeHub(supabase, 'seo_specialist'),
   ])
 
   const gscAccount = gscAccountRow as SeoSearchConsoleAccount | null
@@ -140,6 +146,9 @@ export default async function SeoPage({
 
   return (
     <div className="flex flex-col gap-6">
+      <EmployeeHubTabs agentType="seo_specialist" unitId={hub.unitId} configId={hub.configId} panelHref="/dashboard/seo" whatsappEligible={false} />
+      <EmployeeHubGate agentType="seo_specialist" hired={hub.hired} active={hub.active} />
+
       <PageHeader
         eyebrow="funcionário digital"
         title="Especialista em SEO"

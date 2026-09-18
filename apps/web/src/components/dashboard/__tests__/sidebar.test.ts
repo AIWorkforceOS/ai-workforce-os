@@ -81,6 +81,69 @@ describe('getVisibleNavGroups', () => {
     expect(hrefs).toContain('/dashboard/seo')
   })
 
+  // Redesign do menu (2026-09-18, pedido do Vinicius): navegação por
+  // funcionário digital em vez de por objetivo do usuário — os 6
+  // funcionários levam direto pro "painel" (mesmo panelHref já usado em
+  // employee-catalog.tsx), sem item de menu separado por ação
+  // (configurar/treinar/testar/conexões ficam na barra de abas de cada
+  // painel, ver EmployeeHubTabs).
+  it('os 6 funcionários digitais aparecem no grupo "Funcionários", cada um levando pro próprio painel', () => {
+    const groups = getVisibleNavGroups({ role: 'admin' })
+    const funcionarios = groups.find((g) => g.label.pt === 'Funcionários')
+    expect(funcionarios).toBeDefined()
+    const hrefs = funcionarios!.items.map((i) => i.href)
+    expect(hrefs).toEqual([
+      '/dashboard/agents',
+      '/dashboard/recruiter',
+      '/dashboard/receptionist',
+      '/dashboard/content',
+      '/dashboard/traffic',
+      '/dashboard/seo',
+    ])
+  })
+
+  it('Início tem só Visão geral e Treinamento guiado — o resto desceu pros grupos finais', () => {
+    const groups = getVisibleNavGroups({ role: 'admin' })
+    const inicio = groups.find((g) => g.label.pt === 'Início')
+    expect(inicio?.items.map((i) => i.href)).toEqual(['/dashboard', '/dashboard/onboarding'])
+  })
+
+  it('Financeiro é seu próprio grupo, apontando pra Operação', () => {
+    const hrefs = allHrefs(getVisibleNavGroups({ role: 'admin' }))
+    const financeiro = getVisibleNavGroups({ role: 'admin' }).find((g) => g.label.pt === 'Financeiro')
+    expect(financeiro?.items.map((i) => i.href)).toEqual(['/dashboard/operacao'])
+    expect(hrefs).toContain('/dashboard/operacao')
+  })
+
+  it('nenhum href da arquitetura antiga (por objetivo) sumiu — só mudou de grupo', () => {
+    const hrefs = allHrefs(getVisibleNavGroups({ role: 'admin', managementMode: 'full_management' }))
+    for (const href of [
+      '/dashboard',
+      '/dashboard/onboarding',
+      '/dashboard/conversations',
+      '/dashboard/crm',
+      '/dashboard/leads',
+      '/dashboard/receptionist/customers',
+      '/dashboard/receptionist',
+      '/dashboard/agents',
+      '/dashboard/agenda',
+      '/dashboard/operacao',
+      '/dashboard/employees',
+      '/dashboard/recruiter',
+      '/dashboard/traffic',
+      '/dashboard/content',
+      '/dashboard/seo',
+      '/dashboard/email-marketing',
+      '/dashboard/equipe-digital',
+      '/dashboard/results',
+      '/dashboard/settings',
+      '/dashboard/units',
+      '/dashboard/messaging/connect',
+    ]) {
+      expect(hrefs).toContain(href)
+    }
+  })
+
   it('nenhum grupo visível fica vazio, e nenhum href aparece duplicado', () => {
     for (const role of ['admin', 'super_admin'] as const) {
       for (const managementMode of ['digital_employees', 'full_management'] as const) {

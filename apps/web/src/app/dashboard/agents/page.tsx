@@ -10,6 +10,9 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { Card, PageHeader, PrimaryButton, StatusPill, TableShell, Td, Th, Tr } from '@/components/ui/dashboard-ui'
+import { EmployeeHubGate } from '@/components/dashboard/employee-hub-gate'
+import { EmployeeHubTabs } from '@/components/dashboard/employee-hub-tabs'
+import { resolveEmployeeHub } from '@/lib/dashboard/employee-hub'
 
 const CAPABILITIES = [
   {
@@ -52,12 +55,18 @@ const CAPABILITIES = [
 
 export default async function AgentsPage() {
   const supabase = await createClient()
-  const { data: units } = await supabase.from('units').select('id, name, whatsapp_phone').order('name')
+  const [{ data: units }, hub] = await Promise.all([
+    supabase.from('units').select('id, name, whatsapp_phone').order('name'),
+    resolveEmployeeHub(supabase, 'sdr'),
+  ])
   const unitRows = (units ?? []) as { id: string; name: string; whatsapp_phone: string | null }[]
   const connectedUnits = unitRows.filter(u => u.whatsapp_phone)
 
   return (
     <div className="flex flex-col gap-6">
+      <EmployeeHubTabs agentType="sdr" unitId={hub.unitId} configId={hub.configId} panelHref="/dashboard/agents" whatsappEligible />
+      <EmployeeHubGate agentType="sdr" hired={hub.hired} active={hub.active} />
+
       <PageHeader
         eyebrow="automação"
         title="Agentes IA"
