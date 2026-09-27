@@ -49,6 +49,8 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: { message: string
   private singleMode: 'none' | 'maybeSingle' | 'single' = 'none'
   private onConflictKeys: string[] = []
   private embeds: Embed[] = []
+  private rangeFrom: number | null = null
+  private rangeTo: number | null = null
 
   constructor(
     private table: string,
@@ -122,6 +124,12 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: { message: string
   }
   limit(n: number) {
     this.limitN = n
+    return this
+  }
+  // Paginação usada por backups (lib/backup.ts) — .range(0, 999), .range(1000, 1999) etc.
+  range(from: number, to: number) {
+    this.rangeFrom = from
+    this.rangeTo = to
     return this
   }
   maybeSingle() {
@@ -292,6 +300,7 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: { message: string
       })
     }
     if (this.limitN !== null) rows = rows.slice(0, this.limitN)
+    if (this.rangeFrom !== null && this.rangeTo !== null) rows = rows.slice(this.rangeFrom, this.rangeTo + 1)
     if (this.embeds.length > 0) {
       rows = rows.map((row) => {
         const embedded: Row = { ...row }
