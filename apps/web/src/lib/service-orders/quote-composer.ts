@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { generateStructuredReply, getOpenAIApiKey } from '@/lib/openai'
 
 /**
@@ -108,4 +109,60 @@ export async function composeClientQuoteDescription(input: QuoteComposerInput): 
     console.error(`[quote_composer] falha ao gerar cotação estruturada: ${error instanceof Error ? error.message : String(error)}`)
     return null
   }
+}
+
+/**
+ * Gera a cotação estruturada por IA (inglês + português) automaticamente
+ * assim que o técnico salva a ordem como "Cotação" no Portal do
+ * Funcionário — pedido direto do Vinicius (2026-09-27): "assim que
+ * escrever a cotação a AI já entra em ação... e assim que salvar já
+ * salva a versão final". Antes disso só rodava com um clique manual
+ * (botão "Gerar cotação com IA" no painel do admin/Portal 360) — se
+ * ninguém clicasse, a página em inglês do PDF saía em branco e só a
+ * nota crua em português aparecia (ver drawQuotePage em
+ * lib/service-orders/pdf.ts), exatamente o "só está saindo a versão
+ * português" relatado.
+ *
+ * Recebe o client já pronto (em vez de construir um) pra ficar testável
+ * com createFakeSupabase, mesmo padrão de syncFacilitOrdersForUnit — a
+ * rota decide qual client passar. Precisa ser o SERVICE ROLE quando
+ * chamada a partir da rota do técnico: service_order_quote_description_en/pt
+ * não estão na allowlist do trigger appointments_guard_employee_write,
+ * então uma escrita como role='employee' seria rejeitada pelo banco
+ * (mesma razão pela qual as rotas do Portal 360 já usavam service role —
+ * ver migration 084, bug real do NULL <> 'employee' que bloqueava
+ * exatamente esta coluna).
+ *
+ * Nunca lança nem bloqueia o salvamento principal do técnico: erro na
+ * IA (ou ausência de chave da OpenAI) só deixa a cotação estruturada
+ * pendente até a próxima tentativa — o botão manual continua disponível
+ * pra gerar/regenerar a qualquer momento.
+ */
+export async function autoGenerateQuoteOnSave(
+  supabase: SupabaseClient,
+  appointmentId: string,
+  saved: {
+    service_order_status?: string | null
+    service_order_material_description?: string | null
+    service_order_material_value?: number | null
+    service_order_hours_needed?: number | null
+    service_order_part_purchase_link?: string | null
+  },
+): Promise<void> {
+  if (saved.service_order_status !== 'quote') return
+  const technicianNotes = saved.service_order_material_description?.trim()
+  if (!technicianNotes) return
+
+  const quote = await composeClientQuoteDescription({
+    technicianNotes,
+    materialValue: saved.service_order_material_value ?? null,
+    hoursNeeded: saved.service_order_hours_needed ?? null,
+    partPurchaseLink: saved.service_order_part_purchase_link ?? null,
+  })
+  if (!quote) return
+
+  await supabase
+    .from('appointments')
+    .update({ service_order_quote_description_en: quote.en, service_order_quote_description_pt: quote.pt })
+    .eq('id', appointmentId)
 }

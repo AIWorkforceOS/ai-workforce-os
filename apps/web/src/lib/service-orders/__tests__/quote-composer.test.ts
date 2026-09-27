@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { composeClientQuoteDescription } from '../quote-composer'
+import { composeClientQuoteDescription, autoGenerateQuoteOnSave } from '../quote-composer'
+import { createFakeSupabase } from '../../__tests__/fake-supabase'
 
 // composeClientQuoteDescription (2026-09-15, pedido do Vinicius): transforma
 // a anotação crua do técnico num documento de cotação completo em inglês
@@ -121,5 +122,67 @@ describe('composeClientQuoteDescription', () => {
     const result = await composeClientQuoteDescription({ technicianNotes: 'precisa de uma peça nova' })
 
     expect(result).toBeNull()
+  })
+})
+
+// autoGenerateQuoteOnSave (2026-09-27, pedido do Vinicius): antes disso a
+// cotação por IA só rodava com um clique manual — se ninguém clicasse, o
+// PDF saía com a página em inglês em branco (ver drawQuotePage em
+// lib/service-orders/pdf.ts) e só a versão em português (a nota crua do
+// técnico) tinha conteúdo. Agora dispara sozinho assim que o técnico
+// salva a ordem como "Cotação", sem precisar de um segundo passo manual.
+describe('autoGenerateQuoteOnSave', () => {
+  it('status "quote" com anotação: gera e salva as duas versões (inglês + português) no appointment', async () => {
+    vi.stubEnv('OPENAI_API_KEY', 'sk-test')
+    mockFetchOnce(chatCompletionBody({ quote_en: 'Quote in English.', quote_pt: 'Cotação em português.' }))
+    const { supabase, db } = createFakeSupabase({ appointments: [{ id: 'appt-1', unit_id: 'unit-1' }] })
+
+    await autoGenerateQuoteOnSave(supabase, 'appt-1', {
+      service_order_status: 'quote',
+      service_order_material_description: 'precisa trocar a fechadura',
+    })
+
+    expect(db.appointments?.[0]).toMatchObject({
+      service_order_quote_description_en: 'Quote in English.',
+      service_order_quote_description_pt: 'Cotação em português.',
+    })
+  })
+
+  it('status "completed" (finalizado, não cotação): nunca chama a IA nem toca no appointment', async () => {
+    const fetchMock = mockFetchOnce(chatCompletionBody({ quote_en: 'x', quote_pt: 'y' }))
+    vi.stubEnv('OPENAI_API_KEY', 'sk-test')
+    const { supabase, db } = createFakeSupabase({ appointments: [{ id: 'appt-1', unit_id: 'unit-1' }] })
+
+    await autoGenerateQuoteOnSave(supabase, 'appt-1', {
+      service_order_status: 'completed',
+      service_order_material_description: 'trocou a fechadura, tudo certo',
+    })
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(db.appointments?.[0]).not.toHaveProperty('service_order_quote_description_en')
+  })
+
+  it('cotação sem nenhuma anotação do técnico ainda: nunca chama a IA', async () => {
+    const fetchMock = mockFetchOnce(chatCompletionBody({ quote_en: 'x', quote_pt: 'y' }))
+    vi.stubEnv('OPENAI_API_KEY', 'sk-test')
+    const { supabase } = createFakeSupabase({ appointments: [{ id: 'appt-1', unit_id: 'unit-1' }] })
+
+    await autoGenerateQuoteOnSave(supabase, 'appt-1', { service_order_status: 'quote', service_order_material_description: null })
+
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('falha da IA (nunca lança): appointment fica sem a cotação estruturada, mas nada quebra', async () => {
+    vi.stubEnv('OPENAI_API_KEY', '')
+    const { supabase, db } = createFakeSupabase({ appointments: [{ id: 'appt-1', unit_id: 'unit-1' }] })
+
+    await expect(
+      autoGenerateQuoteOnSave(supabase, 'appt-1', {
+        service_order_status: 'quote',
+        service_order_material_description: 'precisa de uma peça nova',
+      }),
+    ).resolves.toBeUndefined()
+
+    expect(db.appointments?.[0]).not.toHaveProperty('service_order_quote_description_en')
   })
 })

@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import type { PortalServiceOrderPhoto } from '@/lib/portal-funcionario/data'
 import { buildServiceOrderUpdatePayload, buildPhotosOnlyUpdatePayload } from '@/lib/service-orders/finalize'
+import { autoGenerateQuoteOnSave } from '@/lib/service-orders/quote-composer'
 
 type AppointmentRow = {
   id: string
@@ -171,6 +173,11 @@ export async function PATCH(
   }
   if (!updated) {
     return NextResponse.json({ error: 'Sem permissão para atualizar esta ordem de serviço.' }, { status: 403 })
+  }
+
+  const service = createServiceClient()
+  if (service) {
+    await autoGenerateQuoteOnSave(service, appointmentId, updated)
   }
 
   return NextResponse.json({ ok: true, appointment: updated })
