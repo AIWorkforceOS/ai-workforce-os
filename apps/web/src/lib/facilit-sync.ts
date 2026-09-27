@@ -185,12 +185,25 @@ export async function syncFacilitOrdersForUnit(
 
     let imported = 0
     for (const order of due) {
+      // Dedup por PO number, não por facilit_order_number (achado real,
+      // 2026-09-27 — ver migration 085): a Facil-IT reusa o mesmo
+      // orderNumber interno quando uma ordem é revisada/reagendada, só
+      // trocando o sufixo do PO (ex.: "159373-01" concluído virou
+      // "159373-02" com nova visita). Usar facilit_order_number como
+      // chave fazia a revisão sobrescrever a linha da visita antiga já
+      // concluída sem nunca criar o appointment novo, porque
+      // ensureAppointmentForOrder só roda quando appointment_id ainda é
+      // null — e a linha antiga já tinha um. po_number identifica a
+      // visita de verdade; cai pra facilit_order_number só quando não há
+      // PO (mesma rede de segurança de sempre pra esse caso raro).
+      const dedupeKey = order.po_number ?? order.facilit_order_number
       const { data: workOrder, error } = await supabase
         .from('facilit_work_orders')
         .upsert(
           {
             org_id: unit.org_id,
             unit_id: unit.id,
+            dedupe_key: dedupeKey,
             facilit_order_number: order.facilit_order_number,
             po_number: order.po_number,
             client_po: order.client_po,
@@ -213,7 +226,7 @@ export async function syncFacilitOrdersForUnit(
             raw: order.raw,
             imported_at: new Date().toISOString(),
           },
-          { onConflict: 'unit_id,facilit_order_number' },
+          { onConflict: 'unit_id,dedupe_key' },
         )
         .select('id, appointment_id')
         .single()

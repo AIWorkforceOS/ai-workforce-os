@@ -171,6 +171,7 @@ describe('syncFacilitOrdersForUnit', () => {
           org_id: 'org-1',
           unit_id: 'unit-1',
           facilit_order_number: '158725-01',
+          dedupe_key: '158725-01',
           status: 'Scheduled',
           appointment_id: 'appt-existing',
         },
@@ -184,6 +185,52 @@ describe('syncFacilitOrdersForUnit', () => {
     expect(db.appointments).toHaveLength(1)
     expect(db.appointments?.[0]).toMatchObject({ employee_id: 'emp-1', status: 'confirmed' })
     expect(db.facilit_work_orders?.[0]).toMatchObject({ status: 'In Progress', appointment_id: 'appt-existing' })
+  })
+
+  it('bug real 2026-09-27 (WO 159373-02 da Mawi Pro nunca chegou na Agenda): ordem revisada com novo sufixo de PO, mesmo orderNumber interno da visita antiga já concluída, ganha sua PRÓPRIA linha e appointment novo — não sobrescreve o registro concluído', async () => {
+    global.fetch = vi.fn(async (url: unknown) => {
+      const u = String(url)
+      if (u.includes('/devices')) return new Response(JSON.stringify({ token: 'tok-123' }), { status: 200 })
+      // Mesmo orderNumber interno (6188944) da ordem antiga, mas PO revisado
+      // (-02) e visita nova (hoje, no fake timer) — é assim que a Facil-IT
+      // manda uma ordem reagendada/reemitida.
+      return new Response(
+        JSON.stringify([{ orderNumber: '6188944', poNumber: '159373-02', company: 'Alo', visitDate: '2026-09-10T20:00:00Z' }]),
+        { status: 200 },
+      )
+    }) as typeof fetch
+
+    const { supabase, db } = createFakeSupabase({
+      facilit_credentials: [makeCredential()],
+      facilit_work_orders: [
+        {
+          id: 'wo-old',
+          org_id: 'org-1',
+          unit_id: 'unit-1',
+          facilit_order_number: '6188944',
+          dedupe_key: '159373-01',
+          po_number: '159373-01',
+          status: 'Completed',
+          appointment_id: 'appt-old-completed',
+        },
+      ],
+      customers: [],
+      appointments: [
+        { id: 'appt-old-completed', unit_id: 'unit-1', org_id: 'org-1', employee_id: 'emp-1', status: 'completed', service_order_number: '159373-01' },
+      ],
+    })
+
+    const result = await syncFacilitOrdersForUnit(supabase, makeUnit(), makeCredential())
+
+    expect(result.imported).toBe(1)
+    // A ordem antiga concluída nunca é tocada.
+    expect(db.appointments?.find((a) => a.id === 'appt-old-completed')).toMatchObject({ status: 'completed', service_order_number: '159373-01' })
+    // A revisão ganha appointment PRÓPRIO, sem técnico atribuído ainda.
+    const newAppointment = db.appointments?.find((a) => a.id !== 'appt-old-completed')
+    expect(newAppointment).toMatchObject({ employee_id: null, service_order_number: '159373-02' })
+    expect(db.facilit_work_orders).toHaveLength(2)
+    const newWorkOrder = db.facilit_work_orders?.find((w) => w.dedupe_key === '159373-02')
+    expect(newWorkOrder?.appointment_id).toBe(newAppointment?.id)
   })
 
   it('ordem sem orderNumber ou do passado aparece em `skipped` em vez de sumir sem explicação (bug real: 5 ordens na Facil-IT, só 4 chegaram na Agenda)', async () => {
