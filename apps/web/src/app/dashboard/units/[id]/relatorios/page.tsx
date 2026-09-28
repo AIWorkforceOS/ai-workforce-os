@@ -31,10 +31,10 @@ function formatMoney(value: number): string {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
-function formatGrowth(value: number | null): string {
-  if (value === null) return 'Sem dado do mês anterior'
+function formatGrowth(value: number | null, comparedTo: string): string {
+  if (value === null) return `Sem dado de comparação (${comparedTo})`
   const sign = value > 0 ? '+' : ''
-  return `${sign}${value.toFixed(1)}% vs mês anterior`
+  return `${sign}${value.toFixed(1)}% vs ${comparedTo}`
 }
 
 export default async function UnitReportsPage({
@@ -288,19 +288,55 @@ async function MonthlyReportView({
 
       <p className="text-xs text-slate-500">Mostrando: {selectedMonthLabel}</p>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <KpiCard label="Valor cobrado no mês" value={formatMoney(report.financials.totalOrdersAmount)} sub={formatGrowth(report.revenueGrowthPercent)} gradient="from-cyan-400 to-blue-500" />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <KpiCard
+          label="Ordens atendidas"
+          value={report.realOrderCount}
+          sub={formatGrowth(report.revenueGrowthVs6MonthAvgPercent, 'média dos meses anteriores')}
+          icon={<BarChart3 size={16} className="text-white" />}
+        />
+        <KpiCard label="Faturado no mês" value={formatMoney(report.financials.totalOrdersAmount)} sub={formatGrowth(report.revenueGrowthPercent, 'mês anterior')} gradient="from-cyan-400 to-blue-500" />
+        <KpiCard label="Ticket médio por ordem" value={report.averageTicket !== null ? formatMoney(report.averageTicket) : '—'} gradient="from-violet-400 to-purple-500" />
+        <KpiCard label="Clientes/lojas atendidos" value={report.uniqueCustomers} gradient="from-pink-400 to-rose-500" />
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <KpiCard label="Já pago à equipe" value={formatMoney(report.financials.employeePaid)} gradient="from-emerald-400 to-green-500" />
         <KpiCard label="Ainda a pagar à equipe" value={formatMoney(report.financials.employeeDue)} gradient="from-amber-400 to-orange-500" />
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-        <KpiCard label="Ordens atendidas" value={report.orders.total} icon={<BarChart3 size={16} className="text-white" />} />
-        <KpiCard label="Finalizadas" value={report.orders.completed} gradient="from-emerald-400 to-green-500" />
-        <KpiCard label="Em cotação" value={report.orders.quote} gradient="from-purple-400 to-violet-500" />
-        <KpiCard label="Pendentes" value={report.orders.pending} gradient="from-amber-400 to-orange-500" />
-        <KpiCard label="Clientes/lojas atendidos" value={report.uniqueCustomers} gradient="from-pink-400 to-rose-500" />
-      </div>
+      <Card className="flex flex-col gap-3 p-4">
+        <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">Tendência dos últimos {report.trend.length} meses</p>
+        <div className="flex flex-col gap-1.5">
+          {report.trend.map((point) => {
+            const maxOrders = Math.max(...report.trend.map((p) => p.orderCount), 1)
+            const widthPct = (point.orderCount / maxOrders) * 100
+            const isSelected = point.month === report.month
+            return (
+              <div key={point.month} className="flex items-center gap-3">
+                <span className={`w-24 shrink-0 text-xs ${isSelected ? 'font-bold text-white' : 'text-slate-400'}`}>{monthLabel(point.month, locale)}</span>
+                <div className="h-2 flex-1 overflow-hidden rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                  <div
+                    className="h-full rounded-full"
+                    style={{ width: `${widthPct}%`, background: isSelected ? 'linear-gradient(90deg, #06b6d4, #4361ee)' : 'rgba(148,163,184,0.4)' }}
+                  />
+                </div>
+                <span className={`w-16 shrink-0 text-right text-xs ${isSelected ? 'font-bold text-white' : 'text-slate-400'}`}>{point.orderCount} ordens</span>
+                <span className="w-28 shrink-0 text-right text-xs text-slate-500">{formatMoney(point.revenue)}</span>
+              </div>
+            )
+          })}
+        </div>
+      </Card>
+
+      <Card className="flex flex-col gap-3 p-4">
+        <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">Ordens na Agenda (Facil-IT) — {report.orders.total} no mês</p>
+        <div className="grid grid-cols-3 gap-3">
+          <KpiCard label="Finalizadas" value={report.orders.completed} gradient="from-emerald-400 to-green-500" />
+          <KpiCard label="Em cotação" value={report.orders.quote} gradient="from-purple-400 to-violet-500" />
+          <KpiCard label="Pendentes" value={report.orders.pending} gradient="from-amber-400 to-orange-500" />
+        </div>
+      </Card>
     </div>
   )
 }

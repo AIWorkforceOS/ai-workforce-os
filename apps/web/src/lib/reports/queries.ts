@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { summarizeServiceRecords, type ServiceRecordsSummary } from '@/lib/service-financials'
+import { round2 } from '@/lib/service-pay'
 import { growthPercent } from './monthly-growth'
 import { localDateString, zonedTimeToUtc } from '@/lib/slot-engine'
 import { addDays } from '@/lib/calendar-dates'
@@ -103,20 +104,67 @@ export async function fetchProfessionalReport(
   }
 }
 
-export type MonthlyReport = {
-  month: string
-  previousMonth: string
-  orders: OrderStatusCounts
-  financials: ServiceRecordsSummary
-  uniqueCustomers: number
-  revenueGrowthPercent: number | null
+export type MonthlyTrendPoint = { month: string; orderCount: number; revenue: number }
+
+type ServiceRecordFinancialRow = { amount_charged: number | null; amount_due: number | null; amount_paid_to_employee: number; invoice_id: string | null }
+
+async function fetchServiceRecordsForMonth(supabase: SupabaseClient, unitId: string, month: string): Promise<ServiceRecordFinancialRow[]> {
+  const { start, nextStart } = monthRange(month)
+  const { data } = await supabase
+    .from('service_records')
+    .select('amount_charged, amount_due, amount_paid_to_employee, invoice_id')
+    .eq('unit_id', unitId)
+    .gte('service_date', start)
+    .lt('service_date', nextStart)
+  return (data ?? []) as ServiceRecordFinancialRow[]
 }
 
 /**
- * Relatório geral do mês: valores + ordens atendidas/finalizadas/cotação
- * + clientes únicos + % de crescimento da receita (totalOrdersAmount)
- * vs o mês anterior. Reaproveita monthRange/shiftMonth já existentes
- * (mesmos usados na Operação) — nunca reimplementa cálculo de mês.
+ * Série dos últimos `monthsBack` meses (o selecionado incluído, mais
+ * antigo primeiro) de ordens atendidas + faturamento — pedido do
+ * Vinicius (2026-09-27): "Ago 50 ordens, set 89, out 103 — assim
+ * saberemos se teve crescimento de fato". "Ordens atendidas" aqui é a
+ * contagem de service_records (o lançamento financeiro de cada ordem
+ * realizada), não de appointments — achado real ao validar com o
+ * Vinicius: setembro tinha 51 appointments mas 89 lançamentos
+ * financeiros, e é esse o número real de ordens atendidas pra ele
+ * (nem toda ordem realizada passa pelo fluxo de agendamento da
+ * Facil-IT, mas toda ordem realizada gera um lançamento no financeiro).
+ */
+export async function fetchMonthlyTrend(supabase: SupabaseClient, unitId: string, month: string, monthsBack = 6): Promise<MonthlyTrendPoint[]> {
+  const months = Array.from({ length: monthsBack }, (_, i) => shiftMonth(month, i - (monthsBack - 1)))
+  return Promise.all(
+    months.map(async (m) => {
+      const rows = await fetchServiceRecordsForMonth(supabase, unitId, m)
+      return { month: m, orderCount: rows.length, revenue: round2(rows.reduce((sum, r) => sum + (r.amount_charged ?? 0), 0)) }
+    }),
+  )
+}
+
+export type MonthlyReport = {
+  month: string
+  previousMonth: string
+  /** ordens da Agenda (appointments, Facil-IT) no mês — contagem por status; universo mais estreito que realOrderCount, ver comentário abaixo */
+  orders: OrderStatusCounts
+  /** ordens atendidas de verdade no mês — contagem de lançamentos financeiros (service_records), não de appointments; ver fetchMonthlyTrend */
+  realOrderCount: number
+  financials: ServiceRecordsSummary
+  /** faturado ÷ ordens atendidas (realOrderCount) — null quando não há ordem nenhuma no mês, nunca divide por zero */
+  averageTicket: number | null
+  uniqueCustomers: number
+  revenueGrowthPercent: number | null
+  /** crescimento da receita vs a média dos meses anteriores (dentre os monthsBack) que tiveram alguma ordem — null quando não há mês anterior com dado */
+  revenueGrowthVs6MonthAvgPercent: number | null
+  trend: MonthlyTrendPoint[]
+}
+
+/**
+ * Relatório geral do mês: valores + ordens atendidas (financeiro,
+ * achado real 2026-09-27 — ver fetchMonthlyTrend) + ticket médio +
+ * clientes únicos + % de crescimento vs mês anterior e vs a média dos
+ * últimos meses + tendência de 6 meses. Reaproveita monthRange/
+ * shiftMonth já existentes (mesmos usados na Operação) — nunca
+ * reimplementa cálculo de mês.
  */
 export async function fetchMonthlyReport(
   supabase: SupabaseClient,
@@ -126,30 +174,20 @@ export async function fetchMonthlyReport(
 ): Promise<MonthlyReport> {
   const { start, nextStart } = monthRange(month)
   const previousMonth = shiftMonth(month, -1)
-  const { start: prevStart, nextStart: prevNextStart } = monthRange(previousMonth)
 
   const rangeStartUtc = zonedTimeToUtc(start, '00:00', timezone).toISOString()
   const rangeEndUtc = zonedTimeToUtc(nextStart, '00:00', timezone).toISOString()
 
-  const [{ data: appointmentsData }, { data: serviceRecordsData }, { data: prevServiceRecordsData }] = await Promise.all([
+  const [{ data: appointmentsData }, serviceRecords, previousServiceRecords, trend] = await Promise.all([
     supabase
       .from('appointments')
       .select('id, customer_id, service_order_location_name, service_order_status')
       .eq('unit_id', unitId)
       .gte('starts_at', rangeStartUtc)
       .lt('starts_at', rangeEndUtc),
-    supabase
-      .from('service_records')
-      .select('amount_charged, amount_due, amount_paid_to_employee, invoice_id')
-      .eq('unit_id', unitId)
-      .gte('service_date', start)
-      .lt('service_date', nextStart),
-    supabase
-      .from('service_records')
-      .select('amount_charged, amount_due, amount_paid_to_employee, invoice_id')
-      .eq('unit_id', unitId)
-      .gte('service_date', prevStart)
-      .lt('service_date', prevNextStart),
+    fetchServiceRecordsForMonth(supabase, unitId, month),
+    fetchServiceRecordsForMonth(supabase, unitId, previousMonth),
+    fetchMonthlyTrend(supabase, unitId, month, 6),
   ])
 
   const appointments = (appointmentsData ?? []) as {
@@ -158,12 +196,8 @@ export async function fetchMonthlyReport(
     service_order_location_name: string | null
     service_order_status: string | null
   }[]
-  const financials = summarizeServiceRecords(
-    (serviceRecordsData ?? []) as { amount_charged: number | null; amount_due: number | null; amount_paid_to_employee: number; invoice_id: string | null }[],
-  )
-  const previousFinancials = summarizeServiceRecords(
-    (prevServiceRecordsData ?? []) as { amount_charged: number | null; amount_due: number | null; amount_paid_to_employee: number; invoice_id: string | null }[],
-  )
+  const financials = summarizeServiceRecords(serviceRecords)
+  const previousFinancials = summarizeServiceRecords(previousServiceRecords)
   // Achado real (2026-09-27, verificado contra os dados da Mawi Pro): ordens
   // importadas da Facil-IT compartilham TODAS o mesmo customer_id sintético
   // ("360 Service Provider", ver resolveFacilitCustomer em facilit-sync.ts) —
@@ -175,12 +209,25 @@ export async function fetchMonthlyReport(
     appointments.map((a) => a.service_order_location_name ?? a.customer_id).filter((key): key is string => Boolean(key)),
   ).size
 
+  const realOrderCount = serviceRecords.length
+  const averageTicket = realOrderCount > 0 ? round2(financials.totalOrdersAmount / realOrderCount) : null
+
+  // Média só dos meses anteriores (dentro da janela de 6) que tiveram
+  // alguma ordem — meses sem nenhum lançamento (negócio ainda não
+  // operava) distorceriam a média pra baixo se contassem como zero.
+  const priorActiveMonths = trend.slice(0, -1).filter((p) => p.orderCount > 0)
+  const avgPriorRevenue = priorActiveMonths.length > 0 ? priorActiveMonths.reduce((sum, p) => sum + p.revenue, 0) / priorActiveMonths.length : null
+
   return {
     month,
     previousMonth,
     orders: countByStatus(appointments),
+    realOrderCount,
     financials,
+    averageTicket,
     uniqueCustomers,
     revenueGrowthPercent: growthPercent(financials.totalOrdersAmount, previousFinancials.totalOrdersAmount),
+    revenueGrowthVs6MonthAvgPercent: growthPercent(financials.totalOrdersAmount, avgPriorRevenue),
+    trend,
   }
 }
