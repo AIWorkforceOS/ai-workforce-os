@@ -298,7 +298,7 @@ async function MonthlyReportView({
         <KpiCard label="Ordens atendidas" value={report.orders.total} icon={<BarChart3 size={16} className="text-white" />} />
         <KpiCard label="Finalizadas" value={report.orders.completed} gradient="from-emerald-400 to-green-500" />
         <KpiCard label="Em cotação" value={report.orders.quote} gradient="from-purple-400 to-violet-500" />
-        <KpiCard label="Clientes atendidos" value={report.uniqueCustomers} gradient="from-pink-400 to-rose-500" />
+        <KpiCard label="Clientes/lojas atendidos" value={report.uniqueCustomers} gradient="from-pink-400 to-rose-500" />
       </div>
     </div>
   )

@@ -94,6 +94,44 @@ describe('fetchMonthlyReport', () => {
     expect(report.revenueGrowthPercent).toBeCloseTo(25)
   })
 
+  it('bug real 2026-09-27 (Mawi Pro): ordens da Facil-IT compartilham o mesmo customer_id sintético — conta por loja (service_order_location_name), não por customer_id, quando presente', async () => {
+    const { supabase } = createFakeSupabase({
+      appointments: [
+        {
+          id: 'a1',
+          unit_id: 'unit-1',
+          customer_id: 'cust-360-service-provider',
+          service_order_location_name: 'Chandler',
+          starts_at: '2026-09-05T12:00:00Z',
+          service_order_status: 'completed',
+        },
+        {
+          id: 'a2',
+          unit_id: 'unit-1',
+          customer_id: 'cust-360-service-provider',
+          service_order_location_name: 'Scottsdale',
+          starts_at: '2026-09-10T12:00:00Z',
+          service_order_status: 'quote',
+        },
+        // mesma loja de novo — não deve contar duas vezes
+        {
+          id: 'a3',
+          unit_id: 'unit-1',
+          customer_id: 'cust-360-service-provider',
+          service_order_location_name: 'Chandler',
+          starts_at: '2026-09-15T12:00:00Z',
+          service_order_status: 'completed',
+        },
+      ],
+      service_records: [],
+    })
+
+    const report = await fetchMonthlyReport(supabase, 'unit-1', TIMEZONE, '2026-09')
+
+    expect(report.orders.total).toBe(3)
+    expect(report.uniqueCustomers).toBe(2) // Chandler + Scottsdale, não 1 (o customer_id sintético compartilhado)
+  })
+
   it('mês anterior sem nenhum lançamento: crescimento fica null, nunca divide por zero', async () => {
     const { supabase } = createFakeSupabase({
       appointments: [{ id: 'a1', unit_id: 'unit-1', customer_id: 'cust-1', starts_at: '2026-09-05T12:00:00Z', service_order_status: 'completed' }],

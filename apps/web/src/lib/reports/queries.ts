@@ -134,7 +134,7 @@ export async function fetchMonthlyReport(
   const [{ data: appointmentsData }, { data: serviceRecordsData }, { data: prevServiceRecordsData }] = await Promise.all([
     supabase
       .from('appointments')
-      .select('id, customer_id, service_order_status')
+      .select('id, customer_id, service_order_location_name, service_order_status')
       .eq('unit_id', unitId)
       .gte('starts_at', rangeStartUtc)
       .lt('starts_at', rangeEndUtc),
@@ -152,14 +152,28 @@ export async function fetchMonthlyReport(
       .lt('service_date', prevNextStart),
   ])
 
-  const appointments = (appointmentsData ?? []) as { id: string; customer_id: string | null; service_order_status: string | null }[]
+  const appointments = (appointmentsData ?? []) as {
+    id: string
+    customer_id: string | null
+    service_order_location_name: string | null
+    service_order_status: string | null
+  }[]
   const financials = summarizeServiceRecords(
     (serviceRecordsData ?? []) as { amount_charged: number | null; amount_due: number | null; amount_paid_to_employee: number; invoice_id: string | null }[],
   )
   const previousFinancials = summarizeServiceRecords(
     (prevServiceRecordsData ?? []) as { amount_charged: number | null; amount_due: number | null; amount_paid_to_employee: number; invoice_id: string | null }[],
   )
-  const uniqueCustomers = new Set(appointments.map((a) => a.customer_id).filter((id): id is string => Boolean(id))).size
+  // Achado real (2026-09-27, verificado contra os dados da Mawi Pro): ordens
+  // importadas da Facil-IT compartilham TODAS o mesmo customer_id sintético
+  // ("360 Service Provider", ver resolveFacilitCustomer em facilit-sync.ts) —
+  // contar só por customer_id dava "1 cliente atendido" com 51 ordens reais
+  // em 25 lojas diferentes no mesmo mês. service_order_location_name é a loja
+  // de verdade nesse fluxo; cai pro customer_id quando a ordem não veio da
+  // Facil-IT (não tem location_name, mas tem um customer_id real e distinto).
+  const uniqueCustomers = new Set(
+    appointments.map((a) => a.service_order_location_name ?? a.customer_id).filter((key): key is string => Boolean(key)),
+  ).size
 
   return {
     month,
