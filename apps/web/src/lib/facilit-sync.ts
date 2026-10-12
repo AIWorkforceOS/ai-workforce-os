@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { facilitLogin, fetchFacilitOrders, mapFacilitOrder, filterOutPastOrders, FacilitAuthError, type MappedFacilitOrder } from './facilit'
 import { buildFacilitAppointmentInsertRow, FACILIT_CUSTOMER_COMPANY_NAME } from './facilit-appointment'
 import { summarizeFacilitOrderForTechnician } from './facilit-summary'
+import { decideVisitReconcile } from './facilit-reconcile'
 import { logSystemEvent } from './system-events'
 import type { Unit } from './types'
 
@@ -197,6 +198,27 @@ export async function syncFacilitOrdersForUnit(
       // visita de verdade; cai pra facilit_order_number só quando não há
       // PO (mesma rede de segurança de sempre pra esse caso raro).
       const dedupeKey = order.po_number ?? order.facilit_order_number
+
+      // Estado ANTES do upsert: a data de visita anterior é o que permite
+      // saber se foi a Facil-IT que mudou (reagendou/aprovou) ou se foi só
+      // ajuste manual do admin no appointment (ver facilit-reconcile.ts).
+      const { data: previous } = await supabase
+        .from('facilit_work_orders')
+        .select('visit_date, appointment_id')
+        .eq('unit_id', unit.id)
+        .eq('dedupe_key', dedupeKey)
+        .maybeSingle()
+      const previousRow = previous as { visit_date: string | null; appointment_id: string | null } | null
+      let existingAppointment = null as { id: string; starts_at: string; ends_at: string; status: string | null; service_order_status: string | null } | null
+      if (previousRow?.appointment_id) {
+        const { data: appt } = await supabase
+          .from('appointments')
+          .select('id, starts_at, ends_at, status, service_order_status')
+          .eq('id', previousRow.appointment_id)
+          .maybeSingle()
+        existingAppointment = (appt as NonNullable<typeof existingAppointment> | null) ?? null
+      }
+
       const { data: workOrder, error } = await supabase
         .from('facilit_work_orders')
         .upsert(
@@ -247,6 +269,28 @@ export async function syncFacilitOrdersForUnit(
       const row = workOrder as { id: string; appointment_id: string | null }
       if (!row.appointment_id) {
         await ensureAppointmentForOrder(supabase, unit, order, row.id)
+      } else if (existingAppointment) {
+        const action = decideVisitReconcile({
+          previousVisitDate: previousRow?.visit_date ?? null,
+          newVisitDate: order.visit_date,
+          appointment: existingAppointment,
+          timezone: unit.timezone,
+          now: new Date(),
+        })
+        if (action === 'new_appointment') {
+          await ensureAppointmentForOrder(supabase, unit, order, row.id)
+        } else if (action === 'reschedule' && order.visit_date) {
+          const durationMs = new Date(existingAppointment.ends_at).getTime() - new Date(existingAppointment.starts_at).getTime()
+          const start = new Date(order.visit_date)
+          await supabase
+            .from('appointments')
+            .update({
+              starts_at: start.toISOString(),
+              ends_at: new Date(start.getTime() + (durationMs > 0 ? durationMs : 60 * 60000)).toISOString(),
+              service_order_requested_date: new Intl.DateTimeFormat('en-CA', { timeZone: unit.timezone }).format(start),
+            })
+            .eq('id', existingAppointment.id)
+        }
       }
     }
 

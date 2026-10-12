@@ -233,6 +233,72 @@ describe('syncFacilitOrdersForUnit', () => {
     expect(newWorkOrder?.appointment_id).toBe(newAppointment?.id)
   })
 
+  it('bug real 2026-10-12 (urgente, Mawi Pro): MESMO PO já cotado/concluído (assessment) e aprovado com visita nova hoje ganha appointment novo na Agenda, sem tocar no antigo', async () => {
+    global.fetch = vi.fn(async (url: unknown) => {
+      const u = String(url)
+      if (u.includes('/devices')) return new Response(JSON.stringify({ token: 'tok-123' }), { status: 200 })
+      return new Response(
+        JSON.stringify([{ orderNumber: '6201461', poNumber: '160097-01', company: 'Morgan Stanley', visitDate: '2026-09-10T20:00:00Z' }]),
+        { status: 200 },
+      )
+    }) as typeof fetch
+
+    const { supabase, db } = createFakeSupabase({
+      facilit_credentials: [makeCredential()],
+      facilit_work_orders: [
+        {
+          id: 'wo-1',
+          org_id: 'org-1',
+          unit_id: 'unit-1',
+          facilit_order_number: '6201461',
+          dedupe_key: '160097-01',
+          po_number: '160097-01',
+          visit_date: '2026-08-28T18:00:00Z',
+          appointment_id: 'appt-old',
+        },
+      ],
+      customers: [],
+      appointments: [
+        { id: 'appt-old', unit_id: 'unit-1', org_id: 'org-1', status: 'completed', service_order_status: 'quote', starts_at: '2026-08-28T18:00:00Z', ends_at: '2026-08-28T19:00:00Z' },
+      ],
+    })
+
+    await syncFacilitOrdersForUnit(supabase, makeUnit(), makeCredential())
+
+    expect(db.appointments?.find((a) => a.id === 'appt-old')).toMatchObject({ status: 'completed', service_order_status: 'quote', starts_at: '2026-08-28T18:00:00Z' })
+    const created = db.appointments?.find((a) => a.id !== 'appt-old')
+    expect(created).toMatchObject({ employee_id: null, starts_at: '2026-09-11T03:00:00.000Z', service_order_number: '160097-01' })
+    expect(db.facilit_work_orders).toHaveLength(1)
+    expect(db.facilit_work_orders?.[0]?.appointment_id).toBe(created?.id)
+  })
+
+  it('bug real 2026-10-12: ordem ainda pendente cuja data de visita mudou na Facil-IT é REMARCADA (mesmo appointment, técnico preservado), não fica na data velha', async () => {
+    global.fetch = vi.fn(async (url: unknown) => {
+      const u = String(url)
+      if (u.includes('/devices')) return new Response(JSON.stringify({ token: 'tok-123' }), { status: 200 })
+      return new Response(
+        JSON.stringify([{ orderNumber: '6193713', poNumber: '159634-01', company: 'Walgreen', visitDate: '2026-09-10T20:00:00Z' }]),
+        { status: 200 },
+      )
+    }) as typeof fetch
+
+    const { supabase, db } = createFakeSupabase({
+      facilit_credentials: [makeCredential()],
+      facilit_work_orders: [
+        { id: 'wo-1', org_id: 'org-1', unit_id: 'unit-1', facilit_order_number: '6193713', dedupe_key: '159634-01', po_number: '159634-01', visit_date: '2026-09-07T17:00:00Z', appointment_id: 'appt-1' },
+      ],
+      customers: [],
+      appointments: [
+        { id: 'appt-1', unit_id: 'unit-1', org_id: 'org-1', employee_id: 'emp-1', status: 'scheduled', service_order_status: 'pending', starts_at: '2026-09-07T17:00:00Z', ends_at: '2026-09-07T18:00:00Z' },
+      ],
+    })
+
+    await syncFacilitOrdersForUnit(supabase, makeUnit(), makeCredential())
+
+    expect(db.appointments).toHaveLength(1)
+    expect(db.appointments?.[0]).toMatchObject({ employee_id: 'emp-1', starts_at: '2026-09-11T03:00:00.000Z', ends_at: '2026-09-11T04:00:00.000Z' })
+  })
+
   it('ordem sem orderNumber ou do passado aparece em `skipped` em vez de sumir sem explicação (bug real: 5 ordens na Facil-IT, só 4 chegaram na Agenda)', async () => {
     global.fetch = vi.fn(async (url: unknown) => {
       const u = String(url)
