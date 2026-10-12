@@ -4,6 +4,7 @@ import { buildFacilitAppointmentInsertRow, FACILIT_CUSTOMER_COMPANY_NAME } from 
 import { summarizeFacilitOrderForTechnician } from './facilit-summary'
 import { decideVisitReconcile } from './facilit-reconcile'
 import { logSystemEvent } from './system-events'
+import { sendFacilitAgendaMismatchEmail } from './email'
 import type { Unit } from './types'
 
 export type FacilitCredentialRow = {
@@ -25,7 +26,7 @@ export type FacilitCredentialRow = {
  * era "fora de hoje/amanhã" — revisado a pedido do Vinicius, 2026-09-16:
  * qualquer data futura entra, só o passado fica de fora).
  */
-export type FacilitSyncSkipReason = 'sem_numero_ordem' | 'ordem_do_passado' | 'falha_ao_salvar'
+export type FacilitSyncSkipReason = 'sem_numero_ordem' | 'ordem_do_passado' | 'falha_ao_salvar' | 'fora_da_agenda'
 export type FacilitSyncSkip = {
   orderNumber: string | null
   /** Vendor PO# / Client PO# — é isso que aparece como "número da ordem" na tela do app da Facil-IT, não o `orderNumber` interno. */
@@ -128,6 +129,106 @@ async function ensureAppointmentForOrder(
     .from('facilit_work_orders')
     .update({ appointment_id: (appointment as { id: string }).id })
     .eq('id', workOrderId)
+}
+
+
+/**
+ * Trava de segurança (2026-10-12, depois do bug do mesmo PO reagendado):
+ * depois de importar, confere de verdade se TODA ordem com visita de hoje
+ * em diante tem um agendamento certo na Agenda — nunca confia só em
+ * "importei N ordens". Devolve as que não estão (sem agendamento, ou com
+ * agendamento antigo/parado em outra data). O chamador transforma isso em
+ * alerta alto (system_event de erro + e-mail pro dono), então uma ordem
+ * fora da Agenda nunca mais passa em silêncio.
+ */
+async function findOrdersOutOfAgenda(
+  supabase: SupabaseClient,
+  unit: Unit,
+  due: MappedFacilitOrder[],
+): Promise<FacilitSyncSkip[]> {
+  const mismatches: FacilitSyncSkip[] = []
+  const now = new Date()
+  for (const order of due) {
+    const dedupeKey = order.po_number ?? order.facilit_order_number
+    const base = { orderNumber: order.facilit_order_number, poNumber: order.po_number, clientPo: order.client_po, company: order.company, reason: 'fora_da_agenda' as const }
+    const { data: wo } = await supabase
+      .from('facilit_work_orders')
+      .select('appointment_id')
+      .eq('unit_id', unit.id)
+      .eq('dedupe_key', dedupeKey)
+      .maybeSingle()
+    const appointmentId = (wo as { appointment_id: string | null } | null)?.appointment_id ?? null
+    if (!appointmentId) {
+      mismatches.push({ ...base, detail: 'sem agendamento na Agenda' })
+      continue
+    }
+    const { data: appt } = await supabase
+      .from('appointments')
+      .select('starts_at, status, service_order_status')
+      .eq('id', appointmentId)
+      .maybeSingle()
+    const appointment = appt as { starts_at: string; status: string | null; service_order_status: string | null } | null
+    if (!appointment) {
+      mismatches.push({ ...base, detail: 'agendamento vinculado não existe mais' })
+      continue
+    }
+    const action = decideVisitReconcile({
+      previousVisitDate: order.visit_date,
+      newVisitDate: order.visit_date,
+      appointment,
+      timezone: unit.timezone,
+      now,
+    })
+    if (action !== 'none') {
+      mismatches.push({ ...base, detail: `Facil-IT marca visita em ${order.visit_date}, mas a Agenda está em ${appointment.starts_at}` })
+    }
+  }
+  return mismatches
+}
+
+/** Avisa o dono por e-mail (no máximo 1x a cada 6h por unidade, pra não encher a caixa a cada sync). */
+async function alertAgendaMismatch(supabase: SupabaseClient, unit: Unit, mismatches: FacilitSyncSkip[]): Promise<void> {
+  await logSystemEvent(supabase, {
+    level: 'error',
+    source: 'cron',
+    eventType: 'facilit_agenda_mismatch',
+    message: `Facil-IT x Agenda (unidade "${unit.name}"): ${mismatches.length} ordem(ns) com visita a partir de hoje NÃO está(ão) certa(s) na Agenda — ${mismatches
+      .map((m) => `PO ${m.poNumber ?? m.orderNumber ?? '?'}${m.company ? ` "${m.company}"` : ''}: ${m.detail}`)
+      .join('; ')}`,
+    orgId: unit.org_id,
+    unitId: unit.id,
+  })
+
+  const since = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString()
+  const { count } = await supabase
+    .from('system_events')
+    .select('id', { count: 'exact', head: true })
+    .eq('unit_id', unit.id)
+    .eq('event_type', 'facilit_agenda_mismatch_alert_sent')
+    .gte('created_at', since)
+  if ((count ?? 0) > 0 || !unit.org_id) return
+
+  const { data: org } = await supabase.from('organizations').select('owner_email').eq('id', unit.org_id).maybeSingle()
+  const ownerEmail = (org as { owner_email: string | null } | null)?.owner_email
+  if (!ownerEmail) return
+
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://www.alizoai.com').replace(/\/+$/, '')
+  const result = await sendFacilitAgendaMismatchEmail({
+    to: ownerEmail,
+    unitName: unit.name,
+    orders: mismatches.map((m) => `PO ${m.poNumber ?? m.orderNumber ?? '?'}${m.company ? ` (${m.company})` : ''} — ${m.detail}`),
+    agendaUrl: `${appUrl}/dashboard/units/${unit.id}/agenda/calendario`,
+  })
+  if (result.ok) {
+    await logSystemEvent(supabase, {
+      level: 'warning',
+      source: 'cron',
+      eventType: 'facilit_agenda_mismatch_alert_sent',
+      message: `Aviso de ordens fora da Agenda enviado para "${ownerEmail}" (unidade "${unit.name}").`,
+      orgId: unit.org_id,
+      unitId: unit.id,
+    })
+  }
 }
 
 /**
@@ -292,6 +393,12 @@ export async function syncFacilitOrdersForUnit(
             .eq('id', existingAppointment.id)
         }
       }
+    }
+
+    const outOfAgenda = await findOrdersOutOfAgenda(supabase, unit, due)
+    if (outOfAgenda.length > 0) {
+      skipped.push(...outOfAgenda)
+      await alertAgendaMismatch(supabase, unit, outOfAgenda)
     }
 
     await supabase

@@ -299,6 +299,24 @@ describe('syncFacilitOrdersForUnit', () => {
     expect(db.appointments?.[0]).toMatchObject({ employee_id: 'emp-1', starts_at: '2026-09-11T03:00:00.000Z', ends_at: '2026-09-11T04:00:00.000Z' })
   })
 
+  it('trava de segurança 2026-10-12: ordem de hoje que NÃO conseguiu virar agendamento aparece como fora_da_agenda e gera system_event de erro (nunca mais silencioso)', async () => {
+    global.fetch = vi.fn(async (url: unknown) => {
+      const u = String(url)
+      if (u.includes('/devices')) return new Response(JSON.stringify({ token: 'tok-123' }), { status: 200 })
+      return new Response(JSON.stringify([{ orderNumber: '700', poNumber: '700-01', company: 'Loja X', visitDate: '2026-09-10T20:00:00Z' }]), { status: 200 })
+    }) as typeof fetch
+
+    const { supabase, db } = createFakeSupabase(
+      { facilit_credentials: [makeCredential()], facilit_work_orders: [], customers: [], appointments: [], system_events: [] },
+      { appointments: { insert: 'falha simulada ao criar agendamento' } },
+    )
+
+    const result = await syncFacilitOrdersForUnit(supabase, makeUnit(), makeCredential())
+
+    expect(result.skipped.some((s) => s.reason === 'fora_da_agenda' && s.poNumber === '700-01')).toBe(true)
+    expect(db.system_events?.some((e) => e.event_type === 'facilit_agenda_mismatch' && e.level === 'error')).toBe(true)
+  })
+
   it('ordem sem orderNumber ou do passado aparece em `skipped` em vez de sumir sem explicação (bug real: 5 ordens na Facil-IT, só 4 chegaram na Agenda)', async () => {
     global.fetch = vi.fn(async (url: unknown) => {
       const u = String(url)

@@ -31,6 +31,7 @@ const SKIP_REASON_LABEL: Record<string, string> = {
   sem_numero_ordem: 'sem número de ordem identificável',
   ordem_do_passado: 'data da visita já passou',
   falha_ao_salvar: 'falha ao salvar',
+  fora_da_agenda: 'NÃO está certa na Agenda (atenção!)',
 }
 
 function formatSkip(skip: FacilitSyncSkip): string {

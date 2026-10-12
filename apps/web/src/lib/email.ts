@@ -262,6 +262,35 @@ export async function sendWhatsappDisconnectedEmail(params: {
 }
 
 /**
+ * Alerta de ordens da Facil-IT com visita a partir de hoje que não estão
+ * certas na Agenda (facilit-sync.ts, findOrdersOutOfAgenda) — pra o dono
+ * nunca ficar sem saber das ordens do dia (pedido do Vinicius, 2026-10-12).
+ */
+export async function sendFacilitAgendaMismatchEmail(params: {
+  to: string
+  unitName: string
+  orders: string[]
+  agendaUrl: string
+}): Promise<SendResult> {
+  const from = defaultFrom()
+  if (!from) return { ok: false, error: 'EMAIL_FROM_DOMAIN não está configurada.' }
+
+  return sendEmail({
+    to: params.to,
+    from,
+    subject: `⚠️ Ordens da Facil-IT fora da Agenda — ${params.unitName}`,
+    html: `
+      <p>O sistema conferiu a Facil-IT contra a Agenda da unidade <strong>${escapeHtml(params.unitName)}</strong> e achou ordens com visita a partir de hoje que <strong>não estão certas na Agenda</strong>:</p>
+      <ul>${params.orders.map((o) => `<li>${escapeHtml(o)}</li>`).join('')}</ul>
+      <p>Abra a Agenda e clique em "Buscar agora" na tela da Facil-IT; se continuar aparecendo aqui, fale com a gente: suporte@alizo.com.br</p>
+      <div style="margin-top:20px;">
+        <a href="${escapeHtml(params.agendaUrl)}" style="display:inline-block;padding:12px 24px;border-radius:8px;background:#0f172a;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;">Abrir a Agenda</a>
+      </div>
+    `,
+  })
+}
+
+/**
  * E-mail genérico do Recruiter Employee (handoff, briefing de busca
  * externa, escalações de processo). Mesmo Resend/from dos demais.
  */

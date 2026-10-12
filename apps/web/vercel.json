@@ -66,6 +66,22 @@
       "schedule": "0 22 * * *"
     },
     {
+      "path": "/api/cron/facilit-sync",
+      "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/facilit-sync",
+      "schedule": "0 16 * * *"
+    },
+    {
+      "path": "/api/cron/facilit-sync",
+      "schedule": "0 18 * * *"
+    },
+    {
+      "path": "/api/cron/facilit-sync",
+      "schedule": "0 20 * * *"
+    },
+    {
       "path": "/api/cron/db-backup",
       "schedule": "0 6 * * *"
     }
