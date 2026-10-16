@@ -1,55 +1,186 @@
-import { deletePendingSave, listPendingSaves, type PendingSave } from './offline-store'
+import { deletePendingSave, listPendingSaves, updatePendingSave, type PendingSave } from './offline-store'
 
 /**
- * Reenvia um salvamento guardado localmente pra rota que ele já tentou
- * bater antes (a mesma PATCH de sempre, ver
- * app/api/units/[id]/appointments/[appointmentId]/service-order/route.ts)
- * — reconstrói o FormData original a partir do que foi guardado.
+ * Reenvia salvamentos guardados no aparelho pra mesma rota PATCH de sempre
+ * (app/api/units/[id]/appointments/[appointmentId]/service-order/route.ts).
  *
- * 'retry': falha de rede (ainda sem internet) — mantém guardado, tenta
- * de novo na próxima sincronização.
- * 'dropped': o servidor respondeu (chegou a rede), mas rejeitou o
- * salvamento por algum motivo real (ex.: ordem foi excluída nesse
- * meio-tempo) — tentar de novo não vai resolver, então descarta em vez
- * de ficar tentando pra sempre. Perda de dado nesse caso é aceitável:
- * o problema não é falta de internet, que é o que esta fila resolve.
+ * REGRA DE OURO (pedido do Vinicius, 2026-10-16, etapa de confiabilidade):
+ * esta fila NUNCA apaga um item por causa de erro. Só é apagado quando o
+ * servidor confirma o salvamento (2xx). Antes, qualquer resposta não-2xx
+ * (sessão expirada, foto grande demais, falha momentânea do servidor)
+ * descartava assinatura e fotos em definitivo e em silêncio.
+ *
+ *  - rede caiu / 5xx / 408 / 425: mantém, tenta de novo com backoff.
+ *  - 401: sessão expirou — mantém e espera o técnico entrar de novo (nada se perde).
+ *  - 429: respeita Retry-After.
+ *  - 413: corpo grande demais — o salvamento é FATIADO (uma foto por
+ *    requisição, depois os campos + assinatura) e reenviado.
+ *  - 400/403/404/422: o servidor recusou de um jeito que repetir não
+ *    resolve — marca como 'failed', mantém guardado e visível na tela de
+ *    sincronização; só some se alguém descartar de propósito.
  */
-async function trySyncOne(item: PendingSave): Promise<'synced' | 'dropped' | 'retry'> {
-  const formData = new FormData()
-  for (const [key, value] of Object.entries(item.fields)) formData.set(key, value)
-  for (const [fieldName, files] of Object.entries(item.files)) {
-    for (const stored of files) {
-      formData.append(fieldName, new File([stored.blob], stored.name, { type: stored.type }))
-    }
-  }
 
+/** Abaixo do limite de 4,5MB de corpo das funções da Vercel, com folga pro multipart. */
+export const MAX_DIRECT_BYTES = 3.5 * 1024 * 1024
+
+export type RetryReason = 'network' | 'session' | 'too_large' | 'rate_limited' | 'server'
+export type Classification =
+  | { kind: 'synced' }
+  | { kind: 'retry'; reason: RetryReason; status?: number; retryAfterMs?: number }
+  | { kind: 'failed'; status: number; message: string }
+
+export function classifyResponse(status: number, ok: boolean, retryAfterHeader?: string | null): Classification {
+  if (ok) return { kind: 'synced' }
+  if (status === 401) return { kind: 'retry', reason: 'session', status }
+  if (status === 413) return { kind: 'retry', reason: 'too_large', status }
+  if (status === 429) {
+    const seconds = Number(retryAfterHeader)
+    return { kind: 'retry', reason: 'rate_limited', status, retryAfterMs: Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : undefined }
+  }
+  if (status === 408 || status === 425 || status >= 500) return { kind: 'retry', reason: 'server', status }
+  return { kind: 'failed', status, message: `O servidor recusou o salvamento (código ${status}).` }
+}
+
+const BACKOFF_BASE_MS = 20_000
+const BACKOFF_MAX_MS = 15 * 60_000
+
+export function backoffMs(attempts: number): number {
+  return Math.min(BACKOFF_BASE_MS * 2 ** Math.max(attempts, 0), BACKOFF_MAX_MS)
+}
+
+function itemBytes(item: PendingSave): number {
+  let total = 0
+  for (const files of Object.values(item.files)) for (const f of files) total += f.blob.size
+  return total
+}
+
+async function sendRequest(item: PendingSave, formData: FormData): Promise<Classification> {
   try {
     const response = await fetch(`/api/units/${item.unitId}/appointments/${item.appointmentId}/service-order`, {
       method: 'PATCH',
       body: formData,
     })
-    return response.ok ? 'synced' : 'dropped'
+    return classifyResponse(response.status, response.ok, response.headers?.get?.('Retry-After') ?? null)
   } catch {
-    return 'retry'
+    return { kind: 'retry', reason: 'network' }
   }
 }
 
-export type DrainResult = { synced: number; dropped: number; remaining: number }
+function baseForm(item: PendingSave, saveId: string, includeFields: boolean): FormData {
+  const formData = new FormData()
+  if (includeFields) for (const [key, value] of Object.entries(item.fields)) formData.set(key, value)
+  // Idempotência no servidor: o mesmo clientSaveId gera sempre o mesmo caminho de arquivo,
+  // então reenviar depois de uma falha no meio nunca duplica foto nem assinatura.
+  formData.set('clientSaveId', saveId)
+  return formData
+}
 
-/** Percorre a fila inteira (todas as ordens, não só a que está aberta) e tenta reenviar cada item. */
-export async function drainPendingSaves(): Promise<DrainResult> {
+async function trySyncOne(item: PendingSave): Promise<Classification> {
+  const alreadySliced = (item.sentFiles?.length ?? 0) > 0
+  if (!alreadySliced && itemBytes(item) <= MAX_DIRECT_BYTES) {
+    const formData = baseForm(item, item.id, true)
+    for (const [fieldName, files] of Object.entries(item.files)) {
+      for (const stored of files) formData.append(fieldName, new File([stored.blob], stored.name, { type: stored.type }))
+    }
+    const result = await sendRequest(item, formData)
+    if (result.kind === 'retry' && result.reason === 'too_large') return trySlice(item)
+    return result
+  }
+  return trySlice(item)
+}
+
+/** Fatiado: uma foto por requisição (salvamento só de foto), depois os campos + assinatura. */
+async function trySlice(item: PendingSave): Promise<Classification> {
+  const sent = new Set(item.sentFiles ?? [])
+  for (const [fieldName, files] of Object.entries(item.files)) {
+    if (fieldName === 'signature') continue
+    for (const [position, stored] of files.entries()) {
+      const key = `${fieldName}:${position}`
+      if (sent.has(key)) continue
+      const formData = baseForm(item, `${item.id}-${fieldName}-${position}`, false)
+      formData.append(fieldName, new File([stored.blob], stored.name, { type: stored.type }))
+      const result = await sendRequest(item, formData)
+      if (result.kind !== 'synced') return result
+      sent.add(key)
+      await updatePendingSave(item.id, { sentFiles: [...sent] })
+    }
+  }
+
+  const hasFinalStep = Object.keys(item.fields).length > 0 || (item.files.signature?.length ?? 0) > 0
+  if (!hasFinalStep) return { kind: 'synced' }
+  const finalForm = baseForm(item, `${item.id}-final`, true)
+  for (const stored of item.files.signature ?? []) finalForm.append('signature', new File([stored.blob], stored.name, { type: stored.type }))
+  return sendRequest(item, finalForm)
+}
+
+export type DrainResult = { synced: number; failed: number; remaining: number }
+export type DrainOptions = {
+  /** 'Tentar agora' manual: ignora o backoff e também retenta os itens 'failed'. */
+  force?: boolean
+}
+
+async function drainOnce(options: DrainOptions): Promise<DrainResult> {
   const items = await listPendingSaves()
+  const now = Date.now()
   let synced = 0
-  let dropped = 0
+  let failed = 0
 
   for (const item of items) {
+    if (!options.force) {
+      if (item.status === 'failed') continue
+      if (item.nextAttemptAt && item.nextAttemptAt > now) continue
+    }
+
     const result = await trySyncOne(item)
-    if (result === 'retry') continue
-    await deletePendingSave(item.id)
-    if (result === 'synced') synced += 1
-    else dropped += 1
+    if (result.kind === 'synced') {
+      await deletePendingSave(item.id)
+      synced += 1
+      continue
+    }
+
+    const attempts = (item.attempts ?? 0) + 1
+    if (result.kind === 'failed') {
+      await updatePendingSave(item.id, { status: 'failed', attempts, lastError: result.message, lastHttpStatus: result.status })
+      failed += 1
+    } else {
+      await updatePendingSave(item.id, {
+        status: 'pending',
+        attempts,
+        nextAttemptAt: Date.now() + (result.retryAfterMs ?? backoffMs(attempts)),
+        lastError: result.reason,
+        lastHttpStatus: result.status,
+      })
+    }
   }
 
   const remaining = await listPendingSaves()
-  return { synced, dropped, remaining: remaining.length }
+  return { synced, failed, remaining: remaining.length }
+}
+
+let inFlight: Promise<DrainResult> | null = null
+
+/**
+ * Percorre a fila inteira. Uma única execução por vez: dentro da mesma
+ * aba (promessa compartilhada) e entre abas (Web Locks, quando o
+ * navegador suporta) — antes, dois drains simultâneos podiam reenviar o
+ * mesmo item e duplicar arquivos.
+ */
+export function drainPendingSaves(options: DrainOptions = {}): Promise<DrainResult> {
+  if (inFlight) return inFlight
+
+  const run = async (): Promise<DrainResult> => {
+    const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
+    if (!locks?.request) return drainOnce(options)
+    const result = await locks.request('alizo-offline-drain', { ifAvailable: true }, async (lock) => {
+      if (!lock) return null
+      return drainOnce(options)
+    })
+    if (result) return result
+    return { synced: 0, failed: 0, remaining: (await listPendingSaves()).length }
+  }
+
+  inFlight = run().finally(() => {
+    inFlight = null
+  })
+  return inFlight
 }

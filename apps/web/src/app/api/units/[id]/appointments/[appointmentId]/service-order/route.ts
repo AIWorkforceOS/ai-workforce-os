@@ -86,6 +86,11 @@ export async function PATCH(
     return NextResponse.json({ error: 'Agendamento não encontrado.' }, { status: 404 })
   }
 
+  // Idempotência de reenvio vindo da fila offline: mesmo clientSaveId = mesmo caminho de
+  // arquivo (upsert), então repetir uma requisição nunca duplica foto/assinatura.
+  const rawSaveId = formData.get('clientSaveId')
+  const clientSaveId = typeof rawSaveId === 'string' ? rawSaveId.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80) : ''
+
   const beforePhotoFiles = formData
     .getAll('photosBefore')
     .filter((entry): entry is File => entry instanceof File && entry.size > 0)
@@ -105,10 +110,12 @@ export async function PATCH(
     const uploaded: PortalServiceOrderPhoto[] = []
     for (const [index, file] of files.entries()) {
       const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_')
-      const path = `${unitId}/${appointmentId}/${prefix}-${Date.now()}-${index}-${safeName}`
+      const path = clientSaveId
+        ? `${unitId}/${appointmentId}/${prefix}-${clientSaveId}-${index}-${safeName}`
+        : `${unitId}/${appointmentId}/${prefix}-${Date.now()}-${index}-${safeName}`
       const { error: uploadError } = await supabase.storage
         .from('service-orders')
-        .upload(path, file, { contentType: file.type || undefined })
+        .upload(path, file, { contentType: file.type || undefined, upsert: Boolean(clientSaveId) })
       if (uploadError) {
         return { error: `Não foi possível enviar a foto "${file.name}".` }
       }
@@ -130,15 +137,18 @@ export async function PATCH(
   if ('error' in uploadedMaterialPhotos) {
     return NextResponse.json({ error: uploadedMaterialPhotos.error }, { status: 500 })
   }
-  const uploadedPhotos: PortalServiceOrderPhoto[] = [...uploadedBeforePhotos, ...uploadedAfterPhotos, ...uploadedMaterialPhotos]
+  const knownUrls = new Set((appointment.service_order_photos ?? []).map((photo) => photo.url))
+  const uploadedPhotos: PortalServiceOrderPhoto[] = [...uploadedBeforePhotos, ...uploadedAfterPhotos, ...uploadedMaterialPhotos].filter(
+    (photo) => !knownUrls.has(photo.url),
+  )
 
   const signatureFile = formData.get('signature')
   let uploadedSignatureUrl: string | null = null
   if (signatureFile instanceof File && signatureFile.size > 0) {
-    const path = `${unitId}/${appointmentId}/assinatura-${Date.now()}.png`
+    const path = `${unitId}/${appointmentId}/assinatura-${clientSaveId || Date.now()}.png`
     const { error: signatureUploadError } = await supabase.storage
       .from('service-orders')
-      .upload(path, signatureFile, { contentType: signatureFile.type || 'image/png' })
+      .upload(path, signatureFile, { contentType: signatureFile.type || 'image/png', upsert: Boolean(clientSaveId) })
     if (signatureUploadError) {
       return NextResponse.json({ error: 'Não foi possível enviar a assinatura.' }, { status: 500 })
     }

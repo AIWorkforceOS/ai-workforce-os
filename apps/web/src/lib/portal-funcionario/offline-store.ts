@@ -27,6 +27,15 @@ export type PendingSave = {
   fields: Record<string, string>
   /** Arquivos por nome de campo do FormData (photosBefore, photosAfter, materialPhotos, signature). */
   files: Record<string, StoredFile[]>
+  /** 'failed' = o servidor recusou de um jeito que repetir não resolve (ex.: ordem removida) — NUNCA é apagado sozinho, fica visível na tela de sincronização pro técnico/admin decidir. Ausente = 'pending'. */
+  status?: 'pending' | 'failed'
+  attempts?: number
+  /** Só tenta de novo depois deste instante (backoff); 'tentar agora' manual ignora. */
+  nextAttemptAt?: number
+  lastError?: string
+  lastHttpStatus?: number
+  /** Arquivos já enviados com sucesso quando o salvamento foi fatiado (chave `${campo}:${posição}`) — evita reenviar tudo depois de uma falha no meio. */
+  sentFiles?: string[]
 }
 
 function isIndexedDbAvailable(): boolean {
@@ -67,6 +76,44 @@ export async function addPendingSave(input: Omit<PendingSave, 'id' | 'createdAt'
     return item.id
   } catch {
     return null
+  }
+}
+
+export async function updatePendingSave(id: string, patch: Partial<PendingSave>): Promise<void> {
+  if (!isIndexedDbAvailable()) return
+  try {
+    const db = await openDb()
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite')
+      const store = tx.objectStore(STORE_NAME)
+      const getRequest = store.get(id)
+      getRequest.onsuccess = () => {
+        const current = getRequest.result as PendingSave | undefined
+        if (current) store.put({ ...current, ...patch, id: current.id })
+      }
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+    })
+    db.close()
+  } catch {
+    // não conseguir atualizar o estado nunca pode apagar o item — ele continua na fila como estava.
+  }
+}
+
+/**
+ * Pede ao navegador pra não apagar o armazenamento local deste app por
+ * falta de espaço/inatividade (navigator.storage.persist). Chrome/Android
+ * decide sozinho (sem prompt); Safari/iOS tende a conceder quando o site
+ * está instalado na tela inicial. É pedido, não garantia — por isso a fila
+ * sempre mostra o que ainda não sincronizou.
+ */
+export async function requestPersistentStorage(): Promise<boolean> {
+  try {
+    if (typeof navigator === 'undefined' || !navigator.storage?.persist) return false
+    if (await navigator.storage.persisted?.()) return true
+    return await navigator.storage.persist()
+  } catch {
+    return false
   }
 }
 

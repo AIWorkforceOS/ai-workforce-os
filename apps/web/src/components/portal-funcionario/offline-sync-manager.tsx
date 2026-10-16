@@ -1,8 +1,9 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { CloudOff, RefreshCw } from 'lucide-react'
-import { countPendingSaves } from '@/lib/portal-funcionario/offline-store'
+import { listPendingSaves, requestPersistentStorage } from '@/lib/portal-funcionario/offline-store'
 import { drainPendingSaves } from '@/lib/portal-funcionario/offline-sync'
 
 const RETRY_INTERVAL_MS = 20_000
@@ -20,14 +21,19 @@ const RETRY_INTERVAL_MS = 20_000
  */
 export function OfflineSyncManager() {
   const [pendingCount, setPendingCount] = useState(0)
+  const [failedCount, setFailedCount] = useState(0)
   const [syncing, setSyncing] = useState(false)
 
   useEffect(() => {
     let cancelled = false
 
     async function refreshCount() {
-      const count = await countPendingSaves()
-      if (!cancelled) setPendingCount(count)
+      const items = await listPendingSaves()
+      if (cancelled) return
+      setPendingCount(items.length)
+      setFailedCount(items.filter((item) => item.status === 'failed').length)
+      // Pede armazenamento persistente quando existe dado crítico só no aparelho (melhor momento, segundo a web.dev).
+      if (items.length > 0) requestPersistentStorage()
     }
 
     async function drain() {
@@ -58,13 +64,20 @@ export function OfflineSyncManager() {
 
   return (
     <div
-      className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full px-4 py-2 text-xs font-bold text-amber-200 shadow-lg"
-      style={{ background: 'rgba(120,53,15,0.95)', border: '1px solid rgba(245,158,11,0.4)', backdropFilter: 'blur(8px)' }}
+      className={`fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full px-4 py-2 text-xs font-bold shadow-lg ${failedCount > 0 ? 'text-red-100' : 'text-amber-200'}`}
+      style={
+        failedCount > 0
+          ? { background: 'rgba(127,29,29,0.95)', border: '1px solid rgba(248,113,113,0.5)', backdropFilter: 'blur(8px)' }
+          : { background: 'rgba(120,53,15,0.95)', border: '1px solid rgba(245,158,11,0.4)', backdropFilter: 'blur(8px)' }
+      }
     >
       {syncing ? <RefreshCw size={13} className="animate-spin" /> : <CloudOff size={13} />}
       {pendingCount === 1
         ? '1 item salvo no aparelho, aguardando internet para sincronizar'
         : `${pendingCount} itens salvos no aparelho, aguardando internet para sincronizar`}
+      <Link href="/portal-funcionario/sincronizacao" className="ml-1 underline">
+        {failedCount > 0 ? `${failedCount} com erro — ver` : 'Ver'}
+      </Link>
     </div>
   )
 }
