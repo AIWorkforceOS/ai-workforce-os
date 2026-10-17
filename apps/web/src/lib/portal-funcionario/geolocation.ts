@@ -52,10 +52,28 @@ export function geoHelp(reason: GeoFailure, userAgent: string): string {
   const ios = /iPhone|iPad|iPod/i.test(userAgent)
   if (reason === 'denied') {
     return ios
-      ? 'A localização está bloqueada. No iPhone: Ajustes → Privacidade e Segurança → Serviços de Localização → ligado → Safari (Sites) → "Ao Usar o App". Depois volte aqui e toque em "Tentar de novo".'
-      : 'A localização está bloqueada. No Android: toque no cadeado ao lado do endereço → Permissões → Localização → Permitir. Depois volte aqui e toque em "Tentar de novo".'
+      ? 'A localização está bloqueada para este site. Toque em "aA" na barra do endereço → Ajustes do Site → Localização → Permitir. Depois toque em "Tentar de novo".'
+      : 'A localização está bloqueada para este site. Toque no cadeado ao lado do endereço → Permissões → Localização → Permitir. Depois toque em "Tentar de novo".'
   }
-  if (reason === 'timeout') return 'Não conseguimos achar sua posição a tempo. Vá para um lugar aberto, confirme que o GPS do celular está ligado e tente de novo.'
+  if (reason === 'timeout') return 'Não achamos sua posição a tempo. Vá para um lugar aberto, confirme que o GPS do celular está ligado e tente de novo.'
   if (reason === 'unsupported') return 'Este navegador não informa a localização. Abra o app pelo Chrome (Android) ou Safari (iPhone).'
   return 'Não conseguimos obter sua posição. Ligue o GPS do celular e tente de novo.'
+}
+
+const GEO_OK_KEY = 'alizo_geo_ok'
+
+/** Lembra neste aparelho que a localização já foi liberada (Safari nem sempre deixa consultar o estado). */
+export function rememberGeoGranted(granted: boolean): void {
+  try {
+    if (granted) localStorage.setItem(GEO_OK_KEY, '1')
+    else localStorage.removeItem(GEO_OK_KEY)
+  } catch {}
+}
+
+export function geoGrantedBefore(): boolean {
+  try {
+    return localStorage.getItem(GEO_OK_KEY) === '1'
+  } catch {
+    return false
+  }
 }

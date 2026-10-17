@@ -14,7 +14,7 @@ import { CopyToGalleryButton } from './copy-to-gallery-button'
 import { MediaDownloadPanel } from './media-download-panel'
 import { CameraPermissionGate } from './camera-permission-gate'
 import { saveCopiesToDevice } from '@/lib/portal-funcionario/save-to-device'
-import { geoHelp, getCurrentFix } from '@/lib/portal-funcionario/geolocation'
+import { getCurrentFix } from '@/lib/portal-funcionario/geolocation'
 import { directMediaUploadEnabled } from '@/lib/portal-funcionario/media-upload'
 import { saveViaQueue, type LiveSaveResult } from '@/lib/portal-funcionario/live-save'
 
@@ -360,17 +360,13 @@ export function ServiceOrderWorkspace({
       if (copies.length > 0) await saveCopiesToDevice(copies, { downloadFallback: false }).catch(() => null)
     }
 
-    // Fim do tempo de serviço: assinatura + salvar. Com check-in por GPS, a posição é obrigatória (bloqueado = não salva).
+    // Fim do tempo de serviço: assinatura + salvar. Com check-in por GPS, tenta pegar a posição agora.
     const endExtra: Record<string, string> = {}
     const hasSignature = Boolean(signatureDataUrl || appt.service_order_signature_url) && Boolean(signedBy.trim())
     if (requireGps && hasSignature) {
       setSubmitting(true)
       const geo = await getCurrentFix({ timeoutMs: 15_000 })
-      if (!geo.ok && geo.reason === 'denied') {
-        setSubmitting(false)
-        setError(geoHelp('denied', navigator.userAgent))
-        return
-      }
+      // Sem posição (bloqueada/indisponível): a ordem NÃO fica presa — salva com a hora e sem coordenadas (o admin vê "sem GPS").
       endExtra.endedAt = new Date().toISOString()
       if (geo.ok) {
         endExtra.endLat = String(geo.fix.lat)

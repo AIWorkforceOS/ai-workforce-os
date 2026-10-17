@@ -46,3 +46,12 @@ describe('loadPendingFieldEvents', () => {
     expect(await loadPendingFieldEvents('a')).toEqual({ trip_started_at: '2026-10-17T10:00:00Z', checked_in_at: '2026-10-17T10:30:00Z' })
   })
 })
+
+describe('registro sem GPS', () => {
+  it('sem posição, o marco é guardado mesmo assim com a marca no_gps (o admin enxerga)', async () => {
+    await recordFieldEvent({ unitId: 'u', appointmentId: 'a', type: 'check_in', fix: null })
+    const saved = addPendingSave.mock.calls.at(-1)![0]
+    expect(saved.fields).toMatchObject({ __event: 'check_in', no_gps: '1' })
+    expect(saved.fields.lat).toBeUndefined()
+  })
+})

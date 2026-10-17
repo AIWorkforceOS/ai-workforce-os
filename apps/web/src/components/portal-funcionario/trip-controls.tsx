@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Clock, LocateFixed, MapPin, Navigation, TriangleAlert } from 'lucide-react'
-import { geoHelp, getCurrentFix, watchFix, type GeoFailure } from '@/lib/portal-funcionario/geolocation'
+import { geoGrantedBefore, geoHelp, getCurrentFix, queryGeoPermission, rememberGeoGranted, watchFix, type GeoFailure, type GeoPermission } from '@/lib/portal-funcionario/geolocation'
 import { computeDurations, fieldState, formatDuration, type FieldEvents } from '@/lib/portal-funcionario/field-time'
 import { loadPendingFieldEvents, recordFieldEvent } from '@/lib/portal-funcionario/field-events'
 
@@ -36,6 +36,9 @@ export function TripControls({
   const [geoFailure, setGeoFailure] = useState<GeoFailure | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [accuracy, setAccuracy] = useState<number | null>(null)
+  const [permission, setPermission] = useState<GeoPermission>('granted')
+  const [asking, setAsking] = useState(false)
+  const [skippedAction, setSkippedAction] = useState<'trip_start' | 'check_in' | null>(null)
   const state = fieldState(events)
 
   const update = useCallback(
@@ -45,6 +48,33 @@ export function TripControls({
     },
     [onEvents],
   )
+
+  // Pede a localização de cara (um toque) em vez de só descobrir o bloqueio na hora de iniciar a viagem.
+  useEffect(() => {
+    let cancelled = false
+    queryGeoPermission().then((p) => {
+      if (cancelled) return
+      if (p === 'granted') rememberGeoGranted(true)
+      setPermission(p === 'unknown' ? (geoGrantedBefore() ? 'granted' : 'prompt') : p)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  async function allowLocation() {
+    setAsking(true)
+    setGeoFailure(null)
+    const result = await getCurrentFix({ timeoutMs: 20_000 })
+    setAsking(false)
+    if (result.ok) {
+      rememberGeoGranted(true)
+      setPermission('granted')
+    } else {
+      setPermission(result.reason === 'denied' ? 'denied' : 'prompt')
+      setGeoFailure(result.reason)
+    }
+  }
 
   // Marcos já feitos neste aparelho mas ainda não enviados (recarregou a página sem sinal).
   useEffect(() => {
@@ -80,17 +110,24 @@ export function TripControls({
     )
   }, [state])
 
-  async function mark(type: 'trip_start' | 'check_in') {
+  async function mark(type: 'trip_start' | 'check_in', withoutGps = false) {
     setBusy(type)
     setError(null)
     setGeoFailure(null)
-    const result = await getCurrentFix()
-    if (!result.ok) {
-      setGeoFailure(result.reason)
-      setBusy(null)
-      return
+    setSkippedAction(null)
+    let fix = null
+    if (!withoutGps) {
+      const result = await getCurrentFix()
+      if (!result.ok) {
+        setGeoFailure(result.reason)
+        setSkippedAction(type)
+        setBusy(null)
+        return
+      }
+      rememberGeoGranted(true)
+      fix = result.fix
     }
-    const recorded = await recordFieldEvent({ unitId, appointmentId, type, fix: result.fix })
+    const recorded = await recordFieldEvent({ unitId, appointmentId, type, fix })
     setBusy(null)
     if (!recorded.stored) {
       setError('Não foi possível guardar no aparelho. Tente de novo.')
@@ -126,6 +163,23 @@ export function TripControls({
         >
           <MapPin size={12} /> {address}
         </a>
+      )}
+
+      {(state === 'not_started' || state === 'on_trip') && permission !== 'granted' && (
+        <div className="flex flex-col gap-2 rounded-xl p-3" style={{ background: 'rgba(34,211,238,0.08)', border: '1px solid rgba(34,211,238,0.3)' }}>
+          {permission === 'prompt' ? (
+            <>
+              <p className="text-xs text-slate-200">
+                Para contar viagem e check-in, o app precisa da sua localização. Toque no botão e, quando o celular perguntar, escolha <b>Permitir</b>.
+              </p>
+              <button type="button" onClick={allowLocation} disabled={asking} className={btn} style={{ background: '#22d3ee' }}>
+                <LocateFixed size={16} /> {asking ? 'Aguardando…' : 'Permitir localização'}
+              </button>
+            </>
+          ) : (
+            <p className="text-xs text-amber-100">{geoHelp('denied', navigator.userAgent)}</p>
+          )}
+        </div>
       )}
 
       {state === 'not_started' && (
@@ -176,9 +230,16 @@ export function TripControls({
             <TriangleAlert size={14} className="mt-0.5 shrink-0" /> {geoHelp(geoFailure, navigator.userAgent)}
           </p>
           {state !== 'done' && (state === 'not_started' || state === 'on_trip') && (
-            <button type="button" onClick={() => mark(state === 'not_started' ? 'trip_start' : 'check_in')} className="w-fit rounded-lg bg-amber-400 px-3 py-2 text-xs font-black text-black">
-              Tentar de novo
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => mark(state === 'not_started' ? 'trip_start' : 'check_in')} className="w-fit rounded-lg bg-amber-400 px-3 py-2 text-xs font-black text-black">
+                Tentar de novo
+              </button>
+              {skippedAction && (
+                <button type="button" onClick={() => mark(skippedAction, true)} className="w-fit rounded-lg px-3 py-2 text-xs font-bold text-amber-100 underline">
+                  Registrar sem GPS (fica marcado para o admin)
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}

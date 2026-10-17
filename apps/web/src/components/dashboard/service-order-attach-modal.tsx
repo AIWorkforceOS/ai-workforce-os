@@ -229,6 +229,20 @@ function TechnicianReportSection({ unitId, appointment }: { unitId: string; appo
                   Viagem: <b>{formatDuration(d.tripMs)}</b> · Serviço: <b>{formatDuration(d.serviceMs)}</b>
                   {finished ? '' : ' (em andamento)'} · Total: <b>{formatDuration(d.totalMs)}</b>
                 </p>
+                {((appointment.trip_started_at && appointment.trip_start_lat == null) ||
+                  (appointment.checked_in_at && appointment.checkin_lat == null) ||
+                  (appointment.work_ended_at && appointment.work_end_lat == null)) && (
+                  <p className="font-bold text-amber-300">
+                    Atenção: {[
+                      appointment.trip_started_at && appointment.trip_start_lat == null ? 'saída' : null,
+                      appointment.checked_in_at && appointment.checkin_lat == null ? 'check-in' : null,
+                      appointment.work_ended_at && appointment.work_end_lat == null ? 'fim' : null,
+                    ]
+                      .filter(Boolean)
+                      .join(', ')}{' '}
+                    registrado(s) SEM GPS (localização bloqueada ou indisponível no celular do técnico).
+                  </p>
+                )}
                 <p className="flex flex-wrap gap-3 text-slate-400">
                   {link('Local de saída', appointment.trip_start_lat, appointment.trip_start_lng)}
                   {link('Local do check-in', appointment.checkin_lat, appointment.checkin_lng)}

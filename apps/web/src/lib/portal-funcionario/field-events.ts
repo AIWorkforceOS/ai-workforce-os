@@ -20,6 +20,9 @@ export async function recordFieldEvent(input: { unitId: string; appointmentId: s
     fields.lat = String(input.fix.lat)
     fields.lng = String(input.fix.lng)
     fields.accuracy = String(input.fix.accuracy)
+  } else {
+    // Registrado sem GPS (localização bloqueada/indisponível): o horário vale, a posição fica vazia e o admin vê "sem GPS".
+    fields.no_gps = '1'
   }
   const stored = await addPendingSave({ id: localId(), unitId: input.unitId, appointmentId: input.appointmentId, fields, files: {} })
   if (stored) void drainPendingSaves({ ignoreBackoff: true }).catch(() => null)
