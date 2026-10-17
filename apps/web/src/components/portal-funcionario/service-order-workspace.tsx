@@ -9,6 +9,7 @@ import { isDraftWorthSaving, type DraftFields } from '@/lib/portal-funcionario/d
 import { SignaturePad } from './signature-pad'
 import { VideoSection } from './video-section'
 import { directMediaUploadEnabled } from '@/lib/portal-funcionario/media-upload'
+import { saveViaQueue, type LiveSaveResult } from '@/lib/portal-funcionario/live-save'
 
 /** File → StoredFile (mesmo Blob, só junto do nome/tipo) — o que a fila offline guarda. */
 function toStoredFile(file: File): StoredFile {
@@ -141,6 +142,31 @@ export function ServiceOrderWorkspace({
     setSectionError(null)
     setSectionSuccess(null)
     setSectionOffline(null)
+    if (directMediaUploadEnabled()) {
+      const result = await saveViaQueue({
+        id: localId(),
+        unitId: appt.unit_id,
+        appointmentId: appt.id,
+        fields: {},
+        files: { [fieldName]: files.map(toStoredFile) },
+      })
+      setSavingSection(null)
+      if (result.kind === 'not_stored') {
+        setSectionError({ section, message: 'Não foi possível guardar as fotos no aparelho. Tente novamente.' })
+        return
+      }
+      clear()
+      if (result.kind === 'synced') {
+        if (result.patch) setAppt((prev) => ({ ...prev, ...(result.patch as ServiceOrderPatch) }))
+        setSectionSuccess(section)
+        onSaved?.()
+      } else if (result.kind === 'failed') {
+        setSectionError({ section, message: `${result.message} (guardado no aparelho — veja em Sincronização)` })
+      } else {
+        setSectionOffline(section)
+      }
+      return
+    }
     const formData = new FormData()
     for (const photo of files) formData.append(fieldName, photo)
     // mesmo id na requisição e, se cair pra fila offline, no item guardado — reenvio nunca duplica foto.
@@ -298,6 +324,30 @@ export function ServiceOrderWorkspace({
     }
 
     setSubmitting(true)
+    if (directMediaUploadEnabled()) {
+      const files: Record<string, StoredFile[]> = {}
+      if (photosBefore.length > 0) files.photosBefore = photosBefore.map(toStoredFile)
+      if (photosAfter.length > 0) files.photosAfter = photosAfter.map(toStoredFile)
+      if (materialPhotos.length > 0) files.materialPhotos = materialPhotos.map(toStoredFile)
+      if (signatureFile) files.signature = [toStoredFile(signatureFile)]
+      const result: LiveSaveResult = await saveViaQueue({ id: saveId, unitId: appt.unit_id, appointmentId: appt.id, fields, files })
+      setSubmitting(false)
+      if (result.kind === 'not_stored') {
+        setError('Não foi possível guardar no aparelho. Tente novamente.')
+      } else if (result.kind === 'failed') {
+        clearForm()
+        setError(`${result.message} (guardado no aparelho — veja em Sincronização)`)
+      } else if (result.kind === 'queued') {
+        clearForm()
+        setSavedOffline(true)
+      } else {
+        if (result.patch) setAppt((prev) => ({ ...prev, ...(result.patch as ServiceOrderPatch) }))
+        setSuccess(true)
+        clearForm()
+        onSaved?.()
+      }
+      return
+    }
     try {
       const response = await fetch(`/api/units/${appt.unit_id}/appointments/${appt.id}/service-order`, {
         method: 'PATCH',
