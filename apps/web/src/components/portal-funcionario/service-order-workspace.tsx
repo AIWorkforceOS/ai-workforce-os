@@ -9,6 +9,7 @@ import { isDraftWorthSaving, type DraftFields } from '@/lib/portal-funcionario/d
 import { SignaturePad } from './signature-pad'
 import { VideoSection } from './video-section'
 import { MultiShotCamera } from './multi-shot-camera'
+import { CopyToGalleryButton } from './copy-to-gallery-button'
 import { directMediaUploadEnabled } from '@/lib/portal-funcionario/media-upload'
 import { saveViaQueue, type LiveSaveResult } from '@/lib/portal-funcionario/live-save'
 
@@ -590,6 +591,7 @@ export function ServiceOrderWorkspace({
           onChange={handleBeforePhotosChange}
           className="text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:font-bold file:text-slate-200"
         />
+        <CopyToGalleryButton files={photosBefore} />
         {photosBefore.length > 0 && (
           <>
             <p className="flex items-center gap-1 text-xs text-slate-400">
@@ -660,6 +662,7 @@ export function ServiceOrderWorkspace({
           onChange={handleAfterPhotosChange}
           className="text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:font-bold file:text-slate-200"
         />
+        <CopyToGalleryButton files={photosAfter} />
         {photosAfter.length > 0 && (
           <>
             <p className="flex items-center gap-1 text-xs text-slate-400">
@@ -761,6 +764,7 @@ export function ServiceOrderWorkspace({
           onChange={handleMaterialPhotosChange}
           className="hidden"
         />
+        <CopyToGalleryButton files={materialPhotos} />
         {materialPhotos.length > 0 && (
           <button
             type="button"
