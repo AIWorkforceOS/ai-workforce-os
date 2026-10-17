@@ -13,8 +13,15 @@ export const EVENT_FIELD = '__event'
 
 export type RecordedEvent = { type: FieldEventType; at: string; stored: boolean }
 
-export async function recordFieldEvent(input: { unitId: string; appointmentId: string; type: FieldEventType; fix: GeoFix | null }): Promise<RecordedEvent> {
-  const at = new Date().toISOString()
+export async function recordFieldEvent(input: {
+  unitId: string
+  appointmentId: string
+  type: FieldEventType
+  fix: GeoFix | null
+  /** Horário do TOQUE do técnico (padrão: agora). A posição pode chegar depois; o horário não muda. */
+  at?: string
+}): Promise<RecordedEvent> {
+  const at = input.at ?? new Date().toISOString()
   const fields: Record<string, string> = { [EVENT_FIELD]: input.type, at }
   if (input.fix) {
     fields.lat = String(input.fix.lat)

@@ -195,6 +195,7 @@ function AppointmentRow({
             <TripControls
               unitId={appt.unit_id}
               appointmentId={appt.id}
+              address={appt.address}
               initial={{ trip_started_at: appt.trip_started_at ?? null, checked_in_at: appt.checked_in_at ?? null, work_ended_at: appt.work_ended_at ?? null }}
             />
           )}
