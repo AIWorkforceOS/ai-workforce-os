@@ -79,3 +79,6 @@ export function isAllowedContentType(kind: MediaKind, contentType: string | null
   if (kind === 'video') return type.startsWith('video/')
   return type.startsWith('image/')
 }
+
+/** Quantos vídeos de até 15s cabem numa ordem de uma vez (pedido do Vinicius: pelo menos 4). */
+export const MAX_VIDEO_CLIPS = 10

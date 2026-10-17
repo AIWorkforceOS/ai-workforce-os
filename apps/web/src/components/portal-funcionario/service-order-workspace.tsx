@@ -8,6 +8,7 @@ import { addPendingSave, deleteDraft, loadDraft, localId, saveDraft, type Stored
 import { isDraftWorthSaving, type DraftFields } from '@/lib/portal-funcionario/draft'
 import { SignaturePad } from './signature-pad'
 import { VideoSection } from './video-section'
+import { MultiShotCamera } from './multi-shot-camera'
 import { directMediaUploadEnabled } from '@/lib/portal-funcionario/media-upload'
 import { saveViaQueue, type LiveSaveResult } from '@/lib/portal-funcionario/live-save'
 
@@ -579,6 +580,7 @@ export function ServiceOrderWorkspace({
             ))}
           </div>
         )}
+        <MultiShotCamera label="Abrir câmera (várias fotos)" onShot={(file) => setPhotosBefore((prev) => [...prev, file])} />
         <input
           ref={beforeFileInputRef}
           type="file"
@@ -648,6 +650,7 @@ export function ServiceOrderWorkspace({
             ))}
           </div>
         )}
+        <MultiShotCamera label="Abrir câmera (várias fotos)" onShot={(file) => setPhotosAfter((prev) => [...prev, file])} />
         <input
           ref={afterFileInputRef}
           type="file"
@@ -748,6 +751,7 @@ export function ServiceOrderWorkspace({
           <Camera size={13} />
           Compra Material
         </button>
+        <MultiShotCamera label="Câmera (várias notas)" onShot={(file) => setMaterialPhotos((prev) => [...prev, file])} />
         <input
           ref={materialFileInputRef}
           type="file"
