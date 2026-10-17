@@ -70,4 +70,18 @@ describe('generatePhotoReportPdf', () => {
     expect(added).toBe(1)
     expect(doc.getPageCount()).toBe(2)
   })
+  it('botão "Download all" em cada página aponta para a página pública do cliente', async () => {
+    const url = 'https://www.alizoai.com/relatorio/3f2b8c1e-9a4d-4e6f-8b2a-1c3d5e7f9a0b'
+    const media = Array.from({ length: 14 }, (_, i) => m(i % 2 ? 'after' : 'before', i))
+    const pdf = await generatePhotoReportPdf(media, { ...header, downloadUrl: url }, { prepareImage })
+    const doc = await PDFDocument.load(pdf!)
+    const links = await linksOf(pdf!)
+    // 2 links por página (botão + rodapé) além dos 14 das fotos
+    expect(links.filter((l) => l === url).length).toBe(doc.getPageCount() * 2)
+    expect(links.length).toBe(14 + doc.getPageCount() * 2)
+  })
+  it('sem downloadUrl não cria o botão', async () => {
+    const pdf = await generatePhotoReportPdf([m('before', 1)], header, { prepareImage })
+    expect((await linksOf(pdf!)).length).toBe(1)
+  })
 })

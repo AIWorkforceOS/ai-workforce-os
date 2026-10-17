@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { generateServiceOrderPdf } from '@/lib/service-orders/pdf'
 import { generatePhotoReportPdf, type ReportMedia } from '@/lib/service-orders/photo-report'
+import { reportDownloadUrl } from '@/lib/service-orders/report-link'
 
 /** Baixar e reduzir dezenas de fotos leva tempo. */
 export const maxDuration = 60
@@ -28,6 +29,7 @@ type ServiceOrderPdfRow = {
   service_order_quote_description_en: string | null
   service_order_quote_description_pt: string | null
   service_order_photos: ReportMedia[] | null
+  public_report_token: string | null
   address: string | null
   starts_at: string
 }
@@ -59,7 +61,7 @@ export async function GET(
   const { data } = await supabase
     .from('appointments')
     .select(
-      'service_order_number, service_order_client_po, service_order_priority, service_order_order_type, service_order_ivr_pin, service_order_location_name, service_order_location_phone, service_order_issuer_name, service_order_issuer_email, service_order_scope_en, service_order_signed_by, service_order_signed_at, service_order_signature_url, service_order_status, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_part_purchase_link, service_order_quote_description_en, service_order_quote_description_pt, service_order_photos, address, starts_at',
+      'service_order_number, service_order_client_po, service_order_priority, service_order_order_type, service_order_ivr_pin, service_order_location_name, service_order_location_phone, service_order_issuer_name, service_order_issuer_email, service_order_scope_en, service_order_signed_by, service_order_signed_at, service_order_signature_url, service_order_status, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_part_purchase_link, service_order_quote_description_en, service_order_quote_description_pt, service_order_photos, public_report_token, address, starts_at',
     )
     .eq('id', appointmentId)
     .eq('unit_id', unitId)
@@ -72,6 +74,7 @@ export async function GET(
 
   const safeNumber = (appointment.service_order_number ?? appointmentId).replace(/[^a-zA-Z0-9.\-_]/g, '_')
   const media = appointment.service_order_photos ?? []
+  const downloadUrl = appointment.public_report_token ? reportDownloadUrl(new URL(request.url).origin, appointment.public_report_token) : null
 
   // ?report=photos → só o relatório fotográfico (sem o Sign Off).
   if (new URL(request.url).searchParams.get('report') === 'photos') {
@@ -80,6 +83,7 @@ export async function GET(
       clientPo: appointment.service_order_client_po,
       locationName: appointment.service_order_location_name,
       serviceDate: new Date(appointment.starts_at).toLocaleDateString('en-US', { timeZone: 'America/New_York' }),
+      downloadUrl,
     })
     if (!report) return NextResponse.json({ error: 'Esta ordem ainda não tem fotos nem vídeos.' }, { status: 404 })
     return new NextResponse(new Uint8Array(report), {
@@ -91,7 +95,7 @@ export async function GET(
     })
   }
 
-  const pdfBuffer = await generateServiceOrderPdf({ appointment, media })
+  const pdfBuffer = await generateServiceOrderPdf({ appointment, media, reportDownloadUrl: downloadUrl })
 
   return new NextResponse(new Uint8Array(pdfBuffer), {
     status: 200,

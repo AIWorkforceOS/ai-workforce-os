@@ -18,7 +18,33 @@ const MIME_BY_EXT: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jp
  * folha de compartilhar é recente (exigência do iPhone). Tudo acontece no
  * aparelho: nada passa pelo limite de resposta do servidor.
  */
-export function MediaDownloadPanel({ media, orderNumber }: { media: PortalServiceOrderPhoto[]; orderNumber: string | null }) {
+const COPY = {
+  pt: {
+    all: (n: number) => `Baixar todas as fotos e vídeos (${n})`,
+    loading: (i: number, n: number) => `Carregando ${i} de ${n}…`,
+    zip: (n: number) => `Baixar tudo em ZIP (${n})`,
+    gallery: 'Salvar na galeria do celular',
+    zipDone: 'ZIP baixado.',
+    shared: 'Escolha "Salvar imagens" / "Salvar vídeo" para guardar na galeria.',
+    downloaded: 'Arquivos baixados (pasta Downloads do celular).',
+    unsupported: 'Este aparelho não permite salvar na galeria daqui. Use o ZIP.',
+    error: 'Não foi possível carregar todos os arquivos. Verifique a internet e tente de novo.',
+  },
+  en: {
+    all: (n: number) => `Download all photos & videos (${n})`,
+    loading: (i: number, n: number) => `Loading ${i} of ${n}…`,
+    zip: (n: number) => `Download everything as ZIP (${n})`,
+    gallery: 'Save to phone gallery',
+    zipDone: 'ZIP downloaded.',
+    shared: 'Choose "Save Image" / "Save Video" to keep them in your gallery.',
+    downloaded: 'Files downloaded to your device.',
+    unsupported: 'This device cannot save to the gallery from here. Use the ZIP.',
+    error: 'Could not load all the files. Check your connection and try again.',
+  },
+}
+
+export function MediaDownloadPanel({ media, orderNumber, locale = 'pt' }: { media: PortalServiceOrderPhoto[]; orderNumber: string | null; locale?: 'pt' | 'en' }) {
+  const t = COPY[locale]
   const [stage, setStage] = useState<Stage>('idle')
   const [progress, setProgress] = useState(0)
   const [files, setFiles] = useState<File[]>([])
@@ -44,7 +70,7 @@ export function MediaDownloadPanel({ media, orderNumber }: { media: PortalServic
       setStage('ready')
     } catch {
       setStage('error')
-      setNote('Não foi possível carregar todos os arquivos. Verifique a internet e tente de novo.')
+      setNote(t.error)
     }
   }
 
@@ -54,19 +80,19 @@ export function MediaDownloadPanel({ media, orderNumber }: { media: PortalServic
     const url = URL.createObjectURL(new Blob([zip as BlobPart], { type: 'application/zip' }))
     const link = document.createElement('a')
     link.href = url
-    link.download = `fotos-e-videos-${(orderNumber ?? 'ordem').replace(/[^a-zA-Z0-9.\-_]/g, '_')}.zip`
+    link.download = `${locale === 'en' ? 'photos-and-videos' : 'fotos-e-videos'}-${(orderNumber ?? 'ordem').replace(/[^a-zA-Z0-9.\-_]/g, '_')}.zip`
     document.body.appendChild(link)
     link.click()
     link.remove()
     setTimeout(() => URL.revokeObjectURL(url), 30_000)
-    setNote('ZIP baixado.')
+    setNote(t.zipDone)
   }
 
   async function saveToGallery() {
     const result = await saveCopiesToDevice(files)
-    if (result === 'shared') setNote('Escolha "Salvar imagens" / "Salvar vídeo" para guardar na galeria.')
-    else if (result === 'downloaded') setNote('Arquivos baixados (pasta Downloads do celular).')
-    else if (result === 'unsupported') setNote('Este aparelho não permite salvar na galeria daqui. Use o ZIP.')
+    if (result === 'shared') setNote(t.shared)
+    else if (result === 'downloaded') setNote(t.downloaded)
+    else if (result === 'unsupported') setNote(t.unsupported)
   }
 
   const btn = 'flex w-fit items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-slate-200 transition-colors hover:text-white disabled:opacity-60'
@@ -77,16 +103,16 @@ export function MediaDownloadPanel({ media, orderNumber }: { media: PortalServic
       {stage !== 'ready' && (
         <button type="button" onClick={load} disabled={stage === 'loading'} className={btn} style={btnStyle}>
           {stage === 'loading' ? <Loader2 size={13} className="animate-spin" /> : <Images size={13} />}
-          {stage === 'loading' ? `Carregando ${progress} de ${media.length}…` : `Baixar todas as fotos e vídeos (${media.length})`}
+          {stage === 'loading' ? t.loading(progress, media.length) : t.all(media.length)}
         </button>
       )}
       {stage === 'ready' && (
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={downloadZip} className={btn} style={btnStyle}>
-            <Download size={13} /> Baixar tudo em ZIP ({files.length})
+            <Download size={13} /> {t.zip(files.length)}
           </button>
           <button type="button" onClick={saveToGallery} className={btn} style={btnStyle}>
-            <Images size={13} /> Salvar na galeria do celular
+            <Images size={13} /> {t.gallery}
           </button>
         </div>
       )}

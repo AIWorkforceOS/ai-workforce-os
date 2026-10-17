@@ -98,7 +98,14 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
   return results
 }
 
-export type PhotoReportHeader = { orderNumber: string | null; clientPo: string | null; locationName: string | null; serviceDate: string | null }
+export type PhotoReportHeader = {
+  orderNumber: string | null
+  clientPo: string | null
+  locationName: string | null
+  serviceDate: string | null
+  /** Página pública (sem login) onde o cliente baixa tudo — vira o botão "Download all" em cada página do relatório. */
+  downloadUrl?: string | null
+}
 
 export type ReportDeps = { prepareImage?: typeof defaultPrepareImage }
 
@@ -150,6 +157,15 @@ export async function drawPhotoReportPages(
     const line2 = [header.locationName, header.serviceDate].filter(Boolean).join('   ·   ')
     if (line1) page.drawText(line1, { x: MARGIN, y: PAGE_HEIGHT - MARGIN - 28, size: 9, font, color: MUTED })
     if (line2) page.drawText(line2, { x: MARGIN, y: PAGE_HEIGHT - MARGIN - 41, size: 9, font, color: MUTED })
+    if (header.downloadUrl) {
+      const label = 'DOWNLOAD ALL PHOTOS & VIDEOS'
+      const w = bold.widthOfTextAtSize(label, 8.5) + 24
+      const x = PAGE_WIDTH - MARGIN - w
+      const by = PAGE_HEIGHT - MARGIN - 20
+      page.drawRectangle({ x, y: by, width: w, height: 24, color: LINK })
+      page.drawText(label, { x: x + 12, y: by + 8, size: 8.5, font: bold, color: rgb(1, 1, 1) })
+      addLinkAnnotation(page, header.downloadUrl, { x, y: by, width: w, height: 24 })
+    }
     page.drawLine({ start: { x: MARGIN, y: PAGE_HEIGHT - MARGIN - 52 }, end: { x: PAGE_WIDTH - MARGIN, y: PAGE_HEIGHT - MARGIN - 52 }, thickness: 1, color: LINE })
     y = PAGE_HEIGHT - MARGIN - HEADER_H + 10
   }
@@ -211,6 +227,13 @@ export async function drawPhotoReportPages(
   startedPages.forEach((p, i) => {
     const text = `Photographic report — page ${i + 1} of ${total}`
     p.drawText(text, { x: PAGE_WIDTH - MARGIN - font.widthOfTextAtSize(text, 7.5), y: 38, size: 7.5, font, color: MUTED })
+    if (header.downloadUrl) {
+      const note = 'Download all photos & videos (ZIP or save to phone):'
+      p.drawText(note, { x: MARGIN, y: 38, size: 7.5, font, color: MUTED })
+      const urlText = header.downloadUrl
+      p.drawText(urlText, { x: MARGIN, y: 28, size: 7, font, color: LINK })
+      addLinkAnnotation(p, header.downloadUrl, { x: MARGIN, y: 25, width: font.widthOfTextAtSize(urlText, 7), height: 12 })
+    }
   })
   return doc.getPageCount() - pagesBefore
 }

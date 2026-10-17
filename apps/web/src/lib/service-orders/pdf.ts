@@ -259,7 +259,7 @@ function addPage(doc: PDFDocument): { page: PDFPage; y: number } {
   return { page, y: PAGE_HEIGHT - MARGIN }
 }
 
-export async function generateServiceOrderPdf(params: { appointment: ServiceOrderPdfAppointment; media?: ReportMedia[] }): Promise<Buffer> {
+export async function generateServiceOrderPdf(params: { appointment: ServiceOrderPdfAppointment; media?: ReportMedia[]; reportDownloadUrl?: string | null }): Promise<Buffer> {
   const { appointment: a } = params
 
   const doc = await PDFDocument.create()
@@ -546,6 +546,7 @@ export async function generateServiceOrderPdf(params: { appointment: ServiceOrde
           clientPo: a.service_order_client_po,
           locationName: a.service_order_location_name,
           serviceDate: formatServiceDateUs(a.starts_at),
+          downloadUrl: params.reportDownloadUrl ?? null,
         },
         font,
         bold,
