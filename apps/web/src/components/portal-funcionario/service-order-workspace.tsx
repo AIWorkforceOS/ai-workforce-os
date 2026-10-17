@@ -84,6 +84,8 @@ export function ServiceOrderWorkspace({
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [savedOffline, setSavedOffline] = useState(false)
+  /** Motivo real da espera na fila (modo upload direto); null = texto padrão de "sem internet". */
+  const [queuedNote, setQueuedNote] = useState<string | null>(null)
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null)
   const [draftReady, setDraftReady] = useState(false)
   const beforeFileInputRef = useRef<HTMLInputElement>(null)
@@ -142,6 +144,7 @@ export function ServiceOrderWorkspace({
     setSectionError(null)
     setSectionSuccess(null)
     setSectionOffline(null)
+    setQueuedNote(null)
     if (directMediaUploadEnabled()) {
       const result = await saveViaQueue({
         id: localId(),
@@ -163,6 +166,7 @@ export function ServiceOrderWorkspace({
       } else if (result.kind === 'failed') {
         setSectionError({ section, message: `${result.message} (guardado no aparelho — veja em Sincronização)` })
       } else {
+        setQueuedNote(result.label)
         setSectionOffline(section)
       }
       return
@@ -280,6 +284,7 @@ export function ServiceOrderWorkspace({
     setError(null)
     setSuccess(false)
     setSavedOffline(false)
+    setQueuedNote(null)
 
     if (status === 'completed' && !signedBy.trim()) {
       setError('Informe o nome de quem assinou para finalizar.')
@@ -339,6 +344,7 @@ export function ServiceOrderWorkspace({
         setError(`${result.message} (guardado no aparelho — veja em Sincronização)`)
       } else if (result.kind === 'queued') {
         clearForm()
+        setQueuedNote(result.label)
         setSavedOffline(true)
       } else {
         if (result.patch) setAppt((prev) => ({ ...prev, ...(result.patch as ServiceOrderPatch) }))
@@ -603,7 +609,7 @@ export function ServiceOrderWorkspace({
         )}
         {sectionSuccess === 'before' && <p className="text-xs font-semibold text-emerald-400">Fotos salvas.</p>}
         {sectionOffline === 'before' && (
-          <p className="text-xs font-semibold text-amber-400">Sem internet — já salvamos no aparelho, vai enviar sozinho depois.</p>
+          <p className="text-xs font-semibold text-amber-400">{queuedNote ? `Salvo no aparelho — ${queuedNote}. Nada foi perdido.` : 'Sem internet — já salvamos no aparelho, vai enviar sozinho depois.'}</p>
         )}
         {sectionError?.section === 'before' && <p className="text-xs text-red-400">{sectionError.message}</p>}
       </div>
@@ -672,7 +678,7 @@ export function ServiceOrderWorkspace({
         )}
         {sectionSuccess === 'after' && <p className="text-xs font-semibold text-emerald-400">Fotos salvas.</p>}
         {sectionOffline === 'after' && (
-          <p className="text-xs font-semibold text-amber-400">Sem internet — já salvamos no aparelho, vai enviar sozinho depois.</p>
+          <p className="text-xs font-semibold text-amber-400">{queuedNote ? `Salvo no aparelho — ${queuedNote}. Nada foi perdido.` : 'Sem internet — já salvamos no aparelho, vai enviar sozinho depois.'}</p>
         )}
         {sectionError?.section === 'after' && <p className="text-xs text-red-400">{sectionError.message}</p>}
       </div>
@@ -765,7 +771,7 @@ export function ServiceOrderWorkspace({
         )}
         {sectionSuccess === 'material' && <p className="text-xs font-semibold text-emerald-400">Fotos salvas.</p>}
         {sectionOffline === 'material' && (
-          <p className="text-xs font-semibold text-amber-400">Sem internet — já salvamos no aparelho, vai enviar sozinho depois.</p>
+          <p className="text-xs font-semibold text-amber-400">{queuedNote ? `Salvo no aparelho — ${queuedNote}. Nada foi perdido.` : 'Sem internet — já salvamos no aparelho, vai enviar sozinho depois.'}</p>
         )}
         {sectionError?.section === 'material' && <p className="text-xs text-red-400">{sectionError.message}</p>}
       </div>
@@ -797,8 +803,9 @@ export function ServiceOrderWorkspace({
         {success && <p className="text-xs font-semibold text-emerald-400">Salvo com sucesso.</p>}
         {savedOffline && (
           <p className="text-xs font-semibold text-amber-400">
-            Sem internet agora — já salvamos tudo (fotos e assinatura) no seu aparelho. Vai enviar sozinho assim que a conexão voltar,
-            nada foi perdido.
+            {queuedNote
+              ? `Salvo no aparelho — ${queuedNote}. Nada foi perdido.`
+              : 'Sem internet agora — já salvamos tudo (fotos e assinatura) no seu aparelho. Vai enviar sozinho assim que a conexão voltar, nada foi perdido.'}
           </p>
         )}
         <button

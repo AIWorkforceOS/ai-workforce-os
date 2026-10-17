@@ -32,8 +32,15 @@ describe('saveViaQueue', () => {
     expect(result).toEqual({ kind: 'synced', patch: { service_order_status: 'completed' } })
   })
   it('item ainda na fila → queued (nada perdido)', async () => {
-    listPendingSaves.mockResolvedValue([{ id: 'i1', status: 'waiting' }])
-    expect(await saveViaQueue(input)).toEqual({ kind: 'queued' })
+    listPendingSaves.mockResolvedValue([{ id: 'i1', status: 'waiting', lastError: 'network', files: {}, createdAt: 1, appointmentId: 'a' }])
+    expect(await saveViaQueue(input)).toEqual({ kind: 'queued', label: 'Aguardando internet' })
+  })
+  it('sessão expirada NÃO é descrita como falta de internet', async () => {
+    listPendingSaves.mockResolvedValue([{ id: 'i1', status: 'waiting', lastError: 'session', files: {}, createdAt: 1, appointmentId: 'a' }])
+    const result = await saveViaQueue(input)
+    expect(result).toMatchObject({ kind: 'queued' })
+    expect((result as { label: string }).label).toMatch(/Sessão expirada/)
+    expect((result as { label: string }).label).not.toMatch(/internet/i)
   })
   it('item failed → failed com a mensagem, continua guardado', async () => {
     listPendingSaves.mockResolvedValue([{ id: 'i1', status: 'failed', lastError: 'recusado' }])

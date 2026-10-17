@@ -1,13 +1,15 @@
 import { createClient } from '@/lib/supabase/client'
 import { addPendingSave, listPendingSaves, type StoredFile } from './offline-store'
 import { drainPendingSaves } from './offline-sync'
+import { describeQueueItem } from './queue-status'
 
 export const SERVICE_ORDER_PATCH_COLUMNS =
   'service_order_status, service_order_signed_by, service_order_signed_at, service_order_signature_url, service_order_part_purchase_link, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_photos'
 
 export type LiveSaveResult =
   | { kind: 'synced'; patch: Record<string, unknown> | null }
-  | { kind: 'queued' }
+  /** `label` = motivo real da espera (sem internet, sessão expirada, servidor ocupado…). */
+  | { kind: 'queued'; label: string }
   | { kind: 'failed'; message: string }
   | { kind: 'not_stored' }
 
@@ -35,7 +37,7 @@ export async function saveViaQueue(input: {
   if (item?.status === 'failed') {
     return { kind: 'failed', message: item.lastError ?? 'O servidor recusou o salvamento. Seu trabalho continua guardado no aparelho.' }
   }
-  if (item) return { kind: 'queued' }
+  if (item) return { kind: 'queued', label: describeQueueItem(item).label }
 
   // Confirmado e removido da fila: busca o estado atualizado pra tela refletir o que o servidor realmente tem.
   try {

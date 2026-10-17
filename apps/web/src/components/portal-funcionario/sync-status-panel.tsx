@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { CheckCircle2, CloudOff, RefreshCw, TriangleAlert } from 'lucide-react'
 import { listPendingSaves } from '@/lib/portal-funcionario/offline-store'
 import { drainPendingSaves } from '@/lib/portal-funcionario/offline-sync'
+import { directMediaOverrideActive, setDirectMediaOverride } from '@/lib/portal-funcionario/media-upload'
 import { describeQueueItem, type QueueItemView } from '@/lib/portal-funcionario/queue-status'
 
 /** Tela de status da sincronização: o que está salvo só no aparelho, o que falhou, e "tentar agora". */
@@ -11,6 +12,15 @@ export function SyncStatusPanel() {
   const [items, setItems] = useState<QueueItemView[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  const [testMode, setTestMode] = useState(false)
+
+  // Modo de teste por aparelho: abrir esta tela com ?upload_direto=1 liga, =0 desliga. Só afeta este aparelho.
+  useEffect(() => {
+    const flag = new URLSearchParams(window.location.search).get('upload_direto')
+    if (flag === '1') setDirectMediaOverride(true)
+    if (flag === '0') setDirectMediaOverride(false)
+    setTestMode(directMediaOverrideActive())
+  }, [])
 
   const refresh = useCallback(async () => {
     setItems((await listPendingSaves()).map(describeQueueItem))
@@ -41,6 +51,11 @@ export function SyncStatusPanel() {
 
   return (
     <div className="flex flex-col gap-4">
+      {testMode && (
+        <p className="rounded-xl px-3 py-2 text-xs font-bold text-amber-200" style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)' }}>
+          Modo de teste ATIVO neste aparelho: fotos e vídeos sobem direto pro servidor. Para desligar, abra esta tela com ?upload_direto=0.
+        </p>
+      )}
       {items.length === 0 ? (
         <div className="flex items-center gap-2 rounded-2xl px-4 py-4 text-sm text-emerald-300" style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)' }}>
           <CheckCircle2 size={16} />

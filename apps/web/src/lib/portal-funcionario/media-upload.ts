@@ -5,12 +5,36 @@ import { classifyResponse, type Classification } from './offline-sync'
 /**
  * Upload direto aparelho → Storage (sem passar pelo corpo limitado da
  * Vercel, ~4,5MB) + registro verificado na ordem. Desligado por padrão:
- * só vale com NEXT_PUBLIC_DIRECT_MEDIA_UPLOAD=true, pra validar antes de
+ * só vale com NEXT_PUBLIC_DIRECT_MEDIA_UPLOAD=true (todos) ou com o modo de teste por aparelho (localStorage, ver setDirectMediaOverride), pra validar antes de
  * mexer no fluxo de produção do Mawi. Caminho determinístico + upsert =
  * reenviar nunca duplica.
  */
+const OVERRIDE_KEY = 'alizo_direct_media'
+
+function readOverride(): boolean {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem(OVERRIDE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+/** Liga/desliga o upload direto SÓ neste aparelho (técnico de teste), sem mexer em variável de produção nem afetar outros usuários. */
+export function setDirectMediaOverride(on: boolean): void {
+  try {
+    if (on) localStorage.setItem(OVERRIDE_KEY, '1')
+    else localStorage.removeItem(OVERRIDE_KEY)
+  } catch {
+    // sem localStorage (modo privado): o recurso simplesmente continua desligado
+  }
+}
+
+export function directMediaOverrideActive(): boolean {
+  return readOverride()
+}
+
 export function directMediaUploadEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_DIRECT_MEDIA_UPLOAD === 'true'
+  return process.env.NEXT_PUBLIC_DIRECT_MEDIA_UPLOAD === 'true' || readOverride()
 }
 
 export function isMediaField(fieldName: string): boolean {
