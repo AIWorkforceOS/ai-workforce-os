@@ -443,7 +443,7 @@ export type Appointment = {
   service_order_quote_description_en: string | null
   service_order_quote_description_pt: string | null
   /** kind ausente/'service' = foto do atendimento sem distinção antes/depois (fotos salvas antes da migration 061); 'before'/'after' = escolhido pelo técnico no Portal do Funcionário (Portal 360 agrupa por isso); 'material_invoice' = nota fiscal de compra de material. Campo dentro do jsonb, sem migration nova. */
-  service_order_photos: { url: string; uploaded_at: string; kind?: 'before' | 'after' | 'service' | 'material_invoice' }[]
+  service_order_photos: { url: string; uploaded_at: string; kind?: 'before' | 'after' | 'service' | 'material_invoice' | 'video' }[]
   /** Dia (sem hora) pedido pela 360 ao anexar pelo Portal 360 (migration 061) — null fora desse fluxo. Ver comentário da coluna no banco. */
   service_order_requested_date: string | null
   /** Campos do "Sign Off Sheet" fixo da 360 (migration 059) — só o admin preenche, pré-preenchidos pela extração por IA. Ver lib/service-orders/pdf.ts. */
