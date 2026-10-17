@@ -1,5 +1,5 @@
 import { directMediaUploadEnabled, isMediaField, uploadAndRegisterMedia } from './media-upload'
-import { deletePendingSave, listPendingSaves, updatePendingSave, type PendingSave } from './offline-store'
+import { deletePendingSave, getActiveOwner, listPendingSaves, setMeta, updatePendingSave, type PendingSave } from './offline-store'
 
 /**
  * Reenvia salvamentos guardados no aparelho pra mesma rota PATCH de sempre
@@ -169,7 +169,11 @@ async function drainOnce(options: DrainOptions): Promise<DrainResult> {
   let synced = 0
   let failed = 0
 
+  const owner = getActiveOwner()
   for (const item of items) {
+    // Troca de usuário no mesmo aparelho: item de outro funcionário não é enviado por esta sessão
+    // (o servidor recusaria) — fica guardado, visível, até a conta original voltar.
+    if (owner && item.ownerId && item.ownerId !== owner) continue
     if (!options.force) {
       if (item.status === 'failed') continue
       if (!options.ignoreBackoff && item.nextAttemptAt && item.nextAttemptAt > now) continue
@@ -179,6 +183,7 @@ async function drainOnce(options: DrainOptions): Promise<DrainResult> {
     if (result.kind === 'synced') {
       await deletePendingSave(item.id)
       synced += 1
+      void setMeta('last_sync_at', Date.now())
       continue
     }
 

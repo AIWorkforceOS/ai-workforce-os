@@ -5,6 +5,7 @@ import { getAppUser } from '@/lib/app-user'
 import { fetchEmployeePortalData, fetchEmployeeUnitContext, PORTAL_DATA_SINCE } from '@/lib/portal-funcionario/data'
 import { summarizeEmployeeServiceRecords } from '@/lib/portal-funcionario/financials'
 import { AgendaSection } from '@/components/portal-funcionario/agenda-section'
+import { OfflineSnapshotWriter } from '@/components/portal-funcionario/offline-snapshot-writer'
 import { Badge, Card, CardHeader, EmptyState, KpiCard, PageHeader, type BadgeVariant } from '@/components/ui/dashboard-ui'
 import {
   currentMonthInTimezone,
@@ -91,6 +92,7 @@ export default async function PortalFuncionarioPage({
         subtitle={`Sua agenda e seus valores lançados a partir de ${formatDate(PORTAL_DATA_SINCE, locale)}.`}
       />
 
+      <OfflineSnapshotWriter employeeId={appUser.employeeId} appointments={appointments} timezone={timezone} locale={unitLocale} requiresCheckin={requiresCheckin} />
       <Card className="overflow-hidden">
         <AgendaSection appointments={appointments} timezone={timezone} locale={locale} requiresCheckin={requiresCheckin} />
       </Card>

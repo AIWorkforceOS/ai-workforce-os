@@ -10,7 +10,15 @@ const listPendingSaves = vi.fn()
 const deletePendingSave = vi.fn()
 const updatePendingSave = vi.fn()
 
-vi.mock('../offline-store', () => ({ listPendingSaves, deletePendingSave, updatePendingSave }))
+let activeOwner: string | null = null
+const setMeta = vi.fn()
+vi.mock('../offline-store', () => ({
+  listPendingSaves,
+  deletePendingSave,
+  updatePendingSave,
+  getActiveOwner: () => activeOwner,
+  setMeta: (...a: unknown[]) => setMeta(...a),
+}))
 
 // O upload direto agora é o padrão; a suíte abaixo cobre o fluxo ANTIGO (fallback) com ele desligado
 // e, no fim, o fluxo direto com ele ligado.
@@ -57,6 +65,7 @@ describe('drainPendingSaves', () => {
   beforeEach(() => {
     vi.resetModules()
     directOn = false
+    activeOwner = null
     uploadAndRegisterMedia.mockReset()
     listPendingSaves.mockReset()
     deletePendingSave.mockReset()
@@ -346,5 +355,42 @@ describe('marcos de viagem/check-in na fila', () => {
   it('409 (check-in ainda não chegou ao servidor) é nova tentativa, não falha definitiva', async () => {
     const { classifyResponse } = await import('../offline-sync')
     expect(classifyResponse(409, false)).toMatchObject({ kind: 'retry' })
+  })
+})
+
+describe('troca de usuário no mesmo aparelho', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    directOn = false
+    listPendingSaves.mockReset()
+    deletePendingSave.mockReset()
+    updatePendingSave.mockReset()
+    setMeta.mockReset()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(res(200)))
+  })
+  afterEach(() => {
+    activeOwner = null
+    vi.unstubAllGlobals()
+  })
+
+  it('item de outro funcionário NÃO é enviado nem apagado; o do usuário atual e o antigo (sem dono) são', async () => {
+    activeOwner = 'func-B'
+    listPendingSaves.mockResolvedValue([
+      { ...makeItem({ id: 'do-A' }), ownerId: 'func-A' },
+      { ...makeItem({ id: 'do-B' }), ownerId: 'func-B' },
+      makeItem({ id: 'antigo-sem-dono' }),
+    ])
+    const { drainPendingSaves } = await import('../offline-sync')
+    const result = await drainPendingSaves()
+    expect(deletePendingSave).not.toHaveBeenCalledWith('do-A')
+    expect(deletePendingSave).toHaveBeenCalledWith('do-B')
+    expect(deletePendingSave).toHaveBeenCalledWith('antigo-sem-dono')
+    expect(result.synced).toBe(2)
+  })
+  it('registra a hora da última sincronização confirmada', async () => {
+    listPendingSaves.mockResolvedValue([makeItem({ id: 'x' })])
+    const { drainPendingSaves } = await import('../offline-sync')
+    await drainPendingSaves()
+    expect(setMeta).toHaveBeenCalledWith('last_sync_at', expect.any(Number))
   })
 })

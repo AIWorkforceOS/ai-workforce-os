@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import type { ReactNode } from 'react'
 import { getLocale } from '@/lib/i18n/server'
 import { LocaleProvider } from '@/lib/i18n/client'
@@ -13,7 +13,13 @@ import './globals.css'
 // nunca oferecer/aplicar tradução automática nesta página.
 export function generateMetadata(): Metadata {
   const locale = getLocale()
-  const base = { other: { google: 'notranslate' } }
+  const base = {
+    other: { google: 'notranslate' },
+    applicationName: 'Alizo AI',
+    // iPhone: abre em tela cheia quando instalado pela tela inicial (barra de status opaca, sem mexer no layout).
+    appleWebApp: { capable: true, title: 'Alizo', statusBarStyle: 'black' as const },
+    icons: { apple: '/pwa/apple-touch-icon.png' },
+  }
   return locale === 'en'
     ? {
         ...base,
@@ -28,6 +34,8 @@ export function generateMetadata(): Metadata {
           'Funcionários digitais que atendem, vendem, recrutam e cuidam dos seus anúncios — 24 horas por dia.',
       }
 }
+
+export const viewport: Viewport = { themeColor: '#0a0f1e' }
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   const locale = getLocale()

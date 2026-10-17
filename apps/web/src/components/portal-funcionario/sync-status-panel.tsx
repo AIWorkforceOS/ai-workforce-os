@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { CheckCircle2, CloudOff, RefreshCw, TriangleAlert } from 'lucide-react'
 import { listPendingSaves } from '@/lib/portal-funcionario/offline-store'
 import { drainPendingSaves } from '@/lib/portal-funcionario/offline-sync'
+import { OfflineStatusCard } from './offline-status-card'
 import { directMediaOverrideOff, setDirectMediaOverride } from '@/lib/portal-funcionario/media-upload'
 import { describeQueueItem, type QueueItemView } from '@/lib/portal-funcionario/queue-status'
 
@@ -52,6 +53,7 @@ export function SyncStatusPanel() {
 
   return (
     <div className="flex flex-col gap-4">
+      <OfflineStatusCard />
       {testMode && (
         <p className="rounded-xl px-3 py-2 text-xs font-bold text-amber-200" style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)' }}>
           Este aparelho está no fluxo ANTIGO de envio (upload direto desligado só aqui). Para voltar ao padrão, abra esta tela com ?upload_direto=padrao.

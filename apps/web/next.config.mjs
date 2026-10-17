@@ -11,6 +11,18 @@ const nextConfig = {
     // ao navegar entre telas logo após uma edição.
     staleTimes: { dynamic: 0 },
   },
+  async headers() {
+    return [
+      {
+        // O Service Worker nunca pode ficar preso em cache do navegador: versão nova (ou o rollback) vale na próxima abertura.
+        source: '/sw.js',
+        headers: [
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+          { key: 'Service-Worker-Allowed', value: '/' },
+        ],
+      },
+    ]
+  },
 }
 
 export default nextConfig
