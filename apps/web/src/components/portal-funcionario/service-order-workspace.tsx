@@ -9,6 +9,7 @@ import { isDraftWorthSaving, type DraftFields } from '@/lib/portal-funcionario/d
 import { SignaturePad } from './signature-pad'
 import { VideoSection } from './video-section'
 import { MultiShotCamera } from './multi-shot-camera'
+import { useFieldOrder } from './field-order-context'
 import { CopyToGalleryButton } from './copy-to-gallery-button'
 import { MediaDownloadPanel } from './media-download-panel'
 import { CameraPermissionGate } from './camera-permission-gate'
@@ -65,8 +66,8 @@ async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
 export function ServiceOrderWorkspace({
   appointment,
   onSaved,
-  requireGps = false,
-  onFinished,
+  requireGps: requireGpsProp,
+  onFinished: onFinishedProp,
 }: {
   appointment: PortalAppointment
   /** Técnico com check-in por GPS: ao assinar e salvar, a posição e a hora de fim vão junto (o tempo de serviço para aí). */
@@ -76,6 +77,9 @@ export function ServiceOrderWorkspace({
   /** chamado depois de um salvamento confirmado no servidor (não nas fotos-only nem no fallback offline) — pedido do Vinicius (2026-09-16): admin também usa este componente (via ServiceOrderAttachModal) e precisa que a lista da Agenda atualize ao fechar. */
   onSaved?: () => void
 }) {
+  const fieldOrder = useFieldOrder()
+  const requireGps = requireGpsProp ?? fieldOrder.requireGps
+  const onFinished = onFinishedProp ?? fieldOrder.onFinished
   const [appt, setAppt] = useState(appointment)
   const [signedBy, setSignedBy] = useState(appt.service_order_signed_by ?? '')
   const [status, setStatus] = useState<'completed' | 'quote'>(appt.service_order_status === 'quote' ? 'quote' : 'completed')

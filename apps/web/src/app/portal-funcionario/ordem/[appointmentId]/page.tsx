@@ -109,8 +109,9 @@ export default async function ServiceOrderWorkspacePage({
         appointmentId={appointment.id}
         address={appointment.address}
         initial={{ trip_started_at: appointment.trip_started_at ?? null, checked_in_at: appointment.checked_in_at ?? null, work_ended_at: appointment.work_ended_at ?? null }}
-        render={({ requireGps, onFinished }) => <ServiceOrderWorkspace appointment={appointment} requireGps={requireGps} onFinished={onFinished} />}
-      />
+      >
+        <ServiceOrderWorkspace appointment={appointment} />
+      </FieldOrderShell>
     </div>
   )
 }
