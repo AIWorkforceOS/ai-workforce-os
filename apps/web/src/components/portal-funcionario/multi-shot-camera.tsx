@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Camera, Check, Download, X } from 'lucide-react'
 import { saveCopiesToDevice } from '@/lib/portal-funcionario/save-to-device'
-import { cameraHelp, openCameraStream } from '@/lib/portal-funcionario/camera-access'
+import { openCameraStream } from '@/lib/portal-funcionario/camera-access'
+import { rememberCameraDenied, useCameraPermission } from '@/lib/portal-funcionario/use-camera-permission'
 
 const MAX_SHOTS_PER_SESSION = 40
 
@@ -15,6 +16,8 @@ const MAX_SHOTS_PER_SESSION = 40
  * sessão, o que já foi tirado não se perde.
  */
 export function MultiShotCamera({ label, onShot }: { label: string; onShot: (file: File) => void }) {
+  const permission = useCameraPermission()
+  const [blocked, setBlocked] = useState(false)
   const [open, setOpen] = useState(false)
   const [count, setCount] = useState(0)
   const [lastThumb, setLastThumb] = useState<string | null>(null)
@@ -37,7 +40,12 @@ export function MultiShotCamera({ label, onShot }: { label: string; onShot: (fil
     setLastThumb(null)
     const result = await openCameraStream({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 2560 }, height: { ideal: 1440 } } })
     if (!result.ok) {
-      setError(cameraHelp(result.reason, navigator.userAgent))
+      if (result.reason === 'denied') {
+        rememberCameraDenied(true)
+        setBlocked(true)
+        return
+      }
+      setError('Não foi possível abrir a câmera contínua. Use "Tirar foto".')
       return
     }
     streamRef.current = result.stream
@@ -97,6 +105,9 @@ export function MultiShotCamera({ label, onShot }: { label: string; onShot: (fil
             : 'Este aparelho não permite salvar cópia daqui.',
     )
   }
+
+  // Câmera embutida bloqueada: não mostra nada (o botão "Tirar foto" da câmera do celular resolve, sem permissão).
+  if (permission === 'denied' || blocked) return null
 
   return (
     <div className="flex flex-col gap-1">

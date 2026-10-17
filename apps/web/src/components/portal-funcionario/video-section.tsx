@@ -8,7 +8,8 @@ import { AUDIO_BITS_PER_SECOND, pickRecorderMimeType, validateVideoFile, VIDEO_B
 import { addPendingSave, listPendingSaves, localId } from '@/lib/portal-funcionario/offline-store'
 import { drainPendingSaves } from '@/lib/portal-funcionario/offline-sync'
 import { saveCopiesToDevice } from '@/lib/portal-funcionario/save-to-device'
-import { cameraHelp, openCameraStream } from '@/lib/portal-funcionario/camera-access'
+import { openCameraStream } from '@/lib/portal-funcionario/camera-access'
+import { rememberCameraDenied, useCameraPermission } from '@/lib/portal-funcionario/use-camera-permission'
 
 type SavedVideo = { url: string }
 type SessionClip = { id: string; file: File; synced: boolean }
@@ -48,6 +49,9 @@ export function VideoSection({
   onDelete?: (url: string) => void
 }) {
   const router = useRouter()
+  const permission = useCameraPermission()
+  const [blocked, setBlocked] = useState(false)
+  const inAppRecorder = permission !== 'denied' && !blocked
   const [session, setSession] = useState<SessionClip[]>([])
   const [recording, setRecording] = useState(false)
   const [secondsLeft, setSecondsLeft] = useState(MAX_VIDEO_SECONDS)
@@ -123,7 +127,13 @@ export function VideoSection({
     }
     const opened = await openCameraStream({ audio: true, video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 24 } } })
     if (!opened.ok) {
-      setMessage({ tone: 'error', text: cameraHelp(opened.reason, navigator.userAgent) })
+      if (opened.reason === 'denied') {
+        rememberCameraDenied(true)
+        setBlocked(true)
+        setMessage({ tone: 'warn', text: 'O gravador do app não está liberado neste aparelho. Use "Gravar com a câmera do celular".' })
+      } else {
+        setMessage({ tone: 'error', text: 'Não foi possível abrir a câmera do app. Use "Gravar com a câmera do celular".' })
+      }
       return
     }
     const stream = opened.stream
@@ -217,17 +227,24 @@ export function VideoSection({
         </ul>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        {!recording ? (
-          <button type="button" onClick={startRecording} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-red-300" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)' }}>
-            <Circle size={13} /> {session.length > 0 ? 'Gravar outro vídeo' : 'Gravar vídeo'}
-          </button>
-        ) : (
-          <button type="button" onClick={stopRecording} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-white" style={{ background: '#ef4444' }}>
-            <Square size={13} /> Parar
-          </button>
+        {inAppRecorder &&
+          (!recording ? (
+            <button type="button" onClick={startRecording} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-red-300" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)' }}>
+              <Circle size={13} /> {session.length > 0 ? 'Gravar outro (15s, compacto)' : 'Gravar vídeo (15s, compacto)'}
+            </button>
+          ) : (
+            <button type="button" onClick={stopRecording} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-white" style={{ background: '#ef4444' }}>
+              <Square size={13} /> Parar
+            </button>
+          ))}
+        {!recording && (
+          <label className="flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-red-300" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)' }}>
+            <Circle size={13} /> Gravar com a câmera do celular
+            <input type="file" accept="video/*" capture="environment" onChange={handlePick} className="hidden" />
+          </label>
         )}
         <label className="flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-slate-200" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)' }}>
-          <VideoIcon size={13} /> Escolher vídeo
+          <VideoIcon size={13} /> Escolher da galeria
           <input type="file" accept="video/*" multiple onChange={handlePick} className="hidden" />
         </label>
         {session.length > 0 && !recording && (

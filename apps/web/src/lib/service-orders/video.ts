@@ -19,7 +19,7 @@ export function validateVideoFile(file: { size: number; type: string }, duration
   if (!file.type.startsWith('video/')) return { ok: false, error: 'Escolha um arquivo de vídeo.' }
   if (file.size <= 0) return { ok: false, error: 'O vídeo está vazio.' }
   if (file.size > MAX_VIDEO_BYTES) {
-    return { ok: false, error: 'Vídeo grande demais (máximo 50MB). Use o botão "Gravar vídeo" do app, que já comprime.' }
+    return { ok: false, error: 'Vídeo grande demais (máximo 50MB). Grave um vídeo mais curto (até 15 segundos) ou, nos ajustes da câmera do celular, escolha qualidade 1080p em vez de 4K.' }
   }
   if (durationSeconds != null && durationSeconds > MAX_VIDEO_SECONDS + 0.5) {
     return { ok: false, error: `Vídeo longo demais (máximo ${MAX_VIDEO_SECONDS} segundos).` }

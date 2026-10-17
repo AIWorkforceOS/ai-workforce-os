@@ -95,6 +95,8 @@ export function ServiceOrderWorkspace({
   const [draftReady, setDraftReady] = useState(false)
   const beforeFileInputRef = useRef<HTMLInputElement>(null)
   const afterFileInputRef = useRef<HTMLInputElement>(null)
+  const beforeGalleryRef = useRef<HTMLInputElement>(null)
+  const afterGalleryRef = useRef<HTMLInputElement>(null)
   const materialFileInputRef = useRef<HTMLInputElement>(null)
 
   // capture="environment" abre a câmera nativa que tira 1 foto e fecha o input a cada toque —
@@ -649,16 +651,27 @@ export function ServiceOrderWorkspace({
             ))}
           </div>
         )}
-        <MultiShotCamera label="Abrir câmera (várias fotos)" onShot={(file) => setPhotosBefore((prev) => [...prev, file])} />
-        <input
-          ref={beforeFileInputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          multiple
-          onChange={handleBeforePhotosChange}
-          className="text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:font-bold file:text-slate-200"
-        />
+        <MultiShotCamera label="Câmera contínua (várias fotos de uma vez)" onShot={(file) => setPhotosBefore((prev) => [...prev, file])} />
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => beforeFileInputRef.current?.click()}
+            className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-cyan-200"
+            style={{ background: 'rgba(6,182,212,0.15)', border: '1px solid rgba(6,182,212,0.4)' }}
+          >
+            <Camera size={14} /> Tirar foto
+          </button>
+          <button
+            type="button"
+            onClick={() => beforeGalleryRef.current?.click()}
+            className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-slate-200"
+            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)' }}
+          >
+            Escolher da galeria
+          </button>
+        </div>
+        <input ref={beforeFileInputRef} type="file" accept="image/*" capture="environment" onChange={handleBeforePhotosChange} className="hidden" />
+        <input ref={beforeGalleryRef} type="file" accept="image/*" multiple onChange={handleBeforePhotosChange} className="hidden" />
         <CopyToGalleryButton files={photosBefore} />
         {photosBefore.length > 0 && (
           <>
@@ -732,16 +745,27 @@ export function ServiceOrderWorkspace({
             ))}
           </div>
         )}
-        <MultiShotCamera label="Abrir câmera (várias fotos)" onShot={(file) => setPhotosAfter((prev) => [...prev, file])} />
-        <input
-          ref={afterFileInputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          multiple
-          onChange={handleAfterPhotosChange}
-          className="text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:font-bold file:text-slate-200"
-        />
+        <MultiShotCamera label="Câmera contínua (várias fotos de uma vez)" onShot={(file) => setPhotosAfter((prev) => [...prev, file])} />
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => afterFileInputRef.current?.click()}
+            className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-cyan-200"
+            style={{ background: 'rgba(6,182,212,0.15)', border: '1px solid rgba(6,182,212,0.4)' }}
+          >
+            <Camera size={14} /> Tirar foto
+          </button>
+          <button
+            type="button"
+            onClick={() => afterGalleryRef.current?.click()}
+            className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-slate-200"
+            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)' }}
+          >
+            Escolher da galeria
+          </button>
+        </div>
+        <input ref={afterFileInputRef} type="file" accept="image/*" capture="environment" onChange={handleAfterPhotosChange} className="hidden" />
+        <input ref={afterGalleryRef} type="file" accept="image/*" multiple onChange={handleAfterPhotosChange} className="hidden" />
         <CopyToGalleryButton files={photosAfter} />
         {photosAfter.length > 0 && (
           <>
