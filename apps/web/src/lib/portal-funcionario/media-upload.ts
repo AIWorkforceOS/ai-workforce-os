@@ -4,37 +4,51 @@ import { classifyResponse, type Classification } from './offline-sync'
 
 /**
  * Upload direto aparelho → Storage (sem passar pelo corpo limitado da
- * Vercel, ~4,5MB) + registro verificado na ordem. Desligado por padrão:
- * só vale com NEXT_PUBLIC_DIRECT_MEDIA_UPLOAD=true (todos) ou com o modo de teste por aparelho (localStorage, ver setDirectMediaOverride), pra validar antes de
- * mexer no fluxo de produção do Mawi. Caminho determinístico + upsert =
+ * Vercel, ~4,5MB) + registro verificado na ordem. Ligado por padrão (ver directMediaUploadEnabled). Caminho determinístico + upsert =
  * reenviar nunca duplica.
  */
 const OVERRIDE_KEY = 'alizo_direct_media'
 
-function readOverride(): boolean {
+/** Ajuste por aparelho: '1' força ligado, '0' força desligado, null = segue o padrão. */
+function readOverride(): '1' | '0' | null {
   try {
-    return typeof localStorage !== 'undefined' && localStorage.getItem(OVERRIDE_KEY) === '1'
+    if (typeof localStorage === 'undefined') return null
+    const value = localStorage.getItem(OVERRIDE_KEY)
+    return value === '1' || value === '0' ? value : null
   } catch {
-    return false
+    return null
   }
 }
 
-/** Liga/desliga o upload direto SÓ neste aparelho (técnico de teste), sem mexer em variável de produção nem afetar outros usuários. */
-export function setDirectMediaOverride(on: boolean): void {
+/** on=true força ligado neste aparelho, on=false força desligado (volta ao fluxo antigo), null remove o ajuste. */
+export function setDirectMediaOverride(on: boolean | null): void {
   try {
-    if (on) localStorage.setItem(OVERRIDE_KEY, '1')
-    else localStorage.removeItem(OVERRIDE_KEY)
+    if (on === null) localStorage.removeItem(OVERRIDE_KEY)
+    else localStorage.setItem(OVERRIDE_KEY, on ? '1' : '0')
   } catch {
-    // sem localStorage (modo privado): o recurso simplesmente continua desligado
+    // sem localStorage (modo privado): segue o padrão
   }
 }
 
 export function directMediaOverrideActive(): boolean {
-  return readOverride()
+  return readOverride() === '1'
 }
 
+export function directMediaOverrideOff(): boolean {
+  return readOverride() === '0'
+}
+
+/**
+ * PADRÃO LIGADO (ativado em produção em 2026-10-17, autorização do Vinicius).
+ * Rollback imediato, sem mexer em código: definir NEXT_PUBLIC_DIRECT_MEDIA_UPLOAD=false
+ * na Vercel e redeployar (ou promover o deployment anterior). Por aparelho: ?upload_direto=0
+ * na tela de Sincronização volta aquele aparelho ao fluxo antigo (que segue no código como fallback).
+ */
 export function directMediaUploadEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_DIRECT_MEDIA_UPLOAD === 'true' || readOverride()
+  const override = readOverride()
+  if (override === '1') return true
+  if (override === '0') return false
+  return process.env.NEXT_PUBLIC_DIRECT_MEDIA_UPLOAD !== 'false'
 }
 
 export function isMediaField(fieldName: string): boolean {

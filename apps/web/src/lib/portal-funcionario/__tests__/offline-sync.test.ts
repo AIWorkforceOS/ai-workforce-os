@@ -12,6 +12,16 @@ const updatePendingSave = vi.fn()
 
 vi.mock('../offline-store', () => ({ listPendingSaves, deletePendingSave, updatePendingSave }))
 
+// O upload direto agora é o padrão; a suíte abaixo cobre o fluxo ANTIGO (fallback) com ele desligado
+// e, no fim, o fluxo direto com ele ligado.
+let directOn = false
+const uploadAndRegisterMedia = vi.fn()
+vi.mock('../media-upload', () => ({
+  directMediaUploadEnabled: () => directOn,
+  isMediaField: (f: string) => ['photosBefore', 'photosAfter', 'materialPhotos', 'videos'].includes(f),
+  uploadAndRegisterMedia: (...a: unknown[]) => uploadAndRegisterMedia(...a),
+}))
+
 type Item = {
   id: string
   unitId: string
@@ -46,6 +56,8 @@ const res = (status: number, headers: Record<string, string> = {}) => ({
 describe('drainPendingSaves', () => {
   beforeEach(() => {
     vi.resetModules()
+    directOn = false
+    uploadAndRegisterMedia.mockReset()
     listPendingSaves.mockReset()
     deletePendingSave.mockReset()
     updatePendingSave.mockReset()
@@ -211,5 +223,50 @@ describe('classifyResponse / backoffMs', () => {
     expect(backoffMs(0)).toBe(20_000)
     expect(backoffMs(2)).toBe(80_000)
     expect(backoffMs(20)).toBe(15 * 60_000)
+  })
+})
+
+describe('drainPendingSaves com upload direto ligado (padrão)', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    directOn = true
+    uploadAndRegisterMedia.mockReset()
+    listPendingSaves.mockReset()
+    deletePendingSave.mockReset()
+    updatePendingSave.mockReset()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(res(200)))
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('fotos vão direto ao Storage (nunca no multipart) e só depois o item é apagado', async () => {
+    uploadAndRegisterMedia.mockResolvedValue({ kind: 'synced' })
+    listPendingSaves.mockResolvedValue([makeItem()])
+    const { drainPendingSaves } = await import('../offline-sync')
+    const result = await drainPendingSaves()
+    expect(uploadAndRegisterMedia).toHaveBeenCalledTimes(1)
+    expect(uploadAndRegisterMedia.mock.calls[0]![0]).toMatchObject({ fieldName: 'photosBefore', appointmentId: 'appt-1' })
+    const body = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0]![1].body as FormData
+    expect(body.getAll('photosBefore')).toHaveLength(0)
+    expect(body.get('status')).toBe('completed')
+    expect(deletePendingSave).toHaveBeenCalledWith('item-1')
+    expect(result.synced).toBe(1)
+  })
+  it('sessão expirada no upload direto mantém o item (nada é apagado) e não manda os campos', async () => {
+    uploadAndRegisterMedia.mockResolvedValue({ kind: 'retry', reason: 'session', status: 401 })
+    listPendingSaves.mockResolvedValue([makeItem()])
+    const { drainPendingSaves } = await import('../offline-sync')
+    const result = await drainPendingSaves()
+    expect(deletePendingSave).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled()
+    expect(result.remaining).toBe(1)
+  })
+  it('falha de rede no meio: o que já subiu fica marcado e não sobe de novo', async () => {
+    uploadAndRegisterMedia.mockResolvedValueOnce({ kind: 'synced' }).mockResolvedValueOnce({ kind: 'retry', reason: 'network' })
+    const blob = (n: string) => ({ blob: new Blob(['x']), name: n, type: 'image/jpeg' })
+    listPendingSaves.mockResolvedValue([makeItem({ files: { photosBefore: [blob('a.jpg'), blob('b.jpg')] } })])
+    const { drainPendingSaves } = await import('../offline-sync')
+    await drainPendingSaves()
+    expect(updatePendingSave).toHaveBeenCalledWith('item-1', expect.objectContaining({ sentFiles: ['photosBefore:0'] }))
+    expect(deletePendingSave).not.toHaveBeenCalled()
   })
 })
