@@ -302,13 +302,49 @@ describe('rede voltou / sincronização pendurada', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
   it('sincronização pendurada por mais de 5 min é abandonada e uma nova começa', async () => {
-    vi.useFakeTimers()
+    vi.useFakeTimers({ toFake: ['Date'] })
     let call = 0
     listPendingSaves.mockImplementation(() => (call++ === 0 ? new Promise(() => {}) : Promise.resolve([])))
     const { drainPendingSaves } = await import('../offline-sync')
     void drainPendingSaves()
-    vi.advanceTimersByTime(6 * 60_000)
+    vi.setSystemTime(Date.now() + 6 * 60_000)
     const second = await drainPendingSaves()
     expect(second.remaining).toBe(0)
+  })
+})
+
+describe('marcos de viagem/check-in na fila', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    directOn = false
+    listPendingSaves.mockReset()
+    deletePendingSave.mockReset()
+    updatePendingSave.mockReset()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(res(200)))
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('item __event vai para a rota de eventos (JSON com posição), não para o salvamento da ordem', async () => {
+    listPendingSaves.mockResolvedValue([
+      makeItem({ id: 'ev1', fields: { __event: 'check_in', at: '2026-10-17T10:30:00.000Z', lat: '25.77', lng: '-80.19', accuracy: '12' }, files: {} }),
+    ])
+    const { drainPendingSaves } = await import('../offline-sync')
+    await drainPendingSaves()
+    const [url, init] = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!
+    expect(url).toBe('/api/units/unit-1/appointments/appt-1/events')
+    expect(JSON.parse(init.body)).toEqual({ type: 'check_in', at: '2026-10-17T10:30:00.000Z', lat: 25.77, lng: -80.19, accuracy: 12 })
+    expect(deletePendingSave).toHaveBeenCalledWith('ev1')
+  })
+  it('marco sem sinal fica na fila (não se perde)', async () => {
+    ;(fetch as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('offline'))
+    listPendingSaves.mockResolvedValue([makeItem({ id: 'ev2', fields: { __event: 'trip_start', at: '2026-10-17T10:00:00.000Z' }, files: {} })])
+    const { drainPendingSaves } = await import('../offline-sync')
+    const result = await drainPendingSaves()
+    expect(deletePendingSave).not.toHaveBeenCalled()
+    expect(result.remaining).toBe(1)
+  })
+  it('409 (check-in ainda não chegou ao servidor) é nova tentativa, não falha definitiva', async () => {
+    const { classifyResponse } = await import('../offline-sync')
+    expect(classifyResponse(409, false)).toMatchObject({ kind: 'retry' })
   })
 })

@@ -46,6 +46,10 @@ export type PortalAppointment = {
   /** Estimativa de horas, preenchível independente do status (migration 057). */
   service_order_hours_needed: number | null
   service_order_photos: PortalServiceOrderPhoto[]
+  /** Marcos de viagem/check-in/fim (migration 091) — só preenchidos para quem o admin marcou com check-in por GPS. */
+  trip_started_at: string | null
+  checked_in_at: string | null
+  work_ended_at: string | null
 }
 
 export type PortalServiceRecord = {
@@ -66,7 +70,7 @@ export type EmployeePortalData = {
 }
 
 const APPOINTMENT_SELECT_COLUMNS =
-  'id, unit_id, starts_at, ends_at, status, address, notes, customers(name), services(name), service_order_number, service_order_file_url, service_order_file_name, service_order_summary_pt, service_order_scope_en, service_order_status, service_order_signed_by, service_order_signed_at, service_order_location_name, service_order_signature_url, service_order_part_purchase_link, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_photos'
+  'id, unit_id, starts_at, ends_at, status, address, notes, customers(name), services(name), service_order_number, service_order_file_url, service_order_file_name, service_order_summary_pt, service_order_scope_en, service_order_status, service_order_signed_by, service_order_signed_at, service_order_location_name, service_order_signature_url, service_order_part_purchase_link, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_photos, trip_started_at, checked_in_at, work_ended_at'
 
 /**
  * Busca a agenda e o financeiro de UM funcionário (isolado por
@@ -127,6 +131,8 @@ export async function fetchPortalAppointmentById(
 export type EmployeeUnitContext = {
   timezone: string
   locale: Locale
+  /** O admin marcou este técnico para usar viagem/check-in com GPS (employees.requires_checkin, migration 091). */
+  requiresCheckin: boolean
 }
 
 const FALLBACK_TIMEZONE = 'America/Sao_Paulo'
@@ -145,12 +151,13 @@ export async function fetchEmployeeUnitContext(
 ): Promise<EmployeeUnitContext> {
   const { data: employee } = await supabase
     .from('employees')
-    .select('unit_id')
+    .select('unit_id, requires_checkin')
     .eq('id', employeeId)
     .maybeSingle()
 
+  const requiresCheckin = Boolean((employee as { requires_checkin?: boolean | null } | null)?.requires_checkin)
   const unitId = (employee as { unit_id: string | null } | null)?.unit_id
-  if (!unitId) return { timezone: FALLBACK_TIMEZONE, locale: DEFAULT_LOCALE }
+  if (!unitId) return { timezone: FALLBACK_TIMEZONE, locale: DEFAULT_LOCALE, requiresCheckin }
 
   const { data: unit } = await supabase
     .from('units')
@@ -158,11 +165,12 @@ export async function fetchEmployeeUnitContext(
     .eq('id', unitId)
     .maybeSingle()
 
-  if (!unit) return { timezone: FALLBACK_TIMEZONE, locale: DEFAULT_LOCALE }
+  if (!unit) return { timezone: FALLBACK_TIMEZONE, locale: DEFAULT_LOCALE, requiresCheckin }
   const unitRow = unit as { timezone: string | null; default_conversation_language: Locale | null }
 
   return {
     timezone: unitRow.timezone ?? FALLBACK_TIMEZONE,
     locale: unitDefaultLocale({ default_conversation_language: unitRow.default_conversation_language }),
+    requiresCheckin,
   }
 }

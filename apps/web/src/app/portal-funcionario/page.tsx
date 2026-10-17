@@ -54,7 +54,7 @@ export default async function PortalFuncionarioPage({
 
   const { month: monthParam } = await searchParams
   const supabase = await createClient()
-  const [{ appointments, serviceRecords }, { timezone, locale: unitLocale }] = await Promise.all([
+  const [{ appointments, serviceRecords }, { timezone, locale: unitLocale, requiresCheckin }] = await Promise.all([
     fetchEmployeePortalData(supabase, appUser.employeeId),
     fetchEmployeeUnitContext(supabase, appUser.employeeId),
   ])
@@ -92,7 +92,7 @@ export default async function PortalFuncionarioPage({
       />
 
       <Card className="overflow-hidden">
-        <AgendaSection appointments={appointments} timezone={timezone} locale={locale} />
+        <AgendaSection appointments={appointments} timezone={timezone} locale={locale} requiresCheckin={requiresCheckin} />
       </Card>
 
       <Card className="overflow-hidden">

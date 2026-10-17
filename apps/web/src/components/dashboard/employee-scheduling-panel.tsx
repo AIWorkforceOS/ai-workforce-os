@@ -26,6 +26,19 @@ export function EmployeeSchedulingPanel({ initialEmployees }: { initialEmployees
     setEmployees((prev) => prev.map((e) => (e.id === employee.id ? (data as Employee) : e)))
   }
 
+  async function handleToggleCheckin(employee: Employee) {
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from('employees')
+      .update({ requires_checkin: !employee.requires_checkin })
+      .eq('id', employee.id)
+      .select()
+      .single()
+
+    if (error || !data) return
+    setEmployees((prev) => prev.map((e) => (e.id === employee.id ? (data as Employee) : e)))
+  }
+
   function handleExpand(employee: Employee) {
     if (expandedId === employee.id) {
       setExpandedId(null)
@@ -71,6 +84,7 @@ export function EmployeeSchedulingPanel({ initialEmployees }: { initialEmployees
             <Th>Nome</Th>
             <Th>Cargo</Th>
             <Th>Atende agenda</Th>
+            <Th>Check-in com GPS</Th>
             <Th>Disponibilidade</Th>
           </TableShell>
           <tbody>
@@ -91,6 +105,17 @@ export function EmployeeSchedulingPanel({ initialEmployees }: { initialEmployees
                     </label>
                   </Td>
                   <Td>
+                    <label className="flex items-center gap-2 text-sm text-slate-300" title="O técnico inicia a viagem e faz check-in com GPS; o sistema conta o tempo de viagem e de serviço.">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(employee.requires_checkin)}
+                        onChange={() => handleToggleCheckin(employee)}
+                        className="accent-cyan-500"
+                      />
+                      {employee.requires_checkin ? 'Sim' : 'Não'}
+                    </label>
+                  </Td>
+                  <Td>
                     {employee.is_schedulable ? (
                       <button
                         type="button"
@@ -106,7 +131,7 @@ export function EmployeeSchedulingPanel({ initialEmployees }: { initialEmployees
                 </Tr>
                 {expandedId === employee.id && (
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                    <td colSpan={4} className="px-5 py-4" style={{ background: 'rgba(255,255,255,0.02)' }}>
+                    <td colSpan={5} className="px-5 py-4" style={{ background: 'rgba(255,255,255,0.02)' }}>
                       <p className="mb-3 text-xs text-slate-500">
                         Vazio = segue o horário de funcionamento da unidade.
                       </p>

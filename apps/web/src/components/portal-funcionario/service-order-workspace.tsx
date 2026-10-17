@@ -13,6 +13,7 @@ import { CopyToGalleryButton } from './copy-to-gallery-button'
 import { MediaDownloadPanel } from './media-download-panel'
 import { CameraPermissionGate } from './camera-permission-gate'
 import { saveCopiesToDevice } from '@/lib/portal-funcionario/save-to-device'
+import { geoHelp, getCurrentFix } from '@/lib/portal-funcionario/geolocation'
 import { directMediaUploadEnabled } from '@/lib/portal-funcionario/media-upload'
 import { saveViaQueue, type LiveSaveResult } from '@/lib/portal-funcionario/live-save'
 
@@ -64,8 +65,14 @@ async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
 export function ServiceOrderWorkspace({
   appointment,
   onSaved,
+  requireGps = false,
+  onFinished,
 }: {
   appointment: PortalAppointment
+  /** Técnico com check-in por GPS: ao assinar e salvar, a posição e a hora de fim vão junto (o tempo de serviço para aí). */
+  requireGps?: boolean
+  /** Chamado quando a ordem foi assinada e salva (ou guardada no aparelho) com o horário de fim. */
+  onFinished?: (endedAt: string) => void
   /** chamado depois de um salvamento confirmado no servidor (não nas fotos-only nem no fallback offline) — pedido do Vinicius (2026-09-16): admin também usa este componente (via ServiceOrderAttachModal) e precisa que a lista da Agenda atualize ao fechar. */
   onSaved?: () => void
 }) {
@@ -349,6 +356,25 @@ export function ServiceOrderWorkspace({
       if (copies.length > 0) await saveCopiesToDevice(copies, { downloadFallback: false }).catch(() => null)
     }
 
+    // Fim do tempo de serviço: assinatura + salvar. Com check-in por GPS, a posição é obrigatória (bloqueado = não salva).
+    const endExtra: Record<string, string> = {}
+    const hasSignature = Boolean(signatureDataUrl || appt.service_order_signature_url) && Boolean(signedBy.trim())
+    if (requireGps && hasSignature) {
+      setSubmitting(true)
+      const geo = await getCurrentFix({ timeoutMs: 15_000 })
+      if (!geo.ok && geo.reason === 'denied') {
+        setSubmitting(false)
+        setError(geoHelp('denied', navigator.userAgent))
+        return
+      }
+      endExtra.endedAt = new Date().toISOString()
+      if (geo.ok) {
+        endExtra.endLat = String(geo.fix.lat)
+        endExtra.endLng = String(geo.fix.lng)
+        endExtra.endAcc = String(geo.fix.accuracy)
+      }
+    }
+
     const fields = {
       status,
       signedBy: signedBy.trim(),
@@ -356,6 +382,7 @@ export function ServiceOrderWorkspace({
       materialDescription: status === 'quote' ? materialDescription.trim() : '',
       materialValue: status === 'quote' ? materialValue.trim() : '',
       hoursNeeded: hoursNeeded.trim(),
+      ...endExtra,
     }
     const signatureFile = signatureDataUrl
       ? new File([await dataUrlToBlob(signatureDataUrl)], 'assinatura.png', { type: 'image/png' })
@@ -400,11 +427,13 @@ export function ServiceOrderWorkspace({
         clearForm()
         setQueuedNote(result.label)
         setSavedOffline(true)
+        if (endExtra.endedAt) onFinished?.(endExtra.endedAt)
       } else {
         if (result.patch) setAppt((prev) => ({ ...prev, ...(result.patch as ServiceOrderPatch) }))
         setSuccess(true)
         clearForm()
         onSaved?.()
+        if (endExtra.endedAt) onFinished?.(endExtra.endedAt)
       }
       return
     }
@@ -423,6 +452,7 @@ export function ServiceOrderWorkspace({
       setSuccess(true)
       clearForm()
       onSaved?.()
+      if (endExtra.endedAt) onFinished?.(endExtra.endedAt)
     } catch {
       // Sem internet no momento: guarda localmente (fotos + assinatura + campos
       // preenchidos) em vez de perder o trabalho — pedido do Vinicius
@@ -439,6 +469,7 @@ export function ServiceOrderWorkspace({
       if (savedLocally) {
         clearForm()
         setSavedOffline(true)
+        if (endExtra.endedAt) onFinished?.(endExtra.endedAt)
       } else {
         setError('Não foi possível salvar. Verifique sua conexão e tente novamente.')
       }

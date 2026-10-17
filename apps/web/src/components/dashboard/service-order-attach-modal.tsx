@@ -1,5 +1,6 @@
 'use client'
 
+import { computeDurations, formatDuration, mapsLink } from '@/lib/portal-funcionario/field-time'
 import { MediaDownloadPanel } from '@/components/portal-funcionario/media-download-panel'
 import { useState, type ChangeEvent } from 'react'
 import { CheckCircle2, Clock, Download, FileText, Link2, Package, Receipt, Sparkles, Trash2, UserCheck, X } from 'lucide-react'
@@ -67,6 +68,9 @@ function toPortalAppointment(appointment: AppointmentWithRelations): PortalAppoi
     service_order_material_value: appointment.service_order_material_value,
     service_order_hours_needed: appointment.service_order_hours_needed,
     service_order_photos: appointment.service_order_photos,
+    trip_started_at: appointment.trip_started_at,
+    checked_in_at: appointment.checked_in_at,
+    work_ended_at: appointment.work_ended_at,
   }
 }
 
@@ -202,6 +206,39 @@ function TechnicianReportSection({ unitId, appointment }: { unitId: string; appo
         </a>
       )}
 
+      {(appointment.trip_started_at || appointment.checked_in_at) && (
+        <div className="flex flex-col gap-1 rounded-xl px-3 py-2.5 text-xs text-slate-300" style={{ background: 'rgba(6,182,212,0.07)', border: '1px solid rgba(6,182,212,0.2)' }}>
+          {(() => {
+            const d = computeDurations(
+              { trip_started_at: appointment.trip_started_at, checked_in_at: appointment.checked_in_at, work_ended_at: appointment.work_ended_at },
+              Date.now(),
+            )
+            const finished = Boolean(appointment.work_ended_at)
+            const link = (label: string, lat: number | null, lng: number | null) => {
+              const href = mapsLink(lat, lng)
+              return href ? (
+                <a href={href} target="_blank" rel="noreferrer" className="underline">
+                  {label}
+                </a>
+              ) : null
+            }
+            return (
+              <>
+                <p className="font-black uppercase tracking-wider text-cyan-300">Tempo e GPS</p>
+                <p>
+                  Viagem: <b>{formatDuration(d.tripMs)}</b> · Serviço: <b>{formatDuration(d.serviceMs)}</b>
+                  {finished ? '' : ' (em andamento)'} · Total: <b>{formatDuration(d.totalMs)}</b>
+                </p>
+                <p className="flex flex-wrap gap-3 text-slate-400">
+                  {link('Local de saída', appointment.trip_start_lat, appointment.trip_start_lng)}
+                  {link('Local do check-in', appointment.checkin_lat, appointment.checkin_lng)}
+                  {link('Local do fim', appointment.work_end_lat, appointment.work_end_lng)}
+                </p>
+              </>
+            )
+          })()}
+        </div>
+      )}
       <MediaDownloadPanel media={appointment.service_order_photos} orderNumber={appointment.service_order_number} />
 
       {servicePhotos.length > 0 && (

@@ -38,7 +38,8 @@ export function classifyResponse(status: number, ok: boolean, retryAfterHeader?:
     const seconds = Number(retryAfterHeader)
     return { kind: 'retry', reason: 'rate_limited', status, retryAfterMs: Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : undefined }
   }
-  if (status === 408 || status === 425 || status >= 500) return { kind: 'retry', reason: 'server', status }
+  // 409 = a ordem ainda não tem o check-in no servidor (marco ainda na fila): repetir resolve, não é recusa definitiva.
+  if (status === 408 || status === 409 || status === 425 || status >= 500) return { kind: 'retry', reason: 'server', status }
   return { kind: 'failed', status, message: `O servidor recusou o salvamento (código ${status}).` }
 }
 
@@ -81,7 +82,30 @@ function baseForm(item: PendingSave, saveId: string, includeFields: boolean): Fo
   return formData
 }
 
+/** Marco de viagem/check-in/fim (fields.__event): vai para a rota de eventos, não para a de salvar a ordem. */
+async function sendEvent(item: PendingSave): Promise<Classification> {
+  try {
+    const f = item.fields
+    const response = await fetch(`/api/units/${item.unitId}/appointments/${item.appointmentId}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: f.__event,
+        at: f.at,
+        lat: f.lat != null ? Number(f.lat) : null,
+        lng: f.lng != null ? Number(f.lng) : null,
+        accuracy: f.accuracy != null ? Number(f.accuracy) : null,
+      }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    })
+    return classifyResponse(response.status, response.ok, response.headers?.get?.('Retry-After') ?? null)
+  } catch {
+    return { kind: 'retry', reason: 'network' }
+  }
+}
+
 async function trySyncOne(item: PendingSave): Promise<Classification> {
+  if (item.fields.__event) return sendEvent(item)
   const alreadySliced = (item.sentFiles?.length ?? 0) > 0
   if (!alreadySliced && !directMediaUploadEnabled() && itemBytes(item) <= MAX_DIRECT_BYTES) {
     const formData = baseForm(item, item.id, true)
@@ -188,12 +212,15 @@ let inFlightSince = 0
  */
 export function drainPendingSaves(options: DrainOptions = {}): Promise<DrainResult> {
   // Vigia: se uma sincronização antiga ficou pendurada (rede morta no meio do envio), abandona e começa outra.
-  if (inFlight && Date.now() - inFlightSince < DRAIN_WATCHDOG_MS) return inFlight
+  const stale = inFlight !== null && Date.now() - inFlightSince >= DRAIN_WATCHDOG_MS
+  if (inFlight && !stale) return inFlight
 
   const run = async (): Promise<DrainResult> => {
+    // Abandonando uma execução travada, o Web Lock dela continuaria preso pra sempre: `steal` o toma de volta
+    // (a antiga é considerada morta; envios são idempotentes, então o pior caso é reenviar o mesmo arquivo).
     const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
     if (!locks?.request) return drainOnce(options)
-    const result = await locks.request('alizo-offline-drain', { ifAvailable: true }, async (lock) => {
+    const result = await locks.request('alizo-offline-drain', stale ? { steal: true } : { ifAvailable: true }, async (lock) => {
       if (!lock) return null
       return drainOnce(options)
     })

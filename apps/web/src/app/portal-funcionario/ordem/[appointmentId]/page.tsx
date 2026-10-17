@@ -3,8 +3,9 @@ import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getAppUser } from '@/lib/app-user'
-import { fetchPortalAppointmentById } from '@/lib/portal-funcionario/data'
+import { fetchEmployeeUnitContext, fetchPortalAppointmentById } from '@/lib/portal-funcionario/data'
 import { ServiceOrderWorkspace } from '@/components/portal-funcionario/service-order-workspace'
+import { FieldOrderShell } from '@/components/portal-funcionario/field-order-shell'
 
 /**
  * Página única e mobile-first pra trabalhar a ordem de serviço — pedido
@@ -36,7 +37,10 @@ export default async function ServiceOrderWorkspacePage({
   }
 
   const supabase = await createClient()
-  const appointment = await fetchPortalAppointmentById(supabase, appUser.employeeId, appointmentId)
+  const [appointment, { requiresCheckin }] = await Promise.all([
+    fetchPortalAppointmentById(supabase, appUser.employeeId, appointmentId),
+    fetchEmployeeUnitContext(supabase, appUser.employeeId),
+  ])
 
   if (!appointment) notFound()
 
@@ -99,7 +103,14 @@ export default async function ServiceOrderWorkspacePage({
         )}
       </div>
 
-      <ServiceOrderWorkspace appointment={appointment} />
+      <FieldOrderShell
+        requiresCheckin={requiresCheckin}
+        unitId={appointment.unit_id}
+        appointmentId={appointment.id}
+        address={appointment.address}
+        initial={{ trip_started_at: appointment.trip_started_at ?? null, checked_in_at: appointment.checked_in_at ?? null, work_ended_at: appointment.work_ended_at ?? null }}
+        render={({ requireGps, onFinished }) => <ServiceOrderWorkspace appointment={appointment} requireGps={requireGps} onFinished={onFinished} />}
+      />
     </div>
   )
 }

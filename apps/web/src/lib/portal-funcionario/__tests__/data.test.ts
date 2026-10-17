@@ -64,7 +64,7 @@ describe('fetchEmployeeUnitContext', () => {
 
     const context = await fetchEmployeeUnitContext(supabase, 'emp-a')
 
-    expect(context).toEqual({ timezone: 'America/New_York', locale: 'en' })
+    expect(context).toMatchObject({ timezone: 'America/New_York', locale: 'en' })
   })
 
   it('cai no fallback (São Paulo/pt) quando a unidade não define idioma', async () => {
@@ -75,7 +75,7 @@ describe('fetchEmployeeUnitContext', () => {
 
     const context = await fetchEmployeeUnitContext(supabase, 'emp-a')
 
-    expect(context).toEqual({ timezone: 'America/Sao_Paulo', locale: 'pt' })
+    expect(context).toMatchObject({ timezone: 'America/Sao_Paulo', locale: 'pt' })
   })
 
   it('cai no fallback total quando o funcionário não tem unidade vinculada', async () => {
@@ -86,6 +86,6 @@ describe('fetchEmployeeUnitContext', () => {
 
     const context = await fetchEmployeeUnitContext(supabase, 'emp-a')
 
-    expect(context).toEqual({ timezone: 'America/Sao_Paulo', locale: 'pt' })
+    expect(context).toMatchObject({ timezone: 'America/Sao_Paulo', locale: 'pt' })
   })
 })

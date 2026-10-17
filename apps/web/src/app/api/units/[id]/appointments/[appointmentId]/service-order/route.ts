@@ -4,12 +4,15 @@ import { createServiceClient } from '@/lib/supabase/service'
 import type { PortalServiceOrderPhoto } from '@/lib/portal-funcionario/data'
 import { buildServiceOrderUpdatePayload, buildPhotosOnlyUpdatePayload } from '@/lib/service-orders/finalize'
 import { autoGenerateQuoteOnSave } from '@/lib/service-orders/quote-composer'
+import { canFinalizeOrder } from '@/lib/portal-funcionario/field-time'
 
 type AppointmentRow = {
   id: string
   unit_id: string
   service_order_photos: PortalServiceOrderPhoto[] | null
   service_order_signature_url: string | null
+  employee_id: string | null
+  checked_in_at: string | null
 }
 
 /**
@@ -77,13 +80,28 @@ export async function PATCH(
   // sem vazar qual dos dois é o caso.
   const { data: existing } = await supabase
     .from('appointments')
-    .select('id, unit_id, service_order_photos, service_order_signature_url')
+    .select('id, unit_id, service_order_photos, service_order_signature_url, employee_id, checked_in_at')
     .eq('id', appointmentId)
     .eq('unit_id', unitId)
     .maybeSingle()
   const appointment = existing as AppointmentRow | null
   if (!appointment) {
     return NextResponse.json({ error: 'Agendamento não encontrado.' }, { status: 404 })
+  }
+
+  // Check-in com GPS obrigatório (admin marca por técnico): quem é o técnico da ordem não fecha sem ter feito o check-in.
+  // Só vale para o próprio técnico — o admin editando a ordem pelo painel não é barrado.
+  let isAssignedEmployee = false
+  if (!photosOnly && appointment.employee_id) {
+    const { data: me } = await supabase.rpc('current_app_employee_id')
+    isAssignedEmployee = me === appointment.employee_id
+    if (isAssignedEmployee) {
+      const { data: emp } = await supabase.from('employees').select('requires_checkin').eq('id', appointment.employee_id).maybeSingle()
+      const requires = Boolean((emp as { requires_checkin?: boolean | null } | null)?.requires_checkin)
+      if (!canFinalizeOrder(requires, appointment.checked_in_at)) {
+        return NextResponse.json({ error: 'Faça o check-in (com o GPS) antes de finalizar a ordem.' }, { status: 409 })
+      }
+    }
   }
 
   // Idempotência de reenvio vindo da fila offline: mesmo clientSaveId = mesmo caminho de
@@ -183,6 +201,24 @@ export async function PATCH(
   }
   if (!updated) {
     return NextResponse.json({ error: 'Sem permissão para atualizar esta ordem de serviço.' }, { status: 403 })
+  }
+
+  // Fim do tempo de serviço: assinatura + salvar. Só o técnico da ordem, e só se a ordem ficou assinada.
+  const endedAt = formData.get('endedAt')
+  if (!photosOnly && isAssignedEmployee && typeof endedAt === 'string' && updated.service_order_signature_url && updated.service_order_signed_by) {
+    const num = (key: string) => {
+      const v = Number(formData.get(key))
+      return formData.get(key) !== null && Number.isFinite(v) ? v : null
+    }
+    const { error: finishError } = await supabase.rpc('record_appointment_event', {
+      p_appointment_id: appointmentId,
+      p_type: 'finish',
+      p_at: Number.isNaN(Date.parse(endedAt)) ? null : endedAt,
+      p_lat: num('endLat'),
+      p_lng: num('endLng'),
+      p_accuracy: num('endAcc'),
+    })
+    if (finishError) console.error('[service-order] fim do serviço não registrado', finishError.message)
   }
 
   const service = createServiceClient()

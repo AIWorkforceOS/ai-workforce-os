@@ -1,12 +1,13 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { createContext, useContext, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { CalendarDays, ChevronLeft, ChevronRight, ClipboardCheck, FileText, List, MapPin } from 'lucide-react'
 import { Badge, EmptyState, type BadgeVariant } from '@/components/ui/dashboard-ui'
 import { currentMonthInTimezone, monthLabel, shiftMonth } from '@/lib/service-operations-month'
 import { dayKeyInTimezone, groupAppointmentsByTodayTomorrow } from '@/lib/portal-funcionario/agenda-grouping'
 import type { PortalAppointment, PortalServiceOrderPhoto } from '@/lib/portal-funcionario/data'
+import { TripControls } from './trip-controls'
 
 // Agenda do Portal do Funcionário: agendamento clicável (abre o
 // detalhe com a descrição/observações completas, hoje só visível como
@@ -125,6 +126,9 @@ function ServiceOrderPanel({ appt }: { appt: PortalAppointment }) {
   )
 }
 
+/** O admin marcou este técnico para usar viagem/check-in com GPS (vem do servidor, uma vez por página). */
+const RequiresCheckinContext = createContext(false)
+
 function AppointmentRow({
   appt,
   locale,
@@ -136,6 +140,7 @@ function AppointmentRow({
   expanded: boolean
   onToggle: () => void
 }) {
+  const requiresCheckin = useContext(RequiresCheckinContext)
   return (
     <div>
       <button
@@ -185,6 +190,13 @@ function AppointmentRow({
               <MapPin size={12} />
               <span>{appt.address}</span>
             </a>
+          )}
+          {requiresCheckin && appt.status !== 'cancelled' && (
+            <TripControls
+              unitId={appt.unit_id}
+              appointmentId={appt.id}
+              initial={{ trip_started_at: appt.trip_started_at ?? null, checked_in_at: appt.checked_in_at ?? null, work_ended_at: appt.work_ended_at ?? null }}
+            />
           )}
           <ServiceOrderPanel appt={appt} />
         </div>
@@ -267,10 +279,12 @@ export function AgendaSection({
   appointments: initialAppointments,
   timezone,
   locale,
+  requiresCheckin = false,
 }: {
   appointments: PortalAppointment[]
   timezone: string
   locale: string
+  requiresCheckin?: boolean
 }) {
   const appointments = initialAppointments
   const [viewMode, setViewMode] = useState<'lista' | 'calendario'>('lista')
@@ -314,6 +328,7 @@ export function AgendaSection({
   const selectedDayAppointments = selectedDay ? (appointmentsByDay.get(selectedDay) ?? []) : []
 
   return (
+    <RequiresCheckinContext.Provider value={requiresCheckin}>
     <div>
       <div className="flex items-center justify-between gap-3 p-5">
         <div>
@@ -463,5 +478,6 @@ export function AgendaSection({
         </div>
       )}
     </div>
+    </RequiresCheckinContext.Provider>
   )
 }

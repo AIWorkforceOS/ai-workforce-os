@@ -156,6 +156,8 @@ export type Employee = {
   is_active: boolean
   /** true = aparece como profissional atendendo agenda (migration 026) */
   is_schedulable: boolean
+  /** true = este profissional usa viagem/check-in com GPS nas ordens (migration 091) */
+  requires_checkin: boolean
   /** grade semanal de disponibilidade (migration 026). Vazio = segue o horário da unidade. */
   availability: WeeklySchedule
   created_at: string
@@ -444,6 +446,19 @@ export type Appointment = {
   service_order_quote_description_pt: string | null
   /** kind ausente/'service' = foto do atendimento sem distinção antes/depois (fotos salvas antes da migration 061); 'before'/'after' = escolhido pelo técnico no Portal do Funcionário (Portal 360 agrupa por isso); 'material_invoice' = nota fiscal de compra de material. Campo dentro do jsonb, sem migration nova. */
   service_order_photos: { url: string; uploaded_at: string; kind?: 'before' | 'after' | 'service' | 'material_invoice' | 'video' }[]
+  /** Viagem/check-in/fim com GPS (migration 091) — preenchidos só pelo técnico marcado com requires_checkin. */
+  trip_started_at: string | null
+  trip_start_lat: number | null
+  trip_start_lng: number | null
+  trip_start_accuracy_m: number | null
+  checked_in_at: string | null
+  checkin_lat: number | null
+  checkin_lng: number | null
+  checkin_accuracy_m: number | null
+  work_ended_at: string | null
+  work_end_lat: number | null
+  work_end_lng: number | null
+  work_end_accuracy_m: number | null
   /** Dia (sem hora) pedido pela 360 ao anexar pelo Portal 360 (migration 061) — null fora desse fluxo. Ver comentário da coluna no banco. */
   service_order_requested_date: string | null
   /** Campos do "Sign Off Sheet" fixo da 360 (migration 059) — só o admin preenche, pré-preenchidos pela extração por IA. Ver lib/service-orders/pdf.ts. */
