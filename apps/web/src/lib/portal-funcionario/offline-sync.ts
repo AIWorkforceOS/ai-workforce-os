@@ -1,3 +1,4 @@
+import { directMediaUploadEnabled, isMediaField, uploadAndRegisterMedia } from './media-upload'
 import { deletePendingSave, listPendingSaves, updatePendingSave, type PendingSave } from './offline-store'
 
 /**
@@ -77,7 +78,7 @@ function baseForm(item: PendingSave, saveId: string, includeFields: boolean): Fo
 
 async function trySyncOne(item: PendingSave): Promise<Classification> {
   const alreadySliced = (item.sentFiles?.length ?? 0) > 0
-  if (!alreadySliced && itemBytes(item) <= MAX_DIRECT_BYTES) {
+  if (!alreadySliced && !directMediaUploadEnabled() && itemBytes(item) <= MAX_DIRECT_BYTES) {
     const formData = baseForm(item, item.id, true)
     for (const [fieldName, files] of Object.entries(item.files)) {
       for (const stored of files) formData.append(fieldName, new File([stored.blob], stored.name, { type: stored.type }))
@@ -97,9 +98,21 @@ async function trySlice(item: PendingSave): Promise<Classification> {
     for (const [position, stored] of files.entries()) {
       const key = `${fieldName}:${position}`
       if (sent.has(key)) continue
-      const formData = baseForm(item, `${item.id}-${fieldName}-${position}`, false)
-      formData.append(fieldName, new File([stored.blob], stored.name, { type: stored.type }))
-      const result = await sendRequest(item, formData)
+      let result: Classification
+      if (directMediaUploadEnabled() && isMediaField(fieldName)) {
+        result = await uploadAndRegisterMedia({
+          unitId: item.unitId,
+          appointmentId: item.appointmentId,
+          fieldName,
+          saveId: `${item.id}-${fieldName}-${position}`,
+          position,
+          file: new File([stored.blob], stored.name, { type: stored.type }),
+        })
+      } else {
+        const formData = baseForm(item, `${item.id}-${fieldName}-${position}`, false)
+        formData.append(fieldName, new File([stored.blob], stored.name, { type: stored.type }))
+        result = await sendRequest(item, formData)
+      }
       if (result.kind !== 'synced') return result
       sent.add(key)
       await updatePendingSave(item.id, { sentFiles: [...sent] })
