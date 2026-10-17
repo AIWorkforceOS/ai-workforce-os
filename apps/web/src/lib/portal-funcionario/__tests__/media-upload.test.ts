@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const upload = vi.fn()
 vi.mock('@/lib/supabase/client', () => ({ createClient: () => ({ storage: { from: () => ({ upload }) } }) }))
 
-import { uploadAndRegisterMedia } from '../media-upload'
+import { uploadAndRegisterMedia, uploadTimeoutMs } from '../media-upload'
 
 const params = { unitId: 'u', appointmentId: 'a', fieldName: 'photosBefore', saveId: 's-1', position: 0, file: new File(['x'], 'f.jpg', { type: 'image/jpeg' }) }
 
@@ -40,5 +40,20 @@ describe('uploadAndRegisterMedia', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 401, ok: false, headers: new Headers() }))
     expect(await uploadAndRegisterMedia(params)).toMatchObject({ kind: 'retry', reason: 'session' })
     expect(await uploadAndRegisterMedia({ ...params, fieldName: 'xyz' })).toMatchObject({ kind: 'failed' })
+  })
+})
+
+describe('timeouts', () => {
+  it('tempo mínimo de 60s e cresce com o tamanho', () => {
+    expect(uploadTimeoutMs(100_000)).toBe(60_000)
+    expect(uploadTimeoutMs(20 * 1024 * 1024)).toBeGreaterThan(500_000)
+  })
+  it('upload pendurado vira retry de rede (não trava a fila)', async () => {
+    vi.useFakeTimers()
+    upload.mockReturnValue(new Promise(() => {}))
+    const pending = uploadAndRegisterMedia(params)
+    await vi.advanceTimersByTimeAsync(61_000)
+    expect(await pending).toEqual({ kind: 'retry', reason: 'network' })
+    vi.useRealTimers()
   })
 })

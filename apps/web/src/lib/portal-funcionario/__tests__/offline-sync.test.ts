@@ -222,7 +222,7 @@ describe('classifyResponse / backoffMs', () => {
     expect(classifyResponse(404, false)).toMatchObject({ kind: 'failed' })
     expect(backoffMs(0)).toBe(20_000)
     expect(backoffMs(2)).toBe(80_000)
-    expect(backoffMs(20)).toBe(15 * 60_000)
+    expect(backoffMs(20)).toBe(2 * 60_000)
   })
 })
 
@@ -268,5 +268,47 @@ describe('drainPendingSaves com upload direto ligado (padrão)', () => {
     await drainPendingSaves()
     expect(updatePendingSave).toHaveBeenCalledWith('item-1', expect.objectContaining({ sentFiles: ['photosBefore:0'] }))
     expect(deletePendingSave).not.toHaveBeenCalled()
+  })
+})
+
+describe('rede voltou / sincronização pendurada', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    directOn = false
+    listPendingSaves.mockReset()
+    deletePendingSave.mockReset()
+    updatePendingSave.mockReset()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(res(200)))
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+
+  it('ignoreBackoff envia item em espera, mas continua pulando item failed', async () => {
+    listPendingSaves.mockResolvedValue([
+      makeItem({ id: 'esperando', nextAttemptAt: Date.now() + 600_000 }),
+      makeItem({ id: 'falhou', status: 'failed' }),
+    ])
+    const { drainPendingSaves } = await import('../offline-sync')
+    await drainPendingSaves({ ignoreBackoff: true })
+    expect(deletePendingSave).toHaveBeenCalledWith('esperando')
+    expect(deletePendingSave).not.toHaveBeenCalledWith('falhou')
+  })
+  it('sem ignoreBackoff, item em espera continua esperando', async () => {
+    listPendingSaves.mockResolvedValue([makeItem({ nextAttemptAt: Date.now() + 600_000 })])
+    const { drainPendingSaves } = await import('../offline-sync')
+    await drainPendingSaves()
+    expect(fetch).not.toHaveBeenCalled()
+  })
+  it('sincronização pendurada por mais de 5 min é abandonada e uma nova começa', async () => {
+    vi.useFakeTimers()
+    let call = 0
+    listPendingSaves.mockImplementation(() => (call++ === 0 ? new Promise(() => {}) : Promise.resolve([])))
+    const { drainPendingSaves } = await import('../offline-sync')
+    void drainPendingSaves()
+    vi.advanceTimersByTime(6 * 60_000)
+    const second = await drainPendingSaves()
+    expect(second.remaining).toBe(0)
   })
 })

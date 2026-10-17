@@ -1,12 +1,10 @@
 # Roteiro de teste real — upload direto de fotos/vídeos (Chrome/Android e Safari/iPhone)
 
-Pré-requisito: o recurso está DESLIGADO para todos. Só liga no aparelho do testador.
+Estado: o upload direto está LIGADO para todos desde 2026-10-17 (commit 03f2bdf). Não é preciso ligar nada no aparelho.
 
-## 0. Ligar só no aparelho de teste (nenhuma variável de produção muda)
-1. Entrar no app com o login do técnico de teste.
-2. Abrir `https://www.alizoai.com/portal-funcionario/sincronizacao?upload_direto=1`.
-3. Deve aparecer a faixa amarela "Modo de teste ATIVO neste aparelho". Para desligar: mesma tela com `?upload_direto=0`.
-4. Usar uma ordem de teste (não uma ordem real do dia do Mawi).
+## 0. Preparo
+1. Entrar no app com o login do técnico de teste e usar uma ordem de teste/real escolhida pelo Vinicius.
+2. Para comparar com o fluxo antigo num aparelho: `…/portal-funcionario/sincronizacao?upload_direto=0` (faixa amarela avisa); para voltar: `?upload_direto=padrao`.
 
 Registrar em cada caso: aparelho, navegador/versão, rede (Wi-Fi/4G), resultado, print da tela de Sincronização.
 
@@ -57,8 +55,11 @@ Registrar em cada caso: aparelho, navegador/versão, rede (Wi-Fi/4G), resultado,
 - assinatura gravada; `signed_at` preenchido só com assinatura
 - nenhuma foto "órfã" no bucket sem registro (anotar se houver)
 
-## 7. Critério para liberar para todos
-Todos os casos 1–5 passando em ao menos 1 Android/Chrome e 1 iPhone/Safari, 0 perda de dado, e 1 semana de uso do técnico de teste sem item preso na fila. Só então pedir autorização para ligar `NEXT_PUBLIC_DIRECT_MEDIA_UPLOAD=true` (exige novo deploy).
+## 7. Critério de validação
+Todos os casos 1–5 passando em ao menos 1 Android/Chrome e 1 iPhone/Safari, 0 perda de dado e nenhum item preso na fila. Se falhar: rollback abaixo.
 
 ## Reverter
-Aparelho: `?upload_direto=0`. Global (se um dia ligado): remover a variável e redeploy; o caminho antigo continua no código.
+- Imediato (sem build): na Vercel, promover o deployment anterior `dpl_7CEcYZAUNar9zrTaNT1FBWMw683F` (commit c462d8f, upload direto desligado).
+- Definitivo: criar `NEXT_PUBLIC_DIRECT_MEDIA_UPLOAD=false` (Production) e redeployar, ou `git revert 03f2bdf`.
+- Um aparelho: `?upload_direto=0`.
+- Dados já enviados ficam no Storage e na ordem; itens ainda na fila do aparelho continuam sendo reenviados pelo fluxo antigo.

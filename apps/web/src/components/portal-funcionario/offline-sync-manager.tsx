@@ -36,27 +36,35 @@ export function OfflineSyncManager() {
       if (items.length > 0) requestPersistentStorage()
     }
 
-    async function drain() {
+    async function drain(reconnected = false) {
       setSyncing(true)
-      await drainPendingSaves().catch(() => null)
+      // Rede voltou / app voltou pra tela: não espera o backoff (itens 'failed' continuam só no "tentar agora").
+      await drainPendingSaves(reconnected ? { ignoreBackoff: true } : {}).catch(() => null)
       if (!cancelled) {
         setSyncing(false)
         await refreshCount()
       }
     }
 
+    const onOnline = () => void drain(true)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine) void drain(true)
+    }
+
     refreshCount()
-    drain()
+    drain(true)
 
     const interval = setInterval(() => {
       if (navigator.onLine) drain()
     }, RETRY_INTERVAL_MS)
-    window.addEventListener('online', drain)
+    window.addEventListener('online', onOnline)
+    document.addEventListener('visibilitychange', onVisible)
 
     return () => {
       cancelled = true
       clearInterval(interval)
-      window.removeEventListener('online', drain)
+      window.removeEventListener('online', onOnline)
+      document.removeEventListener('visibilitychange', onVisible)
     }
   }, [])
 

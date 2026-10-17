@@ -43,7 +43,11 @@ export function classifyResponse(status: number, ok: boolean, retryAfterHeader?:
 }
 
 const BACKOFF_BASE_MS = 20_000
-const BACKOFF_MAX_MS = 15 * 60_000
+// App de campo: com sinal fraco é melhor tentar de novo logo do que esperar 15 min.
+const BACKOFF_MAX_MS = 2 * 60_000
+/** Nenhuma requisição da fila pode ficar pendurada pra sempre (travaria a fila inteira). */
+const REQUEST_TIMEOUT_MS = 90_000
+const DRAIN_WATCHDOG_MS = 5 * 60_000
 
 export function backoffMs(attempts: number): number {
   return Math.min(BACKOFF_BASE_MS * 2 ** Math.max(attempts, 0), BACKOFF_MAX_MS)
@@ -60,6 +64,7 @@ async function sendRequest(item: PendingSave, formData: FormData): Promise<Class
     const response = await fetch(`/api/units/${item.unitId}/appointments/${item.appointmentId}/service-order`, {
       method: 'PATCH',
       body: formData,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
     return classifyResponse(response.status, response.ok, response.headers?.get?.('Retry-After') ?? null)
   } catch {
@@ -130,6 +135,8 @@ export type DrainResult = { synced: number; failed: number; remaining: number }
 export type DrainOptions = {
   /** 'Tentar agora' manual: ignora o backoff e também retenta os itens 'failed'. */
   force?: boolean
+  /** Rede voltou / app voltou ao primeiro plano: ignora a espera do backoff, mas NÃO retenta itens 'failed'. */
+  ignoreBackoff?: boolean
 }
 
 async function drainOnce(options: DrainOptions): Promise<DrainResult> {
@@ -141,7 +148,7 @@ async function drainOnce(options: DrainOptions): Promise<DrainResult> {
   for (const item of items) {
     if (!options.force) {
       if (item.status === 'failed') continue
-      if (item.nextAttemptAt && item.nextAttemptAt > now) continue
+      if (!options.ignoreBackoff && item.nextAttemptAt && item.nextAttemptAt > now) continue
     }
 
     const result = await trySyncOne(item)
@@ -171,6 +178,7 @@ async function drainOnce(options: DrainOptions): Promise<DrainResult> {
 }
 
 let inFlight: Promise<DrainResult> | null = null
+let inFlightSince = 0
 
 /**
  * Percorre a fila inteira. Uma única execução por vez: dentro da mesma
@@ -179,7 +187,8 @@ let inFlight: Promise<DrainResult> | null = null
  * mesmo item e duplicar arquivos.
  */
 export function drainPendingSaves(options: DrainOptions = {}): Promise<DrainResult> {
-  if (inFlight) return inFlight
+  // Vigia: se uma sincronização antiga ficou pendurada (rede morta no meio do envio), abandona e começa outra.
+  if (inFlight && Date.now() - inFlightSince < DRAIN_WATCHDOG_MS) return inFlight
 
   const run = async (): Promise<DrainResult> => {
     const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
@@ -192,8 +201,10 @@ export function drainPendingSaves(options: DrainOptions = {}): Promise<DrainResu
     return { synced: 0, failed: 0, remaining: (await listPendingSaves()).length }
   }
 
-  inFlight = run().finally(() => {
-    inFlight = null
+  inFlightSince = Date.now()
+  const current: Promise<DrainResult> = run().finally(() => {
+    if (inFlight === current) inFlight = null
   })
-  return inFlight
+  inFlight = current
+  return current
 }

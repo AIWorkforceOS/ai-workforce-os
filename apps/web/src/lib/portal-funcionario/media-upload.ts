@@ -64,6 +64,27 @@ type UploadParams = {
   file: File
 }
 
+/** Tempo máximo do envio de um arquivo: mínimo 60s, ou o suficiente pra ~40KB/s (sinal ruim de campo). */
+export function uploadTimeoutMs(bytes: number): number {
+  return Math.max(60_000, Math.ceil(bytes / 40_000) * 1000)
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timeout')), ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(timer)
+        reject(error)
+      },
+    )
+  })
+}
+
 const authLike = (message: string, status?: number) => status === 401 || status === 403 || /jwt|token|unauthor|expired/i.test(message)
 
 export async function uploadAndRegisterMedia(params: UploadParams): Promise<Classification> {
@@ -79,9 +100,12 @@ export async function uploadAndRegisterMedia(params: UploadParams): Promise<Clas
   })
 
   try {
-    const { error } = await createClient()
-      .storage.from('service-orders')
-      .upload(path, params.file, { contentType: params.file.type || undefined, upsert: true })
+    const { error } = await withTimeout(
+      createClient()
+        .storage.from('service-orders')
+        .upload(path, params.file, { contentType: params.file.type || undefined, upsert: true }),
+      uploadTimeoutMs(params.file.size),
+    )
     if (error) {
       const status = Number((error as { statusCode?: string | number }).statusCode) || undefined
       if (authLike(error.message ?? '', status)) return { kind: 'retry', reason: 'session', status: 401 }
@@ -97,6 +121,7 @@ export async function uploadAndRegisterMedia(params: UploadParams): Promise<Clas
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items: [{ path, kind }] }),
+      signal: AbortSignal.timeout(30_000),
     })
     // 422 = arquivo ainda não visível no bucket: repetir resolve.
     if (response.status === 422) return { kind: 'retry', reason: 'server', status: 422 }
