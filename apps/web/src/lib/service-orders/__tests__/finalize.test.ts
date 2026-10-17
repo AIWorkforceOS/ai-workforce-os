@@ -165,3 +165,16 @@ describe('buildPhotosOnlyUpdatePayload', () => {
     expect(Object.keys(result.payload)).toEqual(['service_order_photos'])
   })
 })
+
+describe('assinatura obrigatória no servidor para finalizar', () => {
+  const input = { status: 'completed', signedBy: 'Maria', ...BASE_INPUT }
+  it('recusa finalizar sem assinatura (nem salva nem nova)', () => {
+    const result = buildServiceOrderUpdatePayload(input, [], [], null, null)
+    expect(result.ok).toBe(false)
+  })
+  it('aceita com assinatura nova ou já salva; cotação não exige', () => {
+    expect(buildServiceOrderUpdatePayload(input, [], [], null, 'https://x/a.png').ok).toBe(true)
+    expect(buildServiceOrderUpdatePayload(input, [], [], 'https://x/old.png', null).ok).toBe(true)
+    expect(buildServiceOrderUpdatePayload({ ...input, status: 'quote' }, [], [], null, null).ok).toBe(true)
+  })
+})

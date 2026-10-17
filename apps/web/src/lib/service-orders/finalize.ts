@@ -62,8 +62,8 @@ export function buildServiceOrderUpdatePayload(
   input: ServiceOrderFinalizeInput,
   existingPhotos: PortalServiceOrderPhoto[],
   uploadedPhotos: PortalServiceOrderPhoto[],
-  existingSignatureUrl: string | null = null,
-  uploadedSignatureUrl: string | null = null,
+  existingSignatureUrl?: string | null,
+  uploadedSignatureUrl?: string | null,
 ): ServiceOrderFinalizeResult {
   if (!isServiceOrderStatus(input.status)) {
     return { ok: false, error: 'Selecione "Finalizado" ou "Cotação".' }
@@ -72,6 +72,13 @@ export function buildServiceOrderUpdatePayload(
   const signedBy = typeof input.signedBy === 'string' ? input.signedBy.trim() : ''
   if (input.status === 'completed' && !signedBy) {
     return { ok: false, error: 'Informe o nome de quem assinou para finalizar.' }
+  }
+  // O app já exige a assinatura desenhada; o servidor também, pra nenhuma ordem
+  // "Finalizada" ficar sem assinatura se a tela (ou um reenvio da fila) falhar.
+  // Só vale quando a assinatura foi passada ao validar o payload final (os
+  // dois últimos parâmetros) — a checagem cedo da rota usa [] e não passa pela aqui.
+  if (input.status === 'completed' && (existingSignatureUrl !== undefined || uploadedSignatureUrl !== undefined) && !existingSignatureUrl && !uploadedSignatureUrl) {
+    return { ok: false, error: 'A assinatura é obrigatória para finalizar.' }
   }
 
   const partPurchaseLink = typeof input.partPurchaseLink === 'string' ? input.partPurchaseLink.trim() : ''
@@ -89,7 +96,7 @@ export function buildServiceOrderUpdatePayload(
     // Horas necessárias é uma estimativa útil nos dois status — nunca é limpo por causa do status.
     service_order_hours_needed: hoursNeeded,
     // Assinatura desenhada: mantém a já salva se não veio uma nova neste envio (nunca é limpa por causa do status, igual às horas).
-    service_order_signature_url: uploadedSignatureUrl ?? existingSignatureUrl,
+    service_order_signature_url: uploadedSignatureUrl ?? existingSignatureUrl ?? null,
   }
   if (signedBy) {
     payload.service_order_signed_by = signedBy
