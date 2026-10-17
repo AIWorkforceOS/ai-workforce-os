@@ -37,6 +37,7 @@ export function PhotoGallery({ photos }: { photos: PortalServiceOrderPhoto[] }) 
   const before = photos.filter((p) => p.kind === 'before')
   const after = photos.filter((p) => p.kind === 'after')
   const unclassified = photos.filter((p) => !p.kind || p.kind === 'service')
+  const videos = photos.filter((p) => p.kind === 'video')
 
   if (photos.length === 0) {
     return <p className="text-sm text-slate-500">No photos uploaded yet.</p>
@@ -54,6 +55,16 @@ export function PhotoGallery({ photos }: { photos: PortalServiceOrderPhoto[] }) 
         <div className="flex flex-col gap-2">
           <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">After</p>
           <PhotoGrid photos={after} altPrefix="After" />
+        </div>
+      )}
+      {videos.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">Videos</p>
+          <div className="flex flex-wrap gap-2">
+            {videos.map((v, i) => (
+              <video key={i} src={v.url} controls preload="metadata" playsInline className="h-32 rounded-lg" />
+            ))}
+          </div>
         </div>
       )}
       {unclassified.length > 0 && (

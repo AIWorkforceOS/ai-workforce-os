@@ -135,7 +135,7 @@ export default async function Portal360OrderPage({ params }: { params: Promise<{
               materialValue: order.materialValue,
               hoursNeeded: order.hoursNeeded,
               partPurchaseLink: order.partPurchaseLink,
-              photoUrls: order.photos.map((p) => p.url),
+              photoUrls: order.photos.filter((p) => p.kind !== 'video').map((p) => p.url),
               quoteDescriptionEn: order.quoteDescriptionEn,
               quoteDescriptionPt: order.quoteDescriptionPt,
             }}

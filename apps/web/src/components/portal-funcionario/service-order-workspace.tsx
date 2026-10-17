@@ -7,6 +7,8 @@ import type { PortalAppointment } from '@/lib/portal-funcionario/data'
 import { addPendingSave, deleteDraft, loadDraft, localId, saveDraft, type StoredFile } from '@/lib/portal-funcionario/offline-store'
 import { isDraftWorthSaving, type DraftFields } from '@/lib/portal-funcionario/draft'
 import { SignaturePad } from './signature-pad'
+import { VideoSection } from './video-section'
+import { directMediaUploadEnabled } from '@/lib/portal-funcionario/media-upload'
 
 /** File → StoredFile (mesmo Blob, só junto do nome/tipo) — o que a fila offline guarda. */
 function toStoredFile(file: File): StoredFile {
@@ -717,6 +719,14 @@ export function ServiceOrderWorkspace({
         )}
         {sectionError?.section === 'material' && <p className="text-xs text-red-400">{sectionError.message}</p>}
       </div>
+
+      {directMediaUploadEnabled() && (
+        <VideoSection
+          unitId={appt.unit_id}
+          appointmentId={appt.id}
+          savedVideos={appt.service_order_photos.filter((photo) => photo.kind === 'video')}
+        />
+      )}
 
       <a
         href={`/api/units/${appt.unit_id}/appointments/${appt.id}/service-order/pdf`}

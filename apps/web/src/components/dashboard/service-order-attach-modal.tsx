@@ -107,7 +107,7 @@ function TechnicianReportSection({ unitId, appointment }: { unitId: string; appo
   )
   if (!hasTechnicianData) return null
 
-  const servicePhotos = appointment.service_order_photos.filter((photo) => photo.kind !== 'material_invoice')
+  const servicePhotos = appointment.service_order_photos.filter((photo) => photo.kind !== 'material_invoice' && photo.kind !== 'video')
   const materialInvoicePhotos = appointment.service_order_photos.filter((photo) => photo.kind === 'material_invoice')
 
   return (
@@ -616,7 +616,7 @@ export function ServiceOrderAttachModal({
                     materialValue: appointment.service_order_material_value,
                     hoursNeeded: appointment.service_order_hours_needed,
                     partPurchaseLink: appointment.service_order_part_purchase_link,
-                    photoUrls: appointment.service_order_photos.map((p) => p.url),
+                    photoUrls: appointment.service_order_photos.filter((p) => p.kind !== 'video').map((p) => p.url),
                     quoteDescriptionEn: appointment.service_order_quote_description_en,
                     quoteDescriptionPt: appointment.service_order_quote_description_pt,
                   }}

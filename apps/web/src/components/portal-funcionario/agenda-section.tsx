@@ -102,9 +102,9 @@ function ServiceOrderPanel({ appt }: { appt: PortalAppointment }) {
         </p>
       )}
 
-      {appt.service_order_photos.length > 0 && (
+      {appt.service_order_photos.some((photo) => photo.kind !== 'video') && (
         <div className="flex flex-wrap gap-2">
-          {appt.service_order_photos.map((photo: PortalServiceOrderPhoto, i: number) => (
+          {appt.service_order_photos.filter((photo) => photo.kind !== 'video').map((photo: PortalServiceOrderPhoto, i: number) => (
             <a key={i} href={photo.url} target="_blank" rel="noreferrer">
               <img src={photo.url} alt="Foto do atendimento" className="h-14 w-14 rounded-lg object-cover" />
             </a>
