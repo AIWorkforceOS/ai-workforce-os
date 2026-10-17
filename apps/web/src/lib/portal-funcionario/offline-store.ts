@@ -13,8 +13,9 @@
  */
 
 const DB_NAME = 'alizo-portal-funcionario'
-const DB_VERSION = 1
+const DB_VERSION = 2
 const STORE_NAME = 'pending_service_order_saves'
+const DRAFT_STORE = 'service_order_drafts'
 
 export type StoredFile = { blob: Blob; name: string; type: string }
 
@@ -50,6 +51,10 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: 'id' })
       }
+      // v2 (2026-10-16): rascunho do formulário por ordem — aditivo, não toca a fila existente.
+      if (!db.objectStoreNames.contains(DRAFT_STORE)) {
+        db.createObjectStore(DRAFT_STORE, { keyPath: 'appointmentId' })
+      }
     }
     request.onsuccess = () => resolve(request.result)
     request.onerror = () => reject(request.error)
@@ -57,15 +62,15 @@ function openDb(): Promise<IDBDatabase> {
 }
 
 /** Gera um id local sem depender de crypto.randomUUID (nem todo WebView antigo tem). */
-function localId(): string {
+export function localId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
-export async function addPendingSave(input: Omit<PendingSave, 'id' | 'createdAt'>): Promise<string | null> {
+export async function addPendingSave(input: Omit<PendingSave, 'id' | 'createdAt'> & { id?: string }): Promise<string | null> {
   if (!isIndexedDbAvailable()) return null
   try {
     const db = await openDb()
-    const item: PendingSave = { ...input, id: localId(), createdAt: Date.now() }
+    const item: PendingSave = { ...input, id: input.id ?? localId(), createdAt: Date.now() }
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite')
       tx.objectStore(STORE_NAME).put(item)
@@ -152,4 +157,69 @@ export async function listPendingSaves(): Promise<PendingSave[]> {
 
 export async function countPendingSaves(): Promise<number> {
   return (await listPendingSaves()).length
+}
+
+/**
+ * Rascunho do formulário da ordem (campos, fotos, assinatura) guardado no
+ * aparelho enquanto o técnico trabalha — antes, tudo isso vivia só na
+ * memória da página e recarregar/fechar/iOS matar a aba perdia tudo.
+ * Apagado quando o salvamento é confirmado ou vira item da fila offline.
+ */
+export type DraftRecord = {
+  appointmentId: string
+  unitId: string
+  updatedAt: number
+  fields: Record<string, string>
+  signatureDataUrl: string | null
+  files: Record<string, StoredFile[]>
+}
+
+export async function saveDraft(draft: DraftRecord): Promise<boolean> {
+  if (!isIndexedDbAvailable()) return false
+  try {
+    const db = await openDb()
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(DRAFT_STORE, 'readwrite')
+      tx.objectStore(DRAFT_STORE).put(draft)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+      tx.onabort = () => reject(tx.error)
+    })
+    db.close()
+    return true
+  } catch {
+    return false
+  }
+}
+
+export async function loadDraft(appointmentId: string): Promise<DraftRecord | null> {
+  if (!isIndexedDbAvailable()) return null
+  try {
+    const db = await openDb()
+    const draft = await new Promise<DraftRecord | null>((resolve, reject) => {
+      const request = db.transaction(DRAFT_STORE, 'readonly').objectStore(DRAFT_STORE).get(appointmentId)
+      request.onsuccess = () => resolve((request.result as DraftRecord | undefined) ?? null)
+      request.onerror = () => reject(request.error)
+    })
+    db.close()
+    return draft
+  } catch {
+    return null
+  }
+}
+
+export async function deleteDraft(appointmentId: string): Promise<void> {
+  if (!isIndexedDbAvailable()) return
+  try {
+    const db = await openDb()
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(DRAFT_STORE, 'readwrite')
+      tx.objectStore(DRAFT_STORE).delete(appointmentId)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+    })
+    db.close()
+  } catch {
+    // rascunho velho que sobra é inofensivo — no máximo reaparece preenchido.
+  }
 }

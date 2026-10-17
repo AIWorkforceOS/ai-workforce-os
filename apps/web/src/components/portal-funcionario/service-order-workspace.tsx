@@ -4,7 +4,8 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'r
 import { Camera, CheckCircle2, Clock, Download, PenLine, Receipt, ShoppingCart, Upload, X } from 'lucide-react'
 import { Input, Label, Textarea } from '@/components/ui/dashboard-ui'
 import type { PortalAppointment } from '@/lib/portal-funcionario/data'
-import { addPendingSave, type StoredFile } from '@/lib/portal-funcionario/offline-store'
+import { addPendingSave, deleteDraft, loadDraft, localId, saveDraft, type StoredFile } from '@/lib/portal-funcionario/offline-store'
+import { isDraftWorthSaving, type DraftFields } from '@/lib/portal-funcionario/draft'
 import { SignaturePad } from './signature-pad'
 
 /** File → StoredFile (mesmo Blob, só junto do nome/tipo) — o que a fila offline guarda. */
@@ -80,6 +81,8 @@ export function ServiceOrderWorkspace({
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [savedOffline, setSavedOffline] = useState(false)
+  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null)
+  const [draftReady, setDraftReady] = useState(false)
   const beforeFileInputRef = useRef<HTMLInputElement>(null)
   const afterFileInputRef = useRef<HTMLInputElement>(null)
   const materialFileInputRef = useRef<HTMLInputElement>(null)
@@ -138,6 +141,9 @@ export function ServiceOrderWorkspace({
     setSectionOffline(null)
     const formData = new FormData()
     for (const photo of files) formData.append(fieldName, photo)
+    // mesmo id na requisição e, se cair pra fila offline, no item guardado — reenvio nunca duplica foto.
+    const saveId = localId()
+    formData.set('clientSaveId', saveId)
     try {
       const response = await fetch(`/api/units/${appt.unit_id}/appointments/${appt.id}/service-order`, {
         method: 'PATCH',
@@ -157,6 +163,7 @@ export function ServiceOrderWorkspace({
       // pedido do Vinicius (2026-09-15). A sincronização automática (ver
       // OfflineSyncManager no layout) reenvia sozinha quando a conexão voltar.
       const savedLocally = await addPendingSave({
+        id: saveId,
         unitId: appt.unit_id,
         appointmentId: appt.id,
         fields: {},
@@ -172,6 +179,64 @@ export function ServiceOrderWorkspace({
       setSavingSection(null)
     }
   }
+
+  const serverValues: DraftFields = {
+    status: appointment.service_order_status === 'quote' ? 'quote' : 'completed',
+    signedBy: appointment.service_order_signed_by ?? '',
+    partPurchaseLink: appointment.service_order_part_purchase_link ?? '',
+    materialDescription: appointment.service_order_material_description ?? '',
+    materialValue: appointment.service_order_material_value != null ? String(appointment.service_order_material_value) : '',
+    hoursNeeded: appointment.service_order_hours_needed != null ? String(appointment.service_order_hours_needed) : '',
+  }
+
+  // Restaura o rascunho guardado neste aparelho (se a página foi recarregada/fechada antes de salvar).
+  useEffect(() => {
+    let cancelled = false
+    loadDraft(appointment.id).then((draft) => {
+      if (cancelled) return
+      if (draft) {
+        const f = draft.fields
+        if (f.status === 'quote' || f.status === 'completed') setStatus(f.status)
+        setSignedBy(f.signedBy ?? '')
+        setPartPurchaseLink(f.partPurchaseLink ?? '')
+        setMaterialDescription(f.materialDescription ?? '')
+        setMaterialValue(f.materialValue ?? '')
+        setHoursNeeded(f.hoursNeeded ?? '')
+        const toFiles = (list: StoredFile[] | undefined) => (list ?? []).map((s) => new File([s.blob], s.name, { type: s.type }))
+        setPhotosBefore(toFiles(draft.files.photosBefore))
+        setPhotosAfter(toFiles(draft.files.photosAfter))
+        setMaterialPhotos(toFiles(draft.files.materialPhotos))
+        setSignatureDataUrl(draft.signatureDataUrl)
+        setDraftSavedAt(draft.updatedAt)
+      }
+      setDraftReady(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [appointment.id])
+
+  // Grava o rascunho (com pequeno atraso) a cada mudança — só depois de restaurar, pra não sobrescrever com o estado vazio inicial.
+  useEffect(() => {
+    if (!draftReady) return
+    const timer = setTimeout(async () => {
+      const current: DraftFields = { status, signedBy, partPurchaseLink, materialDescription, materialValue, hoursNeeded }
+      const fileCount = photosBefore.length + photosAfter.length + materialPhotos.length
+      if (!isDraftWorthSaving({ current, serverValues, fileCount, hasSignature: Boolean(signatureDataUrl) })) {
+        await deleteDraft(appointment.id)
+        setDraftSavedAt(null)
+        return
+      }
+      const files: Record<string, StoredFile[]> = {}
+      if (photosBefore.length > 0) files.photosBefore = photosBefore.map(toStoredFile)
+      if (photosAfter.length > 0) files.photosAfter = photosAfter.map(toStoredFile)
+      if (materialPhotos.length > 0) files.materialPhotos = materialPhotos.map(toStoredFile)
+      const updatedAt = Date.now()
+      const ok = await saveDraft({ appointmentId: appointment.id, unitId: appointment.unit_id, updatedAt, fields: current, signatureDataUrl, files })
+      if (ok) setDraftSavedAt(updatedAt)
+    }, 600)
+    return () => clearTimeout(timer)
+  }, [draftReady, status, signedBy, partPurchaseLink, materialDescription, materialValue, hoursNeeded, photosBefore, photosAfter, materialPhotos, signatureDataUrl])
 
   const beforePhotoPreviews = useFilePreviews(photosBefore)
   const afterPhotoPreviews = useFilePreviews(photosAfter)
@@ -215,8 +280,12 @@ export function ServiceOrderWorkspace({
     for (const photo of photosAfter) formData.append('photosAfter', photo)
     for (const photo of materialPhotos) formData.append('materialPhotos', photo)
     if (signatureFile) formData.set('signature', signatureFile)
+    const saveId = localId()
+    formData.set('clientSaveId', saveId)
 
     function clearForm() {
+      void deleteDraft(appt.id)
+      setDraftSavedAt(null)
       setPhotosBefore([])
       setPhotosAfter([])
       setMaterialPhotos([])
@@ -254,7 +323,7 @@ export function ServiceOrderWorkspace({
       if (materialPhotos.length > 0) files.materialPhotos = materialPhotos.map(toStoredFile)
       if (signatureFile) files.signature = [toStoredFile(signatureFile)]
 
-      const savedLocally = await addPendingSave({ unitId: appt.unit_id, appointmentId: appt.id, fields, files })
+      const savedLocally = await addPendingSave({ id: saveId, unitId: appt.unit_id, appointmentId: appt.id, fields, files })
       if (savedLocally) {
         clearForm()
         setSavedOffline(true)
@@ -280,6 +349,14 @@ export function ServiceOrderWorkspace({
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+      {draftSavedAt && (
+        <p
+          className="rounded-xl px-3 py-2 text-xs font-bold text-amber-200"
+          style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)' }}
+        >
+          Rascunho salvo neste aparelho às {new Date(draftSavedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} — ainda NÃO enviado ao servidor. Toque em salvar abaixo para enviar.
+        </p>
+      )}
       {appt.service_order_status !== 'pending' && appt.service_order_signed_by && (
         <p className="text-xs text-slate-400">
           Assinado por <span className="font-semibold text-slate-200">{appt.service_order_signed_by}</span>
