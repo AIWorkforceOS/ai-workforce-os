@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { generateServiceOrderPdf } from '@/lib/service-orders/pdf'
+import { generatePhotoReportPdf, type ReportMedia } from '@/lib/service-orders/photo-report'
+
+/** Baixar e reduzir dezenas de fotos leva tempo. */
+export const maxDuration = 60
 
 type ServiceOrderPdfRow = {
   service_order_number: string | null
@@ -23,6 +27,7 @@ type ServiceOrderPdfRow = {
   service_order_part_purchase_link: string | null
   service_order_quote_description_en: string | null
   service_order_quote_description_pt: string | null
+  service_order_photos: ReportMedia[] | null
   address: string | null
   starts_at: string
 }
@@ -54,7 +59,7 @@ export async function GET(
   const { data } = await supabase
     .from('appointments')
     .select(
-      'service_order_number, service_order_client_po, service_order_priority, service_order_order_type, service_order_ivr_pin, service_order_location_name, service_order_location_phone, service_order_issuer_name, service_order_issuer_email, service_order_scope_en, service_order_signed_by, service_order_signed_at, service_order_signature_url, service_order_status, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_part_purchase_link, service_order_quote_description_en, service_order_quote_description_pt, address, starts_at',
+      'service_order_number, service_order_client_po, service_order_priority, service_order_order_type, service_order_ivr_pin, service_order_location_name, service_order_location_phone, service_order_issuer_name, service_order_issuer_email, service_order_scope_en, service_order_signed_by, service_order_signed_at, service_order_signature_url, service_order_status, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_part_purchase_link, service_order_quote_description_en, service_order_quote_description_pt, service_order_photos, address, starts_at',
     )
     .eq('id', appointmentId)
     .eq('unit_id', unitId)
@@ -65,9 +70,28 @@ export async function GET(
     return NextResponse.json({ error: 'Agendamento não encontrado.' }, { status: 404 })
   }
 
-  const pdfBuffer = await generateServiceOrderPdf({ appointment })
-
   const safeNumber = (appointment.service_order_number ?? appointmentId).replace(/[^a-zA-Z0-9.\-_]/g, '_')
+  const media = appointment.service_order_photos ?? []
+
+  // ?report=photos → só o relatório fotográfico (sem o Sign Off).
+  if (new URL(request.url).searchParams.get('report') === 'photos') {
+    const report = await generatePhotoReportPdf(media, {
+      orderNumber: appointment.service_order_number,
+      clientPo: appointment.service_order_client_po,
+      locationName: appointment.service_order_location_name,
+      serviceDate: new Date(appointment.starts_at).toLocaleDateString('en-US', { timeZone: 'America/New_York' }),
+    })
+    if (!report) return NextResponse.json({ error: 'Esta ordem ainda não tem fotos nem vídeos.' }, { status: 404 })
+    return new NextResponse(new Uint8Array(report), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="relatorio-fotografico-${safeNumber}.pdf"`,
+      },
+    })
+  }
+
+  const pdfBuffer = await generateServiceOrderPdf({ appointment, media })
 
   return new NextResponse(new Uint8Array(pdfBuffer), {
     status: 200,

@@ -802,6 +802,18 @@ export function ServiceOrderWorkspace({
         <Download size={13} />
         {appt.service_order_status === 'pending' ? 'Abrir ordem em PDF (pra mostrar ao gerente)' : 'Baixar ordem de serviço em PDF'}
       </a>
+      {appt.service_order_photos.length > 0 && (
+        <a
+          href={`/api/units/${appt.unit_id}/appointments/${appt.id}/service-order/pdf?report=photos`}
+          target="_blank"
+          rel="noreferrer"
+          className="flex w-fit items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-slate-200 transition-colors hover:text-white"
+          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)' }}
+        >
+          <Download size={13} />
+          Baixar relatório fotográfico (PDF)
+        </a>
+      )}
 
       <div
         className="sticky bottom-0 -mx-4 mt-2 flex flex-col gap-2 px-4 py-3 sm:mx-0 sm:rounded-2xl"

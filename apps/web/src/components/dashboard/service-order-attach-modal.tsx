@@ -130,6 +130,18 @@ function TechnicianReportSection({ unitId, appointment }: { unitId: string; appo
               Baixar PDF da ordem
             </a>
           )}
+          {appointment.service_order_photos.length > 0 && (
+            <a
+              href={`/api/units/${unitId}/appointments/${appointment.id}/service-order/pdf?report=photos`}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold text-cyan-300 hover:text-cyan-200"
+              style={{ background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.25)' }}
+            >
+              <Receipt size={11} />
+              Baixar relatório fotográfico
+            </a>
+          )}
         </div>
       </div>
 

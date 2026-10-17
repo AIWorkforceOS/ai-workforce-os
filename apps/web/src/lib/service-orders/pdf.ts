@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { PDFDocument, PDFName, PDFString, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib'
+import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib'
+
+import { addLinkAnnotation } from './pdf-link'
+import { drawPhotoReportPages, type ReportMedia } from './photo-report'
 
 /**
  * Gerador do PDF baixável da ordem de serviço — reproduz um MODELO
@@ -69,31 +72,6 @@ function drawRight(page: PDFPage, text: string, font: PDFFont, size: number, col
 function drawCenter(page: PDFPage, text: string, font: PDFFont, size: number, color: ReturnType<typeof rgb>, centerX: number, y: number) {
   const width = font.widthOfTextAtSize(text, size)
   page.drawText(text, { x: centerX - width / 2, y, size, font, color })
-}
-
-/**
- * Link clicável de verdade (anotação PDF, não só texto colorido) — pdf-lib
- * não tem um helper de alto nível pra isso, é o jeito documentado de
- * anexar uma ação de URI numa área da página. Pedido do Vinicius
- * (2026-09-16): "o link clicável em cima do PDF da peça recomendada
- * pelo técnico" na página de cotação.
- */
-function addLinkAnnotation(page: PDFPage, url: string, rect: { x: number; y: number; width: number; height: number }) {
-  const context = page.doc.context
-  const linkDict = context.obj({
-    Type: 'Annot',
-    Subtype: 'Link',
-    Rect: [rect.x, rect.y, rect.x + rect.width, rect.y + rect.height],
-    Border: [0, 0, 0],
-    A: { Type: 'Action', S: 'URI', URI: PDFString.of(url) },
-  })
-  const linkRef = context.register(linkDict)
-  const existingAnnots = page.node.Annots()
-  if (existingAnnots) {
-    existingAnnots.push(linkRef)
-  } else {
-    page.node.set(PDFName.of('Annots'), context.obj([linkRef]))
-  }
 }
 
 /** Formata como DD/MM/AAAA — pedido explícito pro campo "Date" do bloco de assinatura. */
@@ -281,7 +259,7 @@ function addPage(doc: PDFDocument): { page: PDFPage; y: number } {
   return { page, y: PAGE_HEIGHT - MARGIN }
 }
 
-export async function generateServiceOrderPdf(params: { appointment: ServiceOrderPdfAppointment }): Promise<Buffer> {
+export async function generateServiceOrderPdf(params: { appointment: ServiceOrderPdfAppointment; media?: ReportMedia[] }): Promise<Buffer> {
   const { appointment: a } = params
 
   const doc = await PDFDocument.create()
@@ -551,6 +529,30 @@ export async function generateServiceOrderPdf(params: { appointment: ServiceOrde
   // ---------------------------------------------------------------
   if (a.service_order_status === 'quote') {
     drawQuotePage(doc, a, font, bold)
+  }
+
+  // ---------------------------------------------------------------
+  // RELATÓRIO FOTOGRÁFICO, depois de tudo (Sign Off, assinatura, cotação):
+  // fotos clicáveis + vídeos com link. Best-effort: qualquer falha aqui
+  // nunca derruba o Sign Off em si.
+  // ---------------------------------------------------------------
+  if (params.media && params.media.length > 0) {
+    try {
+      await drawPhotoReportPages(
+        doc,
+        params.media,
+        {
+          orderNumber: a.service_order_number,
+          clientPo: a.service_order_client_po,
+          locationName: a.service_order_location_name,
+          serviceDate: formatServiceDateUs(a.starts_at),
+        },
+        font,
+        bold,
+      )
+    } catch (error) {
+      console.error('[service-order-pdf] relatório fotográfico falhou', error)
+    }
   }
 
   const bytes = await doc.save()
