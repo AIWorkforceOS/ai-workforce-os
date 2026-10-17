@@ -10,6 +10,9 @@ import { SignaturePad } from './signature-pad'
 import { VideoSection } from './video-section'
 import { MultiShotCamera } from './multi-shot-camera'
 import { CopyToGalleryButton } from './copy-to-gallery-button'
+import { MediaDownloadPanel } from './media-download-panel'
+import { CameraPermissionGate } from './camera-permission-gate'
+import { saveCopiesToDevice } from '@/lib/portal-funcionario/save-to-device'
 import { directMediaUploadEnabled } from '@/lib/portal-funcionario/media-upload'
 import { saveViaQueue, type LiveSaveResult } from '@/lib/portal-funcionario/live-save'
 
@@ -142,6 +145,8 @@ export function ServiceOrderWorkspace({
 
   async function handleSavePhotosNow(section: PhotoSection, fieldName: string, files: File[], clear: () => void) {
     if (files.length === 0) return
+    // Cópia de segurança na galeria ANTES de enviar (precisa ser no toque do botão: iPhone/Android só abrem a folha de compartilhar assim).
+    if (autoGallery) await saveCopiesToDevice(files, { downloadFallback: false }).catch(() => null)
     setSavingSection(section)
     setSectionError(null)
     setSectionSuccess(null)
@@ -275,6 +280,46 @@ export function ServiceOrderWorkspace({
   const beforePhotoPreviews = useFilePreviews(photosBefore)
   const afterPhotoPreviews = useFilePreviews(photosAfter)
   const materialPhotoPreviews = useFilePreviews(materialPhotos)
+  const [autoGallery, setAutoGallery] = useState(true)
+  useEffect(() => {
+    try {
+      setAutoGallery(localStorage.getItem('alizo_auto_gallery') !== '0')
+    } catch {}
+  }, [])
+  function changeAutoGallery(on: boolean) {
+    setAutoGallery(on)
+    try {
+      localStorage.setItem('alizo_auto_gallery', on ? '1' : '0')
+    } catch {}
+  }
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [deletingUrl, setDeletingUrl] = useState<string | null>(null)
+
+  /** Exclui foto/vídeo já salvo: some da ordem, do PDF e do relatório fotográfico (o arquivo continua guardado no servidor). */
+  async function deleteSavedMedia(url: string, isVideo: boolean) {
+    if (!window.confirm(isVideo ? 'Excluir este vídeo da ordem? Ele sai do relatório fotográfico.' : 'Excluir esta foto da ordem? Ela sai do relatório fotográfico.')) return
+    setDeleteError(null)
+    setDeletingUrl(url)
+    try {
+      const response = await fetch(`/api/units/${appt.unit_id}/appointments/${appt.id}/service-order/media`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      })
+      const data = await response.json().catch(() => null)
+      if (!response.ok || !data?.photos) {
+        setDeleteError(data?.error ?? 'Não foi possível excluir. Tente de novo.')
+        return
+      }
+      setAppt((prev) => ({ ...prev, service_order_photos: data.photos }))
+      onSaved?.()
+    } catch {
+      setDeleteError('Sem internet agora — a exclusão precisa de conexão. Tente de novo quando voltar.')
+    } finally {
+      setDeletingUrl(null)
+    }
+  }
+
   const savedBeforePhotos = appt.service_order_photos.filter((photo) => photo.kind === 'before')
   const savedAfterPhotos = appt.service_order_photos.filter((photo) => photo.kind === 'after')
   // kind ausente/'service' = fotos salvas antes da distinção antes/depois (migration 061) — mostradas à parte pra não sumir do histórico.
@@ -295,6 +340,11 @@ export function ServiceOrderWorkspace({
     if (status === 'completed' && !signatureDataUrl && !appt.service_order_signature_url) {
       setError('Peça para o gerente da loja assinar para finalizar.')
       return
+    }
+
+    if (autoGallery) {
+      const copies = [...photosBefore, ...photosAfter, ...materialPhotos]
+      if (copies.length > 0) await saveCopiesToDevice(copies, { downloadFallback: false }).catch(() => null)
     }
 
     const fields = {
@@ -409,6 +459,12 @@ export function ServiceOrderWorkspace({
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+      <CameraPermissionGate />
+      <label className="flex items-center gap-2 text-xs text-slate-300">
+        <input type="checkbox" checked={autoGallery} onChange={(e) => changeAutoGallery(e.target.checked)} />
+        Ao salvar, guardar também uma cópia das fotos na galeria do celular
+      </label>
+      {deleteError && <p className="text-xs text-red-400">{deleteError}</p>}
       {draftSavedAt && (
         <p
           className="rounded-xl px-3 py-2 text-xs font-bold text-amber-200"
@@ -552,9 +608,21 @@ export function ServiceOrderWorkspace({
         {savedBeforePhotos.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {savedBeforePhotos.map((photo, i) => (
-              <a key={i} href={photo.url} target="_blank" rel="noreferrer">
-                <img src={photo.url} alt="Foto antes do trabalho" className="h-16 w-16 rounded-lg object-cover" />
-              </a>
+              <div key={i} className="relative h-16 w-16">
+                <a href={photo.url} target="_blank" rel="noreferrer">
+                  <img src={photo.url} alt="Foto antes do trabalho" className="h-16 w-16 rounded-lg object-cover" />
+                </a>
+                <button
+                  type="button"
+                  disabled={deletingUrl === photo.url}
+                  onClick={() => deleteSavedMedia(photo.url, false)}
+                  className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full text-white disabled:opacity-50"
+                  style={{ background: '#ef4444' }}
+                  aria-label="Excluir foto"
+                >
+                  <X size={12} />
+                </button>
+              </div>
             ))}
           </div>
         )}
@@ -623,9 +691,21 @@ export function ServiceOrderWorkspace({
         {savedAfterPhotos.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {savedAfterPhotos.map((photo, i) => (
-              <a key={i} href={photo.url} target="_blank" rel="noreferrer">
-                <img src={photo.url} alt="Foto depois do trabalho" className="h-16 w-16 rounded-lg object-cover" />
-              </a>
+              <div key={i} className="relative h-16 w-16">
+                <a href={photo.url} target="_blank" rel="noreferrer">
+                  <img src={photo.url} alt="Foto depois do trabalho" className="h-16 w-16 rounded-lg object-cover" />
+                </a>
+                <button
+                  type="button"
+                  disabled={deletingUrl === photo.url}
+                  onClick={() => deleteSavedMedia(photo.url, false)}
+                  className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full text-white disabled:opacity-50"
+                  style={{ background: '#ef4444' }}
+                  aria-label="Excluir foto"
+                >
+                  <X size={12} />
+                </button>
+              </div>
             ))}
           </div>
         )}
@@ -694,9 +774,21 @@ export function ServiceOrderWorkspace({
           <Label>Outras fotos (antes da separação antes/depois)</Label>
           <div className="flex flex-wrap gap-2">
             {savedUnclassifiedPhotos.map((photo, i) => (
-              <a key={i} href={photo.url} target="_blank" rel="noreferrer">
-                <img src={photo.url} alt="Foto do atendimento" className="h-16 w-16 rounded-lg object-cover" />
-              </a>
+              <div key={i} className="relative h-16 w-16">
+                <a href={photo.url} target="_blank" rel="noreferrer">
+                  <img src={photo.url} alt="Foto do atendimento" className="h-16 w-16 rounded-lg object-cover" />
+                </a>
+                <button
+                  type="button"
+                  disabled={deletingUrl === photo.url}
+                  onClick={() => deleteSavedMedia(photo.url, false)}
+                  className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full text-white disabled:opacity-50"
+                  style={{ background: '#ef4444' }}
+                  aria-label="Excluir foto"
+                >
+                  <X size={12} />
+                </button>
+              </div>
             ))}
           </div>
         </div>
@@ -716,9 +808,21 @@ export function ServiceOrderWorkspace({
         {savedMaterialInvoicePhotos.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {savedMaterialInvoicePhotos.map((photo, i) => (
-              <a key={i} href={photo.url} target="_blank" rel="noreferrer">
-                <img src={photo.url} alt="Nota fiscal de material" className="h-16 w-16 rounded-lg object-cover" />
-              </a>
+              <div key={i} className="relative h-16 w-16">
+                <a href={photo.url} target="_blank" rel="noreferrer">
+                  <img src={photo.url} alt="Nota fiscal de material" className="h-16 w-16 rounded-lg object-cover" />
+                </a>
+                <button
+                  type="button"
+                  disabled={deletingUrl === photo.url}
+                  onClick={() => deleteSavedMedia(photo.url, false)}
+                  className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full text-white disabled:opacity-50"
+                  style={{ background: '#ef4444' }}
+                  aria-label="Excluir foto"
+                >
+                  <X size={12} />
+                </button>
+              </div>
             ))}
           </div>
         )}
@@ -789,6 +893,7 @@ export function ServiceOrderWorkspace({
           unitId={appt.unit_id}
           appointmentId={appt.id}
           savedVideos={appt.service_order_photos.filter((photo) => photo.kind === 'video')}
+          onDelete={(url) => deleteSavedMedia(url, true)}
         />
       )}
 
@@ -802,6 +907,7 @@ export function ServiceOrderWorkspace({
         <Download size={13} />
         {appt.service_order_status === 'pending' ? 'Abrir ordem em PDF (pra mostrar ao gerente)' : 'Baixar ordem de serviço em PDF'}
       </a>
+      <MediaDownloadPanel media={appt.service_order_photos} orderNumber={appt.service_order_number} />
       {appt.service_order_photos.length > 0 && (
         <a
           href={`/api/units/${appt.unit_id}/appointments/${appt.id}/service-order/pdf?report=photos`}

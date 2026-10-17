@@ -7,7 +7,7 @@ export type SaveCopyResult = 'shared' | 'downloaded' | 'cancelled' | 'unsupporte
  * que exige um toque do usuário e funciona sem internet. Fallback: download
  * (Android grava na pasta Downloads).
  */
-export async function saveCopiesToDevice(files: File[]): Promise<SaveCopyResult> {
+export async function saveCopiesToDevice(files: File[], options: { downloadFallback?: boolean } = {}): Promise<SaveCopyResult> {
   if (files.length === 0) return 'unsupported'
   const nav = typeof navigator !== 'undefined' ? navigator : undefined
   if (nav && typeof nav.share === 'function' && typeof nav.canShare === 'function' && nav.canShare({ files })) {
@@ -19,7 +19,8 @@ export async function saveCopiesToDevice(files: File[]): Promise<SaveCopyResult>
       // outro erro: cai pro download
     }
   }
-  if (typeof document === 'undefined') return 'unsupported'
+  // cópia automática ao salvar: sem folha de compartilhar, não baixa nada (só o botão manual faz download)
+  if (options.downloadFallback === false || typeof document === 'undefined') return 'unsupported'
   for (const file of files) {
     const url = URL.createObjectURL(file)
     const link = document.createElement('a')

@@ -1,5 +1,6 @@
 'use client'
 
+import { MediaDownloadPanel } from '@/components/portal-funcionario/media-download-panel'
 import { useState, type ChangeEvent } from 'react'
 import { CheckCircle2, Clock, Download, FileText, Link2, Package, Receipt, Sparkles, Trash2, UserCheck, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -200,6 +201,8 @@ function TechnicianReportSection({ unitId, appointment }: { unitId: string; appo
           Link de compra da peça
         </a>
       )}
+
+      <MediaDownloadPanel media={appointment.service_order_photos} orderNumber={appointment.service_order_number} />
 
       {servicePhotos.length > 0 && (
         <div className="flex flex-col gap-1.5">

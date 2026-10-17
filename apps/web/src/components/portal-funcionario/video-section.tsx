@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { CheckCircle2, CloudOff, Circle, Download, Square, Video as VideoIcon } from 'lucide-react'
+import { CheckCircle2, CloudOff, Circle, Download, Square, Video as VideoIcon, X } from 'lucide-react'
 import { MAX_VIDEO_CLIPS, MAX_VIDEO_SECONDS } from '@/lib/service-orders/media'
 import { AUDIO_BITS_PER_SECOND, pickRecorderMimeType, validateVideoFile, VIDEO_BITS_PER_SECOND, videoExtension } from '@/lib/service-orders/video'
 import { addPendingSave, listPendingSaves, localId } from '@/lib/portal-funcionario/offline-store'
 import { drainPendingSaves } from '@/lib/portal-funcionario/offline-sync'
 import { saveCopiesToDevice } from '@/lib/portal-funcionario/save-to-device'
+import { cameraHelp, openCameraStream } from '@/lib/portal-funcionario/camera-access'
 
 type SavedVideo = { url: string }
 type SessionClip = { id: string; file: File; synced: boolean }
@@ -35,7 +36,17 @@ function readDuration(file: File): Promise<number | null> {
  * a gravação termina — não depende de tocar em "salvar" — e a fila envia
  * direto ao Storage em segundo plano. Fechar o app no meio não perde nada.
  */
-export function VideoSection({ unitId, appointmentId, savedVideos }: { unitId: string; appointmentId: string; savedVideos: SavedVideo[] }) {
+export function VideoSection({
+  unitId,
+  appointmentId,
+  savedVideos,
+  onDelete,
+}: {
+  unitId: string
+  appointmentId: string
+  savedVideos: SavedVideo[]
+  onDelete?: (url: string) => void
+}) {
   const router = useRouter()
   const [session, setSession] = useState<SessionClip[]>([])
   const [recording, setRecording] = useState(false)
@@ -110,11 +121,13 @@ export function VideoSection({ unitId, appointmentId, savedVideos }: { unitId: s
       setMessage({ tone: 'warn', text: 'Este aparelho não grava dentro do app. Use "Escolher vídeo" (máx. 15s e 50MB cada).' })
       return
     }
+    const opened = await openCameraStream({ audio: true, video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 24 } } })
+    if (!opened.ok) {
+      setMessage({ tone: 'error', text: cameraHelp(opened.reason, navigator.userAgent) })
+      return
+    }
+    const stream = opened.stream
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 24 } },
-        audio: true,
-      })
       streamRef.current = stream
       if (liveRef.current) {
         liveRef.current.srcObject = stream
@@ -143,7 +156,8 @@ export function VideoSection({ unitId, appointmentId, savedVideos }: { unitId: s
         if (Date.now() - startedAt >= MAX_VIDEO_SECONDS * 1000) stopRecording() // parada dura em 15s
       }, 250)
     } catch {
-      setMessage({ tone: 'error', text: 'Sem acesso à câmera. Permita a câmera ou use "Escolher vídeo".' })
+      stream.getTracks().forEach((t) => t.stop())
+      setMessage({ tone: 'error', text: 'Não foi possível iniciar a gravação. Tente de novo ou use "Escolher vídeo".' })
     }
   }
 
@@ -173,7 +187,20 @@ export function VideoSection({ unitId, appointmentId, savedVideos }: { unitId: s
       {savedVideos.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {savedVideos.map((v, i) => (
-            <video key={i} src={v.url} controls preload="metadata" className="h-24 rounded-lg" />
+            <div key={i} className="relative">
+              <video src={v.url} controls preload="metadata" className="h-24 rounded-lg" />
+              {onDelete && (
+                <button
+                  type="button"
+                  onClick={() => onDelete(v.url)}
+                  className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full text-white"
+                  style={{ background: '#ef4444' }}
+                  aria-label="Excluir vídeo"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
           ))}
         </div>
       )}

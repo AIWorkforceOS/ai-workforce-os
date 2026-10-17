@@ -30,4 +30,9 @@ describe('saveCopiesToDevice', () => {
     expect(click).toHaveBeenCalledTimes(2)
     expect(link.download).toBe('a.jpg')
   })
+  it('cópia automática (downloadFallback:false) nunca baixa quando não há folha de compartilhar', async () => {
+    vi.stubGlobal('navigator', {})
+    vi.stubGlobal('document', { createElement: vi.fn(), body: { appendChild: vi.fn() } })
+    expect(await saveCopiesToDevice([file], { downloadFallback: false })).toBe('unsupported')
+  })
 })

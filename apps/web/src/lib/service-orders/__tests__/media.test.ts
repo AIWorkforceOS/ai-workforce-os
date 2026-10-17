@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildMediaPath, isAllowedContentType, mediaSizeLimit, validateMediaItems, MAX_VIDEO_BYTES, MAX_PHOTO_BYTES } from '../media'
+import { isMediaUrlOfAppointment, buildMediaPath, isAllowedContentType, mediaSizeLimit, validateMediaItems, MAX_VIDEO_BYTES, MAX_PHOTO_BYTES } from '../media'
 
 const U = 'unit-1'
 const A = 'appt-1'
@@ -42,5 +42,15 @@ describe('limites e tipos', () => {
     expect(isAllowedContentType('before', 'image/jpeg')).toBe(true)
     expect(isAllowedContentType('before', 'application/pdf')).toBe(false)
     expect(isAllowedContentType('after', null)).toBe(false)
+  })
+})
+
+describe('isMediaUrlOfAppointment', () => {
+  const base = 'https://x.supabase.co/storage/v1/object/public/service-orders'
+  it('aceita só URL desta ordem', () => {
+    expect(isMediaUrlOfAppointment(`${base}/${U}/${A}/antes-1.jpg`, U, A)).toBe(true)
+    expect(isMediaUrlOfAppointment(`${base}/${U}/outra/antes-1.jpg`, U, A)).toBe(false)
+    expect(isMediaUrlOfAppointment(`${base}/${U}/${A}/../x.jpg`, U, A)).toBe(false)
+    expect(isMediaUrlOfAppointment(42, U, A)).toBe(false)
   })
 })

@@ -82,3 +82,12 @@ export function isAllowedContentType(kind: MediaKind, contentType: string | null
 
 /** Quantos vídeos de até 15s cabem numa ordem de uma vez (pedido do Vinicius: pelo menos 4). */
 export const MAX_VIDEO_CLIPS = 10
+
+/** A URL pública pertence mesmo a esta ordem? (impede excluir mídia de outra ordem/unidade pela rota) */
+export function isMediaUrlOfAppointment(url: unknown, unitId: string, appointmentId: string): url is string {
+  return (
+    typeof url === 'string' &&
+    !url.includes('..') &&
+    url.includes(`/storage/v1/object/public/service-orders/${unitId}/${appointmentId}/`)
+  )
+}

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { isAllowedContentType, mediaSizeLimit, validateMediaItems } from '@/lib/service-orders/media'
+import { isAllowedContentType, isMediaUrlOfAppointment, mediaSizeLimit, validateMediaItems } from '@/lib/service-orders/media'
 
 /**
  * Registra na ordem fotos/vídeos que o aparelho JÁ enviou direto pro
@@ -55,6 +55,33 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const { data, error } = await supabase.rpc('append_service_order_media', { p_appointment_id: appointmentId, p_items: entries })
   if (error) return NextResponse.json({ error: error.message || 'Não foi possível registrar a mídia.' }, { status: 400 })
   if (!data) return NextResponse.json({ error: 'Sem permissão para atualizar esta ordem de serviço.' }, { status: 403 })
+
+  return NextResponse.json({ ok: true, photos: data })
+}
+
+/**
+ * Exclui uma foto/vídeo da ordem: some do app, do PDF e do relatório
+ * fotográfico. O arquivo continua no Storage (nada é apagado de vez —
+ * recuperável pelo caminho). Atômico via remove_service_order_media
+ * (migration 089); roda com o client do usuário, então RLS e trigger valem.
+ */
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string; appointmentId: string }> }) {
+  const { id: unitId, appointmentId } = await params
+  const supabase = await createClient()
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 })
+
+  const body = (await request.json().catch(() => null)) as { url?: unknown } | null
+  if (!isMediaUrlOfAppointment(body?.url, unitId, appointmentId)) {
+    return NextResponse.json({ error: 'Arquivo não pertence a esta ordem.' }, { status: 400 })
+  }
+
+  const { data, error } = await supabase.rpc('remove_service_order_media', { p_appointment_id: appointmentId, p_url: body!.url as string })
+  if (error) return NextResponse.json({ error: error.message || 'Não foi possível excluir.' }, { status: 400 })
+  if (!data) return NextResponse.json({ error: 'Sem permissão para alterar esta ordem de serviço.' }, { status: 403 })
 
   return NextResponse.json({ ok: true, photos: data })
 }

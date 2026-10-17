@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Camera, Check, Download, X } from 'lucide-react'
 import { saveCopiesToDevice } from '@/lib/portal-funcionario/save-to-device'
+import { cameraHelp, openCameraStream } from '@/lib/portal-funcionario/camera-access'
 
 const MAX_SHOTS_PER_SESSION = 40
 
@@ -34,20 +35,13 @@ export function MultiShotCamera({ label, onShot }: { label: string; onShot: (fil
     sessionFiles.current = []
     setCount(0)
     setLastThumb(null)
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setError('Este aparelho não abre a câmera dentro do app. Use "Escolher / tirar foto" abaixo.')
+    const result = await openCameraStream({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 2560 }, height: { ideal: 1440 } } })
+    if (!result.ok) {
+      setError(cameraHelp(result.reason, navigator.userAgent))
       return
     }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 2560 }, height: { ideal: 1440 } },
-        audio: false,
-      })
-      streamRef.current = stream
-      setOpen(true)
-    } catch {
-      setError('Sem acesso à câmera. Permita a câmera no navegador ou use "Escolher / tirar foto" abaixo.')
-    }
+    streamRef.current = result.stream
+    setOpen(true)
   }
 
   // Liga o stream no <video> assim que o overlay existe.
