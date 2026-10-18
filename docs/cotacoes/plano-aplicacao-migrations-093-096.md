@@ -1,6 +1,6 @@
 # Plano final de aplicação — migrations 093–096 (Super Agente de Cotações)
 
-**Estado: NADA aplicado.** Este plano só vale com autorização específica do Vinicius. Aplicar as migrations NÃO liga o módulo: `units.quote_ai_team_mode` nasce `off` e `QUOTE_TEAM_ENABLED` segue desligado; o registro de etapas (`handlers.ts`) está vazio, então mesmo ligado nada chama IA até a Fase 4.
+**Estado: APLICADAS em produção em 2026-10-18 (093→096), com autorização do Vinicius — ver seção 12. Código NÃO publicado, módulo desligado.** Aplicar as migrations NÃO liga o módulo: `units.quote_ai_team_mode` nasce `off` e `QUOTE_TEAM_ENABLED` segue desligado; o registro de etapas (`handlers.ts`) está vazio, então mesmo ligado nada chama IA até a Fase 4.
 
 ## 0. O que as migrations tocam em dados existentes
 Só **1 coluna constante** em `units` (5 linhas, sem reescrever tabela). Nada em `appointments`, `service_order_*`, fotos, fila offline, PWA, financeiro. Tudo o mais é tabela/função nova.
@@ -87,3 +87,12 @@ Efeito prático: falhas repetidas podem consumir o teto **preventivamente** (3 t
 6. Conferir contagens (units, appointments) e que nenhuma unidade está fora de `off`.
 7. **Parar.** Deploy do código e qualquer ativação (modo sombra) são autorizações separadas.
 **Rollback não destrutivo a qualquer momento:** `update units set quote_ai_team_mode='off'` + `QUOTE_TEAM_ENABLED=false` (nada executa). Só depois, se necessário, o script de rollback (§7).
+
+## 12. Execução real em 18/10/2026 (autorizada)
+- **Backup externo** (fora do Supabase): `~/Documents/alizo-backup-externo-2026-10-18-pre-cotacoes/` (10 tabelas em JSON + MANIFEST com hash e contagem + CONFIG-SNAPSHOT.md). Verificado: hash, contagem e comparação com o banco, 10/10. Segredos/tokens omitidos de propósito (incl. `public_report_token`, `dedupe_key`). Só no Mac do Vinicius (não está na nuvem).
+- **Baseline antes:** 121 ordens, 78 assinaturas, 18 mídias registradas, 137 arquivos no bucket `service-orders`, hash das ordens `07bc14ca…`, 5 unidades.
+- **Aplicação** (`apply_migration`, uma por vez, cada uma conferida antes da próxima): 093 `quote_team_flags_and_rate_cards`, 094 `quote_team_core`, 095 `quote_team_infra`, 096 `quote_team_approval_immutability` — todas `success`, sem falha de lock/timeout. Migrações registradas: 84 → 88.
+- **Pós-aplicação:** `POST_OK` (12 tabelas com RLS, 11 funções só do service_role, sem coluna monetária no plano de mão de obra, 0 unidades ligadas); orçamento 9 grupos OK; isolamento com claims JWT reais OK (funcionário em shadow 0 linhas; em live só a camada técnica da própria ordem; admin da empresa vê tudo; admin de outra empresa 0 linhas em 11 tabelas; escrita do funcionário negada); concorrência real 6/20 aceitas, 1 cobrança em 10 liquidações da mesma reserva (job de teste apagado).
+- **Integridade depois:** ordens 121, assinaturas 78, mídias 18, arquivos 137, hash `07bc14ca…` **idêntico**; policies/triggers de `units`/`appointments` inalterados (7 e 3); 5/5 unidades `off`; 0 jobs/reservas/limites/tarifas residuais.
+- **Achados do verificador de segurança do Supabase (novos, menores):** (1) `quote_set_updated_at`, `quote_drafts_guard_approved`, `quote_children_guard_approved` sem `search_path` fixo — sugerido `alter function … set search_path = public` numa migration 097 aditiva (NÃO aplicada); (2) `product_price_cache` e `quote_budget_reservations` com RLS sem policy (INFO — intencional: só service_role); (3) `quote_draft_visible_to_caller` executável por anon/authenticated (necessário para a policy; devolve só um booleano; mesmo padrão das funções de RLS existentes).
+- **Não verificável:** `QUOTE_TEAM_ENABLED` na Vercel (a API devolve 403 ao listar variáveis). Irrelevante para o comportamento atual: etapas vazias ⇒ módulo inerte.

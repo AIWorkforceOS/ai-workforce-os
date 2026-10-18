@@ -5,11 +5,13 @@
  * do PostgREST) e confere: no máximo 6 passam (teto US$ 0,60), ids distintos, soma exata, e liquidação em paralelo da MESMA reserva
  * cobra uma vez só. Depois apaga o job de teste (cascata remove as reservas).
  *
- * Uso (escolha uma ordem de teste do Vinicius):
- *   NEXT_PUBLIC_SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node tools/quote-budget-concurrency.mjs --confirm --appointment <uuid>
+ * Uso (de dentro de apps/web; escolha uma ordem de teste do Vinicius):
+ *   NEXT_PUBLIC_SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node ../../tools/quote-budget-concurrency.mjs --confirm --appointment <uuid>
  * Sem --confirm só mostra o plano. Nunca imprime chaves.
  */
-import { createClient } from '@supabase/supabase-js'
+import { createRequire } from 'node:module'
+// resolve o pacote a partir da pasta atual (rode de dentro de apps/web, onde @supabase/supabase-js está instalado)
+const { createClient } = createRequire(process.cwd() + '/package.json')('@supabase/supabase-js')
 
 const args = process.argv.slice(2)
 const confirm = args.includes('--confirm')
