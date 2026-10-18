@@ -1,3 +1,4 @@
+import { writeFileSync } from 'node:fs'
 import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
 import { costUsd } from '../budget'
@@ -32,7 +33,9 @@ describe.skipIf(!enabled)('SMOKE PAGO — diagnóstico visual na API real', () =
 
     const cost = costUsd({ model, inputTokens: result.inputTokens, outputTokens: result.outputTokens })
     const estimatedInput = conservativeImageTokens(image) + Math.ceil((DIAGNOSIS_SYSTEM_PROMPT.length + userText.length) / 3)
-    console.log(JSON.stringify({ model: result.model, ms, inputTokens: result.inputTokens, outputTokens: result.outputTokens, estimatedInputWorstCase: estimatedInput, costUsd: cost, refusal: result.refusal }, null, 2))
+    const report = { requestedModel: model, answeredModel: result.model, ms, inputTokens: result.inputTokens, outputTokens: result.outputTokens, estimatedInputWorstCase: estimatedInput, imageEstimatedTokens: conservativeImageTokens(image), costUsd: cost, refusal: result.refusal, notes, output: result.output }
+    if (process.env.QUOTE_SMOKE_OUT) writeFileSync(process.env.QUOTE_SMOKE_OUT, JSON.stringify(report, null, 2))
+    console.log(JSON.stringify(report, null, 2))
 
     expect(result.refusal).toBeNull()
     expect(diagnosisSchema.safeParse(result.output).success).toBe(true)
