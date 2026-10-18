@@ -1,0 +1,160 @@
+import { LEASE_SECONDS, MAX_ATTEMPTS, QUOTE_STAGES, RETRY_BACKOFF_MS, RUNNER_TIME_BUDGET_MS, STAGE_TIMEOUT_MS, type QuoteStage } from './config'
+import type { PendingItem } from './contracts'
+import { BudgetGuard } from './budget'
+import type { JobStore, QuoteJobRow } from './job-store'
+
+export type StageContext = {
+  job: QuoteJobRow
+  /** Resultados já gravados das etapas anteriores (retomada: nada é refeito). */
+  stepResults: Record<string, unknown>
+  budget: BudgetGuard
+}
+
+export type StageOutcome =
+  | { kind: 'done'; result: unknown; pending?: PendingItem[] }
+  /** Falta informação crítica (foto, etiqueta, medida…): o job para e pede ao técnico. */
+  | { kind: 'needs_input'; result?: unknown; pending: PendingItem[] }
+  /** O orçamento acabou no meio da etapa: guarda o parcial e segue só com etapas sem IA. */
+  | { kind: 'budget_exhausted'; result?: unknown; pending: PendingItem[] }
+
+export type StageHandler = {
+  /** Etapas sem IA (cálculo e auditoria por regras) continuam rodando mesmo com orçamento esgotado. */
+  needsAi: boolean
+  run: (ctx: StageContext) => Promise<StageOutcome>
+}
+export type StageHandlers = Partial<Record<QuoteStage, StageHandler>>
+
+/** Erro que não adianta repetir (ex.: pipeline não implementado). */
+export class NonRetryableError extends Error {
+  constructor(message: string, public readonly code = 'non_retryable') {
+    super(message)
+    this.name = 'NonRetryableError'
+  }
+}
+
+export function isPipelineReady(handlers: StageHandlers): boolean {
+  return QUOTE_STAGES.every((stage) => Boolean(handlers[stage]))
+}
+
+export type RunOutcome =
+  | { kind: 'not_claimed' }
+  | { kind: 'yielded' | 'completed' | 'needs_input' | 'budget_exhausted' | 'failed' | 'retry_scheduled'; job: QuoteJobRow }
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`timeout após ${ms} ms`)), ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(timer)
+        reject(error)
+      },
+    )
+  })
+}
+
+export type RunnerDeps = {
+  store: JobStore
+  handlers: StageHandlers
+  worker: string
+  now?: () => number
+  timeBudgetMs?: number
+  stageTimeoutMs?: number
+  leaseSeconds?: number
+}
+
+/**
+ * Roda (ou retoma) UM job. Uma passada nunca passa de `timeBudgetMs`: ao estourar, devolve o job à fila com tudo
+ * gravado e a próxima passada (tela ou cron por minuto) continua de onde parou. Etapas já concluídas nunca são refeitas.
+ * Falhas: tentativas com espera crescente; esgotadas as tentativas o job fica 'failed' MANTENDO os resultados parciais
+ * — a cotação manual continua disponível. Nada aqui bloqueia o salvamento da ordem.
+ */
+export async function runQuoteJob(deps: RunnerDeps, jobId: string | null): Promise<RunOutcome> {
+  const now = deps.now ?? (() => Date.now())
+  const timeBudget = deps.timeBudgetMs ?? RUNNER_TIME_BUDGET_MS
+  const stageTimeout = deps.stageTimeoutMs ?? STAGE_TIMEOUT_MS
+  const lease = deps.leaseSeconds ?? LEASE_SECONDS
+  const startedAt = now()
+
+  const job = jobId ? await deps.store.claim(jobId, deps.worker, lease) : await deps.store.claimNext(deps.worker, lease)
+  if (!job) return { kind: 'not_claimed' }
+
+  const stepResults: Record<string, unknown> = { ...job.step_results }
+  const pending: PendingItem[] = [...job.pending_items]
+  let budgetExhausted = false
+  const iso = (ms: number) => new Date(ms).toISOString()
+  const reload = async () => (await deps.store.get(job.id)) as QuoteJobRow
+
+  const release = { locked_by: null, locked_until: null }
+
+  if (!isPipelineReady(deps.handlers)) {
+    await deps.store.update(job.id, { status: 'failed', error_code: 'pipeline_not_ready', error_message: 'Pipeline de análise ainda não disponível.', finished_at: iso(now()), ...release })
+    return { kind: 'failed', job: await reload() }
+  }
+
+  const budget = new BudgetGuard(deps.store, job.id)
+
+  for (const stage of QUOTE_STAGES) {
+    if (stage in stepResults) continue
+
+    if (now() - startedAt >= timeBudget) {
+      await deps.store.update(job.id, { status: 'queued', next_run_at: iso(now()), step_results: stepResults, pending_items: pending, ...release })
+      return { kind: 'yielded', job: await reload() }
+    }
+
+    const handler = deps.handlers[stage]!
+    if (budgetExhausted && handler.needsAi) {
+      pending.push({ code: 'budget_skipped', message_pt: `Etapa "${stage}" não executada: orçamento de IA da cotação esgotado. Complete manualmente.` })
+      stepResults[stage] = { skipped: 'budget' }
+      await deps.store.update(job.id, { stage, step_results: stepResults, pending_items: pending })
+      continue
+    }
+
+    await deps.store.update(job.id, { stage })
+
+    let outcome: StageOutcome
+    try {
+      outcome = await withTimeout(handler.run({ job: { ...job, stage }, stepResults, budget }), stageTimeout)
+    } catch (error) {
+      const attempts = (await reload()).attempt_count + 1
+      const nonRetryable = error instanceof NonRetryableError
+      const message = (error instanceof Error ? error.message : String(error)).slice(0, 500)
+      if (nonRetryable || attempts >= (job.max_attempts ?? MAX_ATTEMPTS)) {
+        await deps.store.update(job.id, {
+          status: 'failed', attempt_count: attempts, error_code: nonRetryable ? (error as NonRetryableError).code : 'stage_failed', error_message: message,
+          step_results: stepResults, pending_items: pending, finished_at: iso(now()), ...release,
+        })
+        return { kind: 'failed', job: await reload() }
+      }
+      const wait = RETRY_BACKOFF_MS[Math.min(attempts - 1, RETRY_BACKOFF_MS.length - 1)]!
+      await deps.store.update(job.id, {
+        status: 'queued', attempt_count: attempts, error_code: 'stage_failed', error_message: message,
+        next_run_at: iso(now() + wait), step_results: stepResults, pending_items: pending, ...release,
+      })
+      return { kind: 'retry_scheduled', job: await reload() }
+    }
+
+    stepResults[stage] = outcome.kind === 'done' ? outcome.result : (outcome.result ?? { partial: true })
+    if ('pending' in outcome && outcome.pending) pending.push(...outcome.pending)
+    await deps.store.update(job.id, { stage, step_results: stepResults, pending_items: pending })
+
+    if (outcome.kind === 'needs_input') {
+      await deps.store.update(job.id, { status: 'needs_input', finished_at: iso(now()), ...release })
+      return { kind: 'needs_input', job: await reload() }
+    }
+    if (outcome.kind === 'budget_exhausted') budgetExhausted = true
+  }
+
+  await deps.store.update(job.id, {
+    status: budgetExhausted ? 'budget_exhausted' : 'completed',
+    stage: 'done',
+    step_results: stepResults,
+    pending_items: pending,
+    finished_at: iso(now()),
+    ...release,
+  })
+  return { kind: budgetExhausted ? 'budget_exhausted' : 'completed', job: await reload() }
+}

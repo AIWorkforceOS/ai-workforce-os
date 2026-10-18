@@ -84,6 +84,10 @@
     {
       "path": "/api/cron/db-backup",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/quote-jobs",
+      "schedule": "* * * * *"
     }
   ]
 }
