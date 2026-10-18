@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { BudgetGuard, costUsd, worstCaseUsd, WEB_SEARCH_CALL_USD } from '../budget'
+import { BudgetGuard, costUsd, markNotCharged, worstCaseUsd, WEB_SEARCH_CALL_USD } from '../budget'
 import { InMemoryJobStore, type NewQuoteJob } from '../job-store'
 
 /** Só job em EXECUÇÃO (com lease) pode reservar orçamento — igual ao banco. */
@@ -55,8 +55,8 @@ describe('BudgetGuard — reservar antes de gastar', () => {
   it('reservas de chamadas em andamento contam (duas ao mesmo tempo não estouram juntas)', async () => {
     const store = new InMemoryJobStore()
     const job = await running(store)
-    expect(await store.reserve(job.id, 0.35)).toBe(true)
-    expect(await store.reserve(job.id, 0.3)).toBe(false)
+    expect(await store.reserve(job.id, 0.35)).toBeTruthy()
+    expect(await store.reserve(job.id, 0.3)).toBeNull()
   })
 
   it('teto MENSAL da empresa (US$ 50) também bloqueia', async () => {
@@ -75,13 +75,15 @@ describe('BudgetGuard — reservar antes de gastar', () => {
     expect((await guard.run({ label: 'obrigatoria', worstCaseUsd: 0.05, call: async () => ({ result: 1, actualUsd: 0.05, tokensIn: 0, tokensOut: 0 }) })).ok).toBe(true)
   })
 
-  it('erro na chamada devolve a reserva (não trava orçamento)', async () => {
+  it('erro COMPROVADAMENTE sem cobrança (4xx/429/chave ausente) devolve a reserva', async () => {
     const store = new InMemoryJobStore()
     const job = await running(store)
     const guard = new BudgetGuard(store, job.id)
-    const out = await guard.run({ label: 'falha', worstCaseUsd: 0.3, call: async () => { throw new Error('openai fora do ar') } })
-    expect(out.ok).toBe(false)
-    expect((await store.get(job.id))!.reserved_usd).toBe(0)
+    const out = await guard.run({ label: 'falha', worstCaseUsd: 0.3, call: async () => { throw markNotCharged(new Error('400 recusado')) } })
+    expect(out).toMatchObject({ ok: false, skipped: 'error', charged: 'none' })
+    const row = (await store.get(job.id))!
+    expect(row.reserved_usd).toBe(0)
+    expect(row.unconfirmed_usd).toBe(0)
   })
 
   it('modelo desconhecido (pior caso infinito) nunca é chamado', async () => {

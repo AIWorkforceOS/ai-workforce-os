@@ -103,6 +103,7 @@ type JobRow = {
   error_code?: string | null
   spent_usd?: number
   reserved_usd?: number
+  unconfirmed_usd?: number
   budget_usd?: number
   ai_calls?: number
   tokens_in?: number
@@ -139,7 +140,7 @@ export function toAdminJobStatus(job: JobRow) {
     mode: job.mode,
     error_code: job.error_code ?? null,
     attempts: job.attempt_count ?? 0,
-    ai: { calls: job.ai_calls ?? 0, tokens_in: job.tokens_in ?? 0, tokens_out: job.tokens_out ?? 0, spent_usd: job.spent_usd ?? 0, reserved_usd: job.reserved_usd ?? 0, budget_usd: job.budget_usd ?? 0 },
+    ai: { calls: job.ai_calls ?? 0, tokens_in: job.tokens_in ?? 0, tokens_out: job.tokens_out ?? 0, spent_usd: job.spent_usd ?? 0, reserved_usd: job.reserved_usd ?? 0, unconfirmed_usd: job.unconfirmed_usd ?? 0, budget_usd: job.budget_usd ?? 0 },
     created_at: job.created_at ?? null,
     finished_at: job.finished_at ?? null,
   }

@@ -34,8 +34,8 @@ Fonte: documentação oficial da Vercel (consultada em 18/10/2026).
 |---|---|---|
 | Chamadas **simultâneas no mesmo job** | `SELECT … FOR UPDATE` na linha do job + soma `gasto + reservado + pedido ≤ teto` | teste SQL + 10 reservas em paralelo no teste automático: só 6 de US$ 0,10 passam |
 | **Jobs diferentes da mesma empresa** (teto mensal) | lock consultivo por empresa serializa a checagem do mês | lock confirmado no banco; teste: teto mensal bloqueia |
-| **Reserva não liberada** (processo morreu, timeout da função) | no próximo `claim`, reserva presa é **cobrada como gasto no pior caso** (o teto nunca é furado); o cron roda `reconcile_quote_budgets` e converte reservas presas em jobs terminados | teste SQL: `reserved=0 spent=0,40` e depois só cabe 0,20 |
-| **Falha/erro da chamada** | reserva devolvida na hora | teste automático |
+| **Reserva não liberada** (processo morreu, timeout da função) | **REVISADO 18/10:** no próximo `claim` (e na varredura do cron) a reserva presa vira **"não confirmada"** (pior caso continua contando nos tetos, mas NÃO é registrada como gasto real) e pode ser reconciliada depois com o custo real. Ver `plano-aplicacao-migrations-093-096.md` §8 | teste SQL: `spent=0 reserved=0 unconfirmed=0,30`; liquidação tardia vira custo real sem duplicar |
+| **Falha/erro da chamada** | **REVISADO:** só falha comprovadamente sem cobrança (4xx/429/chave ausente) devolve a reserva; falha ambígua (timeout/5xx/rede) a mantém como "não confirmada" | testes automáticos |
 | **Timeout de etapa** | etapa abandonada; reserva fica e é cobrada/reconciliada (conservador); a chamada à OpenAI tem timeout próprio (80 s) menor que o da etapa (90 s) | teste do runner |
 | **Custo real maior que o estimado** | pior caso usa saída máxima + imagem com margem de 25 %; se mesmo assim passar do teto, o runner **para as etapas de IA** e lista o pendente | teste automático |
 | Job parado/terminado tentando gastar | `reserve` só aceita job `running` | teste SQL |

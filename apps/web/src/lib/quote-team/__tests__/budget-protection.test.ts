@@ -21,6 +21,7 @@ describe('teto de US$ 0,60 — chamadas SIMULTÂNEAS', () => {
     const id = await running(store)
     const results = await Promise.all(Array.from({ length: 10 }, () => store.reserve(id, 0.1)))
     expect(results.filter(Boolean)).toHaveLength(6)
+    expect(new Set(results.filter(Boolean)).size).toBe(6) // ids de reserva distintos
     expect((await store.get(id))!.reserved_usd).toBeCloseTo(0.6, 6)
   })
   it('jobs diferentes da MESMA empresa em paralelo respeitam o teto mensal', async () => {
@@ -32,31 +33,36 @@ describe('teto de US$ 0,60 — chamadas SIMULTÂNEAS', () => {
   it('job que não está rodando (parado, terminado) não consegue reservar', async () => {
     const store = new InMemoryJobStore()
     const { job } = await store.insert(newJob())
-    expect(await store.reserve(job.id, 0.05)).toBe(false)
+    expect(await store.reserve(job.id, 0.05)).toBeNull()
   })
 })
 
 describe('FALHAS, TIMEOUTS e reservas não liberadas', () => {
-  it('chamada que lança erro devolve a reserva imediatamente', async () => {
+  it('falha AMBÍGUA (503/timeout depois de enviar) NÃO devolve o orçamento: vira "não confirmado"', async () => {
     const store = new InMemoryJobStore()
     const id = await running(store)
-    await new BudgetGuard(store, id).run({ label: 'x', worstCaseUsd: 0.3, call: async () => { throw new Error('503') } })
-    expect((await store.get(id))!.reserved_usd).toBe(0)
+    const out = await new BudgetGuard(store, id).run({ label: 'x', worstCaseUsd: 0.3, call: async () => { throw new Error('503') } })
+    expect(out).toMatchObject({ ok: false, charged: 'unknown' })
+    const row = (await store.get(id))!
+    expect(row.reserved_usd).toBe(0)
+    expect(row.unconfirmed_usd).toBeCloseTo(0.3)
+    expect(row.spent_usd).toBe(0) // não é gasto confirmado
   })
-  it('worker morreu com reserva aberta: o próximo claim COBRA a reserva como gasto (teto nunca é furado)', async () => {
+  it('worker morreu com reserva aberta: o próximo claim a torna NÃO CONFIRMADA (teto nunca é furado, mas não vira gasto real)', async () => {
     let clock = 1_000_000
     const store = new InMemoryJobStore(() => clock)
     const id = await running(store)
-    expect(await store.reserve(id, 0.4)).toBe(true) // chamada em andamento... e o processo morre aqui
+    expect(await store.reserve(id, 0.4)).toBeTruthy() // chamada em andamento... e o processo morre aqui
     clock += 400_000 // lease vence
     const reclaimed = await store.claim(id, 'w2', 300)
     expect(reclaimed!.reserved_usd).toBe(0)
-    expect(reclaimed!.spent_usd).toBeCloseTo(0.4)
+    expect(reclaimed!.spent_usd).toBe(0)
+    expect(reclaimed!.unconfirmed_usd).toBeCloseTo(0.4)
     // só sobra 0,20 para gastar: o teto continua valendo
-    expect(await store.reserve(id, 0.3)).toBe(false)
-    expect(await store.reserve(id, 0.19)).toBe(true)
+    expect(await store.reserve(id, 0.3)).toBeNull()
+    expect(await store.reserve(id, 0.19)).toBeTruthy()
   })
-  it('reconciliação: reserva presa em job terminado há muito vira gasto (não vaza do mês)', async () => {
+  it('reconciliação: reserva presa em job terminado há muito vira NÃO CONFIRMADA (continua contando no mês)', async () => {
     let clock = 1_000_000
     const store = new InMemoryJobStore(() => clock)
     const id = await running(store)
@@ -67,7 +73,8 @@ describe('FALHAS, TIMEOUTS e reservas não liberadas', () => {
     expect(await store.reconcileBudgets(10)).toBe(1)
     const row = (await store.get(id))!
     expect(row.reserved_usd).toBe(0)
-    expect(row.spent_usd).toBeCloseTo(0.25)
+    expect(row.spent_usd).toBe(0)
+    expect(row.unconfirmed_usd).toBeCloseTo(0.25)
   })
   it('chamada que passou do pior caso estimado: o runner PARA as etapas de IA e lista o pendente', async () => {
     const store = new InMemoryJobStore()

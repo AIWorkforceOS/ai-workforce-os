@@ -44,18 +44,36 @@ export function worstCaseUsd(input: { model: string; inputTokens: number; maxOut
   })
 }
 
-export type BudgetSnapshot = { budget: number; spent: number; reserved: number }
+export type BudgetSnapshot = { budget: number; spent: number; reserved: number; unconfirmed: number }
+
+/** Total que conta nos tetos: confirmado + reservas ativas + reservas interrompidas contabilizadas preventivamente. */
+export const committedUsd = (s: BudgetSnapshot) => s.spent + s.reserved + s.unconfirmed
+
+/**
+ * Falha em que a chamada comprovadamente NÃO foi cobrada (nunca chegou ao provedor, ou ele a recusou sem processar: chave ausente,
+ * HTTP 4xx, 429). Só esta falha libera a reserva. Qualquer outra (timeout, queda de rede, 5xx, resposta ilegível) é AMBÍGUA:
+ * o provedor pode ter cobrado, então o pior caso continua contando nos tetos como "não confirmado" até reconciliar com o custo real.
+ */
+export function markNotCharged<E extends Error>(error: E): E & { notCharged: true } {
+  return Object.assign(error, { notCharged: true as const })
+}
+export const isNotCharged = (error: unknown) => (error as { notCharged?: boolean } | null)?.notCharged === true
 
 export interface BudgetStore {
-  /** Atômico: só reserva se couber no teto da cotação E no teto mensal da empresa. */
-  reserve(jobId: string, usd: number): Promise<boolean>
-  settle(jobId: string, reservedUsd: number, actualUsd: number, tokensIn: number, tokensOut: number): Promise<void>
+  /** Atômico: só reserva se couber no teto da cotação E no teto mensal da empresa. Devolve o id da reserva (null = não coube). */
+  reserve(jobId: string, usd: number): Promise<string | null>
+  /** Troca a reserva pelo custo REAL. Idempotente: a mesma reserva nunca é cobrada duas vezes (devolve false na repetição). */
+  settle(reservationId: string, actualUsd: number, tokensIn: number, tokensOut: number): Promise<boolean>
+  /** Falha comprovadamente sem cobrança: devolve a reserva. */
+  release(reservationId: string, note?: string): Promise<boolean>
+  /** Falha ambígua: o pior caso continua contando, mas como "não confirmado" (reconciliável depois com o custo real). */
+  markUnconfirmed(reservationId: string, note?: string): Promise<boolean>
   snapshot(jobId: string): Promise<BudgetSnapshot | null>
 }
 
 export type GuardedResult<T> =
   | { ok: true; result: T; actualUsd: number }
-  | { ok: false; skipped: 'budget' | 'soft_limit' | 'unknown_model' | 'error'; error?: Error }
+  | { ok: false; skipped: 'budget' | 'soft_limit' | 'unknown_model' | 'error'; error?: Error; reservationId?: string; charged?: 'none' | 'unknown' }
 
 export class BudgetGuard {
   constructor(private readonly store: BudgetStore, private readonly jobId: string, private readonly onSettled?: (e: { label: string; actualUsd: number; tokensIn: number; tokensOut: number }) => void | Promise<void>) {}
@@ -73,21 +91,38 @@ export class BudgetGuard {
 
     if (params.optional) {
       const snap = await this.store.snapshot(this.jobId)
-      if (snap && snap.spent + snap.reserved >= snap.budget * QUOTE_SOFT_BUDGET_RATIO) return { ok: false, skipped: 'soft_limit' }
+      if (snap && committedUsd(snap) >= snap.budget * QUOTE_SOFT_BUDGET_RATIO) return { ok: false, skipped: 'soft_limit' }
     }
 
     // reservar antes de gastar
-    if (!(await this.store.reserve(this.jobId, params.worstCaseUsd))) return { ok: false, skipped: 'budget' }
+    const reservationId = await this.store.reserve(this.jobId, params.worstCaseUsd)
+    if (!reservationId) return { ok: false, skipped: 'budget' }
 
+    let out: { result: T; actualUsd: number; tokensIn: number; tokensOut: number }
     try {
-      const out = await params.call()
-      await this.store.settle(this.jobId, params.worstCaseUsd, out.actualUsd, out.tokensIn, out.tokensOut)
-      await this.onSettled?.({ label: params.label, actualUsd: out.actualUsd, tokensIn: out.tokensIn, tokensOut: out.tokensOut })
-      return { ok: true, result: out.result, actualUsd: out.actualUsd }
+      out = await params.call()
     } catch (error) {
-      // Falhou sem resposta medida: devolve a reserva (custo real desconhecido = 0; chamadas que falham antes de responder não geram uso).
-      await this.store.settle(this.jobId, params.worstCaseUsd, 0, 0, 0).catch(() => {})
-      return { ok: false, skipped: 'error', error: error instanceof Error ? error : new Error(String(error)) }
+      const err = error instanceof Error ? error : new Error(String(error))
+      if (isNotCharged(err)) {
+        await this.store.release(reservationId, `sem cobrança: ${err.message}`.slice(0, 200)).catch(() => {})
+        return { ok: false, skipped: 'error', error: err, reservationId, charged: 'none' }
+      }
+      // ambígua: NÃO devolve o orçamento (a chamada pode ter sido cobrada)
+      await this.store.markUnconfirmed(reservationId, `falha ambígua: ${err.message}`.slice(0, 200)).catch(() => {})
+      return { ok: false, skipped: 'error', error: err, reservationId, charged: 'unknown' }
     }
+
+    // A chamada deu certo e o custo é conhecido: falha ao gravar NÃO pode descartar o resultado nem devolver a reserva.
+    // Tenta de novo; se ainda falhar, a reserva fica ativa e a varredura a torna "não confirmada" (pior caso continua contando).
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        await this.store.settle(reservationId, out.actualUsd, out.tokensIn, out.tokensOut)
+        break
+      } catch {
+        /* tenta de novo */
+      }
+    }
+    await this.onSettled?.({ label: params.label, actualUsd: out.actualUsd, tokensIn: out.tokensIn, tokensOut: out.tokensOut })
+    return { ok: true, result: out.result, actualUsd: out.actualUsd }
   }
 }

@@ -42,8 +42,9 @@ create table if not exists public.quote_analysis_jobs (
   locked_by text,
   locked_until timestamptz,
   budget_usd numeric(10,4) not null default 0.60,
-  spent_usd numeric(12,6) not null default 0,
-  reserved_usd numeric(12,6) not null default 0,
+  spent_usd numeric(12,6) not null default 0,        -- gasto CONFIRMADO (custo real medido pela resposta da API)
+  reserved_usd numeric(12,6) not null default 0,     -- reservas ATIVAS (chamada em andamento, pior caso)
+  unconfirmed_usd numeric(12,6) not null default 0,  -- reservas INTERROMPIDAS contabilizadas preventivamente (pior caso; custo real desconhecido até reconciliar)
   ai_calls integer not null default 0,
   tokens_in bigint not null default 0,
   tokens_out bigint not null default 0,
@@ -57,7 +58,7 @@ create table if not exists public.quote_analysis_jobs (
   finished_at timestamptz,
   updated_at timestamptz not null default now(),
   constraint quote_jobs_idempotency_unique unique (idempotency_key),
-  check (spent_usd >= 0 and reserved_usd >= 0)
+  check (spent_usd >= 0 and reserved_usd >= 0 and unconfirmed_usd >= 0)
 );
 create index if not exists quote_jobs_runnable_idx on public.quote_analysis_jobs (next_run_at) where status in ('queued', 'running');
 create index if not exists quote_jobs_appointment_idx on public.quote_analysis_jobs (appointment_id, created_at desc);

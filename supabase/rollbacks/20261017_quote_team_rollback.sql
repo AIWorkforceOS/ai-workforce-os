@@ -9,13 +9,20 @@ set local lock_timeout = '5s';
 
 drop function if exists public.approve_quote_draft(uuid, uuid, jsonb);
 drop function if exists public.reconcile_quote_budgets(integer);
+drop function if exists public.reconcile_quote_reservation(uuid, numeric, text);
+drop function if exists public.mark_quote_reservation_unconfirmed(uuid, text);
+drop function if exists public.release_quote_budget(uuid, text);
+drop function if exists public.settle_quote_budget(uuid, numeric, bigint, bigint);
 drop function if exists public.settle_quote_budget(uuid, numeric, numeric, bigint, bigint);
+drop function if exists public.quote_org_budget_report(uuid, timestamptz);
+drop function if exists public.quote_expire_job_reservations(uuid, text);
 drop function if exists public.reserve_quote_budget(uuid, numeric);
 drop function if exists public.quote_org_month_spend(uuid, timestamptz);
 drop function if exists public.claim_quote_job(uuid, text, integer);
 drop function if exists public.claim_next_quote_job(text, integer, integer);
 drop function if exists public.claim_next_quote_job(text, integer);
 
+drop table if exists public.quote_budget_reservations;
 drop table if exists public.product_price_cache;
 drop table if exists public.quote_org_limits;
 drop table if exists public.quote_events;

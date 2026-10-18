@@ -1,3 +1,4 @@
+import { markNotCharged } from '../budget'
 import { NonRetryableError } from '../runner'
 import { getOpenAIApiKey } from '@/lib/openai'
 import { DIAGNOSIS_JSON_SCHEMA } from './schema'
@@ -80,7 +81,7 @@ export class OpenAIResponsesDiagnosisModel implements DiagnosisModel {
 
   async analyze(input: DiagnosisModelInput): Promise<DiagnosisModelResult> {
     const apiKey = getOpenAIApiKey()
-    if (!apiKey) throw new NonRetryableError('OPENAI_API_KEY não configurada.', 'no_api_key')
+    if (!apiKey) throw markNotCharged(new NonRetryableError('OPENAI_API_KEY não configurada.', 'no_api_key'))
     const response = await this.fetchImpl('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
@@ -91,9 +92,11 @@ export class OpenAIResponsesDiagnosisModel implements DiagnosisModel {
     if (!response.ok) {
       // 4xx (exceto 408/429) não adianta repetir; o resto o runner repete com espera
       if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) {
-        throw new NonRetryableError(`OpenAI recusou a requisição (${response.status}): ${json.error?.message ?? 'sem detalhe'}`, 'openai_4xx')
+        throw markNotCharged(new NonRetryableError(`OpenAI recusou a requisição (${response.status}): ${json.error?.message ?? 'sem detalhe'}`, 'openai_4xx'))
       }
-      throw new Error(`OpenAI retornou ${response.status}`)
+      // 429 = limite de taxa, recusado antes de processar (sem cobrança); 408/5xx = ambíguo (pode ter processado)
+      const err = new Error(`OpenAI retornou ${response.status}`)
+      throw response.status === 429 ? markNotCharged(err) : err
     }
     return parseResponsesResult(json, input.model)
   }
