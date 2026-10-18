@@ -1,4 +1,4 @@
--- ROLLBACK do Super Agente de Cotações (migrations 093–096). NÃO é uma migration: só roda sob decisão manual.
+-- ROLLBACK do Super Agente de Cotações (migrations 093–097; a 097 só fixa search_path e some junto com as funções). NÃO é uma migration: só roda sob decisão manual.
 -- PASSO 0 (não destrutivo, prefira este): colocar todas as unidades em 'off' e definir QUOTE_TEAM_ENABLED=false.
 --     update public.units set quote_ai_team_mode = 'off';
 -- Este script REMOVE as tabelas do módulo (e os dados de análises de cotação que existirem nelas). Exporte antes, se precisar.
