@@ -4,6 +4,10 @@
 --    opcionais (hora mínima, deslocamento, markup, impostos, arredondamento). NENHUM valor fica no código e
 --    nenhuma regra é inventada: campo nulo = regra inexistente (a função de custos só aplica o que estiver configurado).
 --    Técnico NUNCA lê esta tabela (RLS sem policy para ele).
+-- Segurança de aplicação: falha rápido em vez de travar atrás de transação longa (ex.: sync da Facil-IT) e nunca roda sem limite.
+set local lock_timeout = '5s';
+set local statement_timeout = '60s';
+
 
 alter table public.units
   add column if not exists quote_ai_team_mode text not null default 'off'

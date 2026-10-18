@@ -45,10 +45,15 @@ export type JobPatch = Partial<Pick<QuoteJobRow, 'status' | 'stage' | 'attempt_c
 
 export interface JobStore extends BudgetStore {
   get(jobId: string): Promise<QuoteJobRow | null>
+  findByIdempotencyKey(key: string): Promise<QuoteJobRow | null>
+  /** Quantos jobs a ordem abriu desde `sinceMs` (trava de reanálise em loop). */
+  countForAppointmentSince(appointmentId: string, sinceMs: number): Promise<number>
+  /** Reservas presas (job terminado/sem worker há muito) viram gasto no pior caso. Devolve quantos jobs ajustou. */
+  reconcileBudgets(staleMinutes?: number): Promise<number>
   /** Cria o job; se a chave de idempotência já existe, devolve o existente (created=false) — nunca duplica. */
   insert(job: NewQuoteJob): Promise<{ job: QuoteJobRow; created: boolean }>
   claim(jobId: string, worker: string, leaseSeconds: number): Promise<QuoteJobRow | null>
-  claimNext(worker: string, leaseSeconds: number): Promise<QuoteJobRow | null>
+  claimNext(worker: string, leaseSeconds: number, maxConcurrent?: number): Promise<QuoteJobRow | null>
   update(jobId: string, patch: JobPatch): Promise<void>
 }
 
@@ -59,6 +64,21 @@ export class SupabaseJobStore implements JobStore {
   async get(jobId: string) {
     const { data } = await this.db.from('quote_analysis_jobs').select('*').eq('id', jobId).maybeSingle()
     return (data as QuoteJobRow | null) ?? null
+  }
+
+  async findByIdempotencyKey(key: string) {
+    const { data } = await this.db.from('quote_analysis_jobs').select('*').eq('idempotency_key', key).maybeSingle()
+    return (data as QuoteJobRow | null) ?? null
+  }
+
+  async countForAppointmentSince(appointmentId: string, sinceMs: number) {
+    const { count } = await this.db.from('quote_analysis_jobs').select('id', { count: 'exact', head: true }).eq('appointment_id', appointmentId).gte('created_at', new Date(sinceMs).toISOString())
+    return count ?? 0
+  }
+
+  async reconcileBudgets(staleMinutes = 10) {
+    const { data } = await this.db.rpc('reconcile_quote_budgets', { p_stale_minutes: staleMinutes })
+    return typeof data === 'number' ? data : 0
   }
 
   async insert(job: NewQuoteJob) {
@@ -75,8 +95,8 @@ export class SupabaseJobStore implements JobStore {
     return ((data as QuoteJobRow[] | null) ?? [])[0] ?? null
   }
 
-  async claimNext(worker: string, leaseSeconds: number) {
-    const { data } = await this.db.rpc('claim_next_quote_job', { p_worker: worker, p_lease_seconds: leaseSeconds })
+  async claimNext(worker: string, leaseSeconds: number, maxConcurrent = 3) {
+    const { data } = await this.db.rpc('claim_next_quote_job', { p_worker: worker, p_lease_seconds: leaseSeconds, p_max_concurrent: maxConcurrent })
     return ((data as QuoteJobRow[] | null) ?? [])[0] ?? null
   }
 
@@ -114,6 +134,29 @@ export class InMemoryJobStore implements JobStore {
     return job ? { ...job } : null
   }
 
+  async findByIdempotencyKey(key: string) {
+    const job = [...this.jobs.values()].find((j) => j.idempotency_key === key)
+    return job ? { ...job } : null
+  }
+
+  async countForAppointmentSince(appointmentId: string, sinceMs: number) {
+    return [...this.jobs.values()].filter((j) => j.appointment_id === appointmentId && Date.parse(j.created_at) >= sinceMs).length
+  }
+
+  async reconcileBudgets(staleMinutes = 10) {
+    let n = 0
+    for (const job of this.jobs.values()) {
+      const idle = this.now() - Date.parse(job.updated_at) > staleMinutes * 60_000
+      const noWorker = job.status !== 'running' || !job.locked_until || Date.parse(job.locked_until) < this.now()
+      if (job.reserved_usd > 0 && idle && noWorker) {
+        job.spent_usd += job.reserved_usd
+        job.reserved_usd = 0
+        n += 1
+      }
+    }
+    return n
+  }
+
   async insert(job: NewQuoteJob) {
     const existing = [...this.jobs.values()].find((j) => j.idempotency_key === job.idempotency_key)
     if (existing) return { job: { ...existing }, created: false }
@@ -133,6 +176,9 @@ export class InMemoryJobStore implements JobStore {
   }
 
   private take(job: QuoteJobRow, worker: string, leaseSeconds: number) {
+    // reserva que ficou presa (chamada que morreu) é cobrada como gasto no pior caso — o teto nunca é furado
+    job.spent_usd += job.reserved_usd
+    job.reserved_usd = 0
     job.status = 'running'
     job.locked_by = worker
     job.locked_until = this.iso(this.now() + leaseSeconds * 1000)
@@ -145,7 +191,9 @@ export class InMemoryJobStore implements JobStore {
     return job && this.lockable(job) ? this.take(job, worker, leaseSeconds) : null
   }
 
-  async claimNext(worker: string, leaseSeconds: number) {
+  async claimNext(worker: string, leaseSeconds: number, maxConcurrent = 3) {
+    const running = [...this.jobs.values()].filter((j) => j.status === 'running' && j.locked_until && Date.parse(j.locked_until) > this.now()).length
+    if (running >= maxConcurrent) return null
     const next = [...this.jobs.values()].filter((j) => this.lockable(j) && Date.parse(j.next_run_at) <= this.now()).sort((a, b) => Date.parse(a.next_run_at) - Date.parse(b.next_run_at))[0]
     return next ? this.take(next, worker, leaseSeconds) : null
   }
@@ -161,7 +209,7 @@ export class InMemoryJobStore implements JobStore {
 
   async reserve(jobId: string, usd: number) {
     const job = this.jobs.get(jobId)
-    if (!job || usd < 0) return false
+    if (!job || usd < 0 || job.status !== 'running') return false
     if (job.spent_usd + job.reserved_usd + usd > job.budget_usd) return false
     if (this.monthSpend(job.org_id) + usd > this.monthlyCapUsd) return false
     job.reserved_usd += usd

@@ -44,6 +44,8 @@ export const diagnosisSchema = z
     }
     for (const [i, e] of value.evidence.entries()) {
       if (e.photo_refs.some((ref) => ref >= value.photos_analyzed)) ctx.addIssue({ code: 'custom', message: 'Evidência aponta para uma foto que não foi analisada.', path: ['evidence', i, 'photo_refs'] })
+      // Fato "visível" precisa citar a(s) foto(s) que o sustentam; senão é hipótese, não evidência.
+      if (e.photo_refs.length === 0) ctx.addIssue({ code: 'custom', message: 'Evidência visual precisa apontar para ao menos uma foto (senão é hipótese).', path: ['evidence', i, 'photo_refs'] })
     }
   })
 export type Diagnosis = z.infer<typeof diagnosisSchema>

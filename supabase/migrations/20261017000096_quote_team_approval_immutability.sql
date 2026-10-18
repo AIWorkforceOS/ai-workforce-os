@@ -1,5 +1,9 @@
 -- Super Agente de Cotações — Fase 2 / migration 096 (ADITIVA; NÃO aplicada até autorização).
 -- Versão APROVADA nunca é sobrescrita nem apagada. Aprovação técnica ≠ comercial (colunas separadas).
+-- Segurança de aplicação: falha rápido em vez de travar atrás de transação longa (ex.: sync da Facil-IT) e nunca roda sem limite.
+set local lock_timeout = '5s';
+set local statement_timeout = '60s';
+
 
 -- Rascunho aprovado: só o estado COMERCIAL pode mudar (admin), e approved -> superseded quando uma revisão nova é aprovada.
 create or replace function public.quote_drafts_guard_approved() returns trigger

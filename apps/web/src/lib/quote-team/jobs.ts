@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { QUOTE_DEFAULT_BUDGET_USD, STANDARD_PHOTO_TARGET, type QuoteTeamMode } from './config'
+import { MAX_JOBS_PER_APPOINTMENT_PER_DAY, QUOTE_DEFAULT_BUDGET_USD, STANDARD_PHOTO_TARGET, type QuoteTeamMode } from './config'
 import type { JobStore, QuoteJobRow } from './job-store'
 
 /** Chave de idempotência: mesma ordem + mesmas notas + mesmas mídias registradas + mesma regra comercial ⇒ mesmo job (nunca análise duplicada). `nonce` só para reanálise pedida de propósito. */
@@ -54,7 +54,7 @@ export type EnqueueInput = {
 }
 
 export type EnqueueResult =
-  | { status: 'skipped'; reason: 'mode_off' | 'not_quote' | 'no_content' | 'pipeline_not_ready' }
+  | { status: 'skipped'; reason: 'mode_off' | 'not_quote' | 'no_content' | 'pipeline_not_ready' | 'rate_limited' }
   | { status: 'enqueued' | 'existing'; job: QuoteJobRow }
 
 export async function enqueueQuoteJob(deps: { store: JobStore; pipelineReady: boolean }, input: EnqueueInput): Promise<EnqueueResult> {
@@ -65,6 +65,12 @@ export async function enqueueQuoteJob(deps: { store: JobStore; pipelineReady: bo
 
   const policy = decidePhotoPolicy({ photoCount: input.mediaUrls.length, exceptionReason: input.photoExceptionReason })
   const key = buildIdempotencyKey({ appointmentId: input.appointmentId, notes: input.notes, mediaUrls: input.mediaUrls, rateCardId: input.rateCardId, nonce: input.nonce })
+  // Já existe análise com exatamente esta entrada? devolve a mesma (reenvio/salvar duas vezes nunca duplica nem gasta de novo).
+  const existing = await deps.store.findByIdempotencyKey(key)
+  if (existing) return { status: 'existing', job: existing }
+  // Trava contra reanálise em loop: no máximo N análises novas por ordem por dia.
+  if ((await deps.store.countForAppointmentSince(input.appointmentId, Date.now() - 24 * 3600 * 1000)) >= MAX_JOBS_PER_APPOINTMENT_PER_DAY) return { status: 'skipped', reason: 'rate_limited' }
+
   const { job, created } = await deps.store.insert({
     org_id: input.unit.org_id,
     unit_id: input.unit.id,

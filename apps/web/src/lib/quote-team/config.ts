@@ -37,3 +37,29 @@ export function effectiveQuoteTeamMode(unitMode: string | null | undefined, env:
   if (isQuoteTeamKillSwitchOn(env)) return 'off'
   return unitMode === 'shadow' || unitMode === 'live' ? unitMode : 'off'
 }
+
+/** Quantas análises (jobs) novas uma mesma ordem pode abrir por dia — trava contra reanálise em loop (cada job tem o seu teto, mas o mês também conta). */
+export const MAX_JOBS_PER_APPOINTMENT_PER_DAY = 3
+/** Quantos jobs podem rodar ao mesmo tempo (o cron por minuto pode sobrepor invocações). */
+export const MAX_CONCURRENT_JOBS = 3
+
+/**
+ * Modelos por etapa — SEMPRE configuráveis e fixados só depois do teste comparativo (decisão do Vinicius): nada é trocado
+ * em produção sem teste e rollback. Padrões = perfil "Padrão" a testar. Override por variável de ambiente.
+ */
+export type QuoteModelStage = 'diagnosis' | 'materials' | 'pricing' | 'labor' | 'audit'
+const DEFAULT_MODELS: Record<QuoteModelStage, string> = {
+  diagnosis: 'gpt-6.1-sol',
+  materials: 'gpt-6-luna',
+  pricing: 'gpt-6-luna',
+  labor: 'gpt-6-luna',
+  audit: 'gpt-6-luna',
+}
+export function quoteModelFor(stage: QuoteModelStage, env: Record<string, string | undefined> = process.env): string {
+  return env[`QUOTE_MODEL_${stage.toUpperCase()}`]?.trim() || DEFAULT_MODELS[stage]
+}
+
+/** Limites do diagnóstico visual. */
+export const DIAGNOSIS_MAX_PHOTOS = 8
+export const DIAGNOSIS_IMAGE_MAX_SIDE = 1024
+export const DIAGNOSIS_MAX_OUTPUT_TOKENS = 2500

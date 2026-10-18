@@ -2,6 +2,13 @@ import { describe, expect, it, vi } from 'vitest'
 import { BudgetGuard, costUsd, worstCaseUsd, WEB_SEARCH_CALL_USD } from '../budget'
 import { InMemoryJobStore, type NewQuoteJob } from '../job-store'
 
+/** Só job em EXECUÇÃO (com lease) pode reservar orçamento — igual ao banco. */
+async function running(store: InMemoryJobStore, over: Partial<NewQuoteJob> = {}) {
+  const { job } = await store.insert(newJob(over))
+  await store.claim(job.id, 'w', 300)
+  return job
+}
+
 const newJob = (over: Partial<NewQuoteJob> = {}): NewQuoteJob => ({
   org_id: 'org-1', unit_id: 'u', appointment_id: 'a', idempotency_key: 'k' + Math.random(), trigger_source: 'save', mode: 'shadow',
   input_snapshot: {}, photo_count: 0, photo_exception_reason: null, budget_usd: 0.6, created_by: null, ...over,
@@ -24,7 +31,7 @@ describe('custo por modelo', () => {
 describe('BudgetGuard — reservar antes de gastar', () => {
   it('chamada que cabe: reserva, executa, liquida com o custo REAL e devolve o resto', async () => {
     const store = new InMemoryJobStore()
-    const { job } = await store.insert(newJob())
+    const job = await running(store)
     const guard = new BudgetGuard(store, job.id)
     const out = await guard.run({ label: 'diag', worstCaseUsd: 0.2, call: async () => ({ result: 'ok', actualUsd: 0.05, tokensIn: 100, tokensOut: 50 }) })
     expect(out.ok).toBe(true)
@@ -36,7 +43,7 @@ describe('BudgetGuard — reservar antes de gastar', () => {
 
   it('NÃO inicia a chamada se o pior caso estourar o teto da cotação (US$ 0,60)', async () => {
     const store = new InMemoryJobStore()
-    const { job } = await store.insert(newJob())
+    const job = await running(store)
     const guard = new BudgetGuard(store, job.id)
     const call = vi.fn()
     await guard.run({ label: 'a', worstCaseUsd: 0.4, call: async () => ({ result: 1, actualUsd: 0.4, tokensIn: 0, tokensOut: 0 }) })
@@ -47,21 +54,21 @@ describe('BudgetGuard — reservar antes de gastar', () => {
 
   it('reservas de chamadas em andamento contam (duas ao mesmo tempo não estouram juntas)', async () => {
     const store = new InMemoryJobStore()
-    const { job } = await store.insert(newJob())
+    const job = await running(store)
     expect(await store.reserve(job.id, 0.35)).toBe(true)
     expect(await store.reserve(job.id, 0.3)).toBe(false)
   })
 
   it('teto MENSAL da empresa (US$ 50) também bloqueia', async () => {
     const store = new InMemoryJobStore(() => Date.now(), 0.1)
-    const { job } = await store.insert(newJob())
+    const job = await running(store)
     const guard = new BudgetGuard(store, job.id)
     expect(await guard.run({ label: 'x', worstCaseUsd: 0.2, call: async () => ({ result: 1, actualUsd: 0, tokensIn: 0, tokensOut: 0 }) })).toEqual({ ok: false, skipped: 'budget' })
   })
 
   it('etapa OPCIONAL para em 80% do teto; obrigatória ainda roda', async () => {
     const store = new InMemoryJobStore()
-    const { job } = await store.insert(newJob())
+    const job = await running(store)
     const guard = new BudgetGuard(store, job.id)
     await guard.run({ label: 'gasto', worstCaseUsd: 0.5, call: async () => ({ result: 1, actualUsd: 0.5, tokensIn: 0, tokensOut: 0 }) })
     expect(await guard.run({ label: 'extra', worstCaseUsd: 0.01, optional: true, call: async () => ({ result: 1, actualUsd: 0.01, tokensIn: 0, tokensOut: 0 }) })).toEqual({ ok: false, skipped: 'soft_limit' })
@@ -70,7 +77,7 @@ describe('BudgetGuard — reservar antes de gastar', () => {
 
   it('erro na chamada devolve a reserva (não trava orçamento)', async () => {
     const store = new InMemoryJobStore()
-    const { job } = await store.insert(newJob())
+    const job = await running(store)
     const guard = new BudgetGuard(store, job.id)
     const out = await guard.run({ label: 'falha', worstCaseUsd: 0.3, call: async () => { throw new Error('openai fora do ar') } })
     expect(out.ok).toBe(false)
@@ -79,7 +86,7 @@ describe('BudgetGuard — reservar antes de gastar', () => {
 
   it('modelo desconhecido (pior caso infinito) nunca é chamado', async () => {
     const store = new InMemoryJobStore()
-    const { job } = await store.insert(newJob())
+    const job = await running(store)
     const call = vi.fn()
     expect(await new BudgetGuard(store, job.id).run({ label: 'x', worstCaseUsd: Number.POSITIVE_INFINITY, call })).toEqual({ ok: false, skipped: 'unknown_model' })
     expect(call).not.toHaveBeenCalled()

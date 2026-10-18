@@ -27,11 +27,13 @@ export async function GET(request: Request) {
   const worker = `cron-${randomUUID().slice(0, 8)}`
   const startedAt = Date.now()
   const outcomes: Record<string, number> = {}
+  // Reservas presas (chamada que morreu no meio) viram gasto no pior caso: o orçamento nunca vaza nem é subestimado.
+  const reconciled = await store.reconcileBudgets().catch(() => 0)
 
   for (let i = 0; i < 5 && Date.now() - startedAt < 200_000; i += 1) {
     const outcome = await runQuoteJob({ store, handlers: QUOTE_STAGE_HANDLERS, worker, timeBudgetMs: 200_000 - (Date.now() - startedAt) }, null)
     if (outcome.kind === 'not_claimed') break
     outcomes[outcome.kind] = (outcomes[outcome.kind] ?? 0) + 1
   }
-  return NextResponse.json({ ran: outcomes })
+  return NextResponse.json({ ran: outcomes, reconciled })
 }

@@ -1,6 +1,10 @@
 -- Super Agente de Cotações — Fase 2 / migration 095 (ADITIVA; NÃO aplicada até autorização).
 -- Infra: limites de orçamento por empresa, cache de produtos (dado PÚBLICO), e funções atômicas de fila e orçamento
 -- (executadas só pelo service role: revoke de public/anon/authenticated).
+-- Segurança de aplicação: falha rápido em vez de travar atrás de transação longa (ex.: sync da Facil-IT) e nunca roda sem limite.
+set local lock_timeout = '5s';
+set local statement_timeout = '60s';
+
 
 -- Limites por empresa (editáveis só por super admin). Sem linha = padrão do piloto (US$ 0,60 por cotação / US$ 50 por mês).
 create table if not exists public.quote_org_limits (
@@ -33,14 +37,29 @@ create table if not exists public.product_price_cache (
 create index if not exists product_price_cache_expiry_idx on public.product_price_cache (expires_at);
 alter table public.product_price_cache enable row level security;
 
--- Pegar o próximo job (lease; vários workers nunca pegam o mesmo)
-create or replace function public.claim_next_quote_job(p_worker text, p_lease_seconds integer default 300)
+-- Pegar o próximo job (lease; vários workers nunca pegam o mesmo). Regras de proteção:
+--  * lock consultivo serializa as tomadas (evita corrida na contagem de concorrência);
+--  * no máximo p_max_concurrent jobs rodando ao mesmo tempo (cron por minuto pode sobrepor invocações);
+--  * ao tomar um job, qualquer reserva de orçamento que ficou presa (chamada que morreu/estourou o tempo) é COBRADA como gasto
+--    no pior caso — assim o teto de US$ 0,60 nunca é furado por uma chamada cujo custo real não foi registrado.
+create or replace function public.claim_next_quote_job(p_worker text, p_lease_seconds integer default 300, p_max_concurrent integer default 3)
 returns setof public.quote_analysis_jobs
 language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_running integer;
 begin
+  perform pg_advisory_xact_lock(hashtext('quote_claim'));
+
+  select count(*) into v_running
+    from public.quote_analysis_jobs
+   where status = 'running' and locked_until is not null and locked_until > now();
+  if v_running >= p_max_concurrent then
+    return;
+  end if;
+
   return query
   with next as (
     select j.id
@@ -56,14 +75,15 @@ begin
      set status = 'running',
          locked_by = p_worker,
          locked_until = now() + make_interval(secs => p_lease_seconds),
-         started_at = coalesce(q.started_at, now())
+         started_at = coalesce(q.started_at, now()),
+         spent_usd = q.spent_usd + q.reserved_usd,
+         reserved_usd = 0
     from next
    where q.id = next.id
   returning q.*;
 end;
 $$;
 
--- Pegar UM job específico (a tela dispara logo após salvar), com a mesma garantia de lease
 create or replace function public.claim_quote_job(p_job_id uuid, p_worker text, p_lease_seconds integer default 300)
 returns setof public.quote_analysis_jobs
 language plpgsql
@@ -84,7 +104,9 @@ begin
      set status = 'running',
          locked_by = p_worker,
          locked_until = now() + make_interval(secs => p_lease_seconds),
-         started_at = coalesce(q.started_at, now())
+         started_at = coalesce(q.started_at, now()),
+         spent_usd = q.spent_usd + q.reserved_usd,
+         reserved_usd = 0
     from target
    where q.id = target.id
   returning q.*;
@@ -105,6 +127,9 @@ as $$
 $$;
 
 -- RESERVAR orçamento ANTES de gastar (atômico). Devolve true só se couber no teto da cotação E no teto mensal da empresa.
+--  * trava a linha do job (duas chamadas do MESMO job nunca reservam juntas);
+--  * lock consultivo por empresa (dois jobs da MESMA empresa não passam juntos pelo teto mensal);
+--  * só reserva para job em execução (status running) — job parado/terminado não gasta.
 create or replace function public.reserve_quote_budget(p_job_id uuid, p_amount numeric)
 returns boolean
 language plpgsql
@@ -112,6 +137,7 @@ security definer
 set search_path = public
 as $$
 declare
+  v_org uuid;
   v_job public.quote_analysis_jobs%rowtype;
   v_monthly_cap numeric;
   v_month_spend numeric;
@@ -120,8 +146,14 @@ begin
     return false;
   end if;
 
+  select org_id into v_org from public.quote_analysis_jobs where id = p_job_id;
+  if v_org is null then
+    return false;
+  end if;
+  perform pg_advisory_xact_lock(hashtext('quote_budget:' || v_org::text));
+
   select * into v_job from public.quote_analysis_jobs where id = p_job_id for update;
-  if not found then
+  if not found or v_job.status <> 'running' then
     return false;
   end if;
 
@@ -159,13 +191,40 @@ as $$
    where id = p_job_id;
 $$;
 
+-- RECONCILIAÇÃO (chamada pelo cron): reserva que ficou presa em job terminado ou sem worker há mais de N minutos vira gasto
+-- (pior caso). Mantém o teto mensal honesto: nunca "vaza" orçamento e nunca subestima o que pode ter sido cobrado.
+create or replace function public.reconcile_quote_budgets(p_stale_minutes integer default 10)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_count integer;
+begin
+  with stale as (
+    update public.quote_analysis_jobs
+       set spent_usd = spent_usd + reserved_usd,
+           reserved_usd = 0
+     where reserved_usd > 0
+       and updated_at < now() - make_interval(mins => p_stale_minutes)
+       and (status not in ('running') or locked_until is null or locked_until < now())
+    returning 1
+  )
+  select count(*) into v_count from stale;
+  return v_count;
+end;
+$$;
+
 -- Só o service role executa estas funções (nunca técnico/admin pelo navegador)
-revoke all on function public.claim_next_quote_job(text, integer) from public, anon, authenticated;
+revoke all on function public.claim_next_quote_job(text, integer, integer) from public, anon, authenticated;
+revoke all on function public.reconcile_quote_budgets(integer) from public, anon, authenticated;
 revoke all on function public.claim_quote_job(uuid, text, integer) from public, anon, authenticated;
 revoke all on function public.quote_org_month_spend(uuid, timestamptz) from public, anon, authenticated;
 revoke all on function public.reserve_quote_budget(uuid, numeric) from public, anon, authenticated;
 revoke all on function public.settle_quote_budget(uuid, numeric, numeric, bigint, bigint) from public, anon, authenticated;
-grant execute on function public.claim_next_quote_job(text, integer) to service_role;
+grant execute on function public.claim_next_quote_job(text, integer, integer) to service_role;
+grant execute on function public.reconcile_quote_budgets(integer) to service_role;
 grant execute on function public.claim_quote_job(uuid, text, integer) to service_role;
 grant execute on function public.quote_org_month_spend(uuid, timestamptz) to service_role;
 grant execute on function public.reserve_quote_budget(uuid, numeric) to service_role;

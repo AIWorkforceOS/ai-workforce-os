@@ -4,6 +4,18 @@
 --   ADMIN    (técnico NUNCA lê, nem por API direta): quote_analysis_jobs (custos de IA), quote_commercial, quote_events (visibility='admin')
 -- Valores monetários em MICRO-DÓLARES (bigint): sem float, sem arredondar no meio do cálculo.
 -- quote_labor_plan NÃO tem nenhuma coluna monetária (só técnicos, horas e horas-homem).
+-- Segurança de aplicação: falha rápido em vez de travar atrás de transação longa (ex.: sync da Facil-IT) e nunca roda sem limite.
+set local lock_timeout = '5s';
+set local statement_timeout = '60s';
+
+
+create or replace function public.quote_set_updated_at() returns trigger
+language plpgsql as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
 
 -- ---------------------------------------------------------------
 -- Trabalhos de análise (fila assíncrona, idempotente, retomável) — ADMIN lê; técnico acompanha só pela rota de servidor

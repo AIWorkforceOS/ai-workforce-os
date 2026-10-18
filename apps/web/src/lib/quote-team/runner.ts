@@ -1,4 +1,4 @@
-import { LEASE_SECONDS, MAX_ATTEMPTS, QUOTE_STAGES, RETRY_BACKOFF_MS, RUNNER_TIME_BUDGET_MS, STAGE_TIMEOUT_MS, type QuoteStage } from './config'
+import { LEASE_SECONDS, MAX_ATTEMPTS, MAX_CONCURRENT_JOBS, QUOTE_STAGES, RETRY_BACKOFF_MS, RUNNER_TIME_BUDGET_MS, STAGE_TIMEOUT_MS, type QuoteStage } from './config'
 import type { PendingItem } from './contracts'
 import { BudgetGuard } from './budget'
 import type { JobStore, QuoteJobRow } from './job-store'
@@ -79,7 +79,7 @@ export async function runQuoteJob(deps: RunnerDeps, jobId: string | null): Promi
   const lease = deps.leaseSeconds ?? LEASE_SECONDS
   const startedAt = now()
 
-  const job = jobId ? await deps.store.claim(jobId, deps.worker, lease) : await deps.store.claimNext(deps.worker, lease)
+  const job = jobId ? await deps.store.claim(jobId, deps.worker, lease) : await deps.store.claimNext(deps.worker, lease, MAX_CONCURRENT_JOBS)
   if (!job) return { kind: 'not_claimed' }
 
   const stepResults: Record<string, unknown> = { ...job.step_results }
@@ -146,6 +146,14 @@ export async function runQuoteJob(deps: RunnerDeps, jobId: string | null): Promi
       return { kind: 'needs_input', job: await reload() }
     }
     if (outcome.kind === 'budget_exhausted') budgetExhausted = true
+
+    // Custo real passou do previsto (ex.: imagem maior que a estimada)? Para as etapas de IA agora — o teto manda.
+    const snap = await deps.store.snapshot(job.id)
+    if (snap && snap.spent + snap.reserved >= snap.budget && !budgetExhausted) {
+      budgetExhausted = true
+      pending.push({ code: 'budget_reached', message_pt: 'Orçamento de IA da cotação atingido: as próximas etapas de IA não foram executadas. Complete manualmente o que faltar.' })
+      await deps.store.update(job.id, { pending_items: pending })
+    }
   }
 
   await deps.store.update(job.id, {

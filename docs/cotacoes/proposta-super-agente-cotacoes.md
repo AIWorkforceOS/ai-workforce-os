@@ -351,3 +351,9 @@ Relatório semanal com esses números durante o modo sombra; decisão de ligar p
 - 41 testes novos (orçamento, idempotência, runner, visibilidade, contratos, acesso, gancho). Suíte completa 1440 passando; typecheck, lint e build OK.
 
 **Para aplicar (só com sua autorização):** `apply_migration` 093 → 096 em ordem; depois cadastrar a regra comercial da Mawi (US$ 40 / US$ 20) como **dado** pela tela admin (Fase 5/6) — não vai em migration. Depois da Fase 3, ligar a unidade Mawi Pro em `shadow`.
+
+
+---
+
+## 13. FASE 3 — preparada em commits locais (18/10/2026) — mocks e testes; sem chamada paga, sem aplicar, sem deploy
+Diagnóstico visual multimodal com várias fotos (etapa 1), em `lib/quote-team/diagnosis/`: preparação de fotos (EXIF, 1024 px, só do nosso Storage), estimativa conservadora de tokens de imagem (exemplos oficiais da documentação conferidos em teste), prompt com regras inegociáveis (fatos × hipóteses, nunca inventar marca/modelo/part number, sem foto ⇒ sem diagnóstico visual, injeção de prompt tratada como dado), esquema estrito (Structured Outputs) gerado do contrato Zod, cliente da Responses API (**escrito, não executado**), travas determinísticas pós-modelo (part number só se está na etiqueta lida) e o `StageHandler` com reserva de orçamento. **Não está registrado** em `handlers.ts` (o pipeline só liga com as 6 etapas). Detalhes de verificação e plano de teste real: `verificacoes-pre-aplicacao.md` e `plano-teste-fotos-reais.md`.
