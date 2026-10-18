@@ -315,10 +315,12 @@ describe('rede voltou / sincronização pendurada', () => {
     let call = 0
     listPendingSaves.mockImplementation(() => (call++ === 0 ? new Promise(() => {}) : Promise.resolve([])))
     const { drainPendingSaves } = await import('../offline-sync')
-    void drainPendingSaves()
+    const first = drainPendingSaves()
     vi.setSystemTime(Date.now() + 6 * 60_000)
     const second = await drainPendingSaves()
     expect(second.remaining).toBe(0)
+    // a execução abandonada não pode virar rejeição (AbortError do Web Lock tomado): quem a esperava recebe o resultado da nova
+    await expect(first).resolves.toMatchObject({ remaining: 0 })
   })
 })
 

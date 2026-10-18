@@ -26,7 +26,7 @@ begin
   end loop;
 
   -- plano de mão de obra NÃO pode ter coluna monetária
-  if exists (select 1 from information_schema.columns where table_schema='public' and table_name='quote_labor_plan' and column_name ~* '(rate|price|cost|usd|pay|bill|margin|markup|amount|dollar)') then
+  if exists (select 1 from information_schema.columns where table_schema='public' and table_name='quote_labor_plan' and column_name ~* '(rate|price|cost|usd|pay|margin|markup|amount|dollar|micros|billed|billing)') then
     raise exception 'FAIL: quote_labor_plan tem coluna monetária';
   end if;
   -- default seguro: nenhuma unidade com o módulo ligado

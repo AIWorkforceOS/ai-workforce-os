@@ -225,10 +225,18 @@ export function drainPendingSaves(options: DrainOptions = {}): Promise<DrainResu
     // (a antiga é considerada morta; envios são idempotentes, então o pior caso é reenviar o mesmo arquivo).
     const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
     if (!locks?.request) return drainOnce(options)
-    const result = await locks.request('alizo-offline-drain', stale ? { steal: true } : { ifAvailable: true }, async (lock) => {
-      if (!lock) return null
-      return drainOnce(options)
-    })
+    let result: DrainResult | null
+    try {
+      result = await locks.request('alizo-offline-drain', stale ? { steal: true } : { ifAvailable: true }, async (lock) => {
+        if (!lock) return null
+        return drainOnce(options)
+      })
+    } catch (error) {
+      // Quando OUTRA execução toma o lock (`steal`), o navegador rejeita a promessa desta com AbortError. Isso é o fluxo normal
+      // de "abandonei a execução travada": não é erro para ninguém — quem esperava por esta recebe o resultado da execução nova.
+      if ((error as { name?: string } | null)?.name === 'AbortError' && inFlight && inFlight !== current) return inFlight
+      throw error
+    }
     if (result) return result
     return { synced: 0, failed: 0, remaining: (await listPendingSaves()).length }
   }

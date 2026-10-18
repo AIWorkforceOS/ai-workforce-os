@@ -27,7 +27,7 @@ export async function GET(request: Request) {
   const worker = `cron-${randomUUID().slice(0, 8)}`
   const startedAt = Date.now()
   const outcomes: Record<string, number> = {}
-  // Reservas presas (chamada que morreu no meio) viram gasto no pior caso: o orçamento nunca vaza nem é subestimado.
+  // Reservas presas (chamada que morreu no meio) viram "não confirmadas": continuam contando nos tetos, sem virar gasto real.
   const reconciled = await store.reconcileBudgets().catch(() => 0)
 
   for (let i = 0; i < 5 && Date.now() - startedAt < 200_000; i += 1) {

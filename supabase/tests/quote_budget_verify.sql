@@ -3,7 +3,7 @@
 -- Em sucesso a mensagem de erro final começa com "VERIFY_OK" e traz o relatório; qualquer falha começa com "FAIL:".
 do $verify$
 declare
-  v_org uuid;
+  v_org uuid; v_unit uuid; v_appt uuid;
   v_job1 uuid; v_job2 uuid; v_job3 uuid;
   r1 uuid; r2 uuid; r3 uuid; r4 uuid;
   v_ok boolean;
@@ -13,16 +13,17 @@ declare
   v_denied boolean;
   rep record;
 begin
-  select id into v_org from public.organizations limit 1;
-  if v_org is null then raise exception 'FAIL: sem organização para o teste'; end if;
+  -- usa uma ordem REAL só como âncora das chaves estrangeiras (nada é gravado nela; tudo é desfeito)
+  select u.org_id, a.unit_id, a.id into v_org, v_unit, v_appt from public.appointments a join public.units u on u.id = a.unit_id where u.org_id is not null limit 1;
+  if v_org is null then raise exception 'FAIL: sem ordem/unidade para ancorar o teste'; end if;
 
   -- jobs de teste (em execução, lease válido)
   insert into public.quote_analysis_jobs (id, org_id, unit_id, appointment_id, status, locked_until, idempotency_key) values
-    (uuid_generate_v4(), v_org, uuid_generate_v4(), uuid_generate_v4(), 'running', now() + interval '5 minutes', 'v-1') returning id into v_job1;
+    (uuid_generate_v4(), v_org, v_unit, v_appt, 'running', now() + interval '5 minutes', 'v-1') returning id into v_job1;
   insert into public.quote_analysis_jobs (id, org_id, unit_id, appointment_id, status, locked_until, idempotency_key) values
-    (uuid_generate_v4(), v_org, uuid_generate_v4(), uuid_generate_v4(), 'running', now() + interval '5 minutes', 'v-2') returning id into v_job2;
+    (uuid_generate_v4(), v_org, v_unit, v_appt, 'running', now() + interval '5 minutes', 'v-2') returning id into v_job2;
   insert into public.quote_analysis_jobs (id, org_id, unit_id, appointment_id, status, locked_until, idempotency_key) values
-    (uuid_generate_v4(), v_org, uuid_generate_v4(), uuid_generate_v4(), 'running', now() + interval '5 minutes', 'v-3') returning id into v_job3;
+    (uuid_generate_v4(), v_org, v_unit, v_appt, 'running', now() + interval '5 minutes', 'v-3') returning id into v_job3;
 
   -- 1) reservar devolve id; liquidar é idempotente
   r1 := public.reserve_quote_budget(v_job1, 0.20);

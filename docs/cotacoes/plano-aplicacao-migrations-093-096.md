@@ -11,7 +11,7 @@ Só **1 coluna constante** em `units` (5 linhas, sem reescrever tabela). Nada em
 | 1 | Autorização específica de aplicar | mensagem do Vinicius | Vinicius |
 | 2 | Plano da Vercel confirmado como Pro (cron por minuto só existe no Pro; no Hobby o deploy do `vercel.json` falha) | Vercel → Settings → Billing | Vinicius |
 | 3 | Janela com pouco movimento (sem sync Facil-IT rodando; cron dela é 6×/dia) | olhar horários em `vercel.json` | combinado |
-| 4 | Código local deployado **depois** das migrations (o código novo já tolera tabelas ausentes? NÃO — por isso a ordem é migrations → deploy) | seção 6 | assistente |
+| 4 | Ordem: migrations primeiro, deploy depois. (O código novo é inerte e não toca o banco enquanto `handlers.ts` estiver vazio, então a ordem inversa também não quebraria nada — ver seção 10) | seção 6 | assistente |
 
 ## 2. Backup (obrigatório antes de aplicar)
 O projeto Supabase está no plano Free (sem backup nativo). Como as migrations são aditivas, o risco real é baixo, mas o backup é barato:
@@ -71,3 +71,19 @@ Efeito prático: falhas repetidas podem consumir o teto **preventivamente** (3 t
 3. Qualquer chamada paga adicional à OpenAI (novos testes com fotos de defeitos reais).
 4. Fase 4 (ligar etapas além do diagnóstico, modo sombra) e a escolha definitiva do modelo.
 5. Supabase Pro / backup nativo, se quiser.
+
+## 10. Evidências colhidas em 18/10/2026 (sem alterar nada em produção)
+**Backup recuperável.** O cron `/api/cron/db-backup` roda todo dia às 06:00 UTC e gravou os dias 11 a 18/10 (10 arquivos/dia, ~1,0 MB). Baixei o backup de **18/10** e abri os 10 arquivos: JSON válido e contagens **idênticas** ao banco (organizations 4, units 5, employees 4, customers 10, appointments 121, service_records 237, service_record_payments 2, invoices 8, financial_records 4, facilit_work_orders 89). Limites honestos: é backup **lógico** (linhas de 10 tabelas, sem credenciais de propósito, sem Storage/fotos), fica no **mesmo projeto Supabase** (não protege contra perder o projeto) e não há recuperação ponto-no-tempo (plano Free). As migrations só adicionam 1 coluna constante em `units` e tabelas novas, então o risco real é baixo. Nenhum plano foi contratado nem alterado.
+**Implantação inerte (unidades OFF + `QUOTE_TEAM_ENABLED=false`).** `handlers.ts` está vazio ⇒ `isPipelineReady` é falso ⇒ (a) o gancho ao salvar a ordem retorna `pipeline_not_ready` **sem nenhuma consulta ao banco**; (b) o cron por minuto responde `skipped` **sem criar cliente de banco**; (c) as rotas `/api/quote-jobs/*` respondem 409. Isso vale com ou sem a variável `QUOTE_TEAM_ENABLED`, antes ou depois das migrations. Cobertura automática nova: `app/api/cron/quote-jobs/__tests__/route.test.ts` (4 testes, inclusive banco que lança erro se for tocado). Como as 5 unidades nascem `off` (coluna com default constante), nada do fluxo de WO/foto/PDF/PWA muda.
+**Ensaio completo das migrations 093→096 + pós-testes, em UMA transação desfeita no banco real:** as 4 migrations aplicaram sem erro; `quote_post_apply_checks` ⇒ `POST_OK` (12 tabelas com RLS, 11 funções só do `service_role`, plano de mão de obra sem coluna monetária, nenhuma unidade ligada, `authenticated`/`anon` sem acesso às camadas administrativas); `quote_budget_verify` ⇒ 9 grupos OK com as chaves estrangeiras reais. Depois: 0 tabelas, 0 funções, 0 colunas do módulo; appointments 121 / units 5 (nada gravado). Esse ensaio achou um falso positivo no meu próprio teste (`billable_hours_basis` é texto, não valor) — corrigido.
+**Rollback:** conferência estática: toda função e tabela criada por 093–096 tem o `drop` correspondente no script (0 faltando). O script destrutivo completo já foi ensaiado antes (versão anterior); a versão atual só acrescentou as tabelas/funções novas do orçamento.
+
+## 11. Sequência final de execução (quando o Vinicius autorizar)
+1. Pré-checagem `quote_preflight.sql` (todas `true`) + backup do dia conferido (§10) + novo disparo manual do `/api/cron/db-backup` imediatamente antes (0 erros).
+2. Aplicar **uma por vez**: 093 → conferir → 094 → conferir → 095 → conferir → 096 → conferir (§4). Falha por `lock_timeout` ⇒ repetir; qualquer outra falha ⇒ parar e rollback.
+3. `quote_post_apply_checks.sql` ⇒ `POST_OK`; `quote_budget_verify.sql` ⇒ `VERIFY_OK`.
+4. Permissões por papel com claims JWT reais (técnico/admin/outra empresa) — roteiro de `verificacoes-pre-aplicacao.md` §2.
+5. Concorrência real: `node tools/quote-budget-concurrency.mjs --confirm --appointment <ordem de teste>` ⇒ 6 aceitas de 20, 1 cobrança de 10 liquidações.
+6. Conferir contagens (units, appointments) e que nenhuma unidade está fora de `off`.
+7. **Parar.** Deploy do código e qualquer ativação (modo sombra) são autorizações separadas.
+**Rollback não destrutivo a qualquer momento:** `update units set quote_ai_team_mode='off'` + `QUOTE_TEAM_ENABLED=false` (nada executa). Só depois, se necessário, o script de rollback (§7).
