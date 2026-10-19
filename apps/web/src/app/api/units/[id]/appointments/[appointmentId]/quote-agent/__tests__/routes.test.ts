@@ -7,7 +7,7 @@ import { InMemoryJobStore } from '@/lib/quote-team/job-store'
  */
 const kicks: string[] = []
 vi.mock('@vercel/functions', () => ({ waitUntil: () => undefined }))
-vi.mock('@/lib/quote-team/server', async (orig) => ({ ...(await orig<typeof import('@/lib/quote-team/server')>()), kickQuoteJob: async (_o: string, id: string) => void kicks.push(id) }))
+vi.mock('@/lib/quote-team/server', async (orig) => ({ ...(await orig<Record<string, unknown>>()), kickQuoteJob: async (_o: string, id: string) => void kicks.push(id) }))
 vi.mock('@/lib/quote-team/agent/media', () => ({ verifyStoredMedia: async (urls: string[]) => ({ present: urls, missing: [] }), storageHosts: () => ['x.supabase.co'] }))
 vi.mock('@/lib/quote-team/handlers', () => ({ QUOTE_STAGE_HANDLERS: Object.fromEntries(QUOTE_STAGES.map((s) => [s, { needsAi: false, run: async () => ({ kind: 'done', result: s }) }])) }))
 const loadAgentContext = vi.fn()
