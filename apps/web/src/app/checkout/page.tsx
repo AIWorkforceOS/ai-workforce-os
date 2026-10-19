@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, Suspense } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Check, CreditCard, Zap, Lock, ArrowRight, Loader2, Mail, RefreshCw } from 'lucide-react'
 import { useLocale } from '@/lib/i18n/client'
