@@ -47,3 +47,22 @@ describe('saveViaQueue', () => {
     expect(await saveViaQueue(input)).toEqual({ kind: 'failed', message: 'recusado' })
   })
 })
+
+describe('saveViaQueue — pista própria e retomada', () => {
+  it('usa a pista "default": o Sign Off não espera um vídeo grande que esteja subindo', async () => {
+    listPendingSaves.mockResolvedValue([])
+    await saveViaQueue(input)
+    expect(drainPendingSaves).toHaveBeenCalledWith({ force: true, lane: 'default' })
+  })
+  it('uma sincronização que já rodava não pegou o item (nunca tentado): roda de novo uma vez', async () => {
+    listPendingSaves.mockResolvedValue([{ id: 'i1', status: 'pending', files: {}, createdAt: 1, appointmentId: 'a' }])
+    await saveViaQueue(input)
+    expect(drainPendingSaves).toHaveBeenCalledTimes(2)
+  })
+  it('item já tentado (em espera por rede/servidor): NÃO insiste, informa que está guardado', async () => {
+    listPendingSaves.mockResolvedValue([{ id: 'i1', status: 'pending', attempts: 1, lastError: 'network', files: {}, createdAt: 1, appointmentId: 'a' }])
+    const result = await saveViaQueue(input)
+    expect(drainPendingSaves).toHaveBeenCalledTimes(1)
+    expect(result).toMatchObject({ kind: 'queued' })
+  })
+})

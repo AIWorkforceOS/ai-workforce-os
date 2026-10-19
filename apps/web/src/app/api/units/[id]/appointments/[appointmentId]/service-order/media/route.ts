@@ -28,18 +28,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const validation = validateMediaItems((body as { items?: unknown } | null)?.items, unitId, appointmentId)
   if (!validation.ok) return NextResponse.json({ error: validation.error }, { status: 400 })
 
-  const { data: existing } = await supabase
-    .from('appointments')
-    .select('id')
-    .eq('id', appointmentId)
-    .eq('unit_id', unitId)
-    .maybeSingle()
+  // A ordem e a conferência de cada arquivo no Storage são independentes: tudo em paralelo (antes: uma ida por arquivo, em fila).
+  const bucket = supabase.storage.from('service-orders')
+  const [{ data: existing }, infos] = await Promise.all([
+    supabase.from('appointments').select('id').eq('id', appointmentId).eq('unit_id', unitId).maybeSingle(),
+    Promise.all(validation.items.map((item) => bucket.info(item.path))),
+  ])
   if (!existing) return NextResponse.json({ error: 'Agendamento não encontrado.' }, { status: 404 })
 
-  const bucket = supabase.storage.from('service-orders')
   const entries: { url: string; uploaded_at: string; kind: string }[] = []
-  for (const item of validation.items) {
-    const { data: info, error: infoError } = await bucket.info(item.path)
+  // Os resultados são avaliados na ordem da lista: o 1º problema encontrado é o mesmo de antes e as fotos mantêm a ordem.
+  for (const [index, item] of validation.items.entries()) {
+    const { data: info, error: infoError } = infos[index]!
     if (infoError || !info) {
       return NextResponse.json({ error: 'Arquivo ainda não está no servidor.', path: item.path }, { status: 422 })
     }

@@ -1,4 +1,4 @@
-import { directMediaUploadEnabled, isMediaField, uploadAndRegisterMedia } from './media-upload'
+import { directMediaUploadEnabled, isMediaField, registerMediaBatch, uploadMediaFile, type UploadedMedia } from './media-upload'
 import { deletePendingSave, getActiveOwner, listPendingSaves, setMeta, updatePendingSave, type PendingSave } from './offline-store'
 
 /**
@@ -104,6 +104,53 @@ async function sendEvent(item: PendingSave): Promise<Classification> {
   }
 }
 
+/** Andamento de um salvamento da fila (só números e etapas — nenhum nome de arquivo, URL ou dado da ordem). */
+export type DrainProgress =
+  | { itemId: string; phase: 'uploading'; done: number; total: number }
+  | { itemId: string; phase: 'registering'; total: number }
+  | { itemId: string; phase: 'finalizing' }
+  /** Medição de uma etapa concluída (ms). */
+  | { itemId: string; phase: 'timing'; stage: 'upload' | 'register' | 'final'; ms: number; count?: number; bytes?: number }
+
+const progressListeners = new Set<(event: DrainProgress) => void>()
+export function onDrainProgress(listener: (event: DrainProgress) => void): () => void {
+  progressListeners.add(listener)
+  return () => progressListeners.delete(listener)
+}
+function emit(event: DrainProgress) {
+  for (const listener of progressListeners) {
+    try {
+      listener(event)
+    } catch {
+      // um ouvinte com defeito nunca atrapalha o envio
+    }
+  }
+}
+
+/** Quantos arquivos sobem ao mesmo tempo (celular em campo: mais que isso só disputa o mesmo sinal). */
+export const UPLOAD_CONCURRENCY = 3
+
+/** Executa `fn` sobre os itens com no máximo `limit` ao mesmo tempo, devolvendo os resultados NA ORDEM original. Depois da 1ª falha não começa novos. */
+async function mapPool<T, R extends { ok: boolean }>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>, skipped: () => R): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let next = 0
+  let failed = false
+  async function worker() {
+    while (next < items.length) {
+      const index = next++
+      if (failed) {
+        results[index] = skipped()
+        continue
+      }
+      const result = await fn(items[index]!, index)
+      if (!result.ok) failed = true
+      results[index] = result
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  return results
+}
+
 async function trySyncOne(item: PendingSave): Promise<Classification> {
   if (item.fields.__event) return sendEvent(item)
   const alreadySliced = (item.sentFiles?.length ?? 0) > 0
@@ -119,52 +166,110 @@ async function trySyncOne(item: PendingSave): Promise<Classification> {
   return trySlice(item)
 }
 
-/** Fatiado: uma foto por requisição (salvamento só de foto), depois os campos + assinatura. */
+/** Fatiado: arquivos primeiro (em paralelo e registrados em lote, na ordem), depois os campos + assinatura. */
 async function trySlice(item: PendingSave): Promise<Classification> {
   const sent = new Set(item.sentFiles ?? [])
+  const direct = directMediaUploadEnabled()
+  const pendingMedia: { fieldName: string; position: number; stored: PendingSave['files'][string][number]; key: string }[] = []
   for (const [fieldName, files] of Object.entries(item.files)) {
     if (fieldName === 'signature') continue
     for (const [position, stored] of files.entries()) {
       const key = `${fieldName}:${position}`
       if (sent.has(key)) continue
-      let result: Classification
-      if (directMediaUploadEnabled() && isMediaField(fieldName)) {
-        result = await uploadAndRegisterMedia({
-          unitId: item.unitId,
-          appointmentId: item.appointmentId,
-          fieldName,
-          saveId: `${item.id}-${fieldName}-${position}`,
-          position,
-          file: new File([stored.blob], stored.name, { type: stored.type }),
-        })
-      } else {
-        const formData = baseForm(item, `${item.id}-${fieldName}-${position}`, false)
-        formData.append(fieldName, new File([stored.blob], stored.name, { type: stored.type }))
-        result = await sendRequest(item, formData)
+      if (direct && isMediaField(fieldName)) {
+        pendingMedia.push({ fieldName, position, stored, key })
+        continue
       }
+      // fluxo antigo (upload direto desligado): uma foto por requisição
+      const formData = baseForm(item, `${item.id}-${fieldName}-${position}`, false)
+      formData.append(fieldName, new File([stored.blob], stored.name, { type: stored.type }))
+      const result = await sendRequest(item, formData)
       if (result.kind !== 'synced') return result
       sent.add(key)
       await updatePendingSave(item.id, { sentFiles: [...sent] })
     }
   }
 
+  if (pendingMedia.length > 0) {
+    const total = pendingMedia.length
+    const bytes = pendingMedia.reduce((sum, entry) => sum + entry.stored.blob.size, 0)
+    let done = 0
+    emit({ itemId: item.id, phase: 'uploading', done, total })
+    const uploadStart = Date.now()
+    type UploadResult = { ok: true; media: UploadedMedia } | { ok: false; result: Classification }
+    const results = await mapPool<(typeof pendingMedia)[number], UploadResult>(
+      pendingMedia,
+      UPLOAD_CONCURRENCY,
+      async (entry) => {
+        const uploaded = await uploadMediaFile({
+          unitId: item.unitId,
+          appointmentId: item.appointmentId,
+          fieldName: entry.fieldName,
+          saveId: `${item.id}-${entry.fieldName}-${entry.position}`,
+          position: entry.position,
+          file: new File([entry.stored.blob], entry.stored.name, { type: entry.stored.type }),
+        })
+        if (uploaded.ok) emit({ itemId: item.id, phase: 'uploading', done: ++done, total })
+        return uploaded
+      },
+      () => ({ ok: false, result: { kind: 'retry', reason: 'network' } }),
+    )
+    emit({ itemId: item.id, phase: 'timing', stage: 'upload', ms: Date.now() - uploadStart, count: total, bytes })
+
+    // Registra só o trecho contínuo que subiu (mantém a ordem das fotos); o resto sobe de novo na próxima tentativa (envio idempotente).
+    const registered: typeof pendingMedia = []
+    let firstFailure: Classification | null = null
+    for (const [index, result] of results.entries()) {
+      if (result.ok) registered.push(pendingMedia[index]!)
+      else {
+        // A 1ª falha em ordem de índice é sempre a verdadeira: só são "puladas" as tarefas que começam DEPOIS de uma falha (índices maiores).
+        firstFailure = result.result
+        break
+      }
+    }
+    if (registered.length > 0) {
+      emit({ itemId: item.id, phase: 'registering', total: registered.length })
+      const registerStart = Date.now()
+      const registration = await registerMediaBatch(
+        item.unitId,
+        item.appointmentId,
+        registered.map((entry) => (results[pendingMedia.indexOf(entry)] as { ok: true; media: UploadedMedia }).media),
+      )
+      emit({ itemId: item.id, phase: 'timing', stage: 'register', ms: Date.now() - registerStart, count: registered.length })
+      if (registration.kind !== 'synced') return registration
+      for (const entry of registered) sent.add(entry.key)
+      await updatePendingSave(item.id, { sentFiles: [...sent] })
+    }
+    if (firstFailure) return firstFailure
+  }
+
   const hasFinalStep = Object.keys(item.fields).length > 0 || (item.files.signature?.length ?? 0) > 0
   if (!hasFinalStep) return { kind: 'synced' }
   const finalForm = baseForm(item, `${item.id}-final`, true)
   for (const stored of item.files.signature ?? []) finalForm.append('signature', new File([stored.blob], stored.name, { type: stored.type }))
-  return sendRequest(item, finalForm)
+  emit({ itemId: item.id, phase: 'finalizing' })
+  const finalStart = Date.now()
+  const finalResult = await sendRequest(item, finalForm)
+  emit({ itemId: item.id, phase: 'timing', stage: 'final', ms: Date.now() - finalStart })
+  return finalResult
 }
 
 export type DrainResult = { synced: number; failed: number; remaining: number }
+/** 'default' = tudo menos vídeo (Sign Off, fotos, marcos); 'video' = vídeos grandes, numa pista própria para não segurar o Sign Off; 'all' = as duas. */
+export type DrainLane = 'default' | 'video' | 'all'
 export type DrainOptions = {
   /** 'Tentar agora' manual: ignora o backoff e também retenta os itens 'failed'. */
   force?: boolean
   /** Rede voltou / app voltou ao primeiro plano: ignora a espera do backoff, mas NÃO retenta itens 'failed'. */
   ignoreBackoff?: boolean
+  /** Padrão 'all'. O salvar do Sign Off usa 'default' para NÃO esperar um vídeo grande que está subindo. */
+  lane?: DrainLane
 }
 
-async function drainOnce(options: DrainOptions): Promise<DrainResult> {
-  const items = await listPendingSaves()
+const isVideoItem = (item: PendingSave) => (item.files?.videos?.length ?? 0) > 0
+
+async function drainOnce(options: DrainOptions, lane: 'default' | 'video'): Promise<DrainResult> {
+  const items = (await listPendingSaves()).filter((item) => isVideoItem(item) === (lane === 'video'))
   const now = Date.now()
   let synced = 0
   let failed = 0
@@ -206,45 +311,59 @@ async function drainOnce(options: DrainOptions): Promise<DrainResult> {
   return { synced, failed, remaining: remaining.length }
 }
 
-let inFlight: Promise<DrainResult> | null = null
-let inFlightSince = 0
+const laneState: Record<'default' | 'video', { inFlight: Promise<DrainResult> | null; since: number }> = {
+  default: { inFlight: null, since: 0 },
+  video: { inFlight: null, since: 0 },
+}
+/** Nome do Web Lock de cada pista ('default' mantém o nome antigo, compatível com abas abertas antes desta versão). */
+const LOCK_NAME: Record<'default' | 'video', string> = { default: 'alizo-offline-drain', video: 'alizo-offline-drain-video' }
 
-/**
- * Percorre a fila inteira. Uma única execução por vez: dentro da mesma
- * aba (promessa compartilhada) e entre abas (Web Locks, quando o
- * navegador suporta) — antes, dois drains simultâneos podiam reenviar o
- * mesmo item e duplicar arquivos.
- */
-export function drainPendingSaves(options: DrainOptions = {}): Promise<DrainResult> {
+function drainLane(options: DrainOptions, lane: 'default' | 'video'): Promise<DrainResult> {
+  const state = laneState[lane]
   // Vigia: se uma sincronização antiga ficou pendurada (rede morta no meio do envio), abandona e começa outra.
-  const stale = inFlight !== null && Date.now() - inFlightSince >= DRAIN_WATCHDOG_MS
-  if (inFlight && !stale) return inFlight
+  const stale = state.inFlight !== null && Date.now() - state.since >= DRAIN_WATCHDOG_MS
+  if (state.inFlight && !stale) return state.inFlight
 
   const run = async (): Promise<DrainResult> => {
     // Abandonando uma execução travada, o Web Lock dela continuaria preso pra sempre: `steal` o toma de volta
     // (a antiga é considerada morta; envios são idempotentes, então o pior caso é reenviar o mesmo arquivo).
     const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
-    if (!locks?.request) return drainOnce(options)
+    if (!locks?.request) return drainOnce(options, lane)
     let result: DrainResult | null
     try {
-      result = await locks.request('alizo-offline-drain', stale ? { steal: true } : { ifAvailable: true }, async (lock) => {
+      result = await locks.request(LOCK_NAME[lane], stale ? { steal: true } : { ifAvailable: true }, async (lock) => {
         if (!lock) return null
-        return drainOnce(options)
+        return drainOnce(options, lane)
       })
     } catch (error) {
       // Quando OUTRA execução toma o lock (`steal`), o navegador rejeita a promessa desta com AbortError. Isso é o fluxo normal
       // de "abandonei a execução travada": não é erro para ninguém — quem esperava por esta recebe o resultado da execução nova.
-      if ((error as { name?: string } | null)?.name === 'AbortError' && inFlight && inFlight !== current) return inFlight
+      if ((error as { name?: string } | null)?.name === 'AbortError' && state.inFlight && state.inFlight !== current) return state.inFlight
       throw error
     }
     if (result) return result
     return { synced: 0, failed: 0, remaining: (await listPendingSaves()).length }
   }
 
-  inFlightSince = Date.now()
+  state.since = Date.now()
   const current: Promise<DrainResult> = run().finally(() => {
-    if (inFlight === current) inFlight = null
+    if (state.inFlight === current) state.inFlight = null
   })
-  inFlight = current
+  state.inFlight = current
   return current
+}
+
+/**
+ * Percorre a fila. Uma única execução por pista por vez: dentro da mesma aba (promessa compartilhada) e entre abas (Web Locks, quando o
+ * navegador suporta) — antes, dois drains simultâneos podiam reenviar o mesmo item e duplicar arquivos.
+ *
+ * Duas pistas independentes (vídeo × resto): o Sign Off (fotos + assinatura) não fica preso atrás de um vídeo grande. É seguro porque o
+ * salvamento final não reescreve a lista de fotos (ver finalize.ts) e o registro de mídia é atômico no banco.
+ */
+export async function drainPendingSaves(options: DrainOptions = {}): Promise<DrainResult> {
+  const lane = options.lane ?? 'all'
+  if (lane === 'default' || lane === 'video') return drainLane(options, lane)
+  const [a, b] = await Promise.all([drainLane(options, 'default'), drainLane(options, 'video')])
+  // a pista que terminou por último tem o retrato mais atual da fila
+  return { synced: a.synced + b.synced, failed: a.failed + b.failed, remaining: Math.min(a.remaining, b.remaining) }
 }

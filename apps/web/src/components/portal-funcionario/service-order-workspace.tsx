@@ -4,7 +4,10 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'r
 import { Camera, CheckCircle2, Clock, Download, PenLine, Receipt, ShoppingCart, Upload, X } from 'lucide-react'
 import { Input, Label, Textarea } from '@/components/ui/dashboard-ui'
 import type { PortalAppointment } from '@/lib/portal-funcionario/data'
-import { addPendingSave, deleteDraft, loadDraft, localId, saveDraft, type StoredFile } from '@/lib/portal-funcionario/offline-store'
+import { addPendingSave, deleteDraft, listPendingSaves, loadDraft, localId, saveDraft, type StoredFile } from '@/lib/portal-funcionario/offline-store'
+import { onDrainProgress } from '@/lib/portal-funcionario/offline-sync'
+import { createStageTimer, recordSaveTiming, type SaveTiming } from '@/lib/portal-funcionario/save-timing'
+import { createSubmitGuard } from '@/lib/portal-funcionario/submit-guard'
 import { isDraftWorthSaving, type DraftFields } from '@/lib/portal-funcionario/draft'
 import { SignaturePad } from './signature-pad'
 import { VideoSection } from './video-section'
@@ -65,6 +68,16 @@ async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
  * (lib/service-orders/finalize.ts) — este componente só reorganiza a
  * UI num fluxo de tela única, não muda a regra de negócio.
  */
+/** Quantos anexos de OUTROS salvamentos desta ordem ainda esperam na fila (vídeos subindo em segundo plano). */
+async function countOtherPending(appointmentId: string, exceptId: string): Promise<number> {
+  try {
+    const items = await listPendingSaves()
+    return items.filter((item) => item.appointmentId === appointmentId && item.id !== exceptId && !item.fields?.__event).reduce((n, item) => n + Object.values(item.files ?? {}).reduce((m, list) => m + list.length, 0), 0)
+  } catch {
+    return 0
+  }
+}
+
 export function ServiceOrderWorkspace({
   appointment,
   onSaved,
@@ -109,6 +122,24 @@ export function ServiceOrderWorkspace({
   const [queuedNote, setQueuedNote] = useState<string | null>(null)
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null)
   const [draftReady, setDraftReady] = useState(false)
+  // Salvar: trava contra duplo toque, andamento por etapa e GPS adiantado (ver handleSubmit)
+  const submitGuardRef = useRef(createSubmitGuard())
+  const saveIdRef = useRef<string | null>(null)
+  const warmFixRef = useRef<{ startedAt: number; promise: ReturnType<typeof getCurrentFix> } | null>(null)
+  const stageTimerRef = useRef<ReturnType<typeof createStageTimer> | null>(null)
+  const [saveStage, setSaveStage] = useState<string | null>(null)
+  const [pendingAttachments, setPendingAttachments] = useState(0)
+  useEffect(
+    () =>
+      onDrainProgress((event) => {
+        if (event.itemId !== saveIdRef.current) return
+        if (event.phase === 'uploading') setSaveStage(event.total > 0 ? `Enviando anexos (${event.done}/${event.total})…` : 'Enviando anexos…')
+        else if (event.phase === 'registering') setSaveStage('Confirmando anexos…')
+        else if (event.phase === 'finalizing') setSaveStage('Salvando assinatura e finalizando a ordem…')
+        else if (event.phase === 'timing') stageTimerRef.current?.add(event.stage, event.ms)
+      }),
+    [],
+  )
   const beforeFileInputRef = useRef<HTMLInputElement>(null)
   const afterFileInputRef = useRef<HTMLInputElement>(null)
   const beforeGalleryRef = useRef<HTMLInputElement>(null)
@@ -346,7 +377,27 @@ export function ServiceOrderWorkspace({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    // Duplo toque: só o primeiro vale. O botão já mostra "Salvando…" ANTES de qualquer espera (galeria, GPS, fila).
+    if (submitGuardRef.current.active) return
+    setSubmitting(true)
+    setSaveStage('Preparando…')
+    const timer = createStageTimer()
+    stageTimerRef.current = timer
+    await submitGuardRef.current.run(async () => {
+      try {
+        await runSubmit(timer)
+      } finally {
+        saveIdRef.current = null
+        stageTimerRef.current = null
+        setSubmitting(false)
+        setSaveStage(null)
+      }
+    })
+  }
+
+  async function runSubmit(timer: ReturnType<typeof createStageTimer>) {
     setError(null)
+    setPendingAttachments(0)
     setSuccess(false)
     setSavedOffline(false)
     setQueuedNote(null)
@@ -362,7 +413,9 @@ export function ServiceOrderWorkspace({
 
     if (autoGallery) {
       const copies = [...photosBefore, ...photosAfter, ...materialPhotos]
-      if (copies.length > 0) await saveCopiesToDevice(copies, { downloadFallback: false }).catch(() => null)
+      // A cópia na galeria abre a folha de compartilhar do celular e só termina quando a pessoa a fecha: NÃO pode segurar o salvamento.
+      // As fotos já estão guardadas no aparelho pela fila antes de subir, então rodar junto não arrisca nada.
+      if (copies.length > 0) void saveCopiesToDevice(copies, { downloadFallback: false }).catch(() => null)
     }
 
     // Fim do tempo de serviço: assinatura + salvar. Com check-in por GPS, tenta pegar a posição agora.
@@ -370,7 +423,15 @@ export function ServiceOrderWorkspace({
     const hasSignature = Boolean(signatureDataUrl || appt.service_order_signature_url) && Boolean(signedBy.trim())
     if (requireGps && hasSignature) {
       setSubmitting(true)
-      const geo = await getCurrentFix({ timeoutMs: 15_000 })
+      // A posição começou a ser buscada quando o gerente assinou (ver warmFixRef): normalmente já está pronta e não há espera nenhuma.
+      const geo = await timer.measure('gps', async () => {
+        const warm = warmFixRef.current
+        if (warm && Date.now() - warm.startedAt < 10 * 60_000) {
+          const warmed = await warm.promise
+          if (warmed.ok) return warmed
+        }
+        return getCurrentFix({ timeoutMs: 15_000 })
+      })
       // Sem posição (bloqueada/indisponível): a ordem NÃO fica presa — salva com a hora e sem coordenadas (o admin vê "sem GPS").
       endExtra.endedAt = new Date().toISOString()
       if (geo.ok) {
@@ -403,6 +464,7 @@ export function ServiceOrderWorkspace({
     formData.set('clientSaveId', saveId)
 
     function clearForm() {
+      warmFixRef.current = null
       void deleteDraft(appt.id)
       setDraftSavedAt(null)
       setPhotosBefore([])
@@ -415,6 +477,11 @@ export function ServiceOrderWorkspace({
     }
 
     setSubmitting(true)
+    saveIdRef.current = saveId
+    setSaveStage('Guardando no aparelho…')
+    const fileCount = photosBefore.length + photosAfter.length + materialPhotos.length + (signatureFile ? 1 : 0)
+    const megabytes = Math.round(([...photosBefore, ...photosAfter, ...materialPhotos].reduce((n, f) => n + f.size, signatureFile?.size ?? 0) / 1048576) * 10) / 10
+    const record = (outcome: SaveTiming['outcome']) => recordSaveTiming({ at: new Date().toISOString(), files: fileCount, megabytes, stages: timer.finish(), outcome })
     if (directMediaUploadEnabled()) {
       const files: Record<string, StoredFile[]> = {}
       if (photosBefore.length > 0) files.photosBefore = photosBefore.map(toStoredFile)
@@ -422,6 +489,9 @@ export function ServiceOrderWorkspace({
       if (materialPhotos.length > 0) files.materialPhotos = materialPhotos.map(toStoredFile)
       if (signatureFile) files.signature = [toStoredFile(signatureFile)]
       const result: LiveSaveResult = await saveViaQueue({ id: saveId, unitId: appt.unit_id, appointmentId: appt.id, fields, files })
+      record(result.kind)
+      // Vídeos (ou outros anexos) desta ordem que ainda estão subindo em segundo plano: o Sign Off foi salvo, mas a ordem NÃO está 100% sincronizada.
+      setPendingAttachments(result.kind === 'synced' ? await countOtherPending(appt.id, saveId) : 0)
       setSubmitting(false)
       if (result.kind === 'not_stored') {
         setError('Não foi possível guardar no aparelho. Tente novamente.')
@@ -489,6 +559,8 @@ export function ServiceOrderWorkspace({
         onSave={(dataUrl) => {
           setSignatureDataUrl(dataUrl)
           setShowSignaturePad(false)
+          // Adianta a busca do GPS: quando o técnico tocar em Salvar a posição já está pronta (antes, o salvar esperava até 15 s por ela).
+          if (requireGps) warmFixRef.current = { startedAt: Date.now(), promise: getCurrentFix({ timeoutMs: 15_000 }) }
         }}
         onCancel={() => setShowSignaturePad(false)}
       />
@@ -1004,7 +1076,12 @@ export function ServiceOrderWorkspace({
         style={{ background: 'rgba(10,15,30,0.95)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)' }}
       >
         {error && <p className="text-xs text-red-400">{error}</p>}
-        {success && <p className="text-xs font-semibold text-emerald-400">Salvo com sucesso.</p>}
+        {success && pendingAttachments === 0 && <p className="text-xs font-semibold text-emerald-400">Salvo com sucesso.</p>}
+        {success && pendingAttachments > 0 && (
+          <p className="text-xs font-semibold text-amber-300">
+            Sign Off e assinatura salvos. Ainda há {pendingAttachments} anexo{pendingAttachments > 1 ? 's' : ''} (vídeo) enviando — a ordem ainda NÃO está 100% sincronizada. Pode sair da tela: o app termina sozinho e mostra o andamento em Sincronização.
+          </p>
+        )}
         {savedOffline && (
           <p className="text-xs font-semibold text-amber-400">
             {queuedNote
@@ -1018,7 +1095,7 @@ export function ServiceOrderWorkspace({
           className="w-full rounded-xl px-4 py-4 text-base font-bold text-white transition-all active:scale-[0.98] disabled:opacity-50"
           style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
         >
-          {submitting ? 'Salvando…' : 'Salvar ordem de serviço'}
+          {submitting ? (saveStage ?? 'Salvando…') : 'Salvar ordem de serviço'}
         </button>
       </div>
     </form>

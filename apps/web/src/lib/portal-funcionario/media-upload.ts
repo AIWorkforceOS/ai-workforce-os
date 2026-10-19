@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/client'
-import { buildMediaPath, MEDIA_FIELD_KIND } from '@/lib/service-orders/media'
+import { buildMediaPath, MEDIA_FIELD_KIND, type MediaKind } from '@/lib/service-orders/media'
 import { classifyResponse, type Classification } from './offline-sync'
 
 /**
@@ -87,9 +87,12 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 const authLike = (message: string, status?: number) => status === 401 || status === 403 || /jwt|token|unauthor|expired/i.test(message)
 
-export async function uploadAndRegisterMedia(params: UploadParams): Promise<Classification> {
+export type UploadedMedia = { path: string; kind: MediaKind }
+
+/** Só o envio ao Storage (caminho determinístico + upsert: reenviar nunca duplica). O registro na ordem é feito depois, em lote e na ordem original. */
+export async function uploadMediaFile(params: UploadParams): Promise<{ ok: true; media: UploadedMedia } | { ok: false; result: Classification }> {
   const kind = MEDIA_FIELD_KIND[params.fieldName]
-  if (!kind) return { kind: 'failed', status: 400, message: 'Tipo de mídia desconhecido.' }
+  if (!kind) return { ok: false, result: { kind: 'failed', status: 400, message: 'Tipo de mídia desconhecido.' } }
   const path = buildMediaPath({
     unitId: params.unitId,
     appointmentId: params.appointmentId,
@@ -108,20 +111,25 @@ export async function uploadAndRegisterMedia(params: UploadParams): Promise<Clas
     )
     if (error) {
       const status = Number((error as { statusCode?: string | number }).statusCode) || undefined
-      if (authLike(error.message ?? '', status)) return { kind: 'retry', reason: 'session', status: 401 }
-      if (status === 413) return { kind: 'failed', status: 413, message: 'Arquivo grande demais para o servidor.' }
-      return { kind: 'retry', reason: 'server', status }
+      if (authLike(error.message ?? '', status)) return { ok: false, result: { kind: 'retry', reason: 'session', status: 401 } }
+      if (status === 413) return { ok: false, result: { kind: 'failed', status: 413, message: 'Arquivo grande demais para o servidor.' } }
+      return { ok: false, result: { kind: 'retry', reason: 'server', status } }
     }
   } catch {
-    return { kind: 'retry', reason: 'network' }
+    return { ok: false, result: { kind: 'retry', reason: 'network' } }
   }
+  return { ok: true, media: { path, kind } }
+}
 
+/** Registra na ordem (uma chamada) arquivos que JÁ estão no Storage. O servidor confere cada um no bucket antes de registrar; a mesma ordem da lista é mantida. */
+export async function registerMediaBatch(unitId: string, appointmentId: string, items: UploadedMedia[]): Promise<Classification> {
+  if (items.length === 0) return { kind: 'synced' }
   try {
-    const response = await fetch(`/api/units/${params.unitId}/appointments/${params.appointmentId}/service-order/media`, {
+    const response = await fetch(`/api/units/${unitId}/appointments/${appointmentId}/service-order/media`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: [{ path, kind }] }),
-      signal: AbortSignal.timeout(30_000),
+      body: JSON.stringify({ items: items.map((item) => ({ path: item.path, kind: item.kind })) }),
+      signal: AbortSignal.timeout(60_000),
     })
     // 422 = arquivo ainda não visível no bucket: repetir resolve.
     if (response.status === 422) return { kind: 'retry', reason: 'server', status: 422 }
@@ -129,4 +137,11 @@ export async function uploadAndRegisterMedia(params: UploadParams): Promise<Clas
   } catch {
     return { kind: 'retry', reason: 'network' }
   }
+}
+
+/** Um arquivo: envia e registra (usado pelo envio de vídeo avulso e por quem não precisa de lote). */
+export async function uploadAndRegisterMedia(params: UploadParams): Promise<Classification> {
+  const uploaded = await uploadMediaFile(params)
+  if (!uploaded.ok) return uploaded.result
+  return registerMediaBatch(params.unitId, params.appointmentId, [uploaded.media])
 }

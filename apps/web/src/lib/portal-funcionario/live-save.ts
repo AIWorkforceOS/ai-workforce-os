@@ -31,9 +31,14 @@ export async function saveViaQueue(input: {
   const stored = await addPendingSave(input)
   if (!stored) return { kind: 'not_stored' }
 
-  await drainPendingSaves({ force: true })
-
-  const item = (await listPendingSaves()).find((entry) => entry.id === input.id)
+  // Pista 'default': o Sign Off NÃO espera um vídeo grande que esteja subindo (pista 'video'). Se uma sincronização que já estava rodando
+  // não pegou este item (ela leu a fila antes dele existir), roda de novo uma vez — só enquanto o item ainda não foi tentado nenhuma vez.
+  let item: Awaited<ReturnType<typeof listPendingSaves>>[number] | undefined
+  for (let round = 0; round < 2; round++) {
+    await drainPendingSaves({ force: true, lane: 'default' })
+    item = (await listPendingSaves()).find((entry) => entry.id === input.id)
+    if (!item || item.status === 'failed' || (item.attempts ?? 0) > 0) break
+  }
   if (item?.status === 'failed') {
     return { kind: 'failed', message: item.lastError ?? 'O servidor recusou o salvamento. Seu trabalho continua guardado no aparelho.' }
   }

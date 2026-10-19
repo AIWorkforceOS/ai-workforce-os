@@ -96,6 +96,16 @@ describe('buildServiceOrderUpdatePayload', () => {
     expect(result.payload.service_order_photos).toEqual([...existing, ...uploaded])
   })
 
+  it('sem foto nova NÃO regrava a lista de fotos (mídia registrada à parte, ex.: vídeo ainda subindo, nunca pode ser apagada pelo salvamento final)', () => {
+    const existing = [{ url: 'https://x/1.jpg', uploaded_at: '2026-08-01T10:00:00Z' }]
+    const result = buildServiceOrderUpdatePayload({ status: 'completed', signedBy: 'Maria', ...BASE_INPUT }, existing, [], null, 'https://x/sig.png')
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('esperava sucesso')
+    expect('service_order_photos' in result.payload).toBe(false)
+    expect(result.payload.service_order_signature_url).toBe('https://x/sig.png')
+    expect(result.payload.service_order_status).toBe('completed')
+  })
+
   it('sem assinatura nova, mantém a URL da assinatura já salva', () => {
     const result = buildServiceOrderUpdatePayload(
       { status: 'quote', signedBy: '', ...BASE_INPUT },

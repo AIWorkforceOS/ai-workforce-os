@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import type { PortalServiceOrderPhoto } from '@/lib/portal-funcionario/data'
@@ -37,16 +38,23 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string; appointmentId: string }> },
 ) {
   const { id: unitId, appointmentId } = await params
+  // Medição por etapa (cabeçalho Server-Timing): só nomes de etapa e milissegundos — nada de dados da ordem.
+  const startedAt = performance.now()
+  const marks: string[] = []
+  const mark = (name: string, since: number) => marks.push(`${name};dur=${Math.round(performance.now() - since)}`)
+  const timed = (body: Record<string, unknown>, init: { status?: number } = {}) => {
+    marks.push(`total;dur=${Math.round(performance.now() - startedAt)}`)
+    return NextResponse.json(body, { ...init, headers: { 'Server-Timing': marks.join(', ') } })
+  }
   const supabase = await createClient()
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) {
+  // Autenticação e leitura do corpo são independentes: rodam juntas.
+  let t = performance.now()
+  const [authResult, formData] = await Promise.all([supabase.auth.getUser(), request.formData().catch(() => null)])
+  mark('auth_body', t)
+  if (!authResult.data.user) {
     return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 })
   }
-
-  const formData = await request.formData().catch(() => null)
   if (!formData) {
     return NextResponse.json({ error: 'Requisição inválida.' }, { status: 400 })
   }
@@ -78,12 +86,18 @@ export async function PATCH(
   // appointments_select + current_app_employee_id — migration 053; ou
   // um admin da org) — 404 cobre "não existe" e "não é seu" igualmente,
   // sem vazar qual dos dois é o caso.
-  const { data: existing } = await supabase
-    .from('appointments')
-    .select('id, unit_id, service_order_photos, service_order_signature_url, employee_id, checked_in_at')
-    .eq('id', appointmentId)
-    .eq('unit_id', unitId)
-    .maybeSingle()
+  // A leitura da ordem e "quem sou eu" (técnico) são independentes: uma ida só ao banco em vez de duas em fila.
+  t = performance.now()
+  const [{ data: existing }, meResult] = await Promise.all([
+    supabase
+      .from('appointments')
+      .select('id, unit_id, service_order_photos, service_order_signature_url, employee_id, checked_in_at')
+      .eq('id', appointmentId)
+      .eq('unit_id', unitId)
+      .maybeSingle(),
+    photosOnly ? Promise.resolve({ data: null as string | null }) : supabase.rpc('current_app_employee_id'),
+  ])
+  mark('read_order', t)
   const appointment = existing as AppointmentRow | null
   if (!appointment) {
     return NextResponse.json({ error: 'Agendamento não encontrado.' }, { status: 404 })
@@ -93,7 +107,7 @@ export async function PATCH(
   // Só vale para o próprio técnico — o admin editando a ordem pelo painel não é barrado.
   let isAssignedEmployee = false
   if (!photosOnly && appointment.employee_id) {
-    const { data: me } = await supabase.rpc('current_app_employee_id')
+    const me = meResult.data
     isAssignedEmployee = me === appointment.employee_id
     if (isAssignedEmployee) {
       const { data: emp } = await supabase.from('employees').select('requires_checkin').eq('id', appointment.employee_id).maybeSingle()
@@ -143,6 +157,7 @@ export async function PATCH(
     return uploaded
   }
 
+  t = performance.now()
   const uploadedBeforePhotos = await uploadPhotos(beforePhotoFiles, 'antes', 'before')
   if ('error' in uploadedBeforePhotos) {
     return NextResponse.json({ error: uploadedBeforePhotos.error }, { status: 500 })
@@ -155,6 +170,7 @@ export async function PATCH(
   if ('error' in uploadedMaterialPhotos) {
     return NextResponse.json({ error: uploadedMaterialPhotos.error }, { status: 500 })
   }
+  mark('upload_files', t)
   const knownUrls = new Set((appointment.service_order_photos ?? []).map((photo) => photo.url))
   const uploadedPhotos: PortalServiceOrderPhoto[] = [...uploadedBeforePhotos, ...uploadedAfterPhotos, ...uploadedMaterialPhotos].filter(
     (photo) => !knownUrls.has(photo.url),
@@ -175,6 +191,7 @@ export async function PATCH(
 
   const signatureFile = formData.get('signature')
   let uploadedSignatureUrl: string | null = null
+  t = performance.now()
   if (signatureFile instanceof File && signatureFile.size > 0) {
     const path = `${unitId}/${appointmentId}/assinatura-${clientSaveId || Date.now()}.png`
     const { error: signatureUploadError } = await supabase.storage
@@ -187,6 +204,7 @@ export async function PATCH(
     uploadedSignatureUrl = signaturePublicUrl.publicUrl
   }
 
+  mark('signature', t)
   const finalCheck = photosOnly
     ? buildPhotosOnlyUpdatePayload(appointment.service_order_photos ?? [], uploadedPhotos)
     : buildServiceOrderUpdatePayload(
@@ -200,6 +218,7 @@ export async function PATCH(
     return NextResponse.json({ error: finalCheck.error }, { status: 400 })
   }
 
+  t = performance.now()
   const { data: updated, error: updateError } = await supabase
     .from('appointments')
     .update(finalCheck.payload)
@@ -209,6 +228,7 @@ export async function PATCH(
     )
     .maybeSingle()
 
+  mark('update_order', t)
   if (updateError) {
     return NextResponse.json({ error: updateError.message || 'Não foi possível salvar a ordem de serviço.' }, { status: 400 })
   }
@@ -223,6 +243,7 @@ export async function PATCH(
       const v = Number(formData.get(key))
       return formData.get(key) !== null && Number.isFinite(v) ? v : null
     }
+    t = performance.now()
     const { error: finishError } = await supabase.rpc('record_appointment_event', {
       p_appointment_id: appointmentId,
       p_type: 'finish',
@@ -231,13 +252,21 @@ export async function PATCH(
       p_lng: num('endLng'),
       p_accuracy: num('endAcc'),
     })
+    mark('finish_event', t)
     if (finishError) console.error('[service-order] fim do serviço não registrado', finishError.message)
   }
 
+  // A descrição de cotação por IA (só para status "Cotação") é um extra: a ordem já está salva. Roda DEPOIS da resposta (sem segurar o técnico);
+  // se o ambiente não suportar, roda antes de responder, como sempre foi.
   const service = createServiceClient()
-  if (service) {
-    await autoGenerateQuoteOnSave(service, appointmentId, updated)
+  if (service && updated.service_order_status === 'quote') {
+    const job = autoGenerateQuoteOnSave(service, appointmentId, updated).catch((error) => console.error('[service-order] cotação automática falhou', error instanceof Error ? error.message : error))
+    try {
+      waitUntil(job)
+    } catch {
+      await job
+    }
   }
 
-  return NextResponse.json({ ok: true, appointment: updated })
+  return timed({ ok: true, appointment: updated })
 }

@@ -88,7 +88,6 @@ export function buildServiceOrderUpdatePayload(
 
   const payload: Record<string, unknown> = {
     service_order_status: input.status,
-    service_order_photos: [...existingPhotos, ...uploadedPhotos],
     // Link de compra, material e valor só fazem sentido pra cotação — finalizar limpa qualquer valor anterior.
     service_order_part_purchase_link: input.status === 'quote' ? partPurchaseLink || null : null,
     service_order_material_description: input.status === 'quote' ? materialDescription || null : null,
@@ -98,6 +97,10 @@ export function buildServiceOrderUpdatePayload(
     // Assinatura desenhada: mantém a já salva se não veio uma nova neste envio (nunca é limpa por causa do status, igual às horas).
     service_order_signature_url: uploadedSignatureUrl ?? existingSignatureUrl ?? null,
   }
+  // Só toca na lista de fotos quando há foto NOVA neste envio. Com o upload direto, fotos e vídeos são registrados à parte por uma função atômica
+  // (append_service_order_media); regravar aqui a lista lida no começo da requisição apagaria qualquer mídia registrada nesse intervalo
+  // (ex.: um vídeo ainda subindo enquanto o Sign Off é salvo).
+  if (uploadedPhotos.length > 0) payload.service_order_photos = [...existingPhotos, ...uploadedPhotos]
   if (signedBy) {
     payload.service_order_signed_by = signedBy
     payload.service_order_signed_at = new Date().toISOString()

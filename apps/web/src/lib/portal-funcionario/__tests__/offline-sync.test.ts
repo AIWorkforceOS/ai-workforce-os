@@ -23,11 +23,15 @@ vi.mock('../offline-store', () => ({
 // O upload direto agora é o padrão; a suíte abaixo cobre o fluxo ANTIGO (fallback) com ele desligado
 // e, no fim, o fluxo direto com ele ligado.
 let directOn = false
-const uploadAndRegisterMedia = vi.fn()
+// Envio e registro agora são separados: sobe em paralelo (uploadMediaFile) e registra em lote, na ordem (registerMediaBatch).
+const uploadMediaFile = vi.fn()
+const registerMediaBatch = vi.fn()
+const uploadAndRegisterMedia = uploadMediaFile // compatibilidade com os testes antigos abaixo
 vi.mock('../media-upload', () => ({
   directMediaUploadEnabled: () => directOn,
   isMediaField: (f: string) => ['photosBefore', 'photosAfter', 'materialPhotos', 'videos'].includes(f),
-  uploadAndRegisterMedia: (...a: unknown[]) => uploadAndRegisterMedia(...a),
+  uploadMediaFile: (...a: unknown[]) => uploadMediaFile(...a),
+  registerMediaBatch: (...a: unknown[]) => registerMediaBatch(...a),
 }))
 
 type Item = {
@@ -41,6 +45,12 @@ type Item = {
   attempts?: number
   nextAttemptAt?: number
   sentFiles?: string[]
+}
+
+/** A fila é lida duas vezes por pista (início e fim); com duas pistas (vídeo e resto) são quatro leituras: as duas primeiras veem o estado inicial, as demais o estado final. */
+function queue(first: unknown[], after: unknown[]) {
+  listPendingSaves.mockReset()
+  listPendingSaves.mockResolvedValueOnce(first).mockResolvedValueOnce(first).mockResolvedValue(after)
 }
 
 function makeItem(overrides: Partial<Item> = {}): Item {
@@ -84,7 +94,7 @@ describe('drainPendingSaves', () => {
 
   it('2xx: bate a mesma rota PATCH, manda clientSaveId (idempotência) e só então apaga', async () => {
     const item = makeItem()
-    listPendingSaves.mockResolvedValueOnce([item]).mockResolvedValueOnce([])
+    queue([item], [])
     const fetchMock = vi.fn(async (url: unknown, init?: RequestInit) => {
       expect(url).toBe('/api/units/unit-1/appointments/appt-1/service-order')
       expect(init?.method).toBe('PATCH')
@@ -107,7 +117,7 @@ describe('drainPendingSaves', () => {
     ['gateway (502)', 502],
   ])('%s: NUNCA apaga, mantém na fila com backoff', async (_label, status) => {
     const item = makeItem()
-    listPendingSaves.mockResolvedValueOnce([item]).mockResolvedValueOnce([item])
+    queue([item], [item])
     vi.stubGlobal('fetch', vi.fn(async () => {
       if (status === null) throw new TypeError('Failed to fetch')
       return res(status)
@@ -121,7 +131,7 @@ describe('drainPendingSaves', () => {
 
   it('429: respeita o Retry-After do servidor', async () => {
     const item = makeItem()
-    listPendingSaves.mockResolvedValueOnce([item]).mockResolvedValueOnce([item])
+    queue([item], [item])
     vi.stubGlobal('fetch', vi.fn(async () => res(429, { 'Retry-After': '90' })))
     const before = Date.now()
     const { drainPendingSaves } = await import('../offline-sync')
@@ -132,7 +142,7 @@ describe('drainPendingSaves', () => {
 
   it('recusa definitiva (404): marca como failed e MANTÉM guardado — nunca apaga sozinho', async () => {
     const item = makeItem()
-    listPendingSaves.mockResolvedValueOnce([item]).mockResolvedValueOnce([item])
+    queue([item], [item])
     vi.stubGlobal('fetch', vi.fn(async () => res(404)))
     const { drainPendingSaves } = await import('../offline-sync')
     const result = await drainPendingSaves()
@@ -159,7 +169,7 @@ describe('drainPendingSaves', () => {
     const item = makeItem({
       files: { photosBefore: [big('a.jpg'), big('b.jpg')], signature: [{ blob: new Blob(['sig']), name: 'assinatura.png', type: 'image/png' }] },
     })
-    listPendingSaves.mockResolvedValueOnce([item]).mockResolvedValueOnce([])
+    queue([item], [])
     const forms: FormData[] = []
     vi.stubGlobal('fetch', vi.fn(async (_u: unknown, init?: RequestInit) => {
       forms.push(init?.body as FormData)
@@ -179,7 +189,7 @@ describe('drainPendingSaves', () => {
 
   it('servidor responde 413 num item pequeno: cai pro modo fatiado em vez de perder', async () => {
     const item = makeItem()
-    listPendingSaves.mockResolvedValueOnce([item]).mockResolvedValueOnce([])
+    queue([item], [])
     let call = 0
     vi.stubGlobal('fetch', vi.fn(async () => {
       call += 1
@@ -193,7 +203,7 @@ describe('drainPendingSaves', () => {
   it('falha no meio do fatiado: lembra o que já foi enviado e não reenvia tudo', async () => {
     const big = (n: string) => ({ blob: new Blob([new Uint8Array(2 * 1024 * 1024)]), name: n, type: 'image/jpeg' })
     const item = makeItem({ files: { photosBefore: [big('a.jpg'), big('b.jpg')] } })
-    listPendingSaves.mockResolvedValueOnce([item]).mockResolvedValueOnce([item])
+    queue([item], [item])
     let call = 0
     vi.stubGlobal('fetch', vi.fn(async () => {
       call += 1
@@ -236,24 +246,29 @@ describe('classifyResponse / backoffMs', () => {
 })
 
 describe('drainPendingSaves com upload direto ligado (padrão)', () => {
+  const blob = (n: string, size = 1) => ({ blob: new Blob([new Uint8Array(size)]), name: n, type: 'image/jpeg' })
+  const uploaded = (n: number) => ({ ok: true as const, media: { path: `u/a/antes-${n}.jpg`, kind: 'before' as const } })
   beforeEach(() => {
     vi.resetModules()
     directOn = true
-    uploadAndRegisterMedia.mockReset()
+    uploadMediaFile.mockReset()
+    registerMediaBatch.mockReset()
     listPendingSaves.mockReset()
     deletePendingSave.mockReset()
     updatePendingSave.mockReset()
+    registerMediaBatch.mockResolvedValue({ kind: 'synced' })
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(res(200)))
   })
   afterEach(() => vi.unstubAllGlobals())
 
-  it('fotos vão direto ao Storage (nunca no multipart) e só depois o item é apagado', async () => {
-    uploadAndRegisterMedia.mockResolvedValue({ kind: 'synced' })
+  it('fotos vão direto ao Storage (nunca no multipart), são registradas e só depois o item é apagado', async () => {
+    uploadMediaFile.mockResolvedValue(uploaded(0))
     listPendingSaves.mockResolvedValue([makeItem()])
     const { drainPendingSaves } = await import('../offline-sync')
     const result = await drainPendingSaves()
-    expect(uploadAndRegisterMedia).toHaveBeenCalledTimes(1)
-    expect(uploadAndRegisterMedia.mock.calls[0]![0]).toMatchObject({ fieldName: 'photosBefore', appointmentId: 'appt-1' })
+    expect(uploadMediaFile).toHaveBeenCalledTimes(1)
+    expect(uploadMediaFile.mock.calls[0]![0]).toMatchObject({ fieldName: 'photosBefore', appointmentId: 'appt-1' })
+    expect(registerMediaBatch).toHaveBeenCalledTimes(1)
     const body = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0]![1].body as FormData
     expect(body.getAll('photosBefore')).toHaveLength(0)
     expect(body.get('status')).toBe('completed')
@@ -261,22 +276,139 @@ describe('drainPendingSaves com upload direto ligado (padrão)', () => {
     expect(result.synced).toBe(1)
   })
   it('sessão expirada no upload direto mantém o item (nada é apagado) e não manda os campos', async () => {
-    uploadAndRegisterMedia.mockResolvedValue({ kind: 'retry', reason: 'session', status: 401 })
+    uploadMediaFile.mockResolvedValue({ ok: false, result: { kind: 'retry', reason: 'session', status: 401 } })
     listPendingSaves.mockResolvedValue([makeItem()])
     const { drainPendingSaves } = await import('../offline-sync')
     const result = await drainPendingSaves()
     expect(deletePendingSave).not.toHaveBeenCalled()
     expect(fetch).not.toHaveBeenCalled()
+    expect(registerMediaBatch).not.toHaveBeenCalled()
     expect(result.remaining).toBe(1)
   })
-  it('falha de rede no meio: o que já subiu fica marcado e não sobe de novo', async () => {
-    uploadAndRegisterMedia.mockResolvedValueOnce({ kind: 'synced' }).mockResolvedValueOnce({ kind: 'retry', reason: 'network' })
-    const blob = (n: string) => ({ blob: new Blob(['x']), name: n, type: 'image/jpeg' })
+  it('falha de rede no meio: registra só o que subiu em sequência; o resto sobe de novo na próxima tentativa', async () => {
+    uploadMediaFile.mockResolvedValueOnce(uploaded(0)).mockResolvedValueOnce({ ok: false, result: { kind: 'retry', reason: 'network' } })
     listPendingSaves.mockResolvedValue([makeItem({ files: { photosBefore: [blob('a.jpg'), blob('b.jpg')] } })])
     const { drainPendingSaves } = await import('../offline-sync')
     await drainPendingSaves()
+    expect(registerMediaBatch.mock.calls[0]![2]).toHaveLength(1)
     expect(updatePendingSave).toHaveBeenCalledWith('item-1', expect.objectContaining({ sentFiles: ['photosBefore:0'] }))
     expect(deletePendingSave).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled() // campos + assinatura só depois de TODOS os anexos
+  })
+  it('envia em paralelo (no máximo 3 por vez) e registra TUDO de uma vez, na ordem original das fotos', async () => {
+    let running = 0
+    let peak = 0
+    uploadMediaFile.mockImplementation(async (p: { position: number }) => {
+      running++
+      peak = Math.max(peak, running)
+      await new Promise((r) => setTimeout(r, 10 - p.position)) // as últimas terminam primeiro: a ordem de registro NÃO pode depender disso
+      running--
+      return { ok: true, media: { path: `u/a/antes-${p.position}.jpg`, kind: 'before' } }
+    })
+    const files = Array.from({ length: 8 }, (_, i) => blob(`f${i}.jpg`))
+    listPendingSaves.mockResolvedValue([makeItem({ files: { photosBefore: files } })])
+    const { drainPendingSaves, UPLOAD_CONCURRENCY } = await import('../offline-sync')
+    await drainPendingSaves()
+    expect(UPLOAD_CONCURRENCY).toBe(3)
+    expect(peak).toBeGreaterThan(1)
+    expect(peak).toBeLessThanOrEqual(3)
+    expect(registerMediaBatch).toHaveBeenCalledTimes(1)
+    expect((registerMediaBatch.mock.calls[0]![2] as { path: string }[]).map((m) => m.path)).toEqual(Array.from({ length: 8 }, (_, i) => `u/a/antes-${i}.jpg`))
+    expect(deletePendingSave).toHaveBeenCalledWith('item-1')
+  })
+  it('depois da 1ª falha não começa novos envios, e registra só o trecho contínuo que subiu', async () => {
+    uploadMediaFile.mockImplementation(async (p: { position: number }) => {
+      await new Promise((r) => setTimeout(r, 5))
+      return p.position === 1 ? { ok: false, result: { kind: 'retry', reason: 'network' } } : { ok: true, media: { path: `u/a/antes-${p.position}.jpg`, kind: 'before' } }
+    })
+    listPendingSaves.mockResolvedValue([makeItem({ files: { photosBefore: Array.from({ length: 9 }, (_, i) => blob(`f${i}.jpg`)) } })])
+    const { drainPendingSaves } = await import('../offline-sync')
+    await drainPendingSaves()
+    expect(uploadMediaFile.mock.calls.length).toBeLessThan(9)
+    expect((registerMediaBatch.mock.calls[0]![2] as { path: string }[]).map((m) => m.path)).toEqual(['u/a/antes-0.jpg'])
+    expect(deletePendingSave).not.toHaveBeenCalled()
+  })
+  it('retomada: o que já foi enviado e registrado NÃO é reenviado', async () => {
+    uploadMediaFile.mockImplementation(async (p: { position: number }) => ({ ok: true, media: { path: `u/a/antes-${p.position}.jpg`, kind: 'before' } }))
+    listPendingSaves.mockResolvedValue([makeItem({ sentFiles: ['photosBefore:0', 'photosBefore:1'], files: { photosBefore: [blob('a.jpg'), blob('b.jpg'), blob('c.jpg')] } })])
+    const { drainPendingSaves } = await import('../offline-sync')
+    await drainPendingSaves()
+    expect(uploadMediaFile).toHaveBeenCalledTimes(1)
+    expect(uploadMediaFile.mock.calls[0]![0]).toMatchObject({ position: 2 })
+    expect(deletePendingSave).toHaveBeenCalledWith('item-1')
+  })
+  it('falha no registro (servidor) mantém o item e NÃO marca como enviado', async () => {
+    uploadMediaFile.mockResolvedValue(uploaded(0))
+    registerMediaBatch.mockResolvedValue({ kind: 'retry', reason: 'server', status: 422 })
+    listPendingSaves.mockResolvedValue([makeItem()])
+    const { drainPendingSaves } = await import('../offline-sync')
+    await drainPendingSaves()
+    expect(deletePendingSave).not.toHaveBeenCalled()
+    expect(updatePendingSave).not.toHaveBeenCalledWith('item-1', expect.objectContaining({ sentFiles: expect.anything() }))
+  })
+  it('reenvio idempotente: a mesma fila drenada duas vezes não cria envios duplicados do mesmo arquivo concluído', async () => {
+    uploadMediaFile.mockResolvedValue(uploaded(0))
+    const item = makeItem({ sentFiles: ['photosBefore:0'] })
+    listPendingSaves.mockResolvedValue([item])
+    const { drainPendingSaves } = await import('../offline-sync')
+    await drainPendingSaves()
+    await drainPendingSaves()
+    expect(uploadMediaFile).not.toHaveBeenCalled()
+  })
+  it('retomada após reconexão: a 2ª tentativa envia só o que faltou, registra e finaliza o Sign Off com assinatura', async () => {
+    const files = Array.from({ length: 4 }, (_, i) => blob(`f${i}.jpg`))
+    const up = (p: { position: number }) => ({ ok: true as const, media: { path: `u/a/antes-${p.position}.jpg`, kind: 'before' as const } })
+    // 1ª tentativa: caiu a rede no 3º arquivo
+    uploadMediaFile.mockImplementation(async (p: { position: number }) => (p.position === 2 ? { ok: false, result: { kind: 'retry', reason: 'network' } } : up(p)))
+    const item = makeItem({ files: { photosBefore: files, signature: [blob('assinatura.png')] } })
+    listPendingSaves.mockResolvedValue([item])
+    const { drainPendingSaves } = await import('../offline-sync')
+    await drainPendingSaves()
+    expect(deletePendingSave).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled() // assinatura + dados só depois de TODOS os anexos
+    const savedProgress = updatePendingSave.mock.calls.map((c) => c[1]).find((patch) => patch.sentFiles)
+    expect(savedProgress.sentFiles).toEqual(['photosBefore:0', 'photosBefore:1'])
+    // volta a internet: retoma do ponto onde parou
+    uploadMediaFile.mockReset().mockImplementation(async (p: { position: number }) => up(p))
+    listPendingSaves.mockResolvedValue([{ ...item, sentFiles: ['photosBefore:0', 'photosBefore:1'], attempts: 1 }])
+    await drainPendingSaves({ ignoreBackoff: true })
+    expect(uploadMediaFile.mock.calls.map((c) => (c[0] as { position: number }).position)).toEqual([2, 3])
+    const body = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0]![1].body as FormData
+    expect(body.get('signedBy')).toBe('Maria')
+    expect(body.get('signature')).toBeInstanceOf(File)
+    expect(deletePendingSave).toHaveBeenCalledWith('item-1')
+  })
+  it('o Sign Off (fotos + assinatura) NÃO espera um vídeo grande: pista própria para vídeos', async () => {
+    let releaseVideo: () => void = () => undefined
+    uploadMediaFile.mockImplementation(async (p: { fieldName: string; position: number }) => {
+      if (p.fieldName === 'videos') await new Promise<void>((r) => (releaseVideo = r))
+      return { ok: true, media: { path: `u/a/${p.fieldName}-${p.position}`, kind: p.fieldName === 'videos' ? 'video' : 'before' } }
+    })
+    const videoItem = makeItem({ id: 'vid', fields: {}, files: { videos: [blob('v.mp4', 10)] } })
+    const signOff = makeItem({ id: 'sign', files: { photosBefore: [blob('a.jpg')] } })
+    listPendingSaves.mockResolvedValue([videoItem, signOff])
+    const { drainPendingSaves } = await import('../offline-sync')
+    const videoRun = drainPendingSaves({ lane: 'video' })
+    await new Promise((r) => setTimeout(r, 5))
+    const result = await drainPendingSaves({ lane: 'default', force: true }) // termina SEM esperar o vídeo
+    expect(result.synced).toBe(1)
+    expect(deletePendingSave).toHaveBeenCalledWith('sign')
+    expect(deletePendingSave).not.toHaveBeenCalledWith('vid')
+    releaseVideo()
+    await videoRun
+    expect(deletePendingSave).toHaveBeenCalledWith('vid')
+  })
+  it('informa o andamento (anexos, finalização) e as medições por etapa, sem dados da ordem', async () => {
+    uploadMediaFile.mockResolvedValue(uploaded(0))
+    listPendingSaves.mockResolvedValue([makeItem()])
+    const { drainPendingSaves, onDrainProgress } = await import('../offline-sync')
+    const events: { phase: string; stage?: string }[] = []
+    const off = onDrainProgress((e) => events.push(e))
+    await drainPendingSaves()
+    off()
+    expect(events.map((e) => e.phase)).toEqual(expect.arrayContaining(['uploading', 'registering', 'finalizing', 'timing']))
+    expect(events.filter((e) => e.phase === 'timing').map((e) => e.stage)).toEqual(['upload', 'register', 'final'])
+    expect(JSON.stringify(events)).not.toMatch(/appt-1|unit-1|foto\.jpg|Maria/)
   })
 })
 
