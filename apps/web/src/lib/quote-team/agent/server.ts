@@ -68,8 +68,9 @@ export async function loadAgentContext(unitId: string, appointmentId: string): P
   }
   if (appUser.role === 'employee' && appUser.employeeId && appUser.employeeId === appointment.employee_id && appUser.orgId === unit.org_id) {
     if (mode !== 'live') return { ok: false, status: 404, error: 'Não encontrado.' }
-    const { data: emp } = await db.from('employees').select('quote_agent_enabled').eq('id', appUser.employeeId).maybeSingle()
-    if (!(emp as { quote_agent_enabled?: boolean } | null)?.quote_agent_enabled) return { ok: false, status: 404, error: 'Não encontrado.' }
+    const { data: emp } = await db.from('employees').select('quote_agent_enabled, is_active').eq('id', appUser.employeeId).maybeSingle()
+    const e = emp as { quote_agent_enabled?: boolean; is_active?: boolean } | null
+    if (!e?.quote_agent_enabled || e.is_active === false) return { ok: false, status: 404, error: 'Não encontrado.' }
     return { ok: true, ctx: { actor: 'technician', appUser, db, appointment, unit, store } }
   }
   return { ok: false, status: 404, error: 'Não encontrado.' }
@@ -78,10 +79,11 @@ export async function loadAgentContext(unitId: string, appointmentId: string): P
 /** O técnico deste usuário pode ver o painel do agente nesta ordem? (usado pela página, sem montar o contexto completo) */
 export async function isAgentAvailableForEmployee(db: SupabaseClient, employeeId: string, unitId: string): Promise<boolean> {
   const [{ data: emp }, { data: unit }] = await Promise.all([
-    db.from('employees').select('quote_agent_enabled').eq('id', employeeId).maybeSingle(),
+    db.from('employees').select('quote_agent_enabled, is_active').eq('id', employeeId).maybeSingle(),
     db.from('units').select('quote_ai_team_mode').eq('id', unitId).maybeSingle(),
   ])
-  return Boolean((emp as { quote_agent_enabled?: boolean } | null)?.quote_agent_enabled) && effectiveQuoteTeamMode((unit as { quote_ai_team_mode?: string | null } | null)?.quote_ai_team_mode) === 'live'
+  const e = emp as { quote_agent_enabled?: boolean; is_active?: boolean } | null
+  return Boolean(e?.quote_agent_enabled) && e?.is_active !== false && effectiveQuoteTeamMode((unit as { quote_ai_team_mode?: string | null } | null)?.quote_ai_team_mode) === 'live'
 }
 
 type Row = Record<string, unknown>

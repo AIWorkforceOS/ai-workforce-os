@@ -41,8 +41,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })
   }
   for (const e of parsed.data.employees ?? []) {
-    // só funcionários DESTA unidade
-    await db.from('employees').update({ quote_agent_enabled: e.enabled }).eq('id', e.id).eq('unit_id', unit.id)
+    // só funcionários DESTA unidade; funcionário desativado NUNCA é autorizado (desautorizar é sempre permitido)
+    let q = db.from('employees').update({ quote_agent_enabled: e.enabled }).eq('id', e.id).eq('unit_id', unit.id)
+    if (e.enabled) q = q.eq('is_active', true)
+    await q
   }
   const { data: emps } = await db.from('employees').select('id, name, quote_agent_enabled').eq('unit_id', unit.id)
   const { data: limits } = await db.from('quote_org_limits').select('monthly_cap_usd, pilot_max_quotes').eq('org_id', unit.org_id).maybeSingle()
