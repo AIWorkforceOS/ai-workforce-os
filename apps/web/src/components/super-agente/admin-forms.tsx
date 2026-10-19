@@ -18,11 +18,14 @@ async function send(path: string, method: string, body: unknown) {
 }
 
 /** Liga/desliga o piloto (imediato, sem tocar na operação normal) e escolhe os técnicos autorizados. */
-export function PilotControls({ unitId, mode, employees }: { unitId: string; mode: string; employees: { id: string; name: string; enabled: boolean }[] }) {
+export function PilotControls({ unitId, mode, employees, limits }: { unitId: string; mode: string; employees: { id: string; name: string; enabled: boolean }[]; limits?: { monthly_cap_usd: number; max_quotes: number | null } }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [emps, setEmps] = useState(employees)
+  const [cap, setCap] = useState(String(limits?.monthly_cap_usd ?? 50))
+  const [maxQuotes, setMaxQuotes] = useState(limits?.max_quotes == null ? '' : String(limits.max_quotes))
+  const [limitMsg, setLimitMsg] = useState<string | null>(null)
   const base = `/api/units/${unitId}/quote-agent-admin/settings`
 
   async function setMode(next: 'off' | 'shadow' | 'live') {
@@ -34,6 +37,12 @@ export function PilotControls({ unitId, mode, employees }: { unitId: string; mod
     setBusy(false)
     if (!r.ok) return setError(String(r.data?.error ?? 'Não foi possível alterar.'))
     router.refresh()
+  }
+  async function saveLimits() {
+    setLimitMsg(null)
+    const r = await send(base, 'PATCH', { monthly_cap_usd: Number(cap.replace(',', '.')), max_quotes: maxQuotes.trim() === '' ? null : Number(maxQuotes) })
+    setLimitMsg(r.ok ? 'Limites salvos.' : String(r.data?.error ?? 'Não foi possível salvar.'))
+    if (r.ok) router.refresh()
   }
   async function toggle(id: string, enabled: boolean) {
     setEmps((p) => p.map((e) => (e.id === id ? { ...e, enabled } : e)))
@@ -63,6 +72,16 @@ export function PilotControls({ unitId, mode, employees }: { unitId: string; mod
             <input type="checkbox" checked={e.enabled} onChange={(ev) => toggle(e.id, ev.target.checked)} /> {e.name}
           </label>
         ))}
+      </div>
+      <div className="flex flex-col gap-2 rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.04)' }}>
+        <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Limites do lote (valem para a empresa toda)</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="min-w-0"><Label>Teto de IA no mês (US$)</Label><Input className="min-w-0" inputMode="decimal" value={cap} onChange={(e) => setCap(e.target.value)} /></div>
+          <div className="min-w-0"><Label>Máx. de cotações (vazio = sem limite)</Label><Input className="min-w-0" inputMode="numeric" value={maxQuotes} onChange={(e) => setMaxQuotes(e.target.value)} /></div>
+        </div>
+        <p className="text-xs text-slate-500">Cada cotação nunca passa de US$ 0,60. Máximo da plataforma: US$ 50 por mês.</p>
+        <button type="button" onClick={saveLimits} className={btn} style={{ background: '#475569' }}>Salvar limites</button>
+        {limitMsg && <p className="text-xs font-semibold text-emerald-300">{limitMsg}</p>}
       </div>
       {error && <p className="text-xs font-semibold text-red-300">{error}</p>}
     </div>

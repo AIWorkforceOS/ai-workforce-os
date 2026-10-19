@@ -20,6 +20,8 @@ export default async function SuperAgentePage({ params }: { params: Promise<{ id
   const o = await loadPilotOverview(db, unit)
   const { summary: s } = o
   const { data: rate } = await db.from('quote_rate_cards').select('*').eq('org_id', unit.org_id).eq('is_active', true).or(`unit_id.eq.${unit.id},unit_id.is.null`).order('effective_from', { ascending: false }).limit(1).maybeSingle()
+  const { data: limitsData } = await db.from('quote_org_limits').select('pilot_max_quotes').eq('org_id', unit.org_id).maybeSingle()
+  const limitsRow = limitsData as { pilot_max_quotes: number | null } | null
   const apptById = new Map(o.appointments.map((a) => [String(a.id), a]))
   const empById = new Map(o.employees.map((e) => [String(e.id), e]))
   const latest = new Map<string, PilotDraft>()
@@ -57,7 +59,7 @@ export default async function SuperAgentePage({ params }: { params: Promise<{ id
 
       <Card className="p-5">
         <CardHeader eyebrow="Piloto" title="Controle (liga/desliga imediato)" />
-        <PilotControls unitId={id} mode={unit.quote_ai_team_mode} employees={o.employees.map((e) => ({ id: String(e.id), name: String(e.name), enabled: Boolean(e.quote_agent_enabled) }))} />
+        <PilotControls unitId={id} mode={unit.quote_ai_team_mode} limits={{ monthly_cap_usd: o.month.cap, max_quotes: limitsRow?.pilot_max_quotes ?? null }} employees={o.employees.map((e) => ({ id: String(e.id), name: String(e.name), enabled: Boolean(e.quote_agent_enabled) }))} />
       </Card>
 
       <Card className="p-5">

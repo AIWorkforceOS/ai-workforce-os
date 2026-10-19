@@ -29,6 +29,15 @@ end $$;
 alter table public.quote_analysis_jobs add column if not exists rounds integer not null default 1;
 create unique index if not exists quote_jobs_one_per_appointment on public.quote_analysis_jobs (appointment_id);
 
+-- 3b) Lote de teste do piloto: nº máximo de cotações com IA (null = sem limite de quantidade). O teto em dólares do lote é o limite mensal já existente.
+alter table public.quote_org_limits add column if not exists pilot_max_quotes integer;
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'quote_org_limits_pilot_max_quotes_valid') then
+    alter table public.quote_org_limits add constraint quote_org_limits_pilot_max_quotes_valid check (pilot_max_quotes is null or pilot_max_quotes >= 0);
+  end if;
+end $$;
+
 -- 4) Conversa técnico ↔ agente (perguntas, respostas, pedidos de revisão). Escrita só pelo service role (rotas de servidor).
 create table if not exists public.quote_messages (
   id uuid primary key default uuid_generate_v4(),

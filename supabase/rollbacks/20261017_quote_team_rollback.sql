@@ -16,6 +16,8 @@ alter table if exists public.quote_items drop constraint if exists quote_items_p
 alter table if exists public.quote_items drop constraint if exists quote_items_price_source_valid;
 alter table if exists public.quote_items drop column if exists supplier, drop column if exists product_url, drop column if exists price_source, drop column if exists price_checked_at;
 alter table public.employees drop column if exists quote_agent_enabled;
+alter table if exists public.quote_org_limits drop constraint if exists quote_org_limits_pilot_max_quotes_valid;
+alter table if exists public.quote_org_limits drop column if exists pilot_max_quotes;
 
 drop function if exists public.approve_quote_draft(uuid, uuid, jsonb);
 drop function if exists public.reconcile_quote_budgets(integer);
