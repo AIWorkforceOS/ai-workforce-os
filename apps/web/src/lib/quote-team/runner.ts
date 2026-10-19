@@ -56,7 +56,13 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   })
 }
 
+/** Chamado quando uma passada TERMINA o trabalho do job (concluído, esperando informação, sem orçamento ou falho). Nunca lança. */
+export type RunnerHooks = {
+  onFinish?: (job: QuoteJobRow, kind: 'completed' | 'needs_input' | 'budget_exhausted' | 'failed') => Promise<void>
+}
+
 export type RunnerDeps = {
+  hooks?: RunnerHooks
   store: JobStore
   handlers: StageHandlers
   worker: string
@@ -89,10 +95,19 @@ export async function runQuoteJob(deps: RunnerDeps, jobId: string | null): Promi
   const reload = async () => (await deps.store.get(job.id)) as QuoteJobRow
 
   const release = { locked_by: null, locked_until: null }
+  const finish = async (kind: 'completed' | 'needs_input' | 'budget_exhausted' | 'failed'): Promise<RunOutcome> => {
+    const final = await reload()
+    try {
+      await deps.hooks?.onFinish?.(final, kind)
+    } catch (error) {
+      console.error(`[quote-team] gancho de término falhou (${kind}): ${error instanceof Error ? error.message : String(error)}`)
+    }
+    return { kind, job: final }
+  }
 
   if (!isPipelineReady(deps.handlers)) {
     await deps.store.update(job.id, { status: 'failed', error_code: 'pipeline_not_ready', error_message: 'Pipeline de análise ainda não disponível.', finished_at: iso(now()), ...release })
-    return { kind: 'failed', job: await reload() }
+    return finish('failed')
   }
 
   const budget = new BudgetGuard(deps.store, job.id)
@@ -127,7 +142,7 @@ export async function runQuoteJob(deps: RunnerDeps, jobId: string | null): Promi
           status: 'failed', attempt_count: attempts, error_code: nonRetryable ? (error as NonRetryableError).code : 'stage_failed', error_message: message,
           step_results: stepResults, pending_items: pending, finished_at: iso(now()), ...release,
         })
-        return { kind: 'failed', job: await reload() }
+        return finish('failed')
       }
       const wait = RETRY_BACKOFF_MS[Math.min(attempts - 1, RETRY_BACKOFF_MS.length - 1)]!
       await deps.store.update(job.id, {
@@ -143,7 +158,7 @@ export async function runQuoteJob(deps: RunnerDeps, jobId: string | null): Promi
 
     if (outcome.kind === 'needs_input') {
       await deps.store.update(job.id, { status: 'needs_input', finished_at: iso(now()), ...release })
-      return { kind: 'needs_input', job: await reload() }
+      return finish('needs_input')
     }
     if (outcome.kind === 'budget_exhausted') budgetExhausted = true
 
@@ -164,5 +179,5 @@ export async function runQuoteJob(deps: RunnerDeps, jobId: string | null): Promi
     finished_at: iso(now()),
     ...release,
   })
-  return { kind: budgetExhausted ? 'budget_exhausted' : 'completed', job: await reload() }
+  return finish(budgetExhausted ? 'budget_exhausted' : 'completed')
 }

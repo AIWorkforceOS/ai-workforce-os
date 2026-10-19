@@ -13,6 +13,7 @@ vi.mock('@vercel/functions', () => ({ waitUntil: (p: Promise<unknown>) => void b
 vi.mock('@/lib/app-user', () => ({ getAppUser: () => getAppUser() }))
 vi.mock('@/lib/supabase/service', () => ({ createServiceClient: () => ({}) }))
 vi.mock('@/lib/quote-team/job-store', async (orig) => ({ ...(await orig<typeof JobStoreModule>()), SupabaseJobStore: class { constructor() { return store } } }))
+vi.mock('@/lib/quote-team/agent/lifecycle', () => ({ createRunnerHooks: () => ({}) }))
 vi.mock('@/lib/quote-team/handlers', () => ({ get QUOTE_STAGE_HANDLERS() { return handlers } }))
 
 const call = async (auth?: string) => {

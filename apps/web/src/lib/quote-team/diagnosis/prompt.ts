@@ -1,4 +1,5 @@
 import type { PhotoPolicy } from '../jobs'
+import { formatConversation, type ConversationTurn } from '../agent/context'
 
 /**
  * Instruções do diagnóstico visual. Princípios (decisões do Vinicius): fatos visíveis ≠ hipóteses; nunca inventar marca,
@@ -22,7 +23,7 @@ Hard rules:
 Language: summary_pt, scope_pt and every request_pt in Brazilian Portuguese; problem_en and scope_en in plain professional English.
 Respond ONLY with JSON that matches the required schema.`
 
-export function buildDiagnosisUserText(input: { notes: string; photoCount: number; unreadableCount: number; policy: PhotoPolicy }): string {
+export function buildDiagnosisUserText(input: { notes: string; photoCount: number; unreadableCount: number; policy: PhotoPolicy; conversation?: ConversationTurn[]; blockingAllowed?: boolean }): string {
   const lines: string[] = []
   lines.push(`Technician's note (Portuguese, original): ${input.notes.trim() || '(no written note)'}`)
   if (input.photoCount === 0) {
@@ -30,6 +31,10 @@ export function buildDiagnosisUserText(input: { notes: string; photoCount: numbe
   } else {
     lines.push(`Photos provided: ${input.photoCount} (numbered 0 to ${input.photoCount - 1} in the order they appear below).`)
   }
+  if (input.conversation && input.conversation.length > 0) {
+    lines.push(`Conversation with the technician so far (the most recent technician statement overrides older hypotheses; do not repeat a request that was already answered or declared unavailable):\n${formatConversation(input.conversation)}`)
+  }
+  if (input.blockingAllowed === false) lines.push('Do NOT ask for more information as a blocker anymore: set insufficient_photos accordingly but proceed with the best-supported diagnosis, clearly marking uncertainty.')
   if (input.unreadableCount > 0) lines.push(`${input.unreadableCount} additional photo(s) could not be loaded and were not analyzed.`)
   if (input.policy.belowStandard && input.photoCount > 0) lines.push(`The standard is 5 photos (overview, close-up of the problem, label/model, surrounding context/access, measurement/scale); fewer were sent${input.policy.exceptionAccepted ? ' with a justification from the technician' : ''}. Ask for what is missing if it matters.`)
   return lines.join('\n')

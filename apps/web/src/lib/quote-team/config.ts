@@ -54,7 +54,7 @@ export const MAX_CONCURRENT_JOBS = 3
  */
 export type QuoteModelStage = 'diagnosis' | 'materials' | 'pricing' | 'labor' | 'audit'
 const DEFAULT_MODELS: Record<QuoteModelStage, string> = {
-  diagnosis: 'gpt-6.1-sol',
+  diagnosis: 'gpt-6-luna',
   materials: 'gpt-6-luna',
   pricing: 'gpt-6-luna',
   labor: 'gpt-6-luna',
@@ -68,3 +68,25 @@ export function quoteModelFor(stage: QuoteModelStage, env: Record<string, string
 export const DIAGNOSIS_MAX_PHOTOS = 8
 export const DIAGNOSIS_IMAGE_MAX_SIDE = 1024
 export const DIAGNOSIS_MAX_OUTPUT_TOKENS = 2500
+/** Modelo mais capaz para o diagnóstico, usado só quando o primeiro resultado vem com baixa confiança E há orçamento (etapa opcional). */
+export function diagnosisEscalationModel(env: Record<string, string | undefined> = process.env): string {
+  return env.QUOTE_MODEL_DIAGNOSIS_ESCALATION?.trim() || 'gpt-6.1-sol'
+}
+
+// ---------- Piloto MAWI: conversa, revisões e pesquisa de preços ----------
+/** Rodadas máximas por cotação (respostas do técnico + pedidos de revisão): trava de loop; o orçamento de US$ 0,60 é da cotação inteira. */
+export const QUOTE_MAX_ROUNDS = 6
+/** Depois desta rodada o agente NÃO bloqueia mais a análise pedindo informação: segue com pendências e o técnico continua manualmente. */
+export const QUOTE_MAX_BLOCKING_QUESTION_ROUNDS = 2
+
+/** Fornecedores de referência do piloto (decisão do Vinicius). Nenhum fornecedor pago externo sem autorização. */
+export const PRICE_SEARCH_ALLOWED_DOMAINS = ['homedepot.com', 'lowes.com', 'grainger.com'] as const
+export const PRICE_SEARCH_MAX_ITEMS = 8
+export const PRICE_SEARCH_MAX_OUTPUT_TOKENS = 1200
+/** A pesquisa real (web_search da OpenAI) só roda com PRICE_SEARCH_ENABLED=true — antes disso os preços ficam "pendentes" e o técnico preenche. */
+export function isPriceSearchEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  return env.QUOTE_PRICE_SEARCH_ENABLED === 'true'
+}
+
+export const MATERIALS_MAX_OUTPUT_TOKENS = 2500
+export const LABOR_MAX_OUTPUT_TOKENS = 1500

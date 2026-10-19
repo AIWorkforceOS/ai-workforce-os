@@ -19,6 +19,8 @@ export type QuoteJobRow = {
   photo_exception_reason: string | null
   attempt_count: number
   max_attempts: number
+  /** Rodadas (respostas do técnico / pedidos de revisão) — o orçamento é da cotação inteira. */
+  rounds: number
   next_run_at: string
   locked_by: string | null
   locked_until: string | null
@@ -42,11 +44,18 @@ export type QuoteJobRow = {
 
 export type NewQuoteJob = Pick<QuoteJobRow, 'org_id' | 'unit_id' | 'appointment_id' | 'idempotency_key' | 'trigger_source' | 'mode' | 'input_snapshot' | 'photo_count' | 'photo_exception_reason' | 'budget_usd' | 'created_by'> & { parent_job_id?: string | null }
 
-export type JobPatch = Partial<Pick<QuoteJobRow, 'status' | 'stage' | 'attempt_count' | 'next_run_at' | 'locked_by' | 'locked_until' | 'pending_items' | 'step_results' | 'error_code' | 'error_message' | 'finished_at'>>
+export type JobPatch = Partial<Pick<QuoteJobRow, 'status' | 'stage' | 'attempt_count' | 'next_run_at' | 'locked_by' | 'locked_until' | 'pending_items' | 'step_results' | 'error_code' | 'error_message' | 'finished_at' | 'input_snapshot' | 'rounds' | 'photo_count'>>
 
 export interface JobStore extends BudgetStore {
   get(jobId: string): Promise<QuoteJobRow | null>
   findByIdempotencyKey(key: string): Promise<QuoteJobRow | null>
+  /** Um job por WO: devolve o job da cotação (qualquer estado) ou null. */
+  findByAppointment(appointmentId: string): Promise<QuoteJobRow | null>
+  /**
+   * Reabre o MESMO job (resposta do técnico, pedido de revisão, nova tentativa) de forma atômica: só se ainda estiver num dos estados
+   * `from` (nunca reabre job em execução). Mantém gasto/reservas (orçamento acumula). Devolve null se outro pedido já o reabriu.
+   */
+  reopen(jobId: string, from: JobStatus[], patch: JobPatch): Promise<QuoteJobRow | null>
   /** Quantos jobs a ordem abriu desde `sinceMs` (trava de reanálise em loop). */
   countForAppointmentSince(appointmentId: string, sinceMs: number): Promise<number>
   /** Reservas presas (job terminado/sem worker há muito) viram NÃO CONFIRMADAS (contam nos tetos, mas não são gasto real). Devolve quantos jobs ajustou. */
@@ -71,6 +80,22 @@ export class SupabaseJobStore implements JobStore {
 
   async findByIdempotencyKey(key: string) {
     const { data } = await this.db.from('quote_analysis_jobs').select('*').eq('idempotency_key', key).maybeSingle()
+    return (data as QuoteJobRow | null) ?? null
+  }
+
+  async findByAppointment(appointmentId: string) {
+    const { data } = await this.db.from('quote_analysis_jobs').select('*').eq('appointment_id', appointmentId).maybeSingle()
+    return (data as QuoteJobRow | null) ?? null
+  }
+
+  async reopen(jobId: string, from: JobStatus[], patch: JobPatch) {
+    const { data } = await this.db
+      .from('quote_analysis_jobs')
+      .update({ ...patch, status: 'queued', next_run_at: new Date().toISOString(), locked_by: null, locked_until: null, finished_at: null, error_code: null, error_message: null, attempt_count: 0 })
+      .eq('id', jobId)
+      .in('status', from)
+      .select('*')
+      .maybeSingle()
     return (data as QuoteJobRow | null) ?? null
   }
 
@@ -169,6 +194,18 @@ export class InMemoryJobStore implements JobStore {
     return job ? { ...job } : null
   }
 
+  async findByAppointment(appointmentId: string) {
+    const job = [...this.jobs.values()].find((j) => j.appointment_id === appointmentId)
+    return job ? { ...job } : null
+  }
+
+  async reopen(jobId: string, from: JobStatus[], patch: JobPatch) {
+    const job = this.jobs.get(jobId)
+    if (!job || !from.includes(job.status)) return null
+    Object.assign(job, patch, { status: 'queued' as const, next_run_at: this.iso(this.now()), locked_by: null, locked_until: null, finished_at: null, error_code: null, error_message: null, attempt_count: 0, updated_at: this.iso(this.now()) })
+    return { ...job }
+  }
+
   async countForAppointmentSince(appointmentId: string, sinceMs: number) {
     return [...this.jobs.values()].filter((j) => j.appointment_id === appointmentId && Date.parse(j.created_at) >= sinceMs).length
   }
@@ -214,7 +251,7 @@ export class InMemoryJobStore implements JobStore {
     const id = `job-${++this.seq}`
     const row: QuoteJobRow = {
       id, ...job, parent_job_id: job.parent_job_id ?? null,
-      status: 'queued', stage: 'queued', attempt_count: 0, max_attempts: 3, next_run_at: this.iso(this.now()), locked_by: null, locked_until: null,
+      status: 'queued', stage: 'queued', attempt_count: 0, max_attempts: 3, rounds: 1, next_run_at: this.iso(this.now()), locked_by: null, locked_until: null,
       spent_usd: 0, reserved_usd: 0, unconfirmed_usd: 0, ai_calls: 0, tokens_in: 0, tokens_out: 0, pending_items: [], step_results: {}, error_code: null, error_message: null,
       created_at: this.iso(this.now()), started_at: null, finished_at: null, updated_at: this.iso(this.now()),
     }

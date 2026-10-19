@@ -4,7 +4,6 @@ import { createServiceClient } from '@/lib/supabase/service'
 import type { PortalServiceOrderPhoto } from '@/lib/portal-funcionario/data'
 import { buildServiceOrderUpdatePayload, buildPhotosOnlyUpdatePayload, isIdempotentPhotoReplay } from '@/lib/service-orders/finalize'
 import { autoGenerateQuoteOnSave } from '@/lib/service-orders/quote-composer'
-import { maybeEnqueueQuoteAnalysis } from '@/lib/quote-team/server'
 import { canFinalizeOrder } from '@/lib/portal-funcionario/field-time'
 
 type AppointmentRow = {
@@ -238,18 +237,6 @@ export async function PATCH(
   const service = createServiceClient()
   if (service) {
     await autoGenerateQuoteOnSave(service, appointmentId, updated)
-    // Super Agente de Cotações: só enfileira DEPOIS de salvar e só com a chave da unidade ligada (inerte na Fase 2).
-    const reason = formData.get('photoExceptionReason')
-    await maybeEnqueueQuoteAnalysis(service, {
-      unitId,
-      appointmentId,
-      orderStatus: updated.service_order_status,
-      notes: updated.service_order_material_description,
-      photos: updated.service_order_photos,
-      photoExceptionReason: typeof reason === 'string' ? reason : null,
-      createdBy: user.id,
-      kickOrigin: new URL(request.url).origin,
-    })
   }
 
   return NextResponse.json({ ok: true, appointment: updated })

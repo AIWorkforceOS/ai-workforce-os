@@ -4,6 +4,7 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { isQuoteTeamKillSwitchOn } from '@/lib/quote-team/config'
 import { QUOTE_STAGE_HANDLERS } from '@/lib/quote-team/handlers'
 import { SupabaseJobStore } from '@/lib/quote-team/job-store'
+import { createRunnerHooks } from '@/lib/quote-team/agent/lifecycle'
 import { isPipelineReady, runQuoteJob } from '@/lib/quote-team/runner'
 import { isRunnerAuthorized } from '@/lib/quote-team/runner-auth'
 import { ROUTE_TIME_BUDGET_MS } from '@/lib/quote-team/config'
@@ -32,7 +33,7 @@ export async function GET(request: Request) {
   const reconciled = await store.reconcileBudgets().catch(() => 0)
 
   for (let i = 0; i < 5 && Date.now() - startedAt < ROUTE_TIME_BUDGET_MS; i += 1) {
-    const outcome = await runQuoteJob({ store, handlers: QUOTE_STAGE_HANDLERS, worker, timeBudgetMs: ROUTE_TIME_BUDGET_MS - (Date.now() - startedAt) }, null)
+    const outcome = await runQuoteJob({ store, handlers: QUOTE_STAGE_HANDLERS, hooks: createRunnerHooks({ db, store }), worker, timeBudgetMs: ROUTE_TIME_BUDGET_MS - (Date.now() - startedAt) }, null)
     if (outcome.kind === 'not_claimed') break
     outcomes[outcome.kind] = (outcomes[outcome.kind] ?? 0) + 1
   }

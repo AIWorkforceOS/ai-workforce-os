@@ -7,6 +7,7 @@ import { isQuoteTeamKillSwitchOn, ROUTE_TIME_BUDGET_MS } from '@/lib/quote-team/
 import { QUOTE_STAGE_HANDLERS } from '@/lib/quote-team/handlers'
 import { SupabaseJobStore } from '@/lib/quote-team/job-store'
 import { resolveQuoteJobAccess } from '@/lib/quote-team/access'
+import { createRunnerHooks } from '@/lib/quote-team/agent/lifecycle'
 import { isPipelineReady, runQuoteJob } from '@/lib/quote-team/runner'
 import { isRunnerAuthorized } from '@/lib/quote-team/runner-auth'
 import { toAdminJobStatus, toTechnicianJobStatus } from '@/lib/quote-team/visibility'
@@ -28,8 +29,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (isQuoteTeamKillSwitchOn() || !isPipelineReady(QUOTE_STAGE_HANDLERS)) return NextResponse.json({ error: 'Análise indisponível.' }, { status: 409 })
     const serviceDb = createServiceClient()
     if (!serviceDb) return NextResponse.json({ error: 'Serviço indisponível.' }, { status: 503 })
+    const serviceStore = new SupabaseJobStore(serviceDb)
     waitUntil(
-      runQuoteJob({ store: new SupabaseJobStore(serviceDb), handlers: QUOTE_STAGE_HANDLERS, worker: `kick-${randomUUID().slice(0, 8)}`, timeBudgetMs: ROUTE_TIME_BUDGET_MS }, id).catch((error) => {
+      runQuoteJob({ store: serviceStore, hooks: createRunnerHooks({ db: serviceDb, store: serviceStore }), handlers: QUOTE_STAGE_HANDLERS, worker: `kick-${randomUUID().slice(0, 8)}`, timeBudgetMs: ROUTE_TIME_BUDGET_MS }, id).catch((error) => {
         console.error(`[quote-team] passada imediata falhou: ${error instanceof Error ? error.message : String(error)}`)
       }),
     )
@@ -50,7 +52,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const access = resolveQuoteJobAccess(appUser, job, (appointment as { employee_id: string | null } | null)?.employee_id ?? null)
   if (access === 'none') return NextResponse.json({ error: 'Não encontrado.' }, { status: 404 })
 
-  const outcome = await runQuoteJob({ store, handlers: QUOTE_STAGE_HANDLERS, worker: `web-${randomUUID().slice(0, 8)}`, timeBudgetMs: ROUTE_TIME_BUDGET_MS }, id)
+  const outcome = await runQuoteJob({ store, hooks: createRunnerHooks({ db, store }), handlers: QUOTE_STAGE_HANDLERS, worker: `web-${randomUUID().slice(0, 8)}`, timeBudgetMs: ROUTE_TIME_BUDGET_MS }, id)
   const current = (await store.get(id)) ?? job
   return NextResponse.json({ outcome: outcome.kind, job: access === 'admin' ? toAdminJobStatus(current) : toTechnicianJobStatus(current) }, { headers: { 'Cache-Control': 'no-store' } })
 }
