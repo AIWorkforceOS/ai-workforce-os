@@ -17,6 +17,7 @@ import { saveCopiesToDevice } from '@/lib/portal-funcionario/save-to-device'
 import { getCurrentFix } from '@/lib/portal-funcionario/geolocation'
 import { directMediaUploadEnabled } from '@/lib/portal-funcionario/media-upload'
 import { saveViaQueue, type LiveSaveResult } from '@/lib/portal-funcionario/live-save'
+import { QuoteAgentPanel } from './quote-agent-panel'
 
 /** File → StoredFile (mesmo Blob, só junto do nome/tipo) — o que a fila offline guarda. */
 function toStoredFile(file: File): StoredFile {
@@ -68,7 +69,10 @@ export function ServiceOrderWorkspace({
   onSaved,
   requireGps: requireGpsProp,
   onFinished: onFinishedProp,
+  quoteAgentEnabled = false,
 }: {
+  /** Piloto do Super Agente de Cotações: o técnico está autorizado e a unidade está em modo ao vivo (decidido no servidor). */
+  quoteAgentEnabled?: boolean
   appointment: PortalAppointment
   /** Técnico com check-in por GPS: ao assinar e salvar, a posição e a hora de fim vão junto (o tempo de serviço para aí). */
   requireGps?: boolean
@@ -490,7 +494,11 @@ export function ServiceOrderWorkspace({
     )
   }
 
+  // alterações ainda NÃO enviadas ao servidor (rascunho local ou fotos novas): o agente só inicia depois de tudo salvo
+  const hasUnsavedChanges = draftSavedAt !== null || photosBefore.length + photosAfter.length + materialPhotos.length > 0
+
   return (
+    <>
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
       <CameraPermissionGate />
       <label className="flex items-center gap-2 text-xs text-slate-300">
@@ -597,7 +605,7 @@ export function ServiceOrderWorkspace({
               rows={3}
               value={materialDescription}
               onChange={(e) => setMaterialDescription(e.target.value)}
-              placeholder="Descreva a peça/material necessário para a compra"
+              placeholder={quoteAgentEnabled ? "Descreva o defeito em poucas palavras (a IA monta a lista de materiais)" : "Descreva a peça/material necessário para a compra"}
               className="text-base"
             />
           </div>
@@ -999,5 +1007,15 @@ export function ServiceOrderWorkspace({
         </button>
       </div>
     </form>
+    {quoteAgentEnabled && appt.service_order_status === 'quote' && (
+      <QuoteAgentPanel
+        unitId={appt.unit_id}
+        appointmentId={appt.id}
+        savedStatus={appt.service_order_status}
+        hasUnsavedChanges={hasUnsavedChanges}
+        onPhotosChanged={(photos) => setAppt((prev) => ({ ...prev, service_order_photos: photos as typeof prev.service_order_photos }))}
+      />
+    )}
+    </>
   )
 }

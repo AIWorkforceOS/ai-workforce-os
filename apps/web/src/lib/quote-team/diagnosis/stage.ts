@@ -1,5 +1,5 @@
 import { DIAGNOSIS_MAX_OUTPUT_TOKENS, QUOTE_MAX_BLOCKING_QUESTION_ROUNDS, quoteModelFor } from '../config'
-import { diagnosisSchema } from '../contracts'
+import { diagnosisSchema, type Diagnosis } from '../contracts'
 import { costUsd, worstCaseUsd } from '../budget'
 import { NonRetryableError, type StageHandler } from '../runner'
 import { conservativeImageTokens, conservativeTextTokens } from './image-tokens'
@@ -40,7 +40,7 @@ export function createDiagnosisHandler(deps: DiagnosisHandlerDeps): StageHandler
       const userText = buildDiagnosisUserText({ notes, photoCount: images.length, unreadableCount: unreadable.length, policy, conversation: snapshot.conversation, blockingAllowed })
 
       const inputTokens = conservativeTextTokens(DIAGNOSIS_SYSTEM_PROMPT) + conservativeTextTokens(userText) + images.reduce((n, i) => n + conservativeImageTokens(i), 0)
-      type Attempt = { ok: true; data: import('../contracts').Diagnosis; model: string; cost: number } | { ok: false; skipped: 'budget' | 'soft_limit' }
+      type Attempt = { ok: true; data: Diagnosis; model: string; cost: number } | { ok: false; skipped: 'budget' | 'soft_limit' }
       const attempt = async (modelName: string, label: string, optional: boolean): Promise<Attempt> => {
         const worst = worstCaseUsd({ model: modelName, inputTokens, maxOutputTokens: DIAGNOSIS_MAX_OUTPUT_TOKENS })
         const guarded = await ctx.budget.run({

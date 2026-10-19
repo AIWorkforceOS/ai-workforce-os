@@ -19,21 +19,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!loaded.ok) return NextResponse.json({ error: loaded.error }, { status: loaded.status })
   const { ctx } = loaded
 
-  const payload = (await request.json().catch(() => null)) as { kind?: unknown; body?: unknown; mediaUrls?: unknown; skipQuestions?: unknown } | null
+  const payload = (await request.json().catch(() => null)) as { kind?: unknown; body?: unknown; skipQuestions?: unknown } | null
   if (!payload) return NextResponse.json({ error: 'Requisição inválida.' }, { status: 400 })
   const kind = payload.kind === 'revision_request' ? 'revision_request' : 'answer'
   const text = typeof payload.body === 'string' ? payload.body.slice(0, 4000) : ''
-  const requested = Array.isArray(payload.mediaUrls) ? payload.mediaUrls.filter((u): u is string => typeof u === 'string').slice(0, 12) : []
 
   const job = await ctx.store.findByAppointment(ctx.appointment.id)
   if (!job) return NextResponse.json({ error: 'A análise ainda não foi iniciada.' }, { status: 409 })
 
-  // só fotos que realmente pertencem a esta WO (registradas) e estão no Storage
-  const registered = new Set(diagnosisMediaUrls(ctx.appointment.service_order_photos))
-  const belongs = requested.filter((u) => registered.has(u))
-  const { present } = await verifyStoredMedia(belongs, storageHosts())
+  // fotos NOVAS = as registradas na WO (e presentes no Storage) que a análise ainda não conhece. Assim a resposta funciona mesmo que o envio das
+  // fotos tenha passado pela fila offline antes: o servidor reconcilia sozinho, sem depender de a tela saber as URLs.
   const known = new Set(((job.input_snapshot as AgentSnapshot).media_urls ?? []))
-  const fresh = present.filter((u) => !known.has(u))
+  const candidates = diagnosisMediaUrls(ctx.appointment.service_order_photos).filter((u) => !known.has(u))
+  const { present: fresh } = await verifyStoredMedia(candidates, storageHosts())
 
   const result = await submitTechnicianInput({ store: ctx.store }, { job, kind, body: text, newMediaUrls: fresh, skipQuestions: payload.skipQuestions === true })
   if (result.status === 'rejected') {

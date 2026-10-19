@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getAppUser } from '@/lib/app-user'
+import { createServiceClient } from '@/lib/supabase/service'
+import { isAgentAvailableForEmployee } from '@/lib/quote-team/agent/server'
 import { fetchEmployeeUnitContext, fetchPortalAppointmentById } from '@/lib/portal-funcionario/data'
 import { ServiceOrderWorkspace } from '@/components/portal-funcionario/service-order-workspace'
 import { FieldOrderShell } from '@/components/portal-funcionario/field-order-shell'
@@ -45,6 +47,10 @@ export default async function ServiceOrderWorkspacePage({
 
   if (!appointment) notFound()
 
+  // piloto do Super Agente: técnico autorizado + unidade em modo ao vivo (decidido no servidor; qualquer falha = sem o painel)
+  const service = createServiceClient()
+  const quoteAgentEnabled = service ? await isAgentAvailableForEmployee(service, appUser.employeeId, appointment.unit_id).catch(() => false) : false
+
   const hasOrder = Boolean(
     appointment.service_order_number || appointment.service_order_file_url || appointment.service_order_summary_pt,
   )
@@ -71,7 +77,7 @@ export default async function ServiceOrderWorkspacePage({
         address={appointment.address}
         initial={{ trip_started_at: appointment.trip_started_at ?? null, checked_in_at: appointment.checked_in_at ?? null, work_ended_at: appointment.work_ended_at ?? null }}
       >
-        <ServiceOrderWorkspace appointment={appointment} />
+        <ServiceOrderWorkspace appointment={appointment} quoteAgentEnabled={quoteAgentEnabled} />
       </FieldOrderShell>
     </div>
   )
