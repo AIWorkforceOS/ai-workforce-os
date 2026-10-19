@@ -124,3 +124,56 @@ describe('gerar cotação — tetos do lote', () => {
     expect((await POST(req(), params)).status).toBe(409)
   })
 })
+
+describe('gerar cotação — lote com requisições SIMULTÂNEAS', () => {
+  beforeEach(() => {
+    loadAgentContext.mockReset()
+    kicks.length = 0
+  })
+  /** Banco compartilhado: todas as requisições veem os mesmos jobs; a gravação cede a vez (await) para entrelaçar as requisições como numa corrida real. */
+  function sharedWorld(max: number) {
+    const shared = new Set<string>()
+    const tick = () => new Promise<void>((r) => setTimeout(r, Math.random() * 3))
+    const db = {
+      from: (table: string) => {
+        const q: Record<string, unknown> = {}
+        let deleteId: string | null = null
+        Object.assign(q, {
+          select: () => q,
+          eq: (_c: string, v: string) => { deleteId = v; return q },
+          delete: () => { q.__del = true; return q },
+          maybeSingle: async () => ({ data: table === 'quote_org_limits' ? { monthly_cap_usd: 3, per_quote_cap_usd: 0.6, pilot_max_quotes: max } : null, error: null }),
+          then: (resolve: (v: unknown) => void) => {
+            if (q.__del && deleteId) shared.delete(deleteId)
+            resolve({ data: [], count: table === 'quote_analysis_jobs' ? shared.size : 0, error: null })
+          },
+        })
+        return q
+      },
+      rpc: async () => ({ data: [{ total_usd: 0 }], error: null }),
+    }
+    const make = (n: number) => {
+      const store = new InMemoryJobStore()
+      const insert = store.insert.bind(store)
+      store.insert = (async (job: Parameters<typeof insert>[0]) => { await tick(); const res = await insert(job); const row = res.job; const uid = `n${n}-${row.id}`; store.jobs.delete(row.id); row.id = uid; store.jobs.set(uid, row); shared.add(uid); await tick(); return res }) as typeof store.insert
+      return { ok: true, ctx: { actor: 'technician', appUser: { id: 'usr-' + n }, db, store, unit: { id: 'u1', org_id: 'o1', mode: 'live' }, appointment: { id: 'a' + n, unit_id: 'u1', service_order_status: 'quote', service_order_material_description: 'Porta não fecha', service_order_photos: [{ url: 'https://x.supabase.co/a.jpg', kind: 'before' }], service_order_number: String(n) } } }
+    }
+    return { shared, make }
+  }
+  it('12 gerações ao mesmo tempo em ordens diferentes com limite de 10: nunca passa de 10 no banco', async () => {
+    for (let round = 0; round < 8; round++) {
+      const w = sharedWorld(10)
+      const { POST } = await import('../generate/route')
+      const responses = await Promise.all(
+        Array.from({ length: 12 }, async (_, i) => {
+          loadAgentContext.mockImplementationOnce(async () => w.make(i))
+          return POST(req(), { params: Promise.resolve({ id: 'u1', appointmentId: 'a' + i }) })
+        }),
+      )
+      expect(w.shared.size).toBeLessThanOrEqual(10)
+      const accepted = responses.filter((r) => r.status === 202).length
+      expect(accepted).toBe(w.shared.size)
+      for (const r of responses.filter((x) => x.status === 409)) expect((await r.json()).reason).toBe('max_quotes')
+    }
+  })
+})

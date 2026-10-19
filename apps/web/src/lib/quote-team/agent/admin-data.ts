@@ -111,6 +111,13 @@ export async function loadPilotOverview(db: SupabaseClient, unit: { id: string; 
 
   const apptIds = [...new Set(jobs.map((j) => j.appointment_id))]
   const { data: apptRows } = apptIds.length ? await db.from('appointments').select('id, service_order_number, service_order_location_name, employee_id, starts_at').in('id', apptIds) : { data: [] }
-  const { data: empRows } = await db.from('employees').select('id, name, quote_agent_enabled').eq('unit_id', unit.id)
+  const { data: empRows } = await db.from('employees').select('id, name, quote_agent_enabled, is_active').eq('unit_id', unit.id)
   return { jobs, drafts, reviews, messages, summary, month, appointments: (apptRows as Row[] | null) ?? [], employees: (empRows as Row[] | null) ?? [] }
+}
+
+/** Técnicos que o admin pode (des)habilitar no piloto: só ATIVOS. Um desativado que ainda esteja marcado aparece apenas para poder ser desmarcado. */
+export function pilotEligibleEmployees(rows: Record<string, unknown>[]): { id: string; name: string; enabled: boolean }[] {
+  return rows
+    .filter((e) => e.is_active !== false || Boolean(e.quote_agent_enabled))
+    .map((e) => ({ id: String(e.id), name: String(e.name).trim(), enabled: Boolean(e.quote_agent_enabled) }))
 }

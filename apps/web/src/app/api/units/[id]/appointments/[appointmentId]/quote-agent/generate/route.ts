@@ -53,6 +53,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const message = result.reason === 'budget_exhausted' ? 'O orçamento de IA desta cotação acabou. Continue manualmente.' : 'Não foi possível iniciar a análise.'
     return NextResponse.json({ error: message, reason: result.reason }, { status: 409 })
   }
+  // Corrida do lote: a checagem acima é "contar e depois criar" e pode ser ultrapassada por gerações SIMULTÂNEAS em ordens diferentes.
+  // Fechamos a brecha DEPOIS de criar: cada requisição reconta (já com o próprio job gravado) e, se o total passou do limite, remove o próprio job e recusa.
+  // Todo job mantido viu total <= limite depois de gravado; o último a contar vê todos ⇒ o limite nunca é ultrapassado (no pior caso, duas se recusam e o técnico tenta de novo).
+  if (result.status === 'started' && limits?.pilot_max_quotes != null) {
+    const { count: after } = await ctx.db.from('quote_analysis_jobs').select('id', { count: 'exact', head: true }).eq('org_id', ctx.unit.org_id)
+    if ((after ?? 0) > limits.pilot_max_quotes) {
+      await ctx.db.from('quote_analysis_jobs').delete().eq('id', result.job.id)
+      return NextResponse.json({ error: 'O lote de teste do Super Agente atingiu o número máximo de cotações. Continue manualmente.', reason: 'max_quotes' }, { status: 409 })
+    }
+  }
   if (result.status === 'started' || result.status === 'retried') waitUntil(kickQuoteJob(new URL(request.url).origin, result.job.id))
 
   const state = await buildAgentState(ctx)

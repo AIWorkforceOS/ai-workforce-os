@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import { Card, CardHeader, KpiCard, PageHeader, StatusPill } from '@/components/ui/dashboard-ui'
 import { PilotControls, RateCardForm } from '@/components/super-agente/admin-forms'
 import { requireUnitAdmin } from '@/lib/quote-team/agent/admin-guard'
-import { loadPilotOverview, pilotStateOf, type PilotDraft, type PilotJob } from '@/lib/quote-team/agent/admin-data'
+import { loadPilotOverview, pilotEligibleEmployees, pilotStateOf, type PilotDraft, type PilotJob } from '@/lib/quote-team/agent/admin-data'
 
 export const dynamic = 'force-dynamic'
 
@@ -59,7 +59,7 @@ export default async function SuperAgentePage({ params }: { params: Promise<{ id
 
       <Card className="p-5">
         <CardHeader eyebrow="Piloto" title="Controle (liga/desliga imediato)" />
-        <PilotControls unitId={id} mode={unit.quote_ai_team_mode} limits={{ monthly_cap_usd: o.month.cap, max_quotes: limitsRow?.pilot_max_quotes ?? null }} employees={o.employees.map((e) => ({ id: String(e.id), name: String(e.name), enabled: Boolean(e.quote_agent_enabled) }))} />
+        <PilotControls unitId={id} mode={unit.quote_ai_team_mode} limits={{ monthly_cap_usd: o.month.cap, max_quotes: limitsRow?.pilot_max_quotes ?? null }} employees={pilotEligibleEmployees(o.employees)} />
       </Card>
 
       <Card className="p-5">
