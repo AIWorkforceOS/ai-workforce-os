@@ -5,6 +5,7 @@ import { getAppUser } from '@/lib/app-user'
 import { SignOutButton } from '@/components/dashboard/sign-out-button'
 import { OfflineSyncManager } from '@/components/portal-funcionario/offline-sync-manager'
 import { PortalOfflineBootstrap } from '@/components/portal-funcionario/portal-offline-bootstrap'
+import { RefreshAppButton } from '@/components/portal-funcionario/refresh-app-button'
 
 export default async function PortalFuncionarioLayout({ children }: { children: ReactNode }) {
   const supabase = await createClient()
@@ -73,6 +74,7 @@ export default async function PortalFuncionarioLayout({ children }: { children: 
           <span className="hidden max-w-[200px] truncate text-[13px] font-semibold text-slate-300 sm:inline">
             {appUser.name ?? appUser.email}
           </span>
+          <RefreshAppButton />
           <SignOutButton />
         </div>
       </header>

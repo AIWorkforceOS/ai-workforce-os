@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Download, Share2 } from 'lucide-react'
-import { canShareFiles, downloadPdf, fetchSignOffPdf, openPdf, pdfUrl, sharePdf, type SignOffFile } from '@/lib/portal-funcionario/signoff-download'
+import { canShareFiles, downloadPdf, fetchSignOffPdf, sharePdf, type SignOffFile } from '@/lib/portal-funcionario/signoff-download'
+import { PdfViewerOverlay } from './pdf-viewer-overlay'
 
 type Phase = 'idle' | 'preparing' | 'ready' | 'done' | 'error'
 
@@ -36,6 +37,7 @@ export function SignOffPdfActions({
   const [message, setMessage] = useState<string | null>(null)
   const [canShare, setCanShare] = useState(false)
   const [ios, setIos] = useState(false)
+  const [viewing, setViewing] = useState<SignOffFile | null>(null)
   const cache = useRef<{ version: string; file: SignOffFile } | null>(null)
   const busy = useRef(false)
 
@@ -100,9 +102,24 @@ export function SignOffPdfActions({
       )
       return
     }
-    if (openPdf(file.file)) return
-    setPhase('error')
-    setMessage('Não foi possível baixar neste aparelho. Toque em “Abrir PDF” e salve pelo menu do navegador.')
+    // Último recurso: mostra o PDF DENTRO do app (com botão Voltar). Nunca leva o app inteiro para o PDF.
+    setViewing(file)
+  }
+
+  /** "Ver PDF na tela": visualizador interno com Voltar. */
+  async function view() {
+    if (busy.current) return
+    busy.current = true
+    try {
+      const file = await prepare()
+      if (file) {
+        setPhase('ready')
+        setMessage(null)
+        setViewing(file)
+      }
+    } finally {
+      busy.current = false
+    }
   }
 
   async function run(mode: 'download' | 'share') {
@@ -157,9 +174,10 @@ export function SignOffPdfActions({
           )}
         </p>
       )}
-      <a href={pdfUrl(unitId, appointmentId)} target="_blank" rel="noreferrer" className="w-fit text-xs font-semibold text-slate-300 underline">
-        Abrir PDF na tela
-      </a>
+      <button type="button" disabled={preparing} onClick={() => void view()} className="w-fit text-xs font-semibold text-slate-300 underline disabled:opacity-60">
+        Ver PDF na tela
+      </button>
+      {viewing && <PdfViewerOverlay file={viewing.file} title="Sign Off" onClose={() => setViewing(null)} />}
       {ios && !canShare && <p className="text-xs text-slate-400">iPhone: ao abrir o PDF, toque em Compartilhar → “Salvar em Arquivos”.</p>}
     </div>
   )

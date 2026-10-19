@@ -22,6 +22,7 @@ import { directMediaUploadEnabled } from '@/lib/portal-funcionario/media-upload'
 import { saveViaQueue, type LiveSaveResult } from '@/lib/portal-funcionario/live-save'
 import { QuoteAgentPanel } from './quote-agent-panel'
 import { SignOffPdfActions } from './signoff-pdf-actions'
+import { OpenPdfButton } from './open-pdf-button'
 import { hasSignedSignOff } from '@/lib/service-orders/signoff-file'
 
 /** File → StoredFile (mesmo Blob, só junto do nome/tipo) — o que a fila offline guarda. */
@@ -1050,29 +1051,27 @@ export function ServiceOrderWorkspace({
       )}
 
       {!(isSignedOrder && showSignOffCard) && (
-        <a
-          href={`/api/units/${appt.unit_id}/appointments/${appt.id}/service-order/pdf`}
-          target="_blank"
-          rel="noreferrer"
+        <OpenPdfButton
+          url={`/api/units/${appt.unit_id}/appointments/${appt.id}/service-order/pdf`}
+          fallbackName={`SignOff_${appt.service_order_number ?? 'ordem'}.pdf`}
           className="flex w-fit items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-slate-200 transition-colors hover:text-white"
           style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)' }}
         >
           <Download size={13} />
-          {appt.service_order_status === 'pending' ? 'Abrir ordem em PDF (pra mostrar ao gerente)' : 'Baixar ordem de serviço em PDF'}
-        </a>
+          {appt.service_order_status === 'pending' ? 'Ver ordem em PDF (pra mostrar ao gerente)' : 'Ver ordem de serviço em PDF'}
+        </OpenPdfButton>
       )}
       <MediaDownloadPanel media={appt.service_order_photos} orderNumber={appt.service_order_number} />
       {appt.service_order_photos.length > 0 && (
-        <a
-          href={`/api/units/${appt.unit_id}/appointments/${appt.id}/service-order/pdf?report=photos`}
-          target="_blank"
-          rel="noreferrer"
+        <OpenPdfButton
+          url={`/api/units/${appt.unit_id}/appointments/${appt.id}/service-order/pdf?report=photos`}
+          fallbackName={`relatorio-fotografico-${appt.service_order_number ?? 'ordem'}.pdf`}
           className="flex w-fit items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-slate-200 transition-colors hover:text-white"
           style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)' }}
         >
           <Download size={13} />
-          Baixar relatório fotográfico (PDF)
-        </a>
+          Ver relatório fotográfico (PDF)
+        </OpenPdfButton>
       )}
 
       <div

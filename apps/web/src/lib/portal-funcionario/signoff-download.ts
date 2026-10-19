@@ -19,19 +19,17 @@ export function pdfUrl(unitId: string, appointmentId: string): string {
   return `/api/units/${unitId}/appointments/${appointmentId}/service-order/pdf`
 }
 
-export async function fetchSignOffPdf(
-  input: { unitId: string; appointmentId: string; orderNumber?: string | null; startsAt: string },
-  deps: Deps = {},
-): Promise<FetchSignOffResult> {
+/** Busca qualquer PDF do próprio app (Sign Off, relatório fotográfico) pela sessão atual, confere que é PDF de verdade e devolve como arquivo. */
+export async function fetchPdf(input: { url: string; fallbackName: string }, deps: Deps = {}): Promise<FetchSignOffResult> {
   const fetchFn = deps.fetchFn ?? fetch
   let response: Response
   try {
-    response = await fetchFn(pdfUrl(input.unitId, input.appointmentId), { credentials: 'same-origin', cache: 'no-store' })
+    response = await fetchFn(input.url, { credentials: 'same-origin', cache: 'no-store' })
   } catch {
     return { ok: false, message: 'Sem conexão para baixar o PDF. Verifique a internet e tente de novo.' }
   }
   if (response.status === 401) return { ok: false, message: 'Sua sessão expirou. Entre de novo no app e tente baixar.' }
-  if (response.status === 404 || response.status === 403) return { ok: false, message: 'Não encontramos este Sign Off para o seu acesso.' }
+  if (response.status === 404 || response.status === 403) return { ok: false, message: 'Não encontramos este PDF para o seu acesso (ou a ordem ainda não tem o conteúdo).' }
   if (!response.ok) return { ok: false, message: 'Não foi possível gerar o PDF agora. Tente de novo em instantes.' }
   let bytes: Uint8Array
   try {
@@ -40,10 +38,15 @@ export async function fetchSignOffPdf(
     return { ok: false, message: 'O download foi interrompido. Tente de novo.' }
   }
   if (!looksLikePdf(bytes)) return { ok: false, message: 'O arquivo recebido não é um PDF válido. Tente de novo.' }
-  const name =
-    filenameFromContentDisposition(response.headers.get('content-disposition')) ??
-    signOffFileName({ orderNumber: input.orderNumber, fallbackId: input.appointmentId, dateIso: input.startsAt })
+  const name = filenameFromContentDisposition(response.headers.get('content-disposition')) ?? input.fallbackName
   return { ok: true, value: { file: new File([bytes as BlobPart], name, { type: 'application/pdf' }), name } }
+}
+
+export async function fetchSignOffPdf(
+  input: { unitId: string; appointmentId: string; orderNumber?: string | null; startsAt: string },
+  deps: Deps = {},
+): Promise<FetchSignOffResult> {
+  return fetchPdf({ url: pdfUrl(input.unitId, input.appointmentId), fallbackName: signOffFileName({ orderNumber: input.orderNumber, fallbackId: input.appointmentId, dateIso: input.startsAt }) }, deps)
 }
 
 /** O aparelho consegue compartilhar ARQUIVOS PDF pela folha nativa (iPhone/Android modernos)? */
@@ -88,17 +91,6 @@ export function downloadPdf(file: File, doc: Document | undefined = typeof docum
     link.click()
     link.remove()
     setTimeout(() => URL.revokeObjectURL(url), 60_000)
-    return true
-  } catch {
-    return false
-  }
-}
-
-/** Último recurso: abre o PDF na mesma aba (pop-up fica bloqueado em vários navegadores). O usuário salva pelo menu do visualizador. */
-export function openPdf(file: File, win: Window | undefined = typeof window !== 'undefined' ? window : undefined): boolean {
-  if (!win) return false
-  try {
-    win.location.assign(URL.createObjectURL(file))
     return true
   } catch {
     return false

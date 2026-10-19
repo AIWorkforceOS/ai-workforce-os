@@ -7,6 +7,7 @@ import { getLocale } from '@/lib/i18n/server'
 import { Sidebar } from '@/components/dashboard/sidebar'
 import { MobileSidebar } from '@/components/dashboard/mobile-sidebar'
 import { SignOutButton } from '@/components/dashboard/sign-out-button'
+import { RefreshAppButton } from '@/components/portal-funcionario/refresh-app-button'
 import { KaiLauncher } from '@/components/dashboard/kai-launcher'
 import { OfflineSyncManager } from '@/components/portal-funcionario/offline-sync-manager'
 
@@ -117,6 +118,8 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Atualizar o app (no app instalado não há botão de recarregar do navegador) */}
+            <RefreshAppButton compact />
             {/* Live indicator — escondido em telas muito estreitas */}
             <div className="hidden items-center gap-1.5 sm:flex">
               <span className="relative flex h-2 w-2">

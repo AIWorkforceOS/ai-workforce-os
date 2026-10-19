@@ -84,3 +84,19 @@ describe('download comum', () => {
     expect(downloadPdf(new File([pdfBytes()], 'x.pdf'), undefined)).toBe(false)
   })
 })
+
+describe('PDF genérico (relatório fotográfico) e visualizador interno', () => {
+  it('fetchPdf usa a URL pedida, valida o PDF e mantém o nome do cabeçalho ou o padrão', async () => {
+    const { fetchPdf } = await import('../signoff-download')
+    const fetchFn = vi.fn(async () => res(200, pdfBytes()))
+    const out = await fetchPdf({ url: '/api/x/pdf?report=photos', fallbackName: 'relatorio-fotografico-1.pdf' }, { fetchFn: fetchFn as unknown as typeof fetch })
+    expect(out.ok && out.value.name).toBe('relatorio-fotografico-1.pdf')
+    expect((fetchFn.mock.calls[0] as unknown as [string])[0]).toBe('/api/x/pdf?report=photos')
+    const html = await fetchPdf({ url: '/x', fallbackName: 'a.pdf' }, { fetchFn: (async () => res(200, new TextEncoder().encode('<html>'.repeat(400)))) as unknown as typeof fetch })
+    expect(html.ok).toBe(false)
+  })
+  it('o app nunca navega para o PDF (sem openPdf): só compartilhar, baixar ou visualizador interno', async () => {
+    const mod = await import('../signoff-download')
+    expect('openPdf' in mod).toBe(false)
+  })
+})

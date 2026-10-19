@@ -33,7 +33,7 @@ export function PreviewClient() {
     <div className="mx-auto flex max-w-md flex-col gap-4 p-4">
       <h1 className="text-lg font-bold text-white">Preview — Baixar Sign Off</h1>
       {ready && <SignOffPdfActions unitId="u1" appointmentId="a1" orderNumber="6224247" startsAt="2026-10-13T13:00:00.000Z" version="v1" />}
-      <pre className="text-xs text-slate-400" data-testid="log">{log.join('\n')}</pre>
+      <pre className="whitespace-pre-wrap break-all text-xs text-slate-400" data-testid="log">{log.join('\n')}</pre>
     </div>
   )
 }

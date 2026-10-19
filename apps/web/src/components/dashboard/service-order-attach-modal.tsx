@@ -12,6 +12,7 @@ import type { AppointmentWithRelations } from '@/components/dashboard/calendar-v
 import { QuoteBuilderPanel } from '@/components/service-orders/quote-builder-panel'
 import { ServiceOrderWorkspace } from '@/components/portal-funcionario/service-order-workspace'
 import { SignOffPdfActions } from '@/components/portal-funcionario/signoff-pdf-actions'
+import { OpenPdfButton } from '@/components/portal-funcionario/open-pdf-button'
 import { hasSignedSignOff } from '@/lib/service-orders/signoff-file'
 import type { PortalAppointment } from '@/lib/portal-funcionario/data'
 
@@ -126,16 +127,15 @@ function TechnicianReportSection({ unitId, appointment }: { unitId: string; appo
             {SERVICE_ORDER_STATUS_LABEL[appointment.service_order_status] ?? appointment.service_order_status}
           </Badge>
           {appointment.service_order_photos.length > 0 && (
-            <a
-              href={`/api/units/${unitId}/appointments/${appointment.id}/service-order/pdf?report=photos`}
-              target="_blank"
-              rel="noreferrer"
+            <OpenPdfButton
+              url={`/api/units/${unitId}/appointments/${appointment.id}/service-order/pdf?report=photos`}
+              fallbackName={`relatorio-fotografico-${appointment.service_order_number ?? 'ordem'}.pdf`}
               className="flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold text-cyan-300 hover:text-cyan-200"
               style={{ background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.25)' }}
             >
               <Receipt size={11} />
-              Baixar relatório fotográfico
-            </a>
+              Ver relatório fotográfico
+            </OpenPdfButton>
           )}
         </div>
       </div>
