@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { generateServiceOrderPdf } from '@/lib/service-orders/pdf'
 import { generatePhotoReportPdf, type ReportMedia } from '@/lib/service-orders/photo-report'
 import { reportDownloadUrl } from '@/lib/service-orders/report-link'
+import { signOffFileName } from '@/lib/service-orders/signoff-file'
 
 /** Baixar e reduzir dezenas de fotos leva tempo. */
 export const maxDuration = 60
@@ -101,7 +102,8 @@ export async function GET(
     status: 200,
     headers: {
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="ordem-servico-${safeNumber}.pdf"`,
+      'Content-Disposition': `attachment; filename="${signOffFileName({ clientPo: appointment.service_order_client_po, orderNumber: appointment.service_order_number, fallbackId: appointmentId, dateIso: appointment.starts_at })}"`,
+      'Cache-Control': 'private, no-store',
     },
   })
 }

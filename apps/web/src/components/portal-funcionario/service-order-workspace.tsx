@@ -18,6 +18,7 @@ import { getCurrentFix } from '@/lib/portal-funcionario/geolocation'
 import { directMediaUploadEnabled } from '@/lib/portal-funcionario/media-upload'
 import { saveViaQueue, type LiveSaveResult } from '@/lib/portal-funcionario/live-save'
 import { QuoteAgentPanel } from './quote-agent-panel'
+import { SignOffPdfActions } from './signoff-pdf-actions'
 
 /** File → StoredFile (mesmo Blob, só junto do nome/tipo) — o que a fila offline guarda. */
 function toStoredFile(file: File): StoredFile {
@@ -494,6 +495,9 @@ export function ServiceOrderWorkspace({
     )
   }
 
+  // Sign Off já assinado e salvo no servidor: mostra os botões de baixar/compartilhar bem no topo
+  const isSignedOrder = appt.service_order_status === 'completed' && Boolean(appt.service_order_signature_url) && Boolean(appt.service_order_signed_by)
+
   // alterações ainda NÃO enviadas ao servidor (rascunho local ou fotos novas): o agente só inicia depois de tudo salvo
   const hasUnsavedChanges = draftSavedAt !== null || photosBefore.length + photosAfter.length + materialPhotos.length > 0
 
@@ -513,6 +517,15 @@ export function ServiceOrderWorkspace({
         >
           Rascunho salvo neste aparelho às {new Date(draftSavedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} — ainda NÃO enviado ao servidor. Toque em salvar abaixo para enviar.
         </p>
+      )}
+      {isSignedOrder && (
+        <SignOffPdfActions
+          unitId={appt.unit_id}
+          appointmentId={appt.id}
+          orderNumber={appt.service_order_number}
+          startsAt={appt.starts_at}
+          version={`${appt.service_order_signed_at ?? ''}|${appt.service_order_signature_url ?? ''}|${appt.service_order_photos.length}|${appt.service_order_status}`}
+        />
       )}
       {appt.service_order_status !== 'pending' && appt.service_order_signed_by && (
         <p className="text-xs text-slate-400">
@@ -960,16 +973,18 @@ export function ServiceOrderWorkspace({
         />
       )}
 
-      <a
-        href={`/api/units/${appt.unit_id}/appointments/${appt.id}/service-order/pdf`}
-        target="_blank"
-        rel="noreferrer"
-        className="flex w-fit items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-slate-200 transition-colors hover:text-white"
-        style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)' }}
-      >
-        <Download size={13} />
-        {appt.service_order_status === 'pending' ? 'Abrir ordem em PDF (pra mostrar ao gerente)' : 'Baixar ordem de serviço em PDF'}
-      </a>
+      {!isSignedOrder && (
+        <a
+          href={`/api/units/${appt.unit_id}/appointments/${appt.id}/service-order/pdf`}
+          target="_blank"
+          rel="noreferrer"
+          className="flex w-fit items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-slate-200 transition-colors hover:text-white"
+          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.15)' }}
+        >
+          <Download size={13} />
+          {appt.service_order_status === 'pending' ? 'Abrir ordem em PDF (pra mostrar ao gerente)' : 'Baixar ordem de serviço em PDF'}
+        </a>
+      )}
       <MediaDownloadPanel media={appt.service_order_photos} orderNumber={appt.service_order_number} />
       {appt.service_order_photos.length > 0 && (
         <a
