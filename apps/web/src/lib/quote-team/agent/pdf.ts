@@ -112,7 +112,7 @@ export async function generateTechnicalQuotePdf(input: TechnicalQuotePdfInput): 
   const doc = await PDFDocument.create()
   const font = await doc.embedFont(StandardFonts.Helvetica)
   const bold = await doc.embedFont(StandardFonts.HelveticaBold)
-  const w = new Writer(doc, font, bold, 'Technical quote - not a commercial offer. Prices, rates and margins are not part of this document unless stated.')
+  const w = new Writer(doc, font, bold, 'Technical quote - not a commercial offer. Pricing is not part of this document unless stated.')
   const d = input.view.draft as Record<string, unknown>
   const diagnosis = (d.diagnosis ?? null) as Diagnosis | null
 

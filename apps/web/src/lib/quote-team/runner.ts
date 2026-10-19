@@ -58,6 +58,8 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 /** Chamado quando uma passada TERMINA o trabalho do job (concluído, esperando informação, sem orçamento ou falho). Nunca lança. */
 export type RunnerHooks = {
+  /** Cada chamada de IA liquidada (custo REAL): vira linha de uso da OpenAI por agente/cotação/empresa. Nunca lança. */
+  onUsage?: (job: QuoteJobRow, e: { label: string; actualUsd: number; tokensIn: number; tokensOut: number }) => Promise<void>
   onFinish?: (job: QuoteJobRow, kind: 'completed' | 'needs_input' | 'budget_exhausted' | 'failed') => Promise<void>
 }
 
@@ -110,7 +112,13 @@ export async function runQuoteJob(deps: RunnerDeps, jobId: string | null): Promi
     return finish('failed')
   }
 
-  const budget = new BudgetGuard(deps.store, job.id)
+  const budget = new BudgetGuard(deps.store, job.id, async (e) => {
+    try {
+      await deps.hooks?.onUsage?.(job, e)
+    } catch {
+      /* registro de uso nunca derruba a análise */
+    }
+  })
 
   for (const stage of QUOTE_STAGES) {
     if (stage in stepResults) continue

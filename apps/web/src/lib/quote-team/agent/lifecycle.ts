@@ -118,6 +118,21 @@ export async function submitTechnicianInput(deps: { store: JobStore }, input: Te
  */
 export function createRunnerHooks(deps: { db: SupabaseClient; store: JobStore }): RunnerHooks {
   return {
+    async onUsage(job, e) {
+      await deps.db.from('api_usage_events').insert({
+        org_id: job.org_id,
+        unit_id: job.unit_id,
+        provider: 'openai',
+        endpoint: `quote-agent:${e.label.split(':')[0]}`,
+        model: null,
+        input_tokens: e.tokensIn,
+        output_tokens: e.tokensOut,
+        total_tokens: e.tokensIn + e.tokensOut,
+        request_count: 1,
+        estimated_cost_usd: e.actualUsd,
+        metadata: { quote_job_id: job.id, appointment_id: job.appointment_id, label: e.label },
+      })
+    },
     async onFinish(job, kind) {
       try {
         if (kind === 'needs_input') {

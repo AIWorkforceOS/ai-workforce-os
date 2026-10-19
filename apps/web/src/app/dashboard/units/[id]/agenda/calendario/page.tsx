@@ -106,6 +106,16 @@ export default async function UnitCalendarPage({
               <BarChart3 size={13} />
               Relatórios
             </Link>
+            {/* painel do piloto: o admin precisa alcançá-lo MESMO com o agente desligado (é de lá que se liga); a página só abre para administradores */}
+            {(
+              <Link
+                href={`/dashboard/units/${id}/super-agente`}
+                className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-purple-200 transition-all hover:bg-white/5"
+                style={{ border: '1px solid rgba(168,85,247,0.4)' }}
+              >
+                Super Agente
+              </Link>
+            )}
           </div>
         }
       />
