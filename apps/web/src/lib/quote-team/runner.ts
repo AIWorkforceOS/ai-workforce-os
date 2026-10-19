@@ -128,6 +128,10 @@ export async function runQuoteJob(deps: RunnerDeps, jobId: string | null): Promi
       return { kind: 'yielded', job: await reload() }
     }
 
+    // "Desligar agora": o admin cancelou o job enquanto ele rodava — não começa nenhuma etapa nova (nada mais é gasto).
+    const fresh = await deps.store.get(job.id)
+    if (fresh?.status === 'cancelled') return { kind: 'yielded', job: fresh }
+
     const handler = deps.handlers[stage]!
     if (budgetExhausted && handler.needsAi) {
       pending.push({ code: 'budget_skipped', message_pt: `Etapa "${stage}" não executada: orçamento de IA da cotação esgotado. Complete manualmente.` })

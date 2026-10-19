@@ -24,6 +24,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (parsed.data.mode) {
     const { error } = await db.from('units').update({ quote_ai_team_mode: parsed.data.mode }).eq('id', unit.id)
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+    if (parsed.data.mode === 'off') {
+      // desligar é imediato: nada em andamento continua gastando; cotações e histórico ficam guardados (pode retomar depois)
+      await db.from('quote_analysis_jobs').update({ status: 'cancelled', locked_by: null, locked_until: null, error_code: 'switched_off' }).eq('unit_id', unit.id).in('status', ['queued', 'running', 'needs_input'])
+    }
   }
   for (const e of parsed.data.employees ?? []) {
     // só funcionários DESTA unidade

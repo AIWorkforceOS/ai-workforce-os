@@ -3,6 +3,7 @@ import { waitUntil } from '@vercel/functions'
 import { startQuoteAnalysis } from '@/lib/quote-team/agent/lifecycle'
 import { storageHosts, verifyStoredMedia } from '@/lib/quote-team/agent/media'
 import { buildAgentState, loadAgentContext } from '@/lib/quote-team/agent/server'
+import { QUOTE_DEFAULT_MONTHLY_CAP_USD } from '@/lib/quote-team/config'
 import { QUOTE_STAGE_HANDLERS } from '@/lib/quote-team/handlers'
 import { isPipelineReady } from '@/lib/quote-team/runner'
 import { diagnosisMediaUrls, kickQuoteJob } from '@/lib/quote-team/server'
@@ -27,6 +28,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const notes = appt.service_order_material_description ?? ''
   const registered = diagnosisMediaUrls(appt.service_order_photos)
   if (!notes.trim() && registered.length === 0) return NextResponse.json({ error: 'Descreva o problema e/ou salve ao menos uma foto antes de gerar a cotação.' }, { status: 409 })
+
+  // limite mensal da empresa (US$ 50 no piloto): se já foi atingido, nem começa — o técnico segue manualmente
+  const [{ data: limit }, { data: report }] = await Promise.all([ctx.db.from('quote_org_limits').select('monthly_cap_usd').eq('org_id', ctx.unit.org_id).maybeSingle(), ctx.db.rpc('quote_org_budget_report', { p_org: ctx.unit.org_id })])
+  const cap = Number((limit as { monthly_cap_usd?: number } | null)?.monthly_cap_usd ?? QUOTE_DEFAULT_MONTHLY_CAP_USD)
+  const monthTotal = Number(((report as { total_usd?: number }[] | null) ?? [])[0]?.total_usd ?? 0)
+  if (monthTotal >= cap) return NextResponse.json({ error: 'O limite mensal de IA desta empresa foi atingido. Continue a cotação manualmente; o administrador pode ajustar o limite.', reason: 'monthly_cap' }, { status: 409 })
 
   const { present, missing } = await verifyStoredMedia(registered, storageHosts())
   const result = await startQuoteAnalysis(

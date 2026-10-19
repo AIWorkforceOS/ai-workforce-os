@@ -1,4 +1,4 @@
--- ROLLBACK do Super Agente de Cotações (migrations 093–097; a 097 só fixa search_path e some junto com as funções). NÃO é uma migration: só roda sob decisão manual.
+-- ROLLBACK do Super Agente de Cotações (migrations 093–098; a 097 só fixa search_path e some junto com as funções). NÃO é uma migration: só roda sob decisão manual.
 -- PASSO 0 (não destrutivo, prefira este): colocar todas as unidades em 'off' e definir QUOTE_TEAM_ENABLED=false.
 --     update public.units set quote_ai_team_mode = 'off';
 -- Este script REMOVE as tabelas do módulo (e os dados de análises de cotação que existirem nelas). Exporte antes, se precisar.
@@ -6,6 +6,16 @@
 -- Ordem inversa das dependências. Idempotente (pode rodar mais de uma vez).
 begin;
 set local lock_timeout = '5s';
+
+-- 098 (piloto): conversa, avaliação do piloto, campos de compra, flag de técnico e índice de um job por WO
+drop table if exists public.quote_pilot_reviews;
+drop table if exists public.quote_messages;
+drop index if exists public.quote_jobs_one_per_appointment;
+alter table if exists public.quote_analysis_jobs drop column if exists rounds;
+alter table if exists public.quote_items drop constraint if exists quote_items_product_url_https;
+alter table if exists public.quote_items drop constraint if exists quote_items_price_source_valid;
+alter table if exists public.quote_items drop column if exists supplier, drop column if exists product_url, drop column if exists price_source, drop column if exists price_checked_at;
+alter table public.employees drop column if exists quote_agent_enabled;
 
 drop function if exists public.approve_quote_draft(uuid, uuid, jsonb);
 drop function if exists public.reconcile_quote_budgets(integer);

@@ -224,3 +224,38 @@ describe('edição do rascunho', () => {
     await expect(applyDraftEdits(t.db, t.draftId, { items: [{ id: '00000000-0000-0000-0000-000000000000', quantity: 1 }] }, { id: 'u', role: 'technician' })).rejects.toThrow(/não pertence/)
   })
 })
+
+describe('desligar agora', () => {
+  it('job cancelado enquanto roda: nenhuma etapa nova começa e nada mais é gasto', async () => {
+    const store = new InMemoryJobStore()
+    const calls = { diagnosis: 0, materials: 0 }
+    const handlers: StageHandlers = Object.fromEntries(
+      QUOTE_STAGES.map((stage) => [
+        stage,
+        {
+          needsAi: false,
+          run: async (ctx: { job: { id: string } }) => {
+            if (stage === 'diagnosis') {
+              calls.diagnosis += 1
+              await store.update(ctx.job.id, { status: 'cancelled' }) // o admin tocou em "Desligar agora" no meio da etapa
+            } else if (stage === 'materials') calls.materials += 1
+            return { kind: 'done' as const, result: stage }
+          },
+        },
+      ]),
+    ) as StageHandlers
+    await startQuoteAnalysis({ store }, start())
+    const out = await runQuoteJob({ store, handlers, worker: 'w' }, null)
+    expect(out.kind).toBe('yielded')
+    expect(calls).toEqual({ diagnosis: 1, materials: 0 })
+    expect((await store.get('job-1'))!.status).toBe('cancelled')
+  })
+  it('cancelado pode ser retomado depois (tentar de novo reaproveita o mesmo job)', async () => {
+    const store = new InMemoryJobStore()
+    const started = await startQuoteAnalysis({ store }, start())
+    const id = (started as { job: { id: string } }).job.id
+    await store.update(id, { status: 'cancelled' })
+    expect((await startQuoteAnalysis({ store }, start())).status).toBe('retried')
+    expect(store.jobs.size).toBe(1)
+  })
+})

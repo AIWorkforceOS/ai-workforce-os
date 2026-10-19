@@ -487,10 +487,10 @@ function Editor({ draft, busy, onSave, onCancel }: { draft: Draft; busy: boolean
         return (
           <div key={it.id} className="flex flex-col gap-2 rounded-lg p-2" style={{ background: 'rgba(255,255,255,0.03)' }}>
             <Input value={it.name_en} onChange={(e) => set({ name_en: e.target.value })} placeholder="Nome do material" />
-            <div className="grid grid-cols-3 gap-2">
-              <Input inputMode="decimal" value={it.quantity} onChange={(e) => set({ quantity: e.target.value })} placeholder="Qtd" />
-              <Input value={it.unit} onChange={(e) => set({ unit: e.target.value })} placeholder="Unid." />
-              <Input inputMode="decimal" value={it.price} onChange={(e) => set({ price: e.target.value })} placeholder="Preço US$" />
+            <div className="grid grid-cols-[1fr_1fr_1.6fr] gap-2">
+              <Input className="min-w-0" inputMode="decimal" value={it.quantity} onChange={(e) => set({ quantity: e.target.value })} placeholder="Qtd" />
+              <Input className="min-w-0" value={it.unit} onChange={(e) => set({ unit: e.target.value })} placeholder="Unid." />
+              <Input className="min-w-0" inputMode="decimal" value={it.price} onChange={(e) => set({ price: e.target.value })} placeholder="US$ cada" />
             </div>
             <Input value={it.supplier} onChange={(e) => set({ supplier: e.target.value })} placeholder="Fornecedor" />
             <Input type="url" value={it.product_url} onChange={(e) => set({ product_url: e.target.value })} placeholder="Link do produto (https://…)" />
@@ -503,10 +503,10 @@ function Editor({ draft, busy, onSave, onCancel }: { draft: Draft; busy: boolean
         return (
           <div key={i} className="flex flex-col gap-2 rounded-lg p-2" style={{ background: 'rgba(16,185,129,0.06)' }}>
             <Input value={a.name_en} onChange={(e) => set({ name_en: e.target.value })} placeholder="Novo material" />
-            <div className="grid grid-cols-3 gap-2">
-              <Input inputMode="decimal" value={a.quantity} onChange={(e) => set({ quantity: e.target.value })} placeholder="Qtd" />
-              <Input value={a.unit} onChange={(e) => set({ unit: e.target.value })} placeholder="Unid." />
-              <Input inputMode="decimal" value={a.price} onChange={(e) => set({ price: e.target.value })} placeholder="Preço US$" />
+            <div className="grid grid-cols-[1fr_1fr_1.6fr] gap-2">
+              <Input className="min-w-0" inputMode="decimal" value={a.quantity} onChange={(e) => set({ quantity: e.target.value })} placeholder="Qtd" />
+              <Input className="min-w-0" value={a.unit} onChange={(e) => set({ unit: e.target.value })} placeholder="Unid." />
+              <Input className="min-w-0" inputMode="decimal" value={a.price} onChange={(e) => set({ price: e.target.value })} placeholder="US$ cada" />
             </div>
             <Input value={a.supplier} onChange={(e) => set({ supplier: e.target.value })} placeholder="Fornecedor" />
             <Input type="url" value={a.product_url} onChange={(e) => set({ product_url: e.target.value })} placeholder="Link (https://…)" />
@@ -517,8 +517,8 @@ function Editor({ draft, busy, onSave, onCancel }: { draft: Draft; busy: boolean
       <div className="flex flex-col gap-2 rounded-lg p-2" style={{ background: 'rgba(255,255,255,0.03)' }}>
         <p className="text-xs font-bold text-slate-300">Equipe e tempo</p>
         <div className="grid grid-cols-2 gap-2">
-          <div><Label>Técnicos</Label><Input inputMode="numeric" value={technicians} onChange={(e) => setTechnicians(e.target.value)} /></div>
-          <div><Label>Horas de serviço</Label><Input inputMode="decimal" value={hours} onChange={(e) => setHours(e.target.value)} /></div>
+          <div className="min-w-0"><Label>Técnicos</Label><Input className="min-w-0" inputMode="numeric" value={technicians} onChange={(e) => setTechnicians(e.target.value)} /></div>
+          <div className="min-w-0"><Label>Horas de serviço</Label><Input className="min-w-0" inputMode="decimal" value={hours} onChange={(e) => setHours(e.target.value)} /></div>
         </div>
         {Number(technicians) > 1 && <Textarea rows={2} value={why} onChange={(e) => setWhy(e.target.value)} placeholder="Por que mais de um técnico? (ex.: porta muito pesada)" />}
         <p className="text-xs text-slate-400">Horas-homem = técnicos × horas: {((Math.max(1, Math.round(Number(technicians) || 1))) * (Number(hours.replace(',', '.')) || 0)).toFixed(2)} h</p>
