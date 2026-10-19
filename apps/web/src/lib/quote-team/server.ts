@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { waitUntil } from '@vercel/functions'
 import { effectiveQuoteTeamMode, type QuoteTeamMode } from './config'
 import { QUOTE_STAGE_HANDLERS } from './handlers'
 import { enqueueQuoteJob, type EnqueueResult } from './jobs'
@@ -8,6 +9,21 @@ import { isPipelineReady } from './runner'
 /** Mídias usadas no diagnóstico: só fotos já REGISTRADAS no servidor (antes/depois/atendimento). Vídeo e nota fiscal ficam de fora na v1. */
 export function diagnosisMediaUrls(photos: { url: string; kind?: string }[] | null | undefined): string[] {
   return (photos ?? []).filter((p) => !p.kind || p.kind === 'before' || p.kind === 'after' || p.kind === 'service').map((p) => p.url)
+}
+
+/**
+ * Dispara o processamento do job AGORA, de servidor para servidor (não depende do navegador do técnico). Nunca lança: se falhar, o job
+ * continua na fila e o cron por minuto o pega. A rota de execução responde 202 na hora e trabalha em segundo plano.
+ */
+export async function kickQuoteJob(origin: string, jobId: string, fetchImpl: typeof fetch = fetch): Promise<boolean> {
+  const secret = process.env.CRON_SECRET
+  if (!secret) return false
+  try {
+    const res = await fetchImpl(`${origin}/api/quote-jobs/${jobId}/run`, { method: 'POST', headers: { Authorization: `Bearer ${secret}` }, signal: AbortSignal.timeout(4000) })
+    return res.status === 202
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -25,6 +41,8 @@ export async function maybeEnqueueQuoteAnalysis(
     photos: { url: string; kind?: string }[] | null | undefined
     photoExceptionReason?: string | null
     createdBy?: string | null
+    /** Origem do site (ex.: https://alizoai.com): se informada, dispara a análise na hora (servidor→servidor). Sem ela, o cron por minuto cuida. */
+    kickOrigin?: string | null
   },
 ): Promise<EnqueueResult | { status: 'skipped'; reason: 'error' }> {
   try {
@@ -37,7 +55,7 @@ export async function maybeEnqueueQuoteAnalysis(
     const mode: QuoteTeamMode = row?.org_id ? effectiveQuoteTeamMode(row.quote_ai_team_mode) : 'off'
     if (!row || !row.org_id || mode === 'off') return { status: 'skipped', reason: 'mode_off' }
 
-    return await enqueueQuoteJob(
+    const result = await enqueueQuoteJob(
       { store: new SupabaseJobStore(db), pipelineReady: true },
       {
         unit: { id: row.id, org_id: row.org_id, mode },
@@ -49,6 +67,9 @@ export async function maybeEnqueueQuoteAnalysis(
         createdBy: input.createdBy ?? null,
       },
     )
+    // em segundo plano: o salvamento da ordem NUNCA espera por isso
+    if (result.status === 'enqueued' && input.kickOrigin) waitUntil(kickQuoteJob(input.kickOrigin, result.job.id))
+    return result
   } catch (error) {
     console.error(`[quote-team] não foi possível enfileirar a análise: ${error instanceof Error ? error.message : String(error)}`)
     return { status: 'skipped', reason: 'error' }

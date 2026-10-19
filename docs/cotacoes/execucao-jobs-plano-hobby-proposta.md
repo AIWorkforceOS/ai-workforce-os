@@ -1,4 +1,4 @@
-# Execução dos jobs de análise compatível com o plano Hobby — PROPOSTA (18/10/2026)
+# (OBSOLETO — só histórico) Execução dos jobs compatível com o plano Hobby — o Vinicius confirmou Vercel e Supabase PRO em 18/10; vale `revisao-final-primeiro-deploy-controlado.md`
 
 **Nada foi alterado** (nem `vercel.json`, nem rotas, nem crons existentes). Premissa de planejamento (decisão do Vinicius): plano **Hobby** até confirmar no painel. Requisitos: (1) disparo imediato após salvar; (2) recuperação agendada de jobs interrompidos; (3) **não depender do navegador aberto**; (4) não tocar nos crons existentes (Facil-IT e outros); (5) módulo continua desligado.
 

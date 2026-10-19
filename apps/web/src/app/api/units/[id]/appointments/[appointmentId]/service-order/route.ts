@@ -235,6 +235,7 @@ export async function PATCH(
       photos: updated.service_order_photos,
       photoExceptionReason: typeof reason === 'string' ? reason : null,
       createdBy: user.id,
+      kickOrigin: new URL(request.url).origin,
     })
   }
 

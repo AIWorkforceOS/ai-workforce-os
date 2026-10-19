@@ -20,6 +20,11 @@ export type QuoteStage = (typeof QUOTE_STAGES)[number]
 /** Cada passada do worker devolve o job antes de estourar o limite da função (maxDuration 300 s). */
 export const RUNNER_TIME_BUDGET_MS = 240_000
 export const STAGE_TIMEOUT_MS = 90_000
+/**
+ * Tempo máximo que uma ROTA (cron ou execução imediata) gasta começando etapas: 180 s + a etapa mais longa (90 s) = 270 s < maxDuration 300 s.
+ * (O padrão do runner, 240 s, somado a uma etapa de 90 s passaria de 300 s e a função seria cortada no meio.)
+ */
+export const ROUTE_TIME_BUDGET_MS = 180_000
 export const LEASE_SECONDS = 300
 export const MAX_ATTEMPTS = 3
 /** Espera antes da tentativa 2, 3… (ms). */
