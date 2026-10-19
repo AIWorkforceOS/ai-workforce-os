@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { filenameFromContentDisposition, looksLikePdf, signOffFileName } from '../signoff-file'
+import { filenameFromContentDisposition, hasSignedSignOff, looksLikePdf, signOffFileName } from '../signoff-file'
 
 describe('nome do arquivo do Sign Off', () => {
   it('SignOff_PO-<número>-<data>.pdf, usando o PO do cliente quando existe', () => {
@@ -29,5 +29,18 @@ describe('cabeçalho e validação do PDF', () => {
     expect(looksLikePdf(pdf)).toBe(true)
     expect(looksLikePdf(new TextEncoder().encode('{"error":"x"}'))).toBe(false)
     expect(looksLikePdf(new Uint8Array(2000))).toBe(false)
+  })
+})
+
+describe('quando mostrar Baixar Sign Off', () => {
+  const base = { service_order_signature_url: 'https://x/assinatura.png', service_order_signed_by: 'Jaime Hughes' }
+  it('ordem assinada, Finalizada OU em Cotação: mostra (o PDF é o mesmo Sign Off Sheet)', () => {
+    expect(hasSignedSignOff({ ...base, service_order_status: 'completed' })).toBe(true)
+    expect(hasSignedSignOff({ ...base, service_order_status: 'quote' })).toBe(true)
+  })
+  it('pendente, sem assinatura ou sem nome de quem assinou: não mostra', () => {
+    expect(hasSignedSignOff({ ...base, service_order_status: 'pending' })).toBe(false)
+    expect(hasSignedSignOff({ ...base, service_order_status: 'completed', service_order_signature_url: null })).toBe(false)
+    expect(hasSignedSignOff({ ...base, service_order_status: 'completed', service_order_signed_by: '  ' })).toBe(false)
   })
 })

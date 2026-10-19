@@ -22,6 +22,7 @@ import { directMediaUploadEnabled } from '@/lib/portal-funcionario/media-upload'
 import { saveViaQueue, type LiveSaveResult } from '@/lib/portal-funcionario/live-save'
 import { QuoteAgentPanel } from './quote-agent-panel'
 import { SignOffPdfActions } from './signoff-pdf-actions'
+import { hasSignedSignOff } from '@/lib/service-orders/signoff-file'
 
 /** File → StoredFile (mesmo Blob, só junto do nome/tipo) — o que a fila offline guarda. */
 function toStoredFile(file: File): StoredFile {
@@ -568,7 +569,7 @@ export function ServiceOrderWorkspace({
   }
 
   // Sign Off já assinado e salvo no servidor: mostra os botões de baixar/compartilhar bem no topo
-  const isSignedOrder = appt.service_order_status === 'completed' && Boolean(appt.service_order_signature_url) && Boolean(appt.service_order_signed_by)
+  const isSignedOrder = hasSignedSignOff(appt)
 
   // alterações ainda NÃO enviadas ao servidor (rascunho local ou fotos novas): o agente só inicia depois de tudo salvo
   const hasUnsavedChanges = draftSavedAt !== null || photosBefore.length + photosAfter.length + materialPhotos.length > 0

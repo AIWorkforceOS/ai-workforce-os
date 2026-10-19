@@ -22,3 +22,11 @@ export function filenameFromContentDisposition(header: string | null | undefined
 export function looksLikePdf(bytes: Uint8Array): boolean {
   return bytes.length > 1024 && String.fromCharCode(...bytes.slice(0, 5)) === '%PDF-'
 }
+
+/**
+ * A ordem já tem Sign Off assinado e salvo no servidor, e portanto PDF para baixar/compartilhar? Vale para "Finalizado" E para "Cotação"
+ * (o PDF é o mesmo Sign Off Sheet): só fica de fora a ordem ainda pendente ou sem assinatura/nome de quem assinou.
+ */
+export function hasSignedSignOff(order: { service_order_status: string | null; service_order_signature_url: string | null; service_order_signed_by: string | null }): boolean {
+  return order.service_order_status !== 'pending' && Boolean(order.service_order_signature_url) && Boolean(order.service_order_signed_by?.trim())
+}
