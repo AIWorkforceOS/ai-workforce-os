@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildServiceOrderUpdatePayload, buildPhotosOnlyUpdatePayload, isServiceOrderStatus } from '../finalize'
+import { buildServiceOrderUpdatePayload, buildPhotosOnlyUpdatePayload, isIdempotentPhotoReplay, isServiceOrderStatus } from '../finalize'
 
 describe('isServiceOrderStatus', () => {
   it('aceita só "completed" e "quote"', () => {
@@ -176,5 +176,20 @@ describe('assinatura obrigatória no servidor para finalizar', () => {
     expect(buildServiceOrderUpdatePayload(input, [], [], null, 'https://x/a.png').ok).toBe(true)
     expect(buildServiceOrderUpdatePayload(input, [], [], 'https://x/old.png', null).ok).toBe(true)
     expect(buildServiceOrderUpdatePayload({ ...input, status: 'quote' }, [], [], null, null).ok).toBe(true)
+  })
+})
+
+describe('isIdempotentPhotoReplay (reenvio da fila offline)', () => {
+  it('só-fotos, arquivos enviados e nenhum novo (todos já na ordem) = sucesso idempotente', () => {
+    expect(isIdempotentPhotoReplay({ photosOnly: true, filesSent: 3, newPhotos: 0 })).toBe(true)
+  })
+  it('nenhum arquivo enviado continua sendo erro "nenhuma foto"', () => {
+    expect(isIdempotentPhotoReplay({ photosOnly: true, filesSent: 0, newPhotos: 0 })).toBe(false)
+  })
+  it('misturado (algumas novas) NÃO é reenvio: grava só as novas', () => {
+    expect(isIdempotentPhotoReplay({ photosOnly: true, filesSent: 3, newPhotos: 1 })).toBe(false)
+  })
+  it('salvamento completo (com status) nunca cai neste atalho', () => {
+    expect(isIdempotentPhotoReplay({ photosOnly: false, filesSent: 2, newPhotos: 0 })).toBe(false)
   })
 })

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import type { PortalServiceOrderPhoto } from '@/lib/portal-funcionario/data'
-import { buildServiceOrderUpdatePayload, buildPhotosOnlyUpdatePayload } from '@/lib/service-orders/finalize'
+import { buildServiceOrderUpdatePayload, buildPhotosOnlyUpdatePayload, isIdempotentPhotoReplay } from '@/lib/service-orders/finalize'
 import { autoGenerateQuoteOnSave } from '@/lib/service-orders/quote-composer'
 import { maybeEnqueueQuoteAnalysis } from '@/lib/quote-team/server'
 import { canFinalizeOrder } from '@/lib/portal-funcionario/field-time'
@@ -160,6 +160,19 @@ export async function PATCH(
   const uploadedPhotos: PortalServiceOrderPhoto[] = [...uploadedBeforePhotos, ...uploadedAfterPhotos, ...uploadedMaterialPhotos].filter(
     (photo) => !knownUrls.has(photo.url),
   )
+
+  // Reenvio idempotente (fila offline): arquivos chegaram, mas todos já estão na ordem ⇒ sucesso com o estado atual, sem regravar nada.
+  const filesSent = beforePhotoFiles.length + afterPhotoFiles.length + materialPhotoFiles.length
+  if (isIdempotentPhotoReplay({ photosOnly, filesSent, newPhotos: uploadedPhotos.length })) {
+    const { data: current } = await supabase
+      .from('appointments')
+      .select(
+        'id, service_order_status, service_order_signed_by, service_order_signed_at, service_order_signature_url, service_order_part_purchase_link, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_photos',
+      )
+      .eq('id', appointmentId)
+      .maybeSingle()
+    return NextResponse.json({ ok: true, idempotent: true, appointment: current })
+  }
 
   const signatureFile = formData.get('signature')
   let uploadedSignatureUrl: string | null = null

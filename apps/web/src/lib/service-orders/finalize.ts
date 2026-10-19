@@ -116,6 +116,15 @@ export function buildServiceOrderUpdatePayload(
  * que o upload de foto tinha bugado. Não mexe em status/assinatura/
  * material, só acrescenta às fotos já existentes (nunca substitui).
  */
+/**
+ * Reenvio idempotente de um salvamento só-de-fotos (típico da fila offline: o servidor gravou, a resposta se perdeu, o
+ * aparelho reenviou). Os arquivos chegaram, mas TODOS já constam na ordem (mesmo clientSaveId ⇒ mesmo caminho/URL) — então
+ * não há nada novo a gravar e isso é SUCESSO, não erro. Só é erro "nenhuma foto" quando nenhum arquivo foi enviado.
+ */
+export function isIdempotentPhotoReplay(input: { photosOnly: boolean; filesSent: number; newPhotos: number }): boolean {
+  return input.photosOnly && input.filesSent > 0 && input.newPhotos === 0
+}
+
 export function buildPhotosOnlyUpdatePayload(
   existingPhotos: PortalServiceOrderPhoto[],
   uploadedPhotos: PortalServiceOrderPhoto[],
