@@ -11,6 +11,8 @@ import { Badge, Card, Input, Label, Textarea, type BadgeVariant } from '@/compon
 import type { AppointmentWithRelations } from '@/components/dashboard/calendar-view'
 import { QuoteBuilderPanel } from '@/components/service-orders/quote-builder-panel'
 import { ServiceOrderWorkspace } from '@/components/portal-funcionario/service-order-workspace'
+import { SignOffPdfActions } from '@/components/portal-funcionario/signoff-pdf-actions'
+import { hasSignedSignOff } from '@/lib/service-orders/signoff-file'
 import type { PortalAppointment } from '@/lib/portal-funcionario/data'
 
 const FILE_MAX_BYTES = 15 * 1024 * 1024
@@ -123,18 +125,6 @@ function TechnicianReportSection({ unitId, appointment }: { unitId: string; appo
           <Badge variant={SERVICE_ORDER_STATUS_VARIANT[appointment.service_order_status] ?? 'slate'}>
             {SERVICE_ORDER_STATUS_LABEL[appointment.service_order_status] ?? appointment.service_order_status}
           </Badge>
-          {appointment.service_order_status !== 'pending' && (
-            <a
-              href={`/api/units/${unitId}/appointments/${appointment.id}/service-order/pdf`}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold text-cyan-300 hover:text-cyan-200"
-              style={{ background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.25)' }}
-            >
-              <Receipt size={11} />
-              Baixar PDF da ordem
-            </a>
-          )}
           {appointment.service_order_photos.length > 0 && (
             <a
               href={`/api/units/${unitId}/appointments/${appointment.id}/service-order/pdf?report=photos`}
@@ -149,6 +139,17 @@ function TechnicianReportSection({ unitId, appointment }: { unitId: string; appo
           )}
         </div>
       </div>
+
+      {appointment.service_order_status !== 'pending' && (
+        <SignOffPdfActions
+          unitId={unitId}
+          appointmentId={appointment.id}
+          orderNumber={appointment.service_order_number}
+          startsAt={appointment.starts_at}
+          title={hasSignedSignOff(appointment) ? 'Sign Off assinado' : 'Ordem de serviço (PDF)'}
+          version={`${appointment.service_order_signed_at ?? ''}|${appointment.service_order_signature_url ?? ''}|${appointment.service_order_photos.length}|${appointment.service_order_status}`}
+        />
+      )}
 
       {appointment.service_order_signed_by && (
         <p className="flex items-center gap-1.5 text-xs text-slate-300">
@@ -664,7 +665,7 @@ export function ServiceOrderAttachModal({
                     Mesmo formulário do técnico no Portal do Funcionário — use quando você (o admin) precisar coletar a
                     assinatura do gerente, tirar as fotos ou preencher o orçamento em vez do técnico.
                   </p>
-                  <ServiceOrderWorkspace appointment={toPortalAppointment(appointment)} onSaved={onSaved} />
+                  <ServiceOrderWorkspace appointment={toPortalAppointment(appointment)} onSaved={onSaved} showSignOffCard={false} />
                 </div>
               )}
             </div>

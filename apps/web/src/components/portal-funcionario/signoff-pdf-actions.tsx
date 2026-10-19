@@ -22,6 +22,7 @@ export function SignOffPdfActions({
   orderNumber,
   startsAt,
   version,
+  title = 'Sign Off assinado',
 }: {
   unitId: string
   appointmentId: string
@@ -29,6 +30,7 @@ export function SignOffPdfActions({
   startsAt: string
   /** Muda quando a ordem muda (nova assinatura/fotos): descarta o PDF guardado em memória para nunca entregar uma versão velha. */
   version: string
+  title?: string
 }) {
   const [phase, setPhase] = useState<Phase>('idle')
   const [message, setMessage] = useState<string | null>(null)
@@ -121,7 +123,7 @@ export function SignOffPdfActions({
       style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.35)' }}
       data-testid="signoff-actions"
     >
-      <p className="text-xs font-bold uppercase tracking-wide text-emerald-300">Sign Off assinado</p>
+      <p className="text-xs font-bold uppercase tracking-wide text-emerald-300">{title}</p>
       <button
         type="button"
         disabled={preparing}

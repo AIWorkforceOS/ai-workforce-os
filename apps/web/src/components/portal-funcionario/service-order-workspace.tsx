@@ -85,7 +85,10 @@ export function ServiceOrderWorkspace({
   requireGps: requireGpsProp,
   onFinished: onFinishedProp,
   quoteAgentEnabled = false,
+  showSignOffCard = true,
 }: {
+  /** O painel do admin já mostra o cartão de baixar/compartilhar no resumo da ordem: lá o formulário embutido não repete. */
+  showSignOffCard?: boolean
   /** Piloto do Super Agente de Cotações: o técnico está autorizado e a unidade está em modo ao vivo (decidido no servidor). */
   quoteAgentEnabled?: boolean
   appointment: PortalAppointment
@@ -591,7 +594,7 @@ export function ServiceOrderWorkspace({
           Rascunho salvo neste aparelho às {new Date(draftSavedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} — ainda NÃO enviado ao servidor. Toque em salvar abaixo para enviar.
         </p>
       )}
-      {isSignedOrder && (
+      {isSignedOrder && showSignOffCard && (
         <SignOffPdfActions
           unitId={appt.unit_id}
           appointmentId={appt.id}
@@ -1046,7 +1049,7 @@ export function ServiceOrderWorkspace({
         />
       )}
 
-      {!isSignedOrder && (
+      {!(isSignedOrder && showSignOffCard) && (
         <a
           href={`/api/units/${appt.unit_id}/appointments/${appt.id}/service-order/pdf`}
           target="_blank"
