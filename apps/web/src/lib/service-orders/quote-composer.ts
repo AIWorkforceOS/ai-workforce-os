@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { generateStructuredReply, getOpenAIApiKey } from '@/lib/openai'
+import { stripMissingInfoStatements } from './quote-text-guard'
 
 /**
  * Transforma a anotação crua do técnico (o que precisa pra fazer o
@@ -43,7 +44,7 @@ Regra inegociável: NUNCA se dirija a ninguém. Não comece com saudação nenhu
 Estruture como uma cotação real, sem abertura/saudação:
 1. O que foi encontrado/diagnosticado (baseado só na anotação do técnico).
 2. O que é necessário pra concluir o serviço — material, peças, mão de obra.
-3. Estimativa de custo e de tempo, SE fornecidas (nunca invente números).
+3. Estimativa de custo e de tempo — SOMENTE se o técnico informou. Se NÃO informou, esta seção não existe: não escreva nada sobre custo, preço, valor, prazo ou tempo (nem que "não foram informados/fornecidos").
 4. Referência do material/peça (link), SE fornecida.
 5. Fechamento curto e natural, convidando a aprovar a cotação — sem se dirigir a ninguém pelo nome.
 
@@ -53,7 +54,7 @@ Responda em JSON com exatamente estas duas chaves, AS DUAS SEMPRE PREENCHIDAS PO
   "quote_pt": "o MESMO documento, mesma estrutura e mesmo conteúdo, em português do Brasil — não é um resumo, é o documento espelho, pra quem está no escritório conferir exatamente o que vai ser enviado. Mesmo tom natural, mesma regra de nunca se dirigir a ninguém."
 }
 
-Regra mais importante: nunca invente material, valores, prazos ou informação que não está nos dados fornecidos. Se um dado (custo, prazo, link) não foi fornecido, simplesmente omita essa seção do documento em vez de inventar um número. Tudo que aparece no quote_en tem que aparecer no quote_pt, e vice-versa. Responda só o JSON, nada mais.`
+Regra mais importante: nunca invente material, valores, prazos ou informação que não está nos dados fornecidos. Se um dado (custo, prazo, link) não foi fornecido, simplesmente omita essa seção do documento em vez de inventar um número. NUNCA escreva frases sobre informação que faltou — nada de "custo e prazo não foram fornecidos", "estimativa não informada", "link a ser fornecido" ou parecido: isso dá a impressão de erro do técnico. O documento só afirma o que existe. Tudo que aparece no quote_en tem que aparecer no quote_pt, e vice-versa. Responda só o JSON, nada mais.`
 
 export type ComposedQuote = { en: string; pt: string }
 
@@ -101,8 +102,9 @@ export async function composeClientQuoteDescription(input: QuoteComposerInput): 
       // Default da lib (0.2) saía formal/robótico demais — pedido do Vinicius (2026-09-17) de tom mais natural.
       temperature: 0.6,
     })
-    const quoteEn = typeof raw.quote_en === 'string' ? raw.quote_en.trim() : ''
-    const quotePt = typeof raw.quote_pt === 'string' ? raw.quote_pt.trim() : ''
+    // Rede de segurança: mesmo que o modelo escreva "custo e prazo não foram informados", a frase é removida antes de salvar.
+    const quoteEn = typeof raw.quote_en === 'string' ? stripMissingInfoStatements(raw.quote_en.trim()) : ''
+    const quotePt = typeof raw.quote_pt === 'string' ? stripMissingInfoStatements(raw.quote_pt.trim()) : ''
     if (!quoteEn || !quotePt) return null
     return { en: quoteEn, pt: quotePt }
   } catch (error) {

@@ -186,3 +186,27 @@ describe('autoGenerateQuoteOnSave', () => {
     expect(db.appointments?.[0]).not.toHaveProperty('service_order_quote_description_en')
   })
 })
+
+describe('composeClientQuoteDescription — nunca fala de informação ausente', () => {
+  it('mesmo que o modelo escreva que custo e prazo não foram fornecidos, a frase é removida das duas versões', async () => {
+    vi.stubEnv('OPENAI_API_KEY', 'sk-test')
+    mockFetchOnce(
+      chatCompletionBody({
+        quote_en: 'Found 5 covers fallen.\n\nEstimated cost and time are not provided.\n\nPlease approve the quote to proceed.',
+        quote_pt: 'Encontradas 5 capas.\n\nEstimativa de custo e prazo não foram fornecidos.\n\nAprovar a cotação para prosseguir.',
+      }),
+    )
+    const result = await composeClientQuoteDescription({ technicianNotes: 'caíram 5 capas' })
+    expect(result?.en).not.toMatch(/not provided/i)
+    expect(result?.pt).not.toMatch(/não foram fornecidos/i)
+    expect(result?.en).toContain('Please approve')
+  })
+  it('o prompt proíbe expressamente falar do que faltou', async () => {
+    vi.stubEnv('OPENAI_API_KEY', 'sk-test')
+    const fetchMock = mockFetchOnce(chatCompletionBody({ quote_en: 'x', quote_pt: 'y' }))
+    await composeClientQuoteDescription({ technicianNotes: 'trocar fechadura' })
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as unknown as [unknown, RequestInit])[1].body))
+    const system = JSON.stringify(body.messages)
+    expect(system).toMatch(/NUNCA escreva frases sobre informação que faltou/)
+  })
+})
