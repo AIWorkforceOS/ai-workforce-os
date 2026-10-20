@@ -83,8 +83,9 @@ describe('GET /api/cron/manager-agenda-digest', () => {
   })
 
   it('unidade com agendamentos hoje: lista nome do cliente, horário e serviço na mensagem', async () => {
-    const todayNoon = new Date()
-    todayNoon.setUTCHours(15, 0, 0, 0) // meio-dia em America/Sao_Paulo (UTC-3)
+    // "hoje" é o dia de São Paulo (UTC-3), não o dia UTC: entre 00:00 e 03:00 UTC os dois diferem e o teste quebrava só nessa janela.
+    const nowSp = new Date(Date.now() - 3 * 3600_000)
+    const todayNoon = new Date(Date.UTC(nowSp.getUTCFullYear(), nowSp.getUTCMonth(), nowSp.getUTCDate(), 15, 0, 0)) // meio-dia em America/Sao_Paulo
 
     const { supabase } = createFakeSupabase({
       units: [makeUnit()],
