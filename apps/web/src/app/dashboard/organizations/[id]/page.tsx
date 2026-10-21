@@ -3,6 +3,9 @@ import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getAppUser } from '@/lib/app-user'
 import { computeSetupStatus, unitHasWhatsapp, type UnitWhatsappChannelRow } from '@/lib/setup-status'
+import { BrandingCard } from '@/components/brand/branding-card'
+import { BrandingAccessToggle } from '@/components/admin/branding-access-toggle'
+import { readOrgLogoUrl } from '@/lib/branding/server'
 import { ChangePlanForm, DeleteOrgButton, ManagementModeForm, ProvisionUserForm, ResetPasswordButton, ToggleOrgActive } from '@/components/admin/org-actions'
 import { Badge, Card, TableShell, Td, Th, Tr } from '@/components/ui/dashboard-ui'
 import { AlertTriangle, ArrowLeft, Check, CheckCircle2, WifiOff } from 'lucide-react'
@@ -46,6 +49,11 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ id: 
   if (!org) notFound()
 
   const orgRow = org as Organization
+  // Marca (migration 100): leitura tolerante — se a coluna ainda não existe, a tela segue sem o bloco de permissão.
+  const brandLogoUrl = await readOrgLogoUrl(orgRow.id)
+  const { data: brandFlags, error: brandFlagsError } = await supabase.from('users').select('id, can_manage_branding').eq('org_id', id)
+  const brandingReady = !brandFlagsError
+  const canManageById = new Map(((brandFlags ?? []) as { id: string; can_manage_branding: boolean }[]).map((u) => [u.id, u.can_manage_branding]))
   const unitRows = (units ?? []) as Unit[]
   const userRows = (users ?? []) as { id: string; email: string; name: string | null; role: string; is_active: boolean }[]
   const summaryRows = (summary ?? []) as DashboardSummaryRow[]
@@ -243,6 +251,9 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ id: 
         )}
       </Card>
 
+      {/* Logo da empresa (o super admin escolhe a empresa; o admin só troca se for liberado abaixo) */}
+      <BrandingCard orgId={orgRow.id} currentLogoUrl={brandLogoUrl} title="Logo desta empresa" />
+
       {/* Acessos */}
       <Card className="overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
@@ -260,6 +271,7 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ id: 
               <Th>Usuário</Th>
               <Th>Papel</Th>
               <Th>Status</Th>
+              <Th>Logo da empresa</Th>
               <Th>Ações</Th>
             </TableShell>
             <tbody>
@@ -272,6 +284,9 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ id: 
                   <Td className="text-slate-400">{u.role}</Td>
                   <Td>
                     <Badge variant={u.is_active ? 'green' : 'slate'}>{u.is_active ? 'Ativo' : 'Inativo'}</Badge>
+                  </Td>
+                  <Td>
+                    {u.role === 'admin' && brandingReady ? <BrandingAccessToggle userId={u.id} enabled={Boolean(canManageById.get(u.id))} /> : <span className="text-[11px] text-slate-600">—</span>}
                   </Td>
                   <Td>
                     <ResetPasswordButton email={u.email} />

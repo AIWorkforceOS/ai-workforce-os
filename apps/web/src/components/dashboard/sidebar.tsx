@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { LogOut } from 'lucide-react'
+import { SidebarBrand } from '@/components/brand/brand-logo'
 import { createClient } from '@/lib/supabase/client'
 import { useLocale } from '@/lib/i18n/client'
 import type { ManagementMode } from '@/lib/types'
@@ -20,8 +21,11 @@ export function Sidebar({
   unitId = null,
   managementMode = 'digital_employees',
   facilitEnabled = false,
+  brandLogoUrl = null,
   onNavigate,
 }: {
+  /** Logo própria da empresa (substitui a do Alizo). */
+  brandLogoUrl?: string | null
   userEmail: string
   role?: string
   /** users.unit_id — preenchido = dono de unidade (só acessa a própria unidade) */
@@ -55,7 +59,7 @@ export function Sidebar({
 
       {/* Logo */}
       <div className="px-5 pt-5 pb-4">
-        <img src="/branding/alizo-logo.png" alt="Alizo" className="h-8 w-auto" />
+        <SidebarBrand logoUrl={brandLogoUrl} />
       </div>
 
       {/* Divider */}

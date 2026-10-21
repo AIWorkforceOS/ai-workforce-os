@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getAppUser } from '@/lib/app-user'
 import { SignOutButton } from '@/components/dashboard/sign-out-button'
+import { HeaderBrand } from '@/components/brand/brand-logo'
+import { getBrandLogoUrl } from '@/lib/branding/server'
 
 /**
  * Portal 360 (migration 061) — login único e compartilhado da rede
@@ -48,6 +50,9 @@ export default async function Portal360Layout({ children }: { children: ReactNod
     redirect('/dashboard')
   }
 
+  // Cliente externo: mostra a logo da empresa que o atende (a Mawi), não a do Alizo.
+  const brandLogoUrl = await getBrandLogoUrl(appUser)
+
   return (
     <div className="flex h-dvh flex-col overflow-hidden" style={{ background: '#0a0f1e' }}>
       <header
@@ -61,8 +66,7 @@ export default async function Portal360Layout({ children }: { children: ReactNod
         }}
       >
         <div className="flex items-center gap-2">
-          <img src="/branding/alizo-icon.png" alt="Alizo" className="h-6 w-auto" />
-          <p className="text-[14px] font-black tracking-tight text-white">alizo</p>
+          <HeaderBrand logoUrl={brandLogoUrl} />
           <span style={{ color: 'rgba(255,255,255,0.2)' }}>/</span>
           <span
             className="rounded-md px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider"

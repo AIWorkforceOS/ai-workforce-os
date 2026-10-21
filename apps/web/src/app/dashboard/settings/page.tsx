@@ -11,6 +11,8 @@ import {
 import { Card, PageHeader } from '@/components/ui/dashboard-ui'
 import { CopyField } from '@/components/dashboard/copy-field'
 import { ChangePasswordCard } from '@/components/dashboard/change-password'
+import { BrandingCard } from '@/components/brand/branding-card'
+import { readCanManageBranding, readOrgLogoUrl } from '@/lib/branding/server'
 import { CancelSubscriptionCard } from '@/components/dashboard/cancel-subscription'
 import { ManagerWhatsappSettingsCard } from '@/components/dashboard/manager-whatsapp-settings'
 import type { Unit } from '@/lib/types'
@@ -89,6 +91,9 @@ export default async function SettingsPage() {
     const { data: org } = await supabase.from('organizations').select('billing_status').eq('id', appUser.orgId).maybeSingle()
     billingStatus = (org as { billing_status?: string } | null)?.billing_status ?? null
   }
+  // Logo da empresa: só aparece o cartão de troca para o admin que o super admin Alizo autorizou.
+  const canManageBranding = !isSuperAdmin && appUser?.role === 'admin' && appUser.orgId ? await readCanManageBranding(appUser) : false
+  const brandLogoUrl = canManageBranding ? await readOrgLogoUrl(appUser?.orgId ?? null) : null
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://SEU-DOMINIO.vercel.app'
   const webhookUrl = `${baseUrl.replace(/\/+$/, '')}/api/intake/lead`
 
@@ -123,6 +128,9 @@ export default async function SettingsPage() {
           </span>
         </div>
       </Card>
+
+      {/* Logo da empresa — liberada pelo super admin Alizo */}
+      {canManageBranding && <BrandingCard currentLogoUrl={brandLogoUrl} />}
 
       {/* Segurança — troca de senha self-service */}
       <ChangePasswordCard />

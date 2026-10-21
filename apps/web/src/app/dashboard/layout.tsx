@@ -8,6 +8,8 @@ import { Sidebar } from '@/components/dashboard/sidebar'
 import { MobileSidebar } from '@/components/dashboard/mobile-sidebar'
 import { SignOutButton } from '@/components/dashboard/sign-out-button'
 import { RefreshAppButton } from '@/components/portal-funcionario/refresh-app-button'
+import { HeaderBrand } from '@/components/brand/brand-logo'
+import { getBrandLogoUrl } from '@/lib/branding/server'
 import { KaiLauncher } from '@/components/dashboard/kai-launcher'
 import { OfflineSyncManager } from '@/components/portal-funcionario/offline-sync-manager'
 
@@ -86,12 +88,14 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const managementMode = await fetchOrganizationManagementMode(supabase, appUser.orgId)
   // Facil-IT (360) é específico da Mawi Pro (migration 083) — nunca aparece pra outra organização.
   const facilitEnabled = await fetchOrganizationFacilitEnabled(supabase, appUser.orgId)
+  // Logo própria da empresa (substitui a do Alizo); null = logo do Alizo. Nunca quebra a página se a leitura falhar.
+  const brandLogoUrl = await getBrandLogoUrl(appUser)
 
   return (
     <div className="flex h-dvh overflow-hidden" style={{ background: '#0a0f1e' }}>
       {/* Sidebar fixa — só em desktop; em mobile vira drawer (MobileSidebar no header) */}
       <div className="hidden flex-shrink-0 lg:flex">
-        <Sidebar userEmail={email} role={appUser.role} unitId={appUser.unitId} managementMode={managementMode} facilitEnabled={facilitEnabled} />
+        <Sidebar userEmail={email} role={appUser.role} unitId={appUser.unitId} managementMode={managementMode} facilitEnabled={facilitEnabled} brandLogoUrl={brandLogoUrl} />
       </div>
 
       <div className="flex flex-1 flex-col overflow-hidden">
@@ -107,9 +111,8 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           }}
         >
           <div className="flex items-center gap-2">
-            <MobileSidebar userEmail={email} role={appUser.role} unitId={appUser.unitId} managementMode={managementMode} facilitEnabled={facilitEnabled} />
-            <img src="/branding/alizo-icon.png" alt="Alizo" className="h-6 w-auto" />
-            <p className="text-[14px] font-black tracking-tight text-white">alizo</p>
+            <MobileSidebar userEmail={email} role={appUser.role} unitId={appUser.unitId} managementMode={managementMode} facilitEnabled={facilitEnabled} brandLogoUrl={brandLogoUrl} />
+            <HeaderBrand logoUrl={brandLogoUrl} />
             <span style={{ color: 'rgba(255,255,255,0.2)' }}>/</span>
             <span className="rounded-md px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider"
               style={{ background: 'rgba(6,182,212,0.15)', color: '#06b6d4' }}>

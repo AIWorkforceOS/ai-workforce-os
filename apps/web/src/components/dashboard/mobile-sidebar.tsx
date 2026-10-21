@@ -18,7 +18,9 @@ export function MobileSidebar({
   unitId = null,
   managementMode = 'digital_employees',
   facilitEnabled = false,
+  brandLogoUrl = null,
 }: {
+  brandLogoUrl?: string | null
   userEmail: string
   role?: string
   unitId?: string | null
@@ -73,6 +75,7 @@ export function MobileSidebar({
               unitId={unitId}
               managementMode={managementMode}
               facilitEnabled={facilitEnabled}
+              brandLogoUrl={brandLogoUrl}
               onNavigate={() => setOpen(false)}
             />
           </div>

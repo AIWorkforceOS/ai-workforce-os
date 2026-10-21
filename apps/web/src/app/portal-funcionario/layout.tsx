@@ -6,6 +6,8 @@ import { SignOutButton } from '@/components/dashboard/sign-out-button'
 import { OfflineSyncManager } from '@/components/portal-funcionario/offline-sync-manager'
 import { PortalOfflineBootstrap } from '@/components/portal-funcionario/portal-offline-bootstrap'
 import { RefreshAppButton } from '@/components/portal-funcionario/refresh-app-button'
+import { HeaderBrand } from '@/components/brand/brand-logo'
+import { getBrandLogoUrl } from '@/lib/branding/server'
 
 export default async function PortalFuncionarioLayout({ children }: { children: ReactNode }) {
   const supabase = await createClient()
@@ -46,6 +48,8 @@ export default async function PortalFuncionarioLayout({ children }: { children: 
     redirect('/dashboard')
   }
 
+  const brandLogoUrl = await getBrandLogoUrl(appUser)
+
   return (
     <div className="flex h-dvh flex-col overflow-hidden" style={{ background: '#0a0f1e' }}>
       <header
@@ -59,8 +63,7 @@ export default async function PortalFuncionarioLayout({ children }: { children: 
         }}
       >
         <div className="flex items-center gap-2">
-          <img src="/branding/alizo-icon.png" alt="Alizo" className="h-6 w-auto" />
-          <p className="text-[14px] font-black tracking-tight text-white">alizo</p>
+          <HeaderBrand logoUrl={brandLogoUrl} />
           <span style={{ color: 'rgba(255,255,255,0.2)' }}>/</span>
           <span
             className="rounded-md px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider"
