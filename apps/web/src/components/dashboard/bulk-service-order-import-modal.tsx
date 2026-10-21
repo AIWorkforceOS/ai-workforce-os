@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type ChangeEvent } from 'react'
+import { useEffect, useState, type ChangeEvent } from 'react'
 import { AlertTriangle, CheckCircle2, FileText, Loader2, Sparkles, Trash2, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { isExtractableAttachment, type ServiceOrderExtraction } from '@/lib/service-orders/extraction'
@@ -72,6 +72,23 @@ export function BulkServiceOrderImportModal({
   const [creating, setCreating] = useState(false)
   const [createErrors, setCreateErrors] = useState<string[]>([])
   const [createdCount, setCreatedCount] = useState<number | null>(null)
+  // Cliente das ordens: as ordens importadas saem com a logo e os dados DESTE cliente (cadastro em "Clientes Facility"). Padrão: 360.
+  const [clientName, setClientName] = useState(DEFAULT_CLIENT_COMPANY_NAME)
+  const [clientOptions, setClientOptions] = useState<string[]>([DEFAULT_CLIENT_COMPANY_NAME])
+  useEffect(() => {
+    let cancelled = false
+    void fetch('/api/client-profiles')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { profiles?: { name: string }[] } | null) => {
+        if (cancelled || !data?.profiles) return
+        const names = data.profiles.map((p) => p.name)
+        setClientOptions([DEFAULT_CLIENT_COMPANY_NAME, ...names.filter((n) => n.trim().toLowerCase() !== DEFAULT_CLIENT_COMPANY_NAME.toLowerCase())])
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const selectedService = services.find((s) => s.id === serviceId) ?? null
 
@@ -161,13 +178,10 @@ export function BulkServiceOrderImportModal({
     const customerIdByRowId: Record<string, string> = {}
     for (const row of rowsToCreate) {
       const name = customerNameForRow(row)
-      const { data: existing } = await supabase
-        .from('customers')
-        .select('id')
-        .eq('unit_id', unitId)
-        .eq('name', name)
-        .limit(1)
-        .maybeSingle()
+      // 360 (padrão): reaproveita qualquer cadastro com o mesmo nome (comportamento de sempre). Outro cliente: só reaproveita o cadastro DAQUELE cliente.
+      let existingQuery = supabase.from('customers').select('id').eq('unit_id', unitId).eq('name', name)
+      if (clientName !== DEFAULT_CLIENT_COMPANY_NAME) existingQuery = existingQuery.eq('client_company', clientName)
+      const { data: existing } = await existingQuery.limit(1).maybeSingle()
       if (existing) {
         customerIdByRowId[row.id] = (existing as { id: string }).id
         continue
@@ -184,7 +198,7 @@ export function BulkServiceOrderImportModal({
           // Todo customer criado por este pipeline é, hoje, sempre da 360 — o PDF final (lib/service-orders/pdf.ts)
           // já é gerado 100% como se fosse emitido por ela. Marca o vínculo pro Portal 360 (migration 061) sem
           // precisar recadastrar nada manualmente depois.
-          client_company: DEFAULT_CLIENT_COMPANY_NAME,
+          client_company: clientName,
         })
         .select('id')
         .single()
@@ -283,6 +297,17 @@ export function BulkServiceOrderImportModal({
             </div>
           ) : (
             <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <Label>Cliente das ordens *</Label>
+                <Select value={clientName} onChange={(e) => setClientName(e.target.value)} required>
+                  {clientOptions.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </Select>
+                <p className="text-[11px] text-slate-500">As ordens saem com a logo e os dados deste cliente. Cadastre novos clientes em &quot;Clientes Facility&quot;.</p>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1.5">
                   <Label>Data dos agendamentos *</Label>

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getAppUser } from '@/lib/app-user'
 import { createServiceClient } from '@/lib/supabase/service'
 import { generateServiceOrderPdf } from '@/lib/service-orders/pdf'
+import { loadContractorBrand } from '@/lib/client-profiles/load'
 
 type ServiceOrderPdfRow = {
   service_order_number: string | null
@@ -26,6 +27,7 @@ type ServiceOrderPdfRow = {
   service_order_quote_description_pt: string | null
   address: string | null
   starts_at: string
+  org_id: string | null
 }
 
 /**
@@ -53,7 +55,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ appo
   const { data } = await supabase
     .from('appointments')
     .select(
-      'service_order_number, service_order_client_po, service_order_priority, service_order_order_type, service_order_ivr_pin, service_order_location_name, service_order_location_phone, service_order_issuer_name, service_order_issuer_email, service_order_scope_en, service_order_signed_by, service_order_signed_at, service_order_signature_url, service_order_status, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_part_purchase_link, service_order_quote_description_en, service_order_quote_description_pt, address, starts_at, customers!inner(client_company)',
+      'service_order_number, service_order_client_po, service_order_priority, service_order_order_type, service_order_ivr_pin, service_order_location_name, service_order_location_phone, service_order_issuer_name, service_order_issuer_email, service_order_scope_en, service_order_signed_by, service_order_signed_at, service_order_signature_url, service_order_status, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_part_purchase_link, service_order_quote_description_en, service_order_quote_description_pt, address, starts_at, org_id, customers!inner(client_company)',
     )
     .eq('id', appointmentId)
     .eq('customers.client_company', appUser.clientCompany)
@@ -64,7 +66,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ appo
     return NextResponse.json({ error: 'Order not found.' }, { status: 404 })
   }
 
-  const pdfBuffer = await generateServiceOrderPdf({ appointment })
+  const contractor = await loadContractorBrand(supabase, appointment.org_id, appUser.clientCompany)
+  const pdfBuffer = await generateServiceOrderPdf({ appointment, contractor })
 
   const safeNumber = (appointment.service_order_number ?? appointmentId).replace(/[^a-zA-Z0-9.\-_]/g, '_')
 

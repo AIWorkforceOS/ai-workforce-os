@@ -4,6 +4,7 @@ import { generateServiceOrderPdf } from '@/lib/service-orders/pdf'
 import { generatePhotoReportPdf, type ReportMedia } from '@/lib/service-orders/photo-report'
 import { reportDownloadUrl } from '@/lib/service-orders/report-link'
 import { signOffFileName } from '@/lib/service-orders/signoff-file'
+import { loadContractorBrand } from '@/lib/client-profiles/load'
 
 /** Baixar e reduzir dezenas de fotos leva tempo. */
 export const maxDuration = 60
@@ -33,6 +34,8 @@ type ServiceOrderPdfRow = {
   public_report_token: string | null
   address: string | null
   starts_at: string
+  org_id: string | null
+  customers: { client_company: string | null } | null
 }
 
 /**
@@ -62,7 +65,7 @@ export async function GET(
   const { data } = await supabase
     .from('appointments')
     .select(
-      'service_order_number, service_order_client_po, service_order_priority, service_order_order_type, service_order_ivr_pin, service_order_location_name, service_order_location_phone, service_order_issuer_name, service_order_issuer_email, service_order_scope_en, service_order_signed_by, service_order_signed_at, service_order_signature_url, service_order_status, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_part_purchase_link, service_order_quote_description_en, service_order_quote_description_pt, service_order_photos, public_report_token, address, starts_at',
+      'service_order_number, service_order_client_po, service_order_priority, service_order_order_type, service_order_ivr_pin, service_order_location_name, service_order_location_phone, service_order_issuer_name, service_order_issuer_email, service_order_scope_en, service_order_signed_by, service_order_signed_at, service_order_signature_url, service_order_status, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_part_purchase_link, service_order_quote_description_en, service_order_quote_description_pt, service_order_photos, public_report_token, address, starts_at, org_id, customers(client_company)',
     )
     .eq('id', appointmentId)
     .eq('unit_id', unitId)
@@ -96,7 +99,9 @@ export async function GET(
     })
   }
 
-  const pdfBuffer = await generateServiceOrderPdf({ appointment, media, reportDownloadUrl: downloadUrl })
+  // O PDF sai com a logo e os dados do CLIENTE da ordem (perfil cadastrado); sem perfil, os da 360 como sempre.
+  const contractor = await loadContractorBrand(supabase, appointment.org_id, appointment.customers?.client_company)
+  const pdfBuffer = await generateServiceOrderPdf({ appointment, media, reportDownloadUrl: downloadUrl, contractor })
 
   return new NextResponse(new Uint8Array(pdfBuffer), {
     status: 200,

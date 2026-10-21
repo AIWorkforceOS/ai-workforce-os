@@ -1,3 +1,4 @@
+import { DEFAULT_CONTRACTOR, type ContractorBrand } from '@/lib/client-profiles/profile'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib'
@@ -35,8 +36,6 @@ const LINE = rgb(0.78, 0.81, 0.85)
 const BORDER = rgb(0.55, 0.58, 0.63)
 const STAMP_GRAY = rgb(0.78, 0.8, 0.83)
 
-/** Bloco fixo da contratante — sempre igual, não muda por ordem. */
-const COMPANY_LINES = ['360 Service Provider', '11098 Biscayne Boulevard, Suite 305', 'Miami, FL 33161', 'Phone # 786-281-3413']
 
 /**
  * Caminho fixo do asset de logo — ainda não enviado pelo dono do
@@ -259,13 +258,15 @@ function addPage(doc: PDFDocument): { page: PDFPage; y: number } {
   return { page, y: PAGE_HEIGHT - MARGIN }
 }
 
-export async function generateServiceOrderPdf(params: { appointment: ServiceOrderPdfAppointment; media?: ReportMedia[]; reportDownloadUrl?: string | null }): Promise<Buffer> {
+export async function generateServiceOrderPdf(params: { appointment: ServiceOrderPdfAppointment; media?: ReportMedia[]; reportDownloadUrl?: string | null; contractor?: ContractorBrand }): Promise<Buffer> {
   const { appointment: a } = params
+  // Dados do CLIENTE da ordem (perfil cadastrado). Sem perfil: o bloco e a logo da 360, como sempre saiu.
+  const contractor = params.contractor ?? DEFAULT_CONTRACTOR
 
   const doc = await PDFDocument.create()
   const font = await doc.embedFont(StandardFonts.Helvetica)
   const bold = await doc.embedFont(StandardFonts.HelveticaBold)
-  const logo = await tryEmbedLogo(doc)
+  const logo = contractor.logoUrl ? await tryEmbedImageFromUrl(doc, contractor.logoUrl) : contractor.useLocal360Logo ? await tryEmbedLogo(doc) : null
   const signatureImage = a.service_order_signature_url ? await tryEmbedImageFromUrl(doc, a.service_order_signature_url) : null
 
   const pages: PDFPage[] = []
@@ -294,16 +295,19 @@ export async function generateServiceOrderPdf(params: { appointment: ServiceOrde
   const logoCenterX = MARGIN + 18
   const logoCenterY = headerTopY - 18
   if (logo) {
-    const logoSize = 36
-    page.drawImage(logo, { x: logoCenterX - logoSize / 2, y: logoCenterY - logoSize / 2, width: logoSize, height: logoSize })
+    // cabe numa caixa de 120×36 mantendo a proporção (logo quadrada da 360 continua 36×36; logos largas de outros clientes ocupam mais largura)
+    const scale = Math.min(120 / logo.width, 36 / logo.height)
+    const w = logo.width * scale
+    const h = logo.height * scale
+    page.drawImage(logo, { x: MARGIN, y: logoCenterY - h / 2, width: w, height: h })
   } else {
     page.drawCircle({ x: logoCenterX, y: logoCenterY, size: 18, borderColor: BORDER, borderWidth: 1 })
-    drawCenter(page, '360', bold, 11, DARK, logoCenterX, logoCenterY - 4)
+    drawCenter(page, contractor.initials, bold, contractor.initials.length > 2 ? 9 : 11, DARK, logoCenterX, logoCenterY - 4)
   }
 
   // Bloco fixo da contratante, abaixo da logo.
   let leftY = headerTopY - 54
-  COMPANY_LINES.forEach((line, i) => {
+  contractor.lines.forEach((line, i) => {
     const isFirst = i === 0
     page.drawText(line, { x: MARGIN, y: leftY, size: isFirst ? 9.5 : 8.3, font: isFirst ? bold : font, color: isFirst ? DARK : MUTED })
     leftY -= isFirst ? 12 : 10.5

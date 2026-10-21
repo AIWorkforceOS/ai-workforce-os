@@ -568,3 +568,59 @@ describe('generateServiceOrderPdf — Sign Off Sheet fixo', () => {
     expect(raw).toContain('Maria Gerente')
   })
 })
+
+describe('generateServiceOrderPdf — logo e dados do CLIENTE da ordem', () => {
+  const acme = { lines: ['Acme Facility Group', '500 Main Street, Suite 2', 'Austin, TX 78701', 'Phone # 555-0100'], initials: 'AFG', logoUrl: null, useLocal360Logo: false }
+
+  it('cliente com perfil: o cabeçalho sai com os dados DELE e nada da 360', async () => {
+    readFileSyncMock.mockImplementation(() => {
+      throw new Error('ENOENT')
+    })
+    const buffer = await generateServiceOrderPdf({ appointment: baseAppointment, contractor: acme })
+    const raw = extractStreamText(buffer)
+    expect(raw).toContain('Acme Facility Group')
+    expect(raw).toContain('500 Main Street, Suite 2')
+    expect(raw).toContain('Austin, TX 78701')
+    expect(raw).toContain('Phone # 555-0100')
+    expect(raw).not.toContain('360 Service Provider')
+    expect(raw).not.toContain('Biscayne')
+    // sem logo: selo com as iniciais do cliente, não o "360"
+    expect(raw).toContain('AFG')
+    // o resto do documento não muda
+    expect(raw).toContain('SIGN OFF SHEET')
+    expect(raw).toContain('OS-1001')
+  })
+
+  it('cliente com logo: baixa a logo dele, mantém a proporção (logo larga ocupa mais largura) e NÃO lê o arquivo da 360', async () => {
+    readFileSyncMock.mockImplementation(() => {
+      throw new Error('não deveria ler a logo da 360')
+    })
+    stubFetchWithPng(makeSolidPng(200, 50))
+    const buffer = await generateServiceOrderPdf({ appointment: baseAppointment, contractor: { ...acme, logoUrl: 'https://cdn.example.com/acme.png' } })
+    const fetchMock = vi.mocked(fetch as unknown as ReturnType<typeof vi.fn>)
+    expect(fetchMock.mock.calls.map((c) => String(c[0]))).toContain('https://cdn.example.com/acme.png')
+    expect(readFileSyncMock).not.toHaveBeenCalled()
+    const scale = firstImageScale(extractRawStream(buffer))
+    expect(scale).not.toBeNull()
+    expect(scale!.width).toBeCloseTo(120, 0) // 200×50 cabe em 120 de largura → 120×30
+    expect(scale!.height).toBeCloseTo(30, 0)
+  })
+
+  it('logo do cliente que não carrega (rede/formato): o PDF sai assim mesmo, com o selo de iniciais', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline') }))
+    const buffer = await generateServiceOrderPdf({ appointment: baseAppointment, contractor: { ...acme, logoUrl: 'https://cdn.example.com/acme.png' } })
+    expect(buffer.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+    expect(extractStreamText(buffer)).toContain('AFG')
+  })
+
+  it('sem perfil (nenhum contractor): continua exatamente como sempre — dados e logo da 360', async () => {
+    readFileSyncMock.mockImplementation(() => {
+      throw new Error('ENOENT')
+    })
+    const buffer = await generateServiceOrderPdf({ appointment: baseAppointment })
+    const raw = extractStreamText(buffer)
+    expect(raw).toContain('360 Service Provider')
+    expect(raw).toContain('11098 Biscayne Boulevard, Suite 305')
+    expect(readFileSyncMock.mock.calls.some((c) => String(c[0]).endsWith('360-logo.png'))).toBe(true)
+  })
+})

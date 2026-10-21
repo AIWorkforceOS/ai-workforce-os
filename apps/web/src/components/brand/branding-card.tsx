@@ -12,7 +12,7 @@ const MAX_BYTES = 2 * 1024 * 1024
  * Logo da empresa: enviar, ver como ficará e remover. A logo enviada substitui a do Alizo em todo o sistema (painéis da equipe,
  * Portal do Funcionário e Portal do Cliente). `orgId` só é usado pelo super admin Alizo (para escolher a empresa).
  */
-export function BrandingCard({ currentLogoUrl, orgId, title = 'Logo da empresa', description }: { currentLogoUrl: string | null; orgId?: string; title?: string; description?: string }) {
+export function BrandingCard({ currentLogoUrl, orgId, title = 'Logo da empresa', description, uploadUrl = '/api/branding/logo' }: { currentLogoUrl: string | null; orgId?: string; title?: string; description?: string; /** Endpoint de envio/remoção (padrão: logo da própria empresa; o cadastro de cliente usa o do cliente). */ uploadUrl?: string }) {
   const router = useRouter()
   const inputRef = useRef<HTMLInputElement>(null)
   const [preview, setPreview] = useState<string | null>(null)
@@ -45,7 +45,7 @@ export function BrandingCard({ currentLogoUrl, orgId, title = 'Logo da empresa',
     form.set('file', file)
     if (orgId) form.set('orgId', orgId)
     try {
-      const response = await fetch('/api/branding/logo', { method: 'POST', body: form })
+      const response = await fetch(uploadUrl, { method: 'POST', body: form })
       const data = (await response.json().catch(() => null)) as { error?: string } | null
       if (!response.ok) {
         setMessage({ ok: false, text: data?.error ?? 'Não foi possível salvar a logo.' })
@@ -68,7 +68,7 @@ export function BrandingCard({ currentLogoUrl, orgId, title = 'Logo da empresa',
     setBusy(true)
     setMessage(null)
     try {
-      const response = await fetch('/api/branding/logo', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orgId }) })
+      const response = await fetch(uploadUrl, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orgId }) })
       const data = (await response.json().catch(() => null)) as { error?: string } | null
       if (!response.ok) setMessage({ ok: false, text: data?.error ?? 'Não foi possível remover a logo.' })
       else {

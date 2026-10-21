@@ -102,6 +102,7 @@ export const navGroups: { label: Record<Locale, string>; items: NavItem[] }[] = 
       { href: '/dashboard/crm', label: { pt: 'Funil de vendas', en: 'Sales pipeline' }, icon: Kanban },
       { href: '/dashboard/leads', label: { pt: 'Contatos (leads)', en: 'Contacts (leads)' }, icon: UserCircle },
       { href: '/dashboard/receptionist/customers', label: { pt: 'Clientes', en: 'Customers' }, icon: Users, fullManagementOnly: true },
+      { href: '/dashboard/clientes-facility', label: { pt: 'Clientes Facility', en: 'Facility clients' }, icon: Building2, facilitOnly: true },
     ],
   },
   {
