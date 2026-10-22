@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getAppUser } from '@/lib/app-user'
 import { triggerFirstContact } from '@/lib/leads/lead-intake'
+import { canAssignLeads, canDeleteAllLeads, ownerForNewLead, validAssignee } from '@/lib/crm/lead-ownership'
 import { syncLeadToSmarterCrm } from '@/lib/sales/smarter-crm'
 import type { Lead, Unit } from '@/lib/types'
 
@@ -95,6 +96,7 @@ export async function POST(request: Request) {
         source: typeof row.source === 'string' && row.source.trim() ? row.source.trim() : 'manual',
         notes: typeof row.notes === 'string' && row.notes.trim() ? row.notes.trim() : null,
         status: 'new',
+        ...(ownerForNewLead(appUser) ? { owner_user_id: ownerForNewLead(appUser) } : {}),
       })
       .select()
       .single()
@@ -135,6 +137,10 @@ export async function DELETE(request: Request) {
 
   const supabase = await createClient()
 
+  if (deleteAll && !canDeleteAllLeads(appUser)) {
+    return NextResponse.json({ error: 'Sem permissão para excluir todos os leads.' }, { status: 403 })
+  }
+
   if (deleteAll && unitId) {
     const { data, error } = await supabase.from('leads').delete().eq('unit_id', unitId).select('id')
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -148,4 +154,29 @@ export async function DELETE(request: Request) {
   }
 
   return NextResponse.json({ error: 'Informe lead_ids ou (unit_id + delete_all).' }, { status: 400 })
+}
+
+// PATCH /api/leads/bulk — { lead_ids: string[], owner_user_id: string | null } atribui (ou tira o responsável de) vários leads de uma vez.
+// Só super admin ou administrador completo; o destino precisa ser um usuário ativo da mesma empresa que trabalha leads. O Comercial não reatribui
+// (e o banco também impede que ele passe um lead dele para outra pessoa).
+export async function PATCH(request: Request) {
+  const appUser = await getAppUser()
+  if (!appUser) return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 })
+  if (!canAssignLeads(appUser)) return NextResponse.json({ error: 'Somente o administrador atribui leads.' }, { status: 403 })
+
+  const body = await request.json().catch(() => null)
+  const leadIds: string[] = Array.isArray(body?.lead_ids) ? body.lead_ids.filter((x: unknown): x is string => typeof x === 'string').slice(0, 500) : []
+  const ownerId: string | null = typeof body?.owner_user_id === 'string' ? body.owner_user_id : null
+  if (leadIds.length === 0) return NextResponse.json({ error: 'Escolha ao menos um lead.' }, { status: 400 })
+
+  const supabase = await createClient()
+  if (ownerId) {
+    const { data: target } = await supabase.from('users').select('role, org_id, is_active, job_role').eq('id', ownerId).maybeSingle()
+    const targetRow = target as { role: string; org_id: string | null; is_active: boolean; job_role?: string | null } | null
+    if (!validAssignee(targetRow, appUser.orgId)) return NextResponse.json({ error: 'Essa pessoa não pode receber leads.' }, { status: 400 })
+  }
+
+  const { data, error } = await supabase.from('leads').update({ owner_user_id: ownerId, updated_at: new Date().toISOString() }).in('id', leadIds).select('id')
+  if (error) return NextResponse.json({ error: 'Não foi possível atribuir os leads.' }, { status: 500 })
+  return NextResponse.json({ ok: true, updated: (data ?? []).length })
 }

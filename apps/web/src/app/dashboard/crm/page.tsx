@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { LeadActivityPanel, type CrmUser } from '@/components/crm/lead-activity-panel'
 import { LeadAttachments } from '@/components/crm/lead-attachments'
 import { dueCounts, nextDueByLead, type DueBucket, type OpenItem } from '@/lib/crm/activities'
+import { canAssignLeads, canDeleteAllLeads } from '@/lib/crm/lead-ownership'
 import { columnKeyOf, columnsFrom, neighborColumn, STAGE_COLORS, type Column, type StageRow } from '@/lib/crm/stages'
 import type { Lead } from '@/lib/types'
 import {
@@ -688,6 +689,9 @@ export default function CrmPage() {
   const [stageRows, setStageRows] = useState<StageRow[]>([])
   const [users, setUsers] = useState<CrmUser[]>([])
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [myJobRole, setMyJobRole] = useState<'comercial' | 'financeiro' | 'operacional' | null>(null)
+  const [assignTo, setAssignTo] = useState('')
+  const [assigning, setAssigning] = useState(false)
   const [timezones, setTimezones] = useState<Record<string, string>>({})
   const [openActivities, setOpenActivities] = useState<OpenItem[]>([])
   const [onlyMine, setOnlyMine] = useState(false)
@@ -716,7 +720,14 @@ export default function CrmPage() {
     ])
     const rows = (userData ?? []) as (CrmUser & { role: string })[]
     setUsers(rows.map((u) => ({ id: u.id, name: u.name, email: u.email })))
-    setCurrentUserId(rows.find((u) => u.email.toLowerCase() === (auth.data.user?.email ?? '').toLowerCase())?.id ?? null)
+    const meId = (rows.find((u) => u.email.toLowerCase() === (auth.data.user?.email ?? '').toLowerCase())?.id ?? null)
+    setCurrentUserId(meId)
+    // função do escritório (migration 104): Comercial só enxerga os leads dele — quem é Comercial não atribui nem exclui todos
+    if (meId) {
+      const jr = await supabase.from('users').select('job_role').eq('id', meId).maybeSingle()
+      const role = (jr.data as { job_role?: string | null } | null)?.job_role
+      setMyJobRole(role === 'comercial' || role === 'financeiro' || role === 'operacional' ? role : null)
+    }
     setTimezones(Object.fromEntries(((tzData ?? []) as { id: string; timezone: string | null }[]).map((u) => [u.id, u.timezone ?? 'America/Sao_Paulo'])))
     // Etapas da empresa (migration 108): sem elas, o funil padrão de 6 etapas — exatamente como antes.
     const stagesRes = await supabase.from('crm_stages').select('id, name, kind, color, position').order('position')
@@ -787,6 +798,19 @@ export default function CrmPage() {
     exitSelectMode()
   }
 
+  async function assignSelected() {
+    if (selectedIds.size === 0 || assigning) return
+    setAssigning(true)
+    const owner = assignTo === '' ? null : assignTo === '__none' ? null : assignTo
+    if (assignTo === '') { setAssigning(false); window.alert('Escolha para quem atribuir.'); return }
+    const response = await fetch('/api/leads/bulk', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lead_ids: Array.from(selectedIds), owner_user_id: owner }) })
+    const data = (await response.json().catch(() => null)) as { error?: string; updated?: number } | null
+    setAssigning(false)
+    if (!response.ok) { window.alert(data?.error ?? 'Não foi possível atribuir.'); return }
+    setLeads((prev) => prev.map((l) => (selectedIds.has(l.id) ? { ...l, owner_user_id: owner } : l)))
+    exitSelectMode()
+  }
+
   async function deleteAllLeads() {
     if (leads.length === 0) return
     const ok = window.confirm(
@@ -850,7 +874,7 @@ export default function CrmPage() {
                 style={{ border: '1px solid rgba(255,255,255,0.08)' }}
               >
                 <Trash2 size={14} />
-                {selectMode ? 'Cancelar seleção' : 'Excluir leads'}
+                {selectMode ? 'Cancelar seleção' : 'Selecionar leads'}
               </button>
             )}
             <a
@@ -887,7 +911,7 @@ export default function CrmPage() {
         }
       />
 
-      {/* Barra de seleção — só aparece em modo "Excluir leads" */}
+      {/* Barra de seleção — atribuir ou excluir leads selecionados */}
       {selectMode && (
         <div
           className="flex flex-wrap items-center justify-between gap-2 rounded-2xl px-4 py-3"
@@ -903,6 +927,20 @@ export default function CrmPage() {
             >
               Selecionar todos ({leads.length})
             </button>
+            {canAssignLeads({ id: currentUserId ?? '', role: 'admin', isSuperAdmin: false, jobRole: myJobRole }) && (
+              <>
+                <select value={assignTo} onChange={(e) => setAssignTo(e.target.value)} aria-label="Atribuir a" className="rounded-lg bg-[#0b0f1a] px-2 py-1.5 text-xs text-white" style={{ border: '1px solid rgba(255,255,255,0.12)' }}>
+                  <option value="">Atribuir a…</option>
+                  <option value="__none">Sem responsável</option>
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>{u.name || u.email}</option>
+                  ))}
+                </select>
+                <button onClick={assignSelected} disabled={selectedIds.size === 0 || assigning} className="rounded-lg px-3 py-1.5 text-xs font-bold text-white disabled:opacity-40" style={{ background: brandGradient }}>
+                  {assigning ? 'Atribuindo…' : 'Atribuir'}
+                </button>
+              </>
+            )}
             <button
               onClick={deleteSelected}
               disabled={selectedIds.size === 0 || deleting}
@@ -911,15 +949,23 @@ export default function CrmPage() {
             >
               {deleting ? 'Excluindo...' : `Excluir selecionados${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
             </button>
-            <button
-              onClick={deleteAllLeads}
-              disabled={deleting}
-              className="text-xs font-semibold text-red-400 hover:underline disabled:opacity-40"
-            >
-              Excluir TODOS os leads
-            </button>
+            {canDeleteAllLeads({ jobRole: myJobRole }) && (
+              <button
+                onClick={deleteAllLeads}
+                disabled={deleting}
+                className="text-xs font-semibold text-red-400 hover:underline disabled:opacity-40"
+              >
+                Excluir TODOS os leads
+              </button>
+            )}
           </div>
         </div>
+      )}
+
+      {myJobRole === 'comercial' && (
+        <p className="rounded-xl px-4 py-2.5 text-xs text-cyan-200" style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.25)' }}>
+          Você vê só os leads atribuídos a você. Para receber novos leads, peça ao administrador para atribuir (ou crie o seu próprio lead).
+        </p>
       )}
 
       {/* Filtros do CML: meus leads e retornos */}
@@ -1026,7 +1072,7 @@ export default function CrmPage() {
           lead={selected}
           onClose={() => setSelected(null)}
           onUpdate={handleUpdate}
-          users={users}
+          users={myJobRole === 'comercial' ? users.filter((u) => u.id === currentUserId) : users}
           currentUserId={currentUserId}
           timeZone={timezones[selected.unit_id] ?? 'America/Sao_Paulo'}
           onActivityChanged={() => void loadActivities()}

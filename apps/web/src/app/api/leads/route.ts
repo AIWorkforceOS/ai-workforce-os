@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getAppUser } from '@/lib/app-user'
 import { triggerFirstContact } from '@/lib/leads/lead-intake'
+import { ownerForNewLead } from '@/lib/crm/lead-ownership'
 import { syncLeadToSmarterCrm } from '@/lib/sales/smarter-crm'
 import type { Lead, Unit } from '@/lib/types'
 
@@ -52,6 +53,8 @@ export async function POST(request: Request) {
       source: typeof body?.source === 'string' && body.source.trim() ? body.source.trim() : 'manual',
       notes: typeof body?.notes === 'string' && body.notes.trim() ? body.notes.trim() : null,
       status: 'new',
+      // função Comercial: o lead já nasce dele (a regra do banco só deixa o Comercial criar leads em nome dele)
+      ...(ownerForNewLead(appUser) ? { owner_user_id: ownerForNewLead(appUser) } : {}),
     })
     .select()
     .single()
