@@ -318,6 +318,8 @@ export type Lead = {
   smarter_crm_lead_id: string | null
   /** Responsável pelo lead (migration 105); null = sem responsável. */
   owner_user_id?: string | null
+  /** Etapa do funil escolhida (migration 108); null = a primeira etapa do comportamento do status. */
+  stage_id?: string | null
   created_at: string
   updated_at: string
 }

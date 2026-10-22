@@ -6,7 +6,8 @@ import { createClient } from '@/lib/supabase/client'
 import { LeadActivityPanel, type CrmUser } from '@/components/crm/lead-activity-panel'
 import { LeadAttachments } from '@/components/crm/lead-attachments'
 import { dueCounts, nextDueByLead, type DueBucket, type OpenItem } from '@/lib/crm/activities'
-import type { Lead, LeadStatus } from '@/lib/types'
+import { columnKeyOf, columnsFrom, neighborColumn, STAGE_COLORS, type Column, type StageRow } from '@/lib/crm/stages'
+import type { Lead } from '@/lib/types'
 import {
   Badge,
   type BadgeVariant,
@@ -21,59 +22,12 @@ import {
   cardShadow,
 } from '@/components/ui/dashboard-ui'
 
-// ── Column definitions ────────────────────────────────────────────────────────
-const COLUMNS: {
-  status: LeadStatus
-  label: string
-  accent: string        // gradient top bar
-  bg: string            // column bg
-  variant: BadgeVariant // count badge
-}[] = [
-  {
-    status: 'new',
-    label: 'Novo',
-    accent: 'linear-gradient(90deg,#64748b,#94a3b8)',
-    bg: 'rgba(255,255,255,0.02)',
-    variant: 'slate',
-  },
-  {
-    status: 'contacted',
-    label: 'Em Contato',
-    accent: 'linear-gradient(90deg,#2563eb,#3b82f6)',
-    bg: 'rgba(59,130,246,0.04)',
-    variant: 'blue',
-  },
-  {
-    status: 'replied',
-    label: 'Respondeu',
-    accent: 'linear-gradient(90deg,#d97706,#f59e0b)',
-    bg: 'rgba(245,158,11,0.04)',
-    variant: 'amber',
-  },
-  {
-    status: 'negotiating',
-    label: 'Negociando',
-    accent: 'linear-gradient(90deg,#7c3aed,#a78bfa)',
-    bg: 'rgba(139,92,246,0.04)',
-    variant: 'purple',
-  },
-  {
-    status: 'won',
-    label: 'Convertido',
-    accent: 'linear-gradient(90deg,#16a34a,#22c55e)',
-    bg: 'rgba(34,197,94,0.04)',
-    variant: 'green',
-  },
-  {
-    status: 'lost',
-    label: 'Perdido',
-    accent: 'linear-gradient(90deg,#dc2626,#f87171)',
-    bg: 'rgba(239,68,68,0.04)',
-    variant: 'red',
-  },
-]
+// ── Colunas do quadro: etapas da empresa (crm_stages) ou o funil padrão de 6 ──────
+type BoardColumn = Column & { accent: string; bg: string; variant: BadgeVariant }
 
-const PIPELINE_ORDER: LeadStatus[] = ['new', 'contacted', 'replied', 'negotiating', 'won', 'lost']
+function toBoard(columns: Column[]): BoardColumn[] {
+  return columns.map((c) => ({ ...c, accent: STAGE_COLORS[c.color].accent, bg: STAGE_COLORS[c.color].bg, variant: STAGE_COLORS[c.color].variant }))
+}
 
 const SOURCE_LABEL: Record<string, string> = {
   whatsapp: 'WhatsApp',
@@ -476,7 +430,9 @@ function LeadDetail({
   currentUserId,
   timeZone,
   onActivityChanged,
+  col,
 }: {
+  col: BoardColumn
   lead: Lead
   onClose: () => void
   onUpdate: (updated: Lead) => void
@@ -500,8 +456,6 @@ function LeadDetail({
     setSaving(false)
     if (data) onUpdate(data as Lead)
   }
-
-  const col = COLUMNS.find((c) => c.status === lead.status) ?? COLUMNS[0]!
 
   return (
     <div
@@ -587,6 +541,7 @@ function LeadDetail({
 function LeadCard({
   lead,
   col,
+  columns,
   onMove,
   onClick,
   selectMode,
@@ -598,17 +553,19 @@ function LeadCard({
   due?: { dueAt: string; bucket: DueBucket }
   ownerName?: string | null
   lead: Lead
-  col: (typeof COLUMNS)[number]
-  onMove: (id: string, status: LeadStatus) => void
+  col: BoardColumn
+  columns: BoardColumn[]
+  onMove: (id: string, target: BoardColumn) => void
   onClick: () => void
   selectMode?: boolean
   selected?: boolean
   onToggleSelect?: (id: string) => void
 }) {
   const days = daysSince(lead.last_contacted_at ?? lead.created_at)
-  const colIdx = PIPELINE_ORDER.indexOf(lead.status)
-  const canBack = colIdx > 0 && lead.status !== 'lost'
-  const canFwd  = colIdx < PIPELINE_ORDER.length - 1
+  const prev = neighborColumn(col.key, columns, -1)
+  const next = neighborColumn(col.key, columns, 1)
+  const canBack = Boolean(prev) && col.kind !== 'lost'
+  const canFwd = Boolean(next)
 
   const daysColor =
     days > 7 ? 'text-red-400' : days > 3 ? 'text-amber-400' : 'text-slate-500'
@@ -665,7 +622,7 @@ function LeadCard({
       <div className="flex items-center gap-1 px-3 py-1.5" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
         <button
           disabled={!canBack}
-          onClick={() => canBack && onMove(lead.id, PIPELINE_ORDER[colIdx - 1]!)}
+          onClick={() => prev && canBack && onMove(lead.id, prev)}
           className="rounded-lg p-1 text-slate-600 hover:bg-white/5 hover:text-slate-300 disabled:opacity-20 disabled:cursor-not-allowed"
           title="Voltar etapa"
         >
@@ -676,7 +633,7 @@ function LeadCard({
         <span className="flex-1 text-center text-[9px] font-bold uppercase tracking-widest text-slate-600">{col.label}</span>
         <button
           disabled={!canFwd}
-          onClick={() => canFwd && onMove(lead.id, PIPELINE_ORDER[colIdx + 1]!)}
+          onClick={() => next && onMove(lead.id, next)}
           className="rounded-lg p-1 text-slate-600 hover:bg-white/5 hover:text-cyan-400 disabled:opacity-20 disabled:cursor-not-allowed"
           title="Avançar etapa"
         >
@@ -728,6 +685,7 @@ export default function CrmPage() {
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [deleting, setDeleting] = useState(false)
+  const [stageRows, setStageRows] = useState<StageRow[]>([])
   const [users, setUsers] = useState<CrmUser[]>([])
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [timezones, setTimezones] = useState<Record<string, string>>({})
@@ -760,24 +718,29 @@ export default function CrmPage() {
     setUsers(rows.map((u) => ({ id: u.id, name: u.name, email: u.email })))
     setCurrentUserId(rows.find((u) => u.email.toLowerCase() === (auth.data.user?.email ?? '').toLowerCase())?.id ?? null)
     setTimezones(Object.fromEntries(((tzData ?? []) as { id: string; timezone: string | null }[]).map((u) => [u.id, u.timezone ?? 'America/Sao_Paulo'])))
+    // Etapas da empresa (migration 108): sem elas, o funil padrão de 6 etapas — exatamente como antes.
+    const stagesRes = await supabase.from('crm_stages').select('id, name, kind, color, position').order('position')
+    setStageRows(stagesRes.error ? [] : ((stagesRes.data ?? []) as StageRow[]))
     await loadActivities()
   }, [loadActivities])
 
   useEffect(() => { void load() }, [load])
 
-  async function moveLead(id: string, newStatus: LeadStatus) {
-    // Optimistic update
-    setLeads((prev) =>
-      prev.map((l) => l.id === id ? { ...l, status: newStatus, updated_at: new Date().toISOString() } : l)
-    )
-    if (selected?.id === id) setSelected((p) => p ? { ...p, status: newStatus } : p)
-    const supabase = createClient()
-    await supabase.from('leads').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', id)
-    // Linha do tempo: registra a mudança de etapa (silencioso se a tabela ainda não existe)
+  async function moveLead(id: string, target: BoardColumn) {
     const moved = leads.find((l) => l.id === id)
+    const newStatus = target.kind
+    const newStage = target.stageId
+    // Optimistic update
+    setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, status: newStatus, stage_id: newStage, updated_at: new Date().toISOString() } : l)))
+    if (selected?.id === id) setSelected((p) => (p ? { ...p, status: newStatus, stage_id: newStage } : p))
+    const supabase = createClient()
+    const base = { status: newStatus, updated_at: new Date().toISOString() }
+    let res = await supabase.from('leads').update({ ...base, stage_id: newStage }).eq('id', id)
+    if (res.error) res = await supabase.from('leads').update(base).eq('id', id) // migration 108 ainda não aplicada
+    // Linha do tempo: registra a mudança de etapa (silencioso se a tabela ainda não existe)
     if (moved) {
-      const label = (st: LeadStatus) => COLUMNS.find((c) => c.status === st)?.label ?? st
-      await supabase.from('lead_activities').insert({ unit_id: moved.unit_id, lead_id: id, kind: 'status_change', body: `${label(moved.status)} → ${label(newStatus)}`, created_by: currentUserId })
+      const fromLabel = boardColumns.find((c) => c.key === columnKeyOf(moved, boardColumns))?.label ?? moved.status
+      await supabase.from('lead_activities').insert({ unit_id: moved.unit_id, lead_id: id, kind: 'status_change', body: `${fromLabel} → ${target.label}`, created_by: currentUserId })
     }
   }
 
@@ -844,6 +807,8 @@ export default function CrmPage() {
     exitSelectMode()
   }
 
+  const boardColumns = toBoard(columnsFrom(stageRows))
+
   // Retornos: próximo prazo por lead (no fuso da unidade do lead) e filtros "Meus leads" / atrasados / hoje
   const now = new Date()
   const dueByLead = new Map<string, { dueAt: string; bucket: DueBucket }>()
@@ -888,6 +853,13 @@ export default function CrmPage() {
                 {selectMode ? 'Cancelar seleção' : 'Excluir leads'}
               </button>
             )}
+            <a
+              href="/dashboard/crm/etapas"
+              className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold text-slate-300 transition-all hover:bg-white/5"
+              style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              Etapas do funil
+            </a>
             <a
               href="/dashboard/crm/metricas"
               className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold text-slate-300 transition-all hover:bg-white/5"
@@ -977,9 +949,9 @@ export default function CrmPage() {
       {/* Kanban board */}
       {loading ? (
         <div className="flex gap-3 overflow-x-auto pb-4" style={{ minHeight: '60vh' }}>
-          {COLUMNS.map((col) => (
+          {boardColumns.map((col) => (
             <div
-              key={col.status}
+              key={col.key}
               className="flex-shrink-0 w-56 flex flex-col gap-2 rounded-2xl p-2"
               style={{ background: col.bg, border: '1px solid rgba(255,255,255,0.06)' }}
             >
@@ -992,11 +964,11 @@ export default function CrmPage() {
         </div>
       ) : (
         <div className="flex gap-3 overflow-x-auto pb-4" style={{ minHeight: '60vh' }}>
-          {COLUMNS.map((col) => {
-            const colLeads = visibleLeads.filter((l) => l.status === col.status)
+          {boardColumns.map((col) => {
+            const colLeads = visibleLeads.filter((l) => columnKeyOf(l, boardColumns) === col.key)
             return (
               <div
-                key={col.status}
+                key={col.key}
                 className="flex-shrink-0 w-56 flex flex-col rounded-2xl"
                 style={{ background: col.bg, border: '1px solid rgba(255,255,255,0.06)' }}
               >
@@ -1021,6 +993,7 @@ export default function CrmPage() {
                       key={lead.id}
                       lead={lead}
                       col={col}
+                      columns={boardColumns}
                       onMove={moveLead}
                       onClick={() => setSelected(lead)}
                       selectMode={selectMode}
@@ -1057,6 +1030,7 @@ export default function CrmPage() {
           currentUserId={currentUserId}
           timeZone={timezones[selected.unit_id] ?? 'America/Sao_Paulo'}
           onActivityChanged={() => void loadActivities()}
+          col={boardColumns.find((c) => c.key === columnKeyOf(selected, boardColumns)) ?? boardColumns[0]!}
         />
       )}
     </div>
