@@ -1,4 +1,4 @@
-import { FileText, MapPin } from 'lucide-react'
+import { MapPin } from 'lucide-react'
 import type { PortalAppointment } from '@/lib/portal-funcionario/data'
 
 /** Cabeçalho da ordem (loja, horário, endereço, descrição) — nunca mostra o cliente. Sem estado: usado na página do servidor E na casca offline. */

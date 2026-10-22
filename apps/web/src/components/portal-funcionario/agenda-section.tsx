@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { CalendarDays, ChevronLeft, ChevronRight, ClipboardCheck, FileText, List, MapPin } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, ClipboardCheck, List, MapPin } from 'lucide-react'
 import { Badge, EmptyState, type BadgeVariant } from '@/components/ui/dashboard-ui'
 import { currentMonthInTimezone, monthLabel, shiftMonth } from '@/lib/service-operations-month'
 import { dayKeyInTimezone, groupAppointmentsByTodayTomorrow } from '@/lib/portal-funcionario/agenda-grouping'
