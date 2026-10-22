@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { CheckSquare, Plus, Square, Trash2, Upload, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { LeadActivityPanel, type CrmUser } from '@/components/crm/lead-activity-panel'
+import { LeadAttachments } from '@/components/crm/lead-attachments'
 import { dueCounts, nextDueByLead, type DueBucket, type OpenItem } from '@/lib/crm/activities'
 import type { Lead, LeadStatus } from '@/lib/types'
 import {
@@ -563,6 +564,8 @@ function LeadDetail({
               {saving ? 'Salvando...' : 'Salvar observações'}
             </button>
           </div>
+
+          <LeadAttachments leadId={lead.id} unitId={lead.unit_id} currentUserId={currentUserId} onChanged={onActivityChanged} />
 
           <LeadActivityPanel
             leadId={lead.id}
