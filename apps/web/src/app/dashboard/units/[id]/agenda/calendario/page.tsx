@@ -42,7 +42,7 @@ export default async function UnitCalendarPage({
   const rangeStartUtc = zonedTimeToUtc(weekStart, '00:00', unitRow.timezone).toISOString()
   const rangeEndUtc = zonedTimeToUtc(addDays(weekEnd, 1), '00:00', unitRow.timezone).toISOString()
 
-  const [{ data: services }, { data: employees }, { data: appointments }] = await Promise.all([
+  const [{ data: services }, { data: employees }, { data: appointments }, { data: clientProfiles }] = await Promise.all([
     supabase.from('services').select('*').eq('unit_id', id).eq('is_active', true).order('name'),
     supabase
       .from('employees')
@@ -53,12 +53,15 @@ export default async function UnitCalendarPage({
       .order('name'),
     supabase
       .from('appointments')
-      .select('*, customer:customers(id,name,phone), service:services(id,name), employee:employees(id,name)')
+      .select('*, customer:customers(id,name,phone,client_company), service:services(id,name), employee:employees(id,name)')
       .eq('unit_id', id)
       .gte('starts_at', rangeStartUtc)
       .lt('starts_at', rangeEndUtc)
       .order('starts_at'),
+    // clientes cadastrados (Clientes Facility): filtro por cliente na Agenda — tolerante a falha
+    supabase.from('client_company_profiles').select('name').eq('org_id', unitRow.org_id ?? '').order('name'),
   ])
+  const clientOptions = ((clientProfiles ?? []) as { name: string }[]).map((p) => p.name)
 
   const servicesRows = await ensureDefaultService(supabase, unitRow, (services ?? []) as Service[])
   const employeesRows = (employees ?? []) as Employee[]
@@ -163,6 +166,7 @@ export default async function UnitCalendarPage({
         weekDates={weekDates}
         todayLocal={todayLocal}
         initialAppointments={appointmentsRows}
+        clientOptions={clientOptions}
       />
     </div>
   )

@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { CalendarPlus, ClipboardList, MapPin, Search, Trash2, Upload, X } from 'lucide-react'
@@ -12,6 +13,7 @@ import { ServiceOrderAttachModal } from '@/components/dashboard/service-order-at
 import { BulkServiceOrderImportModal } from '@/components/dashboard/bulk-service-order-import-modal'
 import { Badge, Card, Input, Select, StatusPill, type BadgeVariant } from '@/components/ui/dashboard-ui'
 import { CLIENT_PORTAL_SOURCE } from '@/lib/portal-360/constants'
+import { clientNameOf, NO_CLIENT_LABEL } from '@/lib/billing/by-client'
 import { FACILIT_SYNC_SOURCE } from '@/lib/facilit-appointment'
 import { effectiveDisplayStatus, type EffectiveDisplayStatus } from '@/lib/scheduling/appointment-display-status'
 import type {
@@ -25,7 +27,7 @@ import type {
 } from '@/lib/types'
 
 export type AppointmentWithRelations = Appointment & {
-  customer: Pick<Customer, 'id' | 'name' | 'phone'> | null
+  customer: Pick<Customer, 'id' | 'name' | 'phone' | 'client_company'> | null
   service: Pick<Service, 'id' | 'name'> | null
   employee: Pick<Employee, 'id' | 'name'> | null
 }
@@ -146,6 +148,7 @@ export function CalendarView({
   weekDates,
   todayLocal,
   initialAppointments,
+  clientOptions = [],
 }: {
   unitId: string
   orgId: string | null
@@ -157,6 +160,8 @@ export function CalendarView({
   weekDates: string[]
   todayLocal: string
   initialAppointments: AppointmentWithRelations[]
+  /** clientes cadastrados (Clientes Facility) — alimentam o filtro por cliente */
+  clientOptions?: string[]
 }) {
   const [appointments, setAppointments] = useState<AppointmentWithRelations[]>(initialAppointments)
   const [modal, setModal] = useState<ModalState | null>(null)
@@ -165,6 +170,8 @@ export function CalendarView({
   const [rowError, setRowError] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<ServiceOrderStatusFilter>('all')
   const [orderQuery, setOrderQuery] = useState('')
+  /** filtro por cliente (Facility): 'all' = todos */
+  const [clientFilter, setClientFilter] = useState('all')
   const [searchResults, setSearchResults] = useState<AppointmentWithRelations[]>([])
   const [searching, setSearching] = useState(false)
 
@@ -191,7 +198,7 @@ export function CalendarView({
     const supabase = createClient()
     let query = supabase
       .from('appointments')
-      .select('*, customer:customers(id,name,phone), service:services(id,name), employee:employees(id,name)')
+      .select('*, customer:customers(id,name,phone,client_company), service:services(id,name), employee:employees(id,name)')
       .eq('unit_id', unitId)
       .not('service_order_number', 'is', null)
       .order('starts_at', { ascending: false })
@@ -212,7 +219,7 @@ export function CalendarView({
     const rangeEndUtc = zonedTimeToUtc(addDays(weekDates[weekDates.length - 1]!, 1), '00:00', timezone).toISOString()
     const { data } = await supabase
       .from('appointments')
-      .select('*, customer:customers(id,name,phone), service:services(id,name), employee:employees(id,name)')
+      .select('*, customer:customers(id,name,phone,client_company), service:services(id,name), employee:employees(id,name)')
       .eq('unit_id', unitId)
       .gte('starts_at', rangeStartUtc)
       .lt('starts_at', rangeEndUtc)
@@ -235,7 +242,9 @@ export function CalendarView({
     return () => clearTimeout(timeout)
   }, [isFiltering, statusFilter, orderQuery])
 
-  const displayedAppointments = isFiltering ? searchResults : appointments
+  const baseAppointments = isFiltering ? searchResults : appointments
+  const clientFilterOptions = Array.from(new Set([...clientOptions, ...baseAppointments.map((a) => clientNameOf(a.customer))].filter((n) => n !== NO_CLIENT_LABEL))).sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }))
+  const displayedAppointments = clientFilter === 'all' ? baseAppointments : baseAppointments.filter((a) => clientNameOf(a.customer) === clientFilter)
   const displayedDates = isFiltering
     ? Array.from(new Set(displayedAppointments.map((a) => localDateString(new Date(a.starts_at), timezone)))).sort().reverse()
     : weekDates
@@ -362,12 +371,23 @@ export function CalendarView({
               </option>
             ))}
           </Select>
-          {isFiltering && (
+          {clientFilterOptions.length > 0 && (
+            <Select value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} className="py-1.5 text-xs" style={{ width: 190 }} aria-label="Filtrar por cliente">
+              <option value="all">Todos os clientes</option>
+              {clientFilterOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </Select>
+          )}
+          {(isFiltering || clientFilter !== 'all') && (
             <button
               type="button"
               onClick={() => {
                 setOrderQuery('')
                 setStatusFilter('all')
+                setClientFilter('all')
               }}
               className="flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-slate-200"
             >
@@ -396,7 +416,7 @@ export function CalendarView({
         </p>
       )}
 
-      {isFiltering && !searching && displayedAppointments.length === 0 && (
+      {(isFiltering || clientFilter !== 'all') && !searching && displayedAppointments.length === 0 && (
         <Card className="px-5 py-4 text-sm text-slate-500">Nenhuma ordem encontrada com esse filtro.</Card>
       )}
 
@@ -449,11 +469,16 @@ export function CalendarView({
                     >
                       <div className="flex flex-col gap-0.5">
                         <div className="flex items-center gap-2">
+                          {clientNameOf(appointment.customer) !== NO_CLIENT_LABEL && appointment.customer?.client_company && (
+                            <Link href={`/dashboard/units/${unitId}/clientes/${encodeURIComponent(clientNameOf(appointment.customer))}`} onClick={(e) => e.stopPropagation()} className="rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-wide hover:brightness-125" style={{ background: 'rgba(6,182,212,0.15)', color: '#67e8f9', border: '1px solid rgba(6,182,212,0.35)' }} title="Abrir painel do cliente">
+                              {clientNameOf(appointment.customer)}
+                            </Link>
+                          )}
                           {pendingAssignment ? (
                             <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: 'rgba(245,158,11,0.15)', color: '#fbbf24' }}>
                               {appointment.source === FACILIT_SYNC_SOURCE
                                 ? `Facil-IT · ${formatTimeRange(appointment.starts_at, appointment.ends_at, timezone)} · Sem técnico atribuído`
-                                : `360 requested · ${formatRequestedDate(appointment.service_order_requested_date)} · No technician assigned yet`}
+                                : `${clientNameOf(appointment.customer) === NO_CLIENT_LABEL ? 'Client' : clientNameOf(appointment.customer)} requested · ${formatRequestedDate(appointment.service_order_requested_date)} · No technician assigned yet`}
                             </span>
                           ) : (
                             <>

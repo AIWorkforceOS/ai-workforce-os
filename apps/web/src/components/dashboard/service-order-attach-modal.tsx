@@ -13,6 +13,7 @@ import { QuoteBuilderPanel } from '@/components/service-orders/quote-builder-pan
 import { ServiceOrderWorkspace } from '@/components/portal-funcionario/service-order-workspace'
 import { SignOffPdfActions } from '@/components/portal-funcionario/signoff-pdf-actions'
 import { OpenPdfButton } from '@/components/portal-funcionario/open-pdf-button'
+import { ClientLinkSection } from '@/components/clients/client-link-section'
 import { hasSignedSignOff } from '@/lib/service-orders/signoff-file'
 import type { PortalAppointment } from '@/lib/portal-funcionario/data'
 
@@ -536,6 +537,8 @@ export function ServiceOrderAttachModal({
           </div>
 
           <div className="flex flex-col gap-4">
+            <ClientLinkSection appointment={appointment} unitId={unitId} orgId={appointment.org_id} onChanged={onSaved} />
+
             <div className="flex flex-col gap-1.5">
               <Label>Arquivo da ordem (PDF ou foto)</Label>
               {fileUrl && !file && (
