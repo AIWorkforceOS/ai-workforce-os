@@ -403,10 +403,6 @@ export type Appointment = {
   /** endereço onde o serviço será prestado (serviços de campo) — migration 030. Pré-preenchido com customers.address. */
   address: string | null
   /** null = agendamento único; ocorrência de série recorrente (migration 032, tipos ampliados na 035). Cada ocorrência é uma linha real nesta tabela. */
-  /** Ordem recebida por e-mail (migration 104): awaiting_accept = ainda sem aceite do administrador; refused; null = ordem normal/aceita. */
-  intake_status?: 'awaiting_accept' | 'refused' | null
-  intake_from?: string | null
-  intake_subject?: string | null
   recurrence: 'weekly' | 'biweekly' | 'monthly' | 'custom' | null
   /** une as ocorrências da mesma série recorrente (migration 032) */
   recurrence_group_id: string | null
