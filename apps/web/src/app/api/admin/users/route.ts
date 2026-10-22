@@ -3,6 +3,8 @@ import { getAppUser } from '@/lib/app-user'
 import { createServiceClient } from '@/lib/supabase/service'
 import { sendWelcomeEmail } from '@/lib/email'
 import { generateAccessLink } from '@/lib/auth/access-link'
+import { assignableJobRole } from '@/lib/permissions/job-roles'
+import { canManageUserAccess } from '@/lib/permissions/user-access'
 
 function siteUrl(): string {
   return (process.env.NEXT_PUBLIC_APP_URL || 'https://SEU-DOMINIO.vercel.app').replace(/\/+$/, '')
@@ -41,10 +43,19 @@ export async function POST(request: Request) {
   const name: string | null = body?.name?.trim() || null
   const orgId: string | undefined = body?.org_id
   const unitId: string | null = body?.unit_id || null
-  // Admin de org só pode provisionar 'admin' (dono de unidade usa esse mesmo
-  // papel + unit_id); 'viewer'/'super_admin' continuam exclusivos do super admin.
+  // 'super_admin' continua exclusivo do super admin; dono de unidade usa 'admin' + unit_id.
   const requestedRole: string = body?.role === 'viewer' ? 'viewer' : 'admin'
-  const role: string = appUser.isSuperAdmin ? requestedRole : 'admin'
+  // Administrador completo da empresa também pode criar contas de visualização (só leitura); nunca super_admin.
+  const role: string = appUser.isSuperAdmin || canManageUserAccess(appUser) ? requestedRole : 'admin'
+  // Função de escritório (migration 104): financeiro | comercial | operacional; 'admin'/vazio = administrador completo.
+  const jobRole = assignableJobRole(body?.job_role)
+  if (jobRole === undefined) {
+    return NextResponse.json({ error: 'Função inválida.' }, { status: 400 })
+  }
+  // Quem tem função restrita não cria usuários (nem para si, nem para outros).
+  if (!appUser.isSuperAdmin && !canManageUserAccess(appUser)) {
+    return NextResponse.json({ error: 'Somente o administrador da empresa cria usuários.' }, { status: 403 })
+  }
 
   if (!email || !orgId) {
     return NextResponse.json({ error: 'email e org_id são obrigatórios.' }, { status: 400 })
@@ -82,7 +93,7 @@ export async function POST(request: Request) {
   if (existingUser) {
     const { error: updateError } = await service
       .from('users')
-      .update({ org_id: orgId, unit_id: unitId, role, name: name ?? undefined, is_active: true })
+      .update({ org_id: orgId, unit_id: unitId, role, name: name ?? undefined, is_active: true, ...(jobRole ? { job_role: jobRole } : {}) })
       .eq('id', existingUser.id)
     if (updateError) {
       return NextResponse.json({ error: `Erro ao atualizar usuário: ${updateError.message}` }, { status: 500 })
@@ -90,7 +101,7 @@ export async function POST(request: Request) {
   } else {
     const { error: insertError } = await service
       .from('users')
-      .insert({ email, name, org_id: orgId, unit_id: unitId, role })
+      .insert({ email, name, org_id: orgId, unit_id: unitId, role, ...(jobRole ? { job_role: jobRole } : {}) })
     if (insertError) {
       return NextResponse.json({ error: `Erro ao criar usuário: ${insertError.message}` }, { status: 500 })
     }

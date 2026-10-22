@@ -157,3 +157,32 @@ describe('getVisibleNavGroups', () => {
     }
   })
 })
+
+describe('getVisibleNavGroups por função de escritório (migration 104)', () => {
+  const hrefs = (jobRole: 'financeiro' | 'comercial' | 'operacional' | null) =>
+    getVisibleNavGroups({ role: 'admin', jobRole, facilitEnabled: true }).flatMap((g) => g.items.map((i) => i.href))
+
+  it('sem função vê tudo que via antes', () => {
+    const all = hrefs(null)
+    expect(all).toContain('/dashboard/operacao')
+    expect(all).toContain('/dashboard/settings')
+    expect(all).toContain('/dashboard/crm')
+  })
+  it('financeiro vê financeiro e não vê vendas nem configurações', () => {
+    const f = hrefs('financeiro')
+    expect(f).toContain('/dashboard/operacao')
+    expect(f).toContain('/dashboard/faturamento')
+    expect(f).not.toContain('/dashboard/crm')
+    expect(f).not.toContain('/dashboard/settings')
+  })
+  it('comercial e operacional não veem o financeiro', () => {
+    for (const r of ['comercial', 'operacional'] as const) {
+      const h = hrefs(r)
+      expect(h).not.toContain('/dashboard/operacao')
+      expect(h).not.toContain('/dashboard/faturamento')
+      expect(h).not.toContain('/dashboard/settings')
+    }
+    expect(hrefs('comercial')).toContain('/dashboard/crm')
+    expect(hrefs('operacional')).toContain('/dashboard/employees')
+  })
+})

@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useLocale } from '@/lib/i18n/client'
 import type { ManagementMode } from '@/lib/types'
 import { getVisibleNavGroups } from './nav-groups'
+import type { JobRole } from '@/lib/permissions/job-roles'
 
 function getInitials(email: string): string {
   const parts = email.split('@')[0]?.split(/[._-]/) ?? []
@@ -21,6 +22,7 @@ export function Sidebar({
   unitId = null,
   managementMode = 'digital_employees',
   facilitEnabled = false,
+  jobRole = null,
   brandLogoUrl = null,
   onNavigate,
 }: {
@@ -34,6 +36,8 @@ export function Sidebar({
   managementMode?: ManagementMode
   /** organizations.facilit_integration_enabled (migration 083) — só Mawi Pro por enquanto */
   facilitEnabled?: boolean
+  /** função de escritório (migration 104) — esconde do menu o que a função não acessa */
+  jobRole?: JobRole | null
   /** chamado ao clicar num link — usado pelo drawer mobile pra fechar */
   onNavigate?: () => void
 }) {
@@ -41,7 +45,7 @@ export function Sidebar({
   const router = useRouter()
   const locale = useLocale()
 
-  const visibleGroups = getVisibleNavGroups({ role, unitId, managementMode, facilitEnabled })
+  const visibleGroups = getVisibleNavGroups({ role, unitId, managementMode, facilitEnabled, jobRole })
 
   async function handleSignOut() {
     const supabase = createClient()

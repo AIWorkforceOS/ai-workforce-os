@@ -95,7 +95,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     <div className="flex h-dvh overflow-hidden" style={{ background: '#0a0f1e' }}>
       {/* Sidebar fixa — só em desktop; em mobile vira drawer (MobileSidebar no header) */}
       <div className="hidden flex-shrink-0 lg:flex">
-        <Sidebar userEmail={email} role={appUser.role} unitId={appUser.unitId} managementMode={managementMode} facilitEnabled={facilitEnabled} brandLogoUrl={brandLogoUrl} />
+        <Sidebar userEmail={email} role={appUser.role} unitId={appUser.unitId} managementMode={managementMode} facilitEnabled={facilitEnabled} jobRole={appUser.jobRole} brandLogoUrl={brandLogoUrl} />
       </div>
 
       <div className="flex flex-1 flex-col overflow-hidden">
@@ -111,7 +111,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           }}
         >
           <div className="flex items-center gap-2">
-            <MobileSidebar userEmail={email} role={appUser.role} unitId={appUser.unitId} managementMode={managementMode} facilitEnabled={facilitEnabled} brandLogoUrl={brandLogoUrl} />
+            <MobileSidebar userEmail={email} role={appUser.role} unitId={appUser.unitId} managementMode={managementMode} facilitEnabled={facilitEnabled} jobRole={appUser.jobRole} brandLogoUrl={brandLogoUrl} />
             <HeaderBrand logoUrl={brandLogoUrl} />
             <span style={{ color: 'rgba(255,255,255,0.2)' }}>/</span>
             <span className="rounded-md px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider"

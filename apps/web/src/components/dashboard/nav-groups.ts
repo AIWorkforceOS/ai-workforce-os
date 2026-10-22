@@ -1,3 +1,4 @@
+import { canAccessModule, moduleForPath, type JobRole } from '@/lib/permissions/job-roles'
 import {
   LayoutDashboard,
   Building2,
@@ -135,12 +136,15 @@ export function getVisibleNavGroups({
   unitId = null,
   managementMode = 'digital_employees',
   facilitEnabled = false,
+  jobRole = null,
 }: {
   role?: string
   unitId?: string | null
   managementMode?: ManagementMode
   /** organizations.facilit_integration_enabled (migration 083) — só Mawi Pro por enquanto */
   facilitEnabled?: boolean
+  /** users.job_role (migration 104): função de escritório que restringe um admin; null = completo */
+  jobRole?: JobRole | null
 }): { label: Record<Locale, string>; items: NavItem[] }[] {
   const isSuperAdmin = role === 'super_admin'
   const fullManagement = managementMode === 'full_management' && !isSuperAdmin
@@ -153,7 +157,8 @@ export function getVisibleNavGroups({
           (item) =>
             (isSuperAdmin || !item.superOnly) &&
             (fullManagement || !item.fullManagementOnly) &&
-            (facilitEnabled || !item.facilitOnly),
+            (facilitEnabled || !item.facilitOnly) &&
+            canAccessModule(jobRole, moduleForPath(item.href)),
         )
         .map((item) => {
           // Dono de unidade não gerencia a lista de unidades — vai direto pra sua

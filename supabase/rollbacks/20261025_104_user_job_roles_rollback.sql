@@ -1,0 +1,10 @@
+drop trigger if exists invoices_job_role_guard on public.invoices;
+drop trigger if exists service_record_payments_job_role_guard on public.service_record_payments;
+drop trigger if exists financial_records_job_role_guard on public.financial_records;
+drop function if exists public.block_restricted_job_role_finance();
+drop policy if exists service_record_payments_job_role on public.service_record_payments;
+drop policy if exists invoices_job_role on public.invoices;
+drop policy if exists financial_records_job_role on public.financial_records;
+drop function if exists public.current_job_role();
+alter table public.users drop constraint if exists users_job_role_check;
+alter table public.users drop column if exists job_role;

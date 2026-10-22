@@ -1,5 +1,6 @@
 'use client'
 
+import type { JobRole } from '@/lib/permissions/job-roles'
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { usePathname } from 'next/navigation'
@@ -18,6 +19,7 @@ export function MobileSidebar({
   unitId = null,
   managementMode = 'digital_employees',
   facilitEnabled = false,
+  jobRole = null,
   brandLogoUrl = null,
 }: {
   brandLogoUrl?: string | null
@@ -26,6 +28,7 @@ export function MobileSidebar({
   unitId?: string | null
   managementMode?: ManagementMode
   facilitEnabled?: boolean
+  jobRole?: JobRole | null
 }) {
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
@@ -75,6 +78,7 @@ export function MobileSidebar({
               unitId={unitId}
               managementMode={managementMode}
               facilitEnabled={facilitEnabled}
+              jobRole={jobRole}
               brandLogoUrl={brandLogoUrl}
               onNavigate={() => setOpen(false)}
             />

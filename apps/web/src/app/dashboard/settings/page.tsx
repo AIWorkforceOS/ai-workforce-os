@@ -12,6 +12,8 @@ import { Card, PageHeader } from '@/components/ui/dashboard-ui'
 import { CopyField } from '@/components/dashboard/copy-field'
 import { ChangePasswordCard } from '@/components/dashboard/change-password'
 import { BrandingCard } from '@/components/brand/branding-card'
+import { TeamAccessManager, type AccessUser } from '@/components/admin/team-access-manager'
+import { canManageUserAccess } from '@/lib/permissions/user-access'
 import { readCanManageBranding, readOrgLogoUrl } from '@/lib/branding/server'
 import { CancelSubscriptionCard } from '@/components/dashboard/cancel-subscription'
 import { ManagerWhatsappSettingsCard } from '@/components/dashboard/manager-whatsapp-settings'
@@ -94,6 +96,16 @@ export default async function SettingsPage() {
   // Logo da empresa: só aparece o cartão de troca para o admin que o super admin Alizo autorizou.
   const canManageBranding = !isSuperAdmin && appUser?.role === 'admin' && appUser.orgId ? await readCanManageBranding(appUser) : false
   const brandLogoUrl = canManageBranding ? await readOrgLogoUrl(appUser?.orgId ?? null) : null
+  // Usuários e funções do escritório: só o administrador completo da empresa (super admin gerencia pela tela da empresa).
+  let accessUsers: AccessUser[] = []
+  const canManageAccess = !isSuperAdmin && canManageUserAccess(appUser) && Boolean(appUser?.orgId)
+  if (canManageAccess && appUser?.orgId) {
+    type Row = { id: string; email: string; name: string | null; role: string; job_role?: string | null; is_active: boolean }
+    const q = (cols: string) => supabase.from('users').select(cols).eq('org_id', appUser.orgId!).in('role', ['admin', 'viewer']).order('created_at', { ascending: true })
+    let res = await q('id, email, name, role, job_role, is_active')
+    if (res.error) res = await q('id, email, name, role, is_active') // migration 104 ainda não aplicada
+    accessUsers = ((res.data ?? []) as unknown as Row[]).map((u) => ({ id: u.id, email: u.email, name: u.name, role: u.role, jobRole: u.job_role ?? null, isActive: u.is_active }))
+  }
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://SEU-DOMINIO.vercel.app'
   const webhookUrl = `${baseUrl.replace(/\/+$/, '')}/api/intake/lead`
 
@@ -131,6 +143,8 @@ export default async function SettingsPage() {
 
       {/* Logo da empresa — liberada pelo super admin Alizo */}
       {canManageBranding && <BrandingCard currentLogoUrl={brandLogoUrl} />}
+
+      {canManageAccess && appUser?.orgId && <TeamAccessManager users={accessUsers} orgId={appUser.orgId} currentUserId={appUser.id} />}
 
       {/* Segurança — troca de senha self-service */}
       <ChangePasswordCard />

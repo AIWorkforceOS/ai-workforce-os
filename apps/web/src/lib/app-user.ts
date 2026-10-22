@@ -1,5 +1,6 @@
 import { cache } from 'react'
 import { createClient } from '@/lib/supabase/server'
+import { parseJobRole, type JobRole } from '@/lib/permissions/job-roles'
 
 export type AppRole = 'super_admin' | 'admin' | 'viewer' | 'employee' | 'client'
 
@@ -18,6 +19,8 @@ export type AppUser = {
   employeeId: string | null
   /** Preenchido = a conta é de um cliente externo (role='client', ex.: "360 Service Provider"): só vê os dados desse client_company no Portal 360 — ver lib/portal-360/data.ts (migration 061). NULL nas demais roles. */
   clientCompany: string | null
+  /** Função do escritório (migration 104): restringe um 'admin'. NULL = administrador completo. */
+  jobRole: JobRole | null
 }
 
 export const ROLE_LABEL: Record<AppRole, string> = {
@@ -37,6 +40,7 @@ type AppUserRow = {
   unit_id: string | null
   employee_id: string | null
   client_company: string | null
+  job_role?: string | null
   is_active: boolean
   organizations: { name: string } | null
 }
@@ -57,13 +61,12 @@ export const getAppUser = cache(async (): Promise<AppUser | null> => {
 
   if (!user?.email) return null
 
-  const { data } = await supabase
-    .from('users')
-    .select('id, email, name, role, org_id, unit_id, employee_id, client_company, is_active, organizations(name)')
-    .ilike('email', user.email)
-    .maybeSingle()
+  const baseColumns = 'id, email, name, role, org_id, unit_id, employee_id, client_company, is_active, organizations(name)'
+  let result = await supabase.from('users').select(`${baseColumns}, job_role`).ilike('email', user.email).maybeSingle()
+  // migration 104 ainda não aplicada: sem a coluna a consulta falharia e travaria o login de todos — cai para a consulta de antes.
+  if (result.error) result = await supabase.from('users').select(baseColumns).ilike('email', user.email).maybeSingle()
 
-  const row = data as AppUserRow | null
+  const row = result.data as unknown as AppUserRow | null
   if (!row || !row.is_active) return null
 
   const role: AppRole =
@@ -82,5 +85,7 @@ export const getAppUser = cache(async (): Promise<AppUser | null> => {
     unitId: row.unit_id,
     employeeId: row.employee_id,
     clientCompany: role === 'client' ? row.client_company : null,
+    // a função só vale para 'admin' (técnico/cliente/visualização/super admin seguem pelo próprio papel)
+    jobRole: role === 'admin' ? parseJobRole(row.job_role) : null,
   }
 })

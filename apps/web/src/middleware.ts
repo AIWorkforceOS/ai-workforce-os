@@ -7,6 +7,7 @@ import {
   localeForCountry,
   type Locale,
 } from '@/lib/i18n/config'
+import { canAccessModule, moduleForPath, parseJobRole, pathNeedsJobRoleCheck } from '@/lib/permissions/job-roles'
 
 /**
  * Ordem de resolução da localidade (sem mudar a URL):
@@ -64,6 +65,21 @@ export async function middleware(request: NextRequest) {
       const redirect = NextResponse.redirect(loginUrl)
       redirect.cookies.set(LOCALE_COOKIE, locale, { path: '/', maxAge: 60 * 60 * 24 * 365, sameSite: 'lax' })
       return redirect
+    }
+
+    // Função do escritório (migration 104): só consulta o banco em páginas que alguma função não pode ver. A RLS continua sendo a proteção dos dados;
+    // aqui a pessoa cai numa tela de "sem acesso" em vez de ver a página vazia/quebrada.
+    const pathname = request.nextUrl.pathname
+    if (pathname.startsWith('/dashboard') && user.email && pathNeedsJobRoleCheck(pathname)) {
+      let res = await supabase.from('users').select('role, job_role').ilike('email', user.email).maybeSingle()
+      if (res.error) res = await supabase.from('users').select('role').ilike('email', user.email).maybeSingle()
+      const row = res.data as { role?: string; job_role?: string | null } | null
+      const jobRole = row?.role === 'admin' ? parseJobRole(row.job_role) : null
+      if (jobRole && !canAccessModule(jobRole, moduleForPath(pathname))) {
+        const denied = NextResponse.redirect(new URL('/dashboard/sem-acesso', request.url))
+        denied.cookies.set(LOCALE_COOKIE, locale, { path: '/', maxAge: 60 * 60 * 24 * 365, sameSite: 'lax' })
+        return denied
+      }
     }
   }
 
