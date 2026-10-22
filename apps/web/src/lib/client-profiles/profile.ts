@@ -17,9 +17,13 @@ export type ClientProfile = {
   website: string | null
   notes: string | null
   is_active: boolean
+  /** prazo padrão de pagamento em dias (Net 15/30/45/60 ou livre); null = sem prazo padrão */
+  payment_terms_days?: number | null
 }
 
 export const CLIENT_PROFILE_COLUMNS = 'id, org_id, name, logo_url, address_line1, address_line2, phone, email, website, notes, is_active'
+/** Cadastro/edição do cliente: inclui o prazo de pagamento (migration 102). O PDF usa só CLIENT_PROFILE_COLUMNS, então não depende dela. */
+export const CLIENT_PROFILE_EDIT_COLUMNS = `${CLIENT_PROFILE_COLUMNS}, payment_terms_days`
 
 /** O que o PDF desenha no cabeçalho: bloco de texto da contratante + logo. */
 export type ContractorBrand = {

@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent 
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { computeSuggestedPay, round2 } from '@/lib/service-pay'
+import { DueDateField } from '@/components/billing/due-date-field'
+import { clientNameOf } from '@/lib/billing/by-client'
 import { nextOccurrenceAfter, type RecurrenceType } from '@/lib/scheduling/recurrence'
 import { normalizeServiceRecurrence, projectedMonthlyRevenue } from '@/lib/scheduling/service-recurrence'
 import { defaultDateForMonth, todayInTimezone } from '@/lib/service-operations-month'
@@ -69,7 +71,7 @@ export type InvoiceWithRelations = Invoice & {
   customer: Pick<Customer, 'id' | 'name' | 'email' | 'phone'> | null
 }
 
-type CustomerOption = Pick<Customer, 'id' | 'name' | 'email' | 'phone' | 'address' | 'custom_fields'>
+type CustomerOption = Pick<Customer, 'id' | 'name' | 'email' | 'phone' | 'address' | 'custom_fields'> & { client_company?: string | null }
 
 type RecordFormState = {
   service_date: string
@@ -79,6 +81,8 @@ type RecordFormState = {
   description: string
   amount_charged: string
   amount_due: string
+  /** vencimento da ordem (data de envio da invoice); '' = sem vencimento */
+  due_date: string
 }
 
 type RecordEditFormState = RecordFormState
@@ -177,6 +181,7 @@ export function ServiceOperationsPanel({
   employees,
   services,
   customers,
+  clientTerms,
   initialRecords,
   initialInvoices,
   initialPayments,
@@ -197,6 +202,8 @@ export function ServiceOperationsPanel({
   employees: Employee[]
   services: Service[]
   customers: CustomerOption[]
+  /** prazo padrão de pagamento por cliente (nome em minúsculas → dias), do cadastro Clientes Facility */
+  clientTerms?: Record<string, number | null>
   initialRecords: ServiceRecordWithRelations[]
   initialInvoices: InvoiceWithRelations[]
   /** ledger de pagamentos parciais dos lançamentos acima (migration 055) */
@@ -228,6 +235,7 @@ export function ServiceOperationsPanel({
     description: '',
     amount_charged: '',
     amount_due: '',
+    due_date: '',
   }
   const [recordForm, setRecordForm] = useState<RecordFormState>(() =>
     pendingCompletion
@@ -239,6 +247,7 @@ export function ServiceOperationsPanel({
           description: pendingCompletion.description,
           amount_charged: pendingCompletion.amountCharged != null ? String(pendingCompletion.amountCharged) : '',
           amount_due: pendingCompletion.amountDue != null ? String(pendingCompletion.amountDue) : '',
+          due_date: '',
         }
       : emptyRecordForm,
   )
@@ -321,6 +330,7 @@ export function ServiceOperationsPanel({
         description: recordForm.description.trim() || null,
         amount_charged: recordForm.amount_charged.trim() === '' ? null : Number(recordForm.amount_charged),
         amount_due: recordForm.amount_due.trim() === '' ? null : Number(recordForm.amount_due),
+        due_date: recordForm.due_date || null,
       })
       .select('*, employee:employees(id,name), customer:customers(id,name,email), service:services(id,name)')
       .single()
@@ -509,6 +519,7 @@ export function ServiceOperationsPanel({
       description: record.description ?? '',
       amount_charged: record.amount_charged === null ? '' : String(record.amount_charged),
       amount_due: record.amount_due === null ? '' : String(record.amount_due),
+      due_date: record.due_date ?? '',
     })
   }
 
@@ -1381,6 +1392,13 @@ export function ServiceOperationsPanel({
                   placeholder="0.00"
                 />
               </div>
+              <DueDateField
+                id="recordDueDate"
+                value={recordForm.due_date}
+                baseDate={recordForm.service_date}
+                termDays={clientTerms?.[clientNameOf(customers.find((c) => c.id === recordForm.customer_id)).toLowerCase()] ?? null}
+                onChange={(due) => setRecordForm((f) => ({ ...f, due_date: due }))}
+              />
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="recordDue">Valor a pagar ao profissional</Label>
                 <Input

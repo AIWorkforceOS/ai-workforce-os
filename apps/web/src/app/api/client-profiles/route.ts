@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireClientProfileAdmin } from '@/lib/client-profiles/auth'
 import { createClientProfileSchema } from '@/lib/client-profiles/schema'
-import { CLIENT_PROFILE_COLUMNS, normalizeClientName } from '@/lib/client-profiles/profile'
+import { CLIENT_PROFILE_COLUMNS, CLIENT_PROFILE_EDIT_COLUMNS, normalizeClientName } from '@/lib/client-profiles/profile'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,7 +11,9 @@ export async function GET() {
   const auth = await requireClientProfileAdmin()
   if (!auth.ok) return auth.response
   const supabase = await createClient()
-  const { data, error } = await supabase.from('client_company_profiles').select(CLIENT_PROFILE_COLUMNS).order('name')
+  let result: { data: unknown[] | null; error: unknown } = await supabase.from('client_company_profiles').select(CLIENT_PROFILE_EDIT_COLUMNS).order('name')
+  if (result.error) result = await supabase.from('client_company_profiles').select(CLIENT_PROFILE_COLUMNS).order('name') // sem a coluna de prazo (migration 102 ainda não aplicada)
+  const { data, error } = result
   if (error) return NextResponse.json({ error: 'Não foi possível carregar os clientes.' }, { status: 500 })
   return NextResponse.json({ profiles: data ?? [] })
 }

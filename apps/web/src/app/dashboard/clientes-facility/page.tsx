@@ -3,7 +3,7 @@ import { getAppUser } from '@/lib/app-user'
 import { createClient } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/ui/dashboard-ui'
 import { ClientProfilesManager } from '@/components/clients/client-profiles-manager'
-import { CLIENT_PROFILE_COLUMNS, type ClientProfile } from '@/lib/client-profiles/profile'
+import { CLIENT_PROFILE_COLUMNS, CLIENT_PROFILE_EDIT_COLUMNS, type ClientProfile } from '@/lib/client-profiles/profile'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,7 +12,9 @@ export default async function ClientesFacilityPage() {
   const appUser = await getAppUser()
   if (!appUser || (appUser.role !== 'admin' && appUser.role !== 'super_admin') || !appUser.orgId) redirect('/dashboard')
   const supabase = await createClient()
-  const { data, error } = await supabase.from('client_company_profiles').select(CLIENT_PROFILE_COLUMNS).eq('org_id', appUser.orgId).order('name')
+  let result: { data: unknown[] | null; error: unknown } = await supabase.from('client_company_profiles').select(CLIENT_PROFILE_EDIT_COLUMNS).eq('org_id', appUser.orgId).order('name')
+  if (result.error) result = await supabase.from('client_company_profiles').select(CLIENT_PROFILE_COLUMNS).eq('org_id', appUser.orgId).order('name')
+  const { data, error } = result
   const profiles = (data ?? []) as ClientProfile[]
   return (
     <div className="flex flex-col gap-6">

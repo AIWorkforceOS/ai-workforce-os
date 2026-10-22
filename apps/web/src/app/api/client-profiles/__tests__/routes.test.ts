@@ -106,6 +106,14 @@ describe('POST /api/client-profiles', () => {
     expect(res.status).toBe(201)
     expect(inserted.find((i) => i.table === 'client_company_profiles')!.row.org_id).toBe('3f2504e0-4f89-41d3-9a0c-0305e82c3301')
   })
+  it('prazo padrão de pagamento (Net): grava o número de dias; negativo ou acima de 365 é recusado', async () => {
+    const { POST } = await import('../route')
+    expect((await POST(json({ name: 'Acme', payment_terms_days: 15 }))).status).toBe(201)
+    expect(inserted.find((i) => i.table === 'client_company_profiles')!.row.payment_terms_days).toBe(15)
+    expect((await POST(json({ name: 'Beta', payment_terms_days: -1 }))).status).toBe(400)
+    expect((await POST(json({ name: 'Beta', payment_terms_days: 400 }))).status).toBe(400)
+    expect((await POST(json({ name: 'Beta', payment_terms_days: 12.5 }))).status).toBe(400)
+  })
   it('nome vazio 400; nome repetido 409; sem permissão no banco 403', async () => {
     const { POST } = await import('../route')
     expect((await POST(json({ name: '   ' }))).status).toBe(400)

@@ -70,12 +70,16 @@ export default async function UnitOperationsPage({
   // atual em vez do mês escolhido.
   const monthOptions = Array.from({ length: 26 }, (_, i) => shiftMonth(currentMonth, 1 - i))
 
-  const [{ data: employees }, { data: services }, { data: customers }, { records, invoices, payments }] = await Promise.all([
+  const [{ data: employees }, { data: services }, { data: customers }, { records, invoices, payments }, { data: clientProfiles }] = await Promise.all([
     supabase.from('employees').select('*').eq('unit_id', id).eq('is_active', true).order('name'),
     supabase.from('services').select('*').eq('unit_id', id).eq('is_active', true).order('name'),
-    supabase.from('customers').select('id, name, email, phone, address, custom_fields').eq('unit_id', id).eq('status', 'active').order('name').limit(500),
+    supabase.from('customers').select('id, name, email, phone, address, custom_fields, client_company').eq('unit_id', id).eq('status', 'active').order('name').limit(500),
     fetchOperationsData(supabase, id, selectedMonth, isAllMonths),
+    // prazo padrão de pagamento por cliente (migration 102) — tolerante: sem a coluna, só não sugere o prazo do cliente
+    supabase.from('client_company_profiles').select('name, payment_terms_days').eq('org_id', unitRow.org_id ?? ''),
   ])
+  const clientTerms: Record<string, number | null> = {}
+  for (const p of (clientProfiles ?? []) as { name: string; payment_terms_days: number | null }[]) clientTerms[p.name.trim().replace(/\s+/g, ' ').toLowerCase()] = p.payment_terms_days ?? null
 
   // Veio de "Concluir" na Agenda (?completeAppointment=) — pedido do
   // Vinicius (2026-09-16): em vez de lançar sozinho, busca o agendamento
@@ -142,6 +146,9 @@ export default async function UnitOperationsPage({
         }
         action={
           <div className="flex flex-wrap items-center gap-2">
+            <Link href={`/dashboard/units/${id}/faturamento?month=${selectedMonth}`} className="rounded-xl px-3 py-2 text-xs font-bold text-cyan-300 transition-all hover:bg-white/5" style={{ border: '1px solid rgba(6,182,212,0.3)' }}>
+              Faturamento por cliente
+            </Link>
             <form method="get" className="flex items-center gap-1.5">
               {isAllMonths ? (
                 <span
@@ -298,7 +305,8 @@ export default async function UnitOperationsPage({
           selectedMonthLabel={selectedMonthLabel}
           employees={(employees ?? []) as Employee[]}
           services={(services ?? []) as Service[]}
-          customers={(customers ?? []) as Pick<Customer, 'id' | 'name' | 'email' | 'phone' | 'address' | 'custom_fields'>[]}
+          customers={(customers ?? []) as (Pick<Customer, 'id' | 'name' | 'email' | 'phone' | 'address' | 'custom_fields'> & { client_company?: string | null })[]}
+          clientTerms={clientTerms}
           initialRecords={records as unknown as ServiceRecordWithRelations[]}
           initialInvoices={invoices as unknown as InvoiceWithRelations[]}
           initialPayments={payments as unknown as ServiceRecordPayment[]}

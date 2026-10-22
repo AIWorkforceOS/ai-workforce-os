@@ -7,9 +7,11 @@ import { Card, Input, Label, Textarea } from '@/components/ui/dashboard-ui'
 import { BrandingCard } from '@/components/brand/branding-card'
 import type { ClientProfile } from '@/lib/client-profiles/profile'
 
-type Form = { name: string; address_line1: string; address_line2: string; phone: string; email: string; website: string; notes: string }
-const empty: Form = { name: '', address_line1: '', address_line2: '', phone: '', email: '', website: '', notes: '' }
-const fromProfile = (p: ClientProfile): Form => ({ name: p.name, address_line1: p.address_line1 ?? '', address_line2: p.address_line2 ?? '', phone: p.phone ?? '', email: p.email ?? '', website: p.website ?? '', notes: p.notes ?? '' })
+type Form = { name: string; address_line1: string; address_line2: string; phone: string; email: string; website: string; notes: string; payment_terms_days: string }
+const empty: Form = { name: '', address_line1: '', address_line2: '', phone: '', email: '', website: '', notes: '', payment_terms_days: '' }
+/** O formulário guarda o prazo como texto; a API recebe número (ou null = sem prazo padrão). */
+const toPayload = (f: Partial<Form>) => ({ ...f, payment_terms_days: f.payment_terms_days === undefined || f.payment_terms_days.trim() === '' ? null : Number(f.payment_terms_days) })
+const fromProfile = (p: ClientProfile): Form => ({ name: p.name, address_line1: p.address_line1 ?? '', address_line2: p.address_line2 ?? '', phone: p.phone ?? '', email: p.email ?? '', website: p.website ?? '', notes: p.notes ?? '', payment_terms_days: p.payment_terms_days == null ? '' : String(p.payment_terms_days) })
 
 function Fields({ form, onChange, nameLocked }: { form: Form; onChange: (f: Form) => void; nameLocked?: boolean }) {
   const set = (k: keyof Form) => (e: { target: { value: string } }) => onChange({ ...form, [k]: e.target.value })
@@ -37,6 +39,18 @@ function Fields({ form, onChange, nameLocked }: { form: Form; onChange: (f: Form
         <Input value={form.email} onChange={set('email')} placeholder="contato@cliente.com" />
       </div>
       <div className="sm:col-span-2">
+        <Label>Prazo padrão de pagamento (dias)</Label>
+        <div className="flex flex-wrap items-center gap-2">
+          <Input type="number" min={0} max={365} value={form.payment_terms_days} onChange={set('payment_terms_days')} placeholder="Ex.: 15" className="w-28" />
+          {[15, 30, 45, 60].map((d) => (
+            <button key={d} type="button" onClick={() => onChange({ ...form, payment_terms_days: String(d) })} className="rounded-md px-2 py-1 text-[11px] font-bold text-slate-200 hover:text-white" style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)' }}>
+              Net {d}
+            </button>
+          ))}
+        </div>
+        <p className="mt-1 text-[11px] text-slate-500">Sugere o vencimento de cada ordem deste cliente ao finalizar (data do serviço + dias). Pode ser ajustado em cada ordem.</p>
+      </div>
+      <div className="sm:col-span-2">
         <Label>Site (opcional)</Label>
         <Input value={form.website} onChange={set('website')} placeholder="www.cliente.com" />
       </div>
@@ -62,7 +76,7 @@ function ClientCard({ profile }: { profile: ClientProfile }) {
     const { name: _name, ...fields } = form
     void _name
     try {
-      const response = await fetch(`/api/client-profiles/${profile.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields) })
+      const response = await fetch(`/api/client-profiles/${profile.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(toPayload(fields)) })
       const data = (await response.json().catch(() => null)) as { error?: string } | null
       if (response.ok) {
         setMessage({ ok: true, text: 'Dados salvos. As próximas ordens deste cliente já saem com eles.' })
@@ -115,7 +129,7 @@ export function ClientProfilesManager({ initialProfiles }: { initialProfiles: Cl
     setBusy(true)
     setMessage(null)
     try {
-      const response = await fetch('/api/client-profiles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+      const response = await fetch('/api/client-profiles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(toPayload(form)) })
       const data = (await response.json().catch(() => null)) as { error?: string; warning?: string | null } | null
       if (response.ok) {
         setForm(empty)

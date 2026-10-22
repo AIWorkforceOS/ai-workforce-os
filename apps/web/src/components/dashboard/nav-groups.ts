@@ -93,6 +93,7 @@ export const navGroups: { label: Record<Locale, string>; items: NavItem[] }[] = 
     label: { pt: 'Financeiro', en: 'Finance' },
     items: [
       { href: '/dashboard/operacao', label: { pt: 'Financeiro', en: 'Finance' }, icon: Wallet },
+      { href: '/dashboard/faturamento', label: { pt: 'Faturamento por cliente', en: 'Billing by client' }, icon: FileText, facilitOnly: true },
     ],
   },
   {
@@ -162,6 +163,9 @@ export function getVisibleNavGroups({
           // ...e a Operação e a Agenda dele são as da própria unidade, sem passar pelo hub
           if (item.href === '/dashboard/operacao' && unitId) {
             return { ...item, href: `/dashboard/units/${unitId}/operacao` }
+          }
+          if (item.href === '/dashboard/faturamento' && unitId) {
+            return { ...item, href: `/dashboard/units/${unitId}/faturamento` }
           }
           if (item.href === '/dashboard/agenda' && unitId) {
             return { ...item, href: `/dashboard/units/${unitId}/agenda/calendario` }

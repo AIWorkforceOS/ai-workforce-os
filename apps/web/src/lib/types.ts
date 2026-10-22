@@ -504,6 +504,8 @@ export type ServiceRecord = {
   paid_at: string | null
   /** fatura (individual ou consolidada) que já cobriu este lançamento — null = avulso pendente de fatura */
   invoice_id: string | null
+  /** vencimento da ordem (migration 102): data de envio/cobrança da invoice, definida ao finalizar */
+  due_date?: string | null
   created_at: string
   updated_at: string
 }

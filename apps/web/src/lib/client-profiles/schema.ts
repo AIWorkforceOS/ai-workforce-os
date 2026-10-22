@@ -10,6 +10,7 @@ export const clientProfileFields = {
   email: z.union([z.literal(''), z.string().trim().max(120).email()]).transform((v) => (v === '' ? null : v)).nullable().optional(),
   website: text(200),
   notes: text(1000),
+  payment_terms_days: z.number().int().min(0).max(365).nullable().optional(),
 }
 
 export const createClientProfileSchema = z.object({
