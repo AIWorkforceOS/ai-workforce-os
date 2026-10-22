@@ -74,8 +74,8 @@ export function ViewTabs({ view, month }: { view: PortalView; month: string }) {
 
 export function Kpi({ label, value, sub, tone = 'text-white' }: { label: string; value: string | number; sub?: string; tone?: string }) {
   return (
-    <div className="rounded-2xl p-4" style={{ background: '#141a2b', border: '1px solid rgba(255,255,255,0.06)' }}>
-      <p className={`text-2xl font-black ${tone}`}>{value}</p>
+    <div className="rounded-2xl p-3 sm:p-4" style={{ background: '#141a2b', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <p className={`text-xl font-black sm:text-2xl ${tone}`}>{value}</p>
       <p className="mt-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">{label}</p>
       {sub && <p className="mt-0.5 text-[11px] text-slate-500">{sub}</p>}
     </div>
