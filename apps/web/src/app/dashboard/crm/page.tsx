@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { CheckSquare, Plus, Square, Trash2, Upload, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { LeadActivityPanel, type CrmUser } from '@/components/crm/lead-activity-panel'
+import { dueCounts, nextDueByLead, type DueBucket, type OpenItem } from '@/lib/crm/activities'
 import type { Lead, LeadStatus } from '@/lib/types'
 import {
   Badge,
@@ -469,10 +471,18 @@ function LeadDetail({
   lead,
   onClose,
   onUpdate,
+  users,
+  currentUserId,
+  timeZone,
+  onActivityChanged,
 }: {
   lead: Lead
   onClose: () => void
   onUpdate: (updated: Lead) => void
+  users: CrmUser[]
+  currentUserId: string | null
+  timeZone: string
+  onActivityChanged: () => void
 }) {
   const [notes, setNotes] = useState(lead.notes ?? '')
   const [saving, setSaving] = useState(false)
@@ -553,6 +563,17 @@ function LeadDetail({
               {saving ? 'Salvando...' : 'Salvar observações'}
             </button>
           </div>
+
+          <LeadActivityPanel
+            leadId={lead.id}
+            unitId={lead.unit_id}
+            ownerId={lead.owner_user_id ?? null}
+            users={users}
+            currentUserId={currentUserId}
+            timeZone={timeZone}
+            onOwnerChange={(userId) => onUpdate({ ...lead, owner_user_id: userId })}
+            onChanged={onActivityChanged}
+          />
         </div>
       </div>
     </div>
@@ -568,7 +589,11 @@ function LeadCard({
   selectMode,
   selected,
   onToggleSelect,
+  due,
+  ownerName,
 }: {
+  due?: { dueAt: string; bucket: DueBucket }
+  ownerName?: string | null
   lead: Lead
   col: (typeof COLUMNS)[number]
   onMove: (id: string, status: LeadStatus) => void
@@ -613,6 +638,16 @@ function LeadCard({
           <p className="mt-1 text-[11px] text-slate-500">{lead.phone}</p>
         )}
 
+        {(due || ownerName) && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-1">
+            {due && (
+              <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={due.bucket === 'overdue' ? { background: 'rgba(239,68,68,0.15)', color: '#f87171' } : due.bucket === 'today' ? { background: 'rgba(245,158,11,0.15)', color: '#fbbf24' } : { background: 'rgba(255,255,255,0.06)', color: '#94a3b8' }}>
+                {due.bucket === 'overdue' ? 'Retorno atrasado' : due.bucket === 'today' ? 'Retorno hoje' : `Retorno ${new Date(due.dueAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`}
+              </span>
+            )}
+            {ownerName && <span className="truncate rounded-full px-2 py-0.5 text-[10px] text-slate-400" style={{ background: 'rgba(255,255,255,0.06)' }}>{ownerName}</span>}
+          </div>
+        )}
         <div className="mt-2 flex items-center justify-between">
           <span className="rounded-full px-2 py-0.5 text-[10px] font-medium text-slate-400 truncate max-w-[100px]" style={{ background: 'rgba(255,255,255,0.06)' }}>
             {SOURCE_LABEL[lead.source] ?? lead.source}
@@ -690,6 +725,17 @@ export default function CrmPage() {
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [deleting, setDeleting] = useState(false)
+  const [users, setUsers] = useState<CrmUser[]>([])
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [timezones, setTimezones] = useState<Record<string, string>>({})
+  const [openActivities, setOpenActivities] = useState<OpenItem[]>([])
+  const [onlyMine, setOnlyMine] = useState(false)
+  const [dueFilter, setDueFilter] = useState<'all' | 'overdue' | 'today'>('all')
+
+  const loadActivities = useCallback(async () => {
+    const { data, error } = await createClient().from('lead_activities').select('id, lead_id, kind, due_at, done_at').in('kind', ['followup', 'task']).is('done_at', null).limit(2000)
+    setOpenActivities(error ? [] : ((data ?? []) as OpenItem[]))
+  }, [])
 
   const load = useCallback(async () => {
     const supabase = createClient()
@@ -700,7 +746,19 @@ export default function CrmPage() {
     setLeads((leadData ?? []) as Lead[])
     setUnits((unitData ?? []) as { id: string; name: string }[])
     setLoading(false)
-  }, [])
+
+    // Responsáveis, fuso das unidades e retornos em aberto: tudo opcional (se a migration 105 ainda não foi aplicada, o CRM segue como antes).
+    const [{ data: userData }, { data: tzData }, auth] = await Promise.all([
+      supabase.from('users').select('id, name, email, role').in('role', ['admin']).eq('is_active', true).order('name'),
+      supabase.from('units').select('id, timezone'),
+      supabase.auth.getUser(),
+    ])
+    const rows = (userData ?? []) as (CrmUser & { role: string })[]
+    setUsers(rows.map((u) => ({ id: u.id, name: u.name, email: u.email })))
+    setCurrentUserId(rows.find((u) => u.email.toLowerCase() === (auth.data.user?.email ?? '').toLowerCase())?.id ?? null)
+    setTimezones(Object.fromEntries(((tzData ?? []) as { id: string; timezone: string | null }[]).map((u) => [u.id, u.timezone ?? 'America/Sao_Paulo'])))
+    await loadActivities()
+  }, [loadActivities])
 
   useEffect(() => { void load() }, [load])
 
@@ -712,6 +770,12 @@ export default function CrmPage() {
     if (selected?.id === id) setSelected((p) => p ? { ...p, status: newStatus } : p)
     const supabase = createClient()
     await supabase.from('leads').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', id)
+    // Linha do tempo: registra a mudança de etapa (silencioso se a tabela ainda não existe)
+    const moved = leads.find((l) => l.id === id)
+    if (moved) {
+      const label = (st: LeadStatus) => COLUMNS.find((c) => c.status === st)?.label ?? st
+      await supabase.from('lead_activities').insert({ unit_id: moved.unit_id, lead_id: id, kind: 'status_change', body: `${label(moved.status)} → ${label(newStatus)}`, created_by: currentUserId })
+    }
   }
 
   function handleAdd(lead: Lead) {
@@ -776,6 +840,17 @@ export default function CrmPage() {
     setLeads([])
     exitSelectMode()
   }
+
+  // Retornos: próximo prazo por lead (no fuso da unidade do lead) e filtros "Meus leads" / atrasados / hoje
+  const now = new Date()
+  const dueByLead = new Map<string, { dueAt: string; bucket: DueBucket }>()
+  for (const lead of leads) {
+    const next = nextDueByLead(openActivities.filter((a) => a.lead_id === lead.id), now, timezones[lead.unit_id] ?? 'America/Sao_Paulo').get(lead.id)
+    if (next) dueByLead.set(lead.id, next)
+  }
+  const counts = dueCounts(dueByLead)
+  const ownerNameById = new Map(users.map((u) => [u.id, u.name || u.email]))
+  const visibleLeads = leads.filter((l) => (!onlyMine || l.owner_user_id === currentUserId) && (dueFilter === 'all' || dueByLead.get(l.id)?.bucket === dueFilter))
 
   // KPIs
   const total = leads.length
@@ -865,6 +940,23 @@ export default function CrmPage() {
         </div>
       )}
 
+      {/* Filtros do CML: meus leads e retornos */}
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" onClick={() => setOnlyMine(false)} className={`rounded-full px-3 py-1 text-xs font-bold ${!onlyMine ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-slate-200'}`}>
+          Todos os leads
+        </button>
+        <button type="button" disabled={!currentUserId} onClick={() => setOnlyMine(true)} className={`rounded-full px-3 py-1 text-xs font-bold disabled:opacity-40 ${onlyMine ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-slate-200'}`}>
+          Meus leads
+        </button>
+        <span className="mx-1 h-4 w-px bg-white/10" />
+        <button type="button" onClick={() => setDueFilter(dueFilter === 'overdue' ? 'all' : 'overdue')} className={`rounded-full px-3 py-1 text-xs font-bold ${dueFilter === 'overdue' ? 'bg-red-500/20 text-red-300' : 'text-slate-400 hover:text-slate-200'}`}>
+          Retornos atrasados ({counts.overdue})
+        </button>
+        <button type="button" onClick={() => setDueFilter(dueFilter === 'today' ? 'all' : 'today')} className={`rounded-full px-3 py-1 text-xs font-bold ${dueFilter === 'today' ? 'bg-amber-500/20 text-amber-300' : 'text-slate-400 hover:text-slate-200'}`}>
+          Retornos hoje ({counts.today})
+        </button>
+      </div>
+
       {/* KPI bar */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         {kpis.map((k) => (
@@ -891,7 +983,7 @@ export default function CrmPage() {
       ) : (
         <div className="flex gap-3 overflow-x-auto pb-4" style={{ minHeight: '60vh' }}>
           {COLUMNS.map((col) => {
-            const colLeads = leads.filter((l) => l.status === col.status)
+            const colLeads = visibleLeads.filter((l) => l.status === col.status)
             return (
               <div
                 key={col.status}
@@ -924,6 +1016,8 @@ export default function CrmPage() {
                       selectMode={selectMode}
                       selected={selectedIds.has(lead.id)}
                       onToggleSelect={toggleSelectId}
+                      due={dueByLead.get(lead.id)}
+                      ownerName={lead.owner_user_id ? ownerNameById.get(lead.owner_user_id) ?? null : null}
                     />
                   ))}
                 </div>
@@ -945,7 +1039,15 @@ export default function CrmPage() {
         />
       )}
       {selected && (
-        <LeadDetail lead={selected} onClose={() => setSelected(null)} onUpdate={handleUpdate} />
+        <LeadDetail
+          lead={selected}
+          onClose={() => setSelected(null)}
+          onUpdate={handleUpdate}
+          users={users}
+          currentUserId={currentUserId}
+          timeZone={timezones[selected.unit_id] ?? 'America/Sao_Paulo'}
+          onActivityChanged={() => void loadActivities()}
+        />
       )}
     </div>
   )

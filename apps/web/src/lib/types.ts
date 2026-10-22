@@ -316,6 +316,8 @@ export type Lead = {
   deal_closed_at: string | null
   /** id do CrmLead correspondente no CRM da Smarter, quando a unidade usa crm_integration_mode = 'smarter' (migration 018). */
   smarter_crm_lead_id: string | null
+  /** Responsável pelo lead (migration 105); null = sem responsável. */
+  owner_user_id?: string | null
   created_at: string
   updated_at: string
 }
