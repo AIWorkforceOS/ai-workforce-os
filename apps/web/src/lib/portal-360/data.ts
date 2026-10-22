@@ -1,4 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { PortalInvoice } from './dashboard'
+import { parseQuoteItems, type QuoteItem } from './quote'
 import type { PortalServiceOrderPhoto } from '@/lib/portal-funcionario/data'
 import { CLIENT_PORTAL_SOURCE } from '@/lib/portal-360/constants'
 
@@ -48,7 +50,16 @@ export type ClientPortalOrder = {
   /** Decisão do cliente sobre a cotação (migration 103): approved | rejected | null = aguardando. */
   quoteDecision: string | null
   quoteDecidedAt: string | null
+  /** Prioridade da ordem (Low/Medium/High…), escolhida pelo cliente ao pedir ou lida do documento. */
+  priority: string | null
+  /** O que o cliente informou ao criar a ordem pelo portal (custom_fields.client_request). */
+  clientRequest: ClientRequestInfo | null
+  /** Linhas de material da cotação (custom_fields.quote_items), com quantidade e preço. */
+  quoteItems: QuoteItem[]
+  updatedAt: string
 }
+
+export type ClientRequestInfo = { description: string | null; approvedAmount: number | null; approvedHours: number | null; photos: string[] }
 
 type ClientOrderRow = {
   id: string
@@ -79,12 +90,15 @@ type ClientOrderRow = {
   service_order_quote_description_pt: string | null
   quote_decision: string | null
   quote_decided_at: string | null
+  service_order_priority: string | null
+  custom_fields: Record<string, unknown> | null
+  updated_at: string
   customers: { name: string; client_company: string | null } | null
   units: { timezone: string | null } | null
 }
 
 const ORDER_SELECT_COLUMNS =
-  'id, unit_id, starts_at, ends_at, status, employee_id, source, address, service_order_requested_date, service_order_status, service_order_number, service_order_location_name, service_order_scope_en, service_order_file_url, service_order_file_name, service_order_signed_by, service_order_signed_at, service_order_signature_url, service_order_photos, created_at, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_part_purchase_link, service_order_quote_description_en, service_order_quote_description_pt, quote_decision, quote_decided_at, customers!inner(name, client_company), units(timezone)'
+  'id, unit_id, starts_at, ends_at, status, employee_id, source, address, service_order_requested_date, service_order_status, service_order_number, service_order_location_name, service_order_scope_en, service_order_file_url, service_order_file_name, service_order_signed_by, service_order_signed_at, service_order_signature_url, service_order_photos, created_at, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_part_purchase_link, service_order_quote_description_en, service_order_quote_description_pt, quote_decision, quote_decided_at, service_order_priority, custom_fields, updated_at, customers!inner(name, client_company), units(timezone)'
 
 /** Deriva o status visível para a 360 — pura, testável sem banco. */
 export function deriveClientOrderStatus(row: {
@@ -98,6 +112,16 @@ export function deriveClientOrderStatus(row: {
   if (row.service_order_status === 'completed') return 'completed'
   if (row.service_order_status === 'quote') return 'quote'
   return 'scheduled'
+}
+
+/** Lê custom_fields.client_request com tolerância: qualquer coisa fora do formato esperado vira ausente. */
+export function parseClientRequest(customFields: Record<string, unknown> | null | undefined): ClientRequestInfo | null {
+  const raw = customFields?.client_request as Record<string, unknown> | undefined
+  if (!raw || typeof raw !== 'object') return null
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null)
+  const photos = Array.isArray(raw.photos) ? raw.photos.filter((u): u is string => typeof u === 'string' && u.startsWith('https://')) : []
+  const description = typeof raw.description === 'string' && raw.description.trim() ? raw.description.trim() : null
+  return { description, approvedAmount: num(raw.approvedAmount), approvedHours: num(raw.approvedHours), photos }
 }
 
 function toClientPortalOrder(row: ClientOrderRow): ClientPortalOrder {
@@ -129,6 +153,10 @@ function toClientPortalOrder(row: ClientOrderRow): ClientPortalOrder {
     quoteDescriptionPt: row.service_order_quote_description_pt,
     quoteDecision: row.quote_decision ?? null,
     quoteDecidedAt: row.quote_decided_at ?? null,
+    priority: row.service_order_priority ?? null,
+    clientRequest: parseClientRequest(row.custom_fields),
+    quoteItems: parseQuoteItems(row.custom_fields),
+    updatedAt: row.updated_at,
   }
 }
 
@@ -187,4 +215,38 @@ export async function resolveClientTargetCustomer(
   const row = data as { id: string; unit_id: string; org_id: string; units: { timezone: string | null } | null } | null
   if (!row) return null
   return { id: row.id, unitId: row.unit_id, orgId: row.org_id, timezone: row.units?.timezone ?? 'America/Sao_Paulo' }
+}
+
+/** Escapa curingas do LIKE para comparar nomes de forma exata (sem diferenciar maiúsculas). */
+export function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (c) => `\\${c}`)
+}
+
+/**
+ * Faturas do cliente já EMITIDAS (enviadas ou pagas) — as de rascunho, canceladas e as substituídas por consolidação não aparecem. A autorização é o
+ * vínculo com os cadastros do próprio cliente (customers.client_company), como nas demais leituras do portal.
+ */
+export async function fetchClientInvoices(supabase: SupabaseClient, clientCompany: string): Promise<PortalInvoice[]> {
+  const { data: customers } = await supabase.from('customers').select('id').ilike('client_company', escapeLike(clientCompany)).limit(500)
+  const ids = ((customers ?? []) as { id: string }[]).map((c) => c.id)
+  if (ids.length === 0) return []
+  const { data } = await supabase
+    .from('invoices')
+    .select('id, invoice_number, description, amount, currency, due_date, status, sent_at, paid_at, reference_month')
+    .in('customer_id', ids)
+    .in('status', ['sent', 'paid'])
+    .order('due_date', { ascending: false })
+    .limit(1000)
+  return ((data ?? []) as { id: string; invoice_number: string; description: string; amount: number | string; currency: string; due_date: string | null; status: string; sent_at: string | null; paid_at: string | null; reference_month: string }[]).map((r) => ({
+    id: r.id,
+    invoiceNumber: r.invoice_number,
+    description: r.description,
+    amount: Number(r.amount),
+    currency: r.currency,
+    dueDate: r.due_date,
+    status: r.status,
+    sentAt: r.sent_at,
+    paidAt: r.paid_at,
+    referenceMonth: r.reference_month,
+  }))
 }

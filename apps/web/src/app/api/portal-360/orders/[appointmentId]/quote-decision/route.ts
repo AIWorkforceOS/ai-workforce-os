@@ -25,14 +25,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ app
 
   const { data } = await supabase
     .from('appointments')
-    .select('id, service_order_status, quote_decision, service_order_quote_description_en, service_order_material_description, customers!inner(client_company)')
+    .select('id, service_order_status, quote_decision, service_order_quote_description_en, service_order_material_description, service_order_material_value, customers!inner(client_company)')
     .eq('id', appointmentId)
     .eq('customers.client_company', appUser.clientCompany)
     .maybeSingle()
-  const order = data as { id: string; service_order_status: string | null; quote_decision: string | null; service_order_quote_description_en: string | null; service_order_material_description: string | null } | null
+  const order = data as { id: string; service_order_status: string | null; quote_decision: string | null; service_order_quote_description_en: string | null; service_order_material_description: string | null; service_order_material_value: number | null } | null
   if (!order) return NextResponse.json({ error: 'Order not found.' }, { status: 404 })
 
-  const block = clientDecisionBlock({ status: order.service_order_status, decision: order.quote_decision, quoteDescriptionEn: order.service_order_quote_description_en, materialDescription: order.service_order_material_description })
+  const block = clientDecisionBlock({ status: order.service_order_status, decision: order.quote_decision, quoteDescriptionEn: order.service_order_quote_description_en, materialDescription: order.service_order_material_description, materialValue: order.service_order_material_value })
   if (block) return NextResponse.json({ error: block }, { status: 409 })
 
   // .is('quote_decision', null): duas abas/duplo toque nunca sobrescrevem uma decisão já registrada

@@ -7,16 +7,8 @@ import { fetchClientOrderById, type ClientPortalOrderStatus } from '@/lib/portal
 import { Badge, Card, PageHeader, type BadgeVariant } from '@/components/ui/dashboard-ui'
 import { PhotoGallery } from '@/components/portal-360/photo-gallery'
 import { DownloadOriginalButton } from '@/components/portal-360/download-original-button'
-import { QuoteDecisionPanel } from '@/components/portal-360/quote-decision-panel'
-import { QuoteBuilderPanel } from '@/components/service-orders/quote-builder-panel'
-
-const STATUS_LABEL: Record<ClientPortalOrderStatus, string> = {
-  pending_assignment: 'Pending scheduling',
-  scheduled: 'Scheduled',
-  completed: 'Completed',
-  quote: 'Quote',
-  cancelled: 'Cancelled',
-}
+import { ClientQuoteView } from '@/components/portal-360/client-quote-view'
+import { stageOf, STAGE_LABEL, formatUsd } from '@/lib/portal-360/dashboard'
 
 const STATUS_VARIANT: Record<ClientPortalOrderStatus, BadgeVariant> = {
   pending_assignment: 'amber',
@@ -59,7 +51,7 @@ export default async function Portal360OrderPage({ params }: { params: Promise<{
       <PageHeader
         eyebrow={order.orderNumber ? `Order #${order.orderNumber}` : 'Order'}
         title={order.locationName ?? 'Service order'}
-        action={<Badge variant={STATUS_VARIANT[order.status]}>{STATUS_LABEL[order.status]}</Badge>}
+        action={<Badge variant={STATUS_VARIANT[order.status]}>{STAGE_LABEL[stageOf(order, new Date())]}</Badge>}
       />
 
       <Card>
@@ -118,35 +110,52 @@ export default async function Portal360OrderPage({ params }: { params: Promise<{
         </div>
       </Card>
 
+      {order.clientRequest && (order.clientRequest.description || order.clientRequest.approvedAmount != null || order.clientRequest.approvedHours != null || order.priority) && (
+        <Card>
+          <p className="mb-3 text-[11px] font-black uppercase tracking-wider text-slate-400">Your request</p>
+          <div className="flex flex-col gap-2 text-sm">
+            {order.priority && (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-slate-400">Priority</span>
+                <span className="font-semibold text-white">{order.priority}</span>
+              </div>
+            )}
+            {order.clientRequest.approvedAmount != null && (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-slate-400">Approved amount</span>
+                <span className="font-semibold text-white">{formatUsd(order.clientRequest.approvedAmount)}</span>
+              </div>
+            )}
+            {order.clientRequest.approvedHours != null && (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-slate-400">Approved time</span>
+                <span className="font-semibold text-white">{order.clientRequest.approvedHours} h</span>
+              </div>
+            )}
+            {order.clientRequest.description && <p className="whitespace-pre-wrap border-t pt-3 text-slate-200" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>{order.clientRequest.description}</p>}
+          </div>
+        </Card>
+      )}
+
       <Card>
         <p className="mb-4 text-[11px] font-black uppercase tracking-wider text-slate-400">Photos</p>
-        <PhotoGallery photos={order.photos} />
+        <PhotoGallery photos={[...(order.clientRequest?.photos ?? []).map((url) => ({ url, kind: 'service' as const, uploaded_at: order.createdAt })), ...order.photos]} />
       </Card>
 
       {order.status === 'quote' && (
-        <Card>
-          <p className="mb-4 text-[11px] font-black uppercase tracking-wider text-slate-400">Quote</p>
-          <QuoteBuilderPanel
-            order={{
-              id: order.id,
-              orderNumber: order.orderNumber,
-              locationName: order.locationName,
-              address: order.address,
-              materialDescription: order.materialDescription,
-              materialValue: order.materialValue,
-              hoursNeeded: order.hoursNeeded,
-              partPurchaseLink: order.partPurchaseLink,
-              photoUrls: order.photos.filter((p) => p.kind !== 'video').map((p) => p.url),
-              quoteDescriptionEn: order.quoteDescriptionEn,
-              quoteDescriptionPt: order.quoteDescriptionPt,
-            }}
-            generateUrl={`/api/portal-360/orders/${order.id}/quote`}
-            locale="en"
-          />
-          <div className="mt-5 border-t pt-4" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-            <QuoteDecisionPanel appointmentId={order.id} decision={order.quoteDecision} decidedAt={order.quoteDecidedAt} />
-          </div>
-        </Card>
+        <ClientQuoteView
+          appointmentId={order.id}
+          description={order.quoteDescriptionEn}
+          items={order.quoteItems}
+          materialValue={order.materialValue}
+          hoursNeeded={order.hoursNeeded}
+          partLink={order.partPurchaseLink}
+          approvedAmount={order.clientRequest?.approvedAmount ?? null}
+          approvedHours={order.clientRequest?.approvedHours ?? null}
+          decision={order.quoteDecision}
+          decidedAt={order.quoteDecidedAt}
+          stageLabel={STAGE_LABEL[stageOf(order, new Date())]}
+        />
       )}
     </div>
   )

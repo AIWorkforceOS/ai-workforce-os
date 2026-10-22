@@ -29,5 +29,6 @@ describe('clientDecisionBlock', () => {
     expect(clientDecisionBlock({ ...ok, decision: 'approved' })).not.toBeNull()
     expect(clientDecisionBlock({ ...ok, decision: 'rejected' })).not.toBeNull()
     expect(clientDecisionBlock({ ...ok, quoteDescriptionEn: ' ', materialDescription: null })).not.toBeNull()
+    expect(clientDecisionBlock({ ...ok, quoteDescriptionEn: null, materialDescription: null, materialValue: 250 })).toBeNull() // só o valor do material já é cotação
   })
 })

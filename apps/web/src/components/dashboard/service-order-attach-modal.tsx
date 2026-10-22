@@ -13,6 +13,8 @@ import { QuoteBuilderPanel } from '@/components/service-orders/quote-builder-pan
 import { ServiceOrderWorkspace } from '@/components/portal-funcionario/service-order-workspace'
 import { SignOffPdfActions } from '@/components/portal-funcionario/signoff-pdf-actions'
 import { OpenPdfButton } from '@/components/portal-funcionario/open-pdf-button'
+import { ClientRequestCard } from '@/components/dashboard/client-request-card'
+import { QuoteItemsEditor } from '@/components/dashboard/quote-items-editor'
 import { OrderAnalysisCard } from '@/components/dashboard/order-analysis-card'
 import { ClientLinkSection } from '@/components/clients/client-link-section'
 import { hasSignedSignOff } from '@/lib/service-orders/signoff-file'
@@ -537,6 +539,8 @@ export function ServiceOrderAttachModal({
           <div className="flex flex-col gap-4">
             <ClientLinkSection appointment={appointment} unitId={unitId} orgId={appointment.org_id} onChanged={onSaved} />
 
+            <ClientRequestCard customFields={appointment.custom_fields} priority={appointment.service_order_priority} />
+
             <OrderAnalysisCard customFields={appointment.custom_fields} />
 
             <div className="flex flex-col gap-1.5">
@@ -675,6 +679,7 @@ export function ServiceOrderAttachModal({
 
             {appointment.service_order_status === 'quote' && (
               <div className="flex flex-col gap-3 rounded-xl p-4" style={{ background: 'rgba(129,140,248,0.06)', border: '1px solid rgba(129,140,248,0.18)' }}>
+                <QuoteItemsEditor appointmentId={appointment.id} customFields={appointment.custom_fields} onSaved={onSaved} />
                 <span className="text-[11px] font-black uppercase tracking-wider text-indigo-300">Cotação (gerada por IA)</span>
                 <QuoteBuilderPanel
                   order={{

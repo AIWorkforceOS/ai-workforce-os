@@ -1,149 +1,74 @@
-import { ClipboardList, Plus } from 'lucide-react'
-import Link from 'next/link'
+import { Plus } from 'lucide-react'
 import { getAppUser } from '@/lib/app-user'
 import { createServiceClient } from '@/lib/supabase/service'
-import { fetchClientOrders, type ClientPortalOrder, type ClientPortalOrderStatus } from '@/lib/portal-360/data'
-import { Badge, Card, EmptyState, PageHeader, PrimaryButton, type BadgeVariant } from '@/components/ui/dashboard-ui'
+import { fetchClientInvoices, fetchClientOrders } from '@/lib/portal-360/data'
+import { countOrders, financeSummary, formatUsd, TAB_ORDER, type OrderTab } from '@/lib/portal-360/dashboard'
+import { currentMonthInTimezone, resolveSelectedMonth, todayInTimezone } from '@/lib/service-operations-month'
+import { PageHeader, PrimaryButton } from '@/components/ui/dashboard-ui'
+import { CalendarSection, FinancialSection, Kpi, MonthSwitcher, OrdersSection, ViewTabs, type PortalView } from '@/components/portal-360/portal-sections'
 
-const STATUS_LABEL: Record<ClientPortalOrderStatus, string> = {
-  pending_assignment: 'Pending scheduling',
-  scheduled: 'Scheduled',
-  completed: 'Completed',
-  quote: 'Quote',
-  cancelled: 'Cancelled',
-}
-
-const STATUS_VARIANT: Record<ClientPortalOrderStatus, BadgeVariant> = {
-  pending_assignment: 'amber',
-  scheduled: 'blue',
-  completed: 'green',
-  quote: 'purple',
-  cancelled: 'red',
-}
-
-function formatDate(iso: string | null): string {
-  if (!iso) return '-'
-  const date = iso.length === 10 ? new Date(`${iso}T00:00:00`) : new Date(iso)
-  return date.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })
-}
-
-function orderDateLabel(order: ClientPortalOrder): string {
-  if (order.status === 'pending_assignment') return `Requested for ${formatDate(order.requestedDate)}`
-  return formatDate(order.startsAt)
-}
-
-// force-dynamic: mesmo motivo do Portal do Funcionário — sem isso, anexar uma
-// ordem nova e voltar pra lista pode mostrar dado desatualizado (Data Cache do Next).
+// force-dynamic: sem isso, anexar uma ordem nova e voltar pode mostrar dado desatualizado (Data Cache do Next).
 export const dynamic = 'force-dynamic'
 
-type PortalTab = 'agenda' | 'completed'
-
-const AGENDA_STATUSES: ClientPortalOrderStatus[] = ['pending_assignment', 'scheduled']
-const COMPLETED_STATUSES: ClientPortalOrderStatus[] = ['quote', 'completed', 'cancelled']
-
-/** Cotação primeiro (precisa de ação), depois concluído, depois cancelado — pedido do Vinicius: "muito organizado para acelerar o trabalho de quem está no office". */
-const COMPLETED_TAB_ORDER: Record<ClientPortalOrderStatus, number> = {
-  pending_assignment: 0,
-  scheduled: 0,
-  quote: 0,
-  completed: 1,
-  cancelled: 2,
-}
+const DEFAULT_TZ = 'America/New_York'
 
 /**
- * Duas abas — pedido do Vinicius (2026-09-15): "além de ver toda a agenda
- * de serviços que ainda irá ser feito", e "tem que ser tudo muito
- * organizado para acelerar o trabalho de quem está no office". Uma lista
- * só (ordenada por created_at) misturava trabalho futuro com passado.
+ * Painel do cliente (sempre em inglês): indicadores do mês, ordens por aba (Scheduled / Completed / Quote / Awaiting approval), calendário com as ordens de
+ * cada dia e a aba Financial com as faturas. O mês é escolhido no topo e vale para tudo.
  */
-export default async function Portal360Page({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+export default async function Portal360Page({ searchParams }: { searchParams: Promise<{ view?: string; month?: string; tab?: string; day?: string }> }) {
   const appUser = await getAppUser()
-  if (!appUser || appUser.role !== 'client' || !appUser.clientCompany) {
-    return null
-  }
+  if (!appUser || appUser.role !== 'client' || !appUser.clientCompany) return null
 
-  const { tab: tabParam } = await searchParams
-  const tab: PortalTab = tabParam === 'completed' ? 'completed' : 'agenda'
+  const sp = await searchParams
+  const view: PortalView = sp.view === 'calendar' || sp.view === 'financial' ? sp.view : 'orders'
+  const tab: OrderTab = (TAB_ORDER as string[]).includes(sp.tab ?? '') ? (sp.tab as OrderTab) : 'scheduled'
 
   const supabase = createServiceClient()
-  const allOrders = supabase ? await fetchClientOrders(supabase, appUser.clientCompany) : []
+  const [orders, invoices] = supabase ? await Promise.all([fetchClientOrders(supabase, appUser.clientCompany), fetchClientInvoices(supabase, appUser.clientCompany)]) : [[], []]
 
-  const agendaOrders = allOrders.filter((o) => AGENDA_STATUSES.includes(o.status))
-  const completedOrders = allOrders
-    .filter((o) => COMPLETED_STATUSES.includes(o.status))
-    .sort((a, b) => COMPLETED_TAB_ORDER[a.status] - COMPLETED_TAB_ORDER[b.status] || b.startsAt.localeCompare(a.startsAt))
-  const orders = tab === 'agenda' ? agendaOrders : completedOrders
+  const tz = orders[0]?.timezone ?? DEFAULT_TZ
+  const now = new Date()
+  const today = todayInTimezone(tz)
+  const currentMonth = currentMonthInTimezone(tz)
+  const month = resolveSelectedMonth(sp.month, tz)
+  const counts = countOrders(orders, month, now)
+  const finance = financeSummary(invoices, month, today)
 
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
         eyebrow="Service orders"
-        title="Your orders"
-        subtitle="All stores, all locations — attach a new order or track an existing one."
+        title="Dashboard"
+        subtitle="All stores, all locations — track every order, quote and invoice in one place."
         action={
-          <PrimaryButton href="/portal-360/new" icon={<Plus size={14} />}>
-            New order
-          </PrimaryButton>
+          <div className="flex flex-wrap items-center gap-2">
+            <MonthSwitcher month={month} currentMonth={currentMonth} view={view} />
+            <PrimaryButton href="/portal-360/new" icon={<Plus size={14} />}>
+              New order
+            </PrimaryButton>
+          </div>
         }
       />
 
-      <div className="flex w-fit gap-1 rounded-xl p-1" style={{ background: 'rgba(255,255,255,0.04)' }}>
-        <Link
-          href="/portal-360?tab=agenda"
-          className="rounded-lg px-4 py-2 text-xs font-bold transition-colors"
-          style={tab === 'agenda' ? { background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', color: 'white' } : { color: '#94a3b8' }}
-        >
-          Agenda ({agendaOrders.length})
-        </Link>
-        <Link
-          href="/portal-360?tab=completed"
-          className="rounded-lg px-4 py-2 text-xs font-bold transition-colors"
-          style={tab === 'completed' ? { background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)', color: 'white' } : { color: '#94a3b8' }}
-        >
-          Completed ({completedOrders.length})
-        </Link>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-5">
+        <Kpi label="Orders sent" value={counts.sent} />
+        <Kpi label="Accepted" value={counts.accepted} />
+        <Kpi label="In scheduling" value={counts.scheduling} tone={counts.scheduling > 0 ? 'text-amber-300' : 'text-white'} />
+        <Kpi label="Scheduled" value={counts.scheduled} tone="text-blue-300" />
+        <Kpi label="Quotes" value={counts.quote} tone="text-purple-300" />
+        <Kpi label="Awaiting approval" value={counts.awaiting} tone={counts.awaiting > 0 ? 'text-amber-300' : 'text-white'} />
+        <Kpi label="Completed" value={counts.completed} tone="text-emerald-400" />
+        <Kpi label="Invoices to be paid" value={formatUsd(finance.allOutstanding)} sub="all months" tone={finance.allOutstanding > 0 ? 'text-amber-300' : 'text-white'} />
+        <Kpi label="Overdue" value={formatUsd(finance.allOverdue)} sub="all months" tone={finance.allOverdue > 0 ? 'text-red-400' : 'text-white'} />
+        <Kpi label="Paid this month" value={formatUsd(finance.month.paid)} tone="text-emerald-400" />
       </div>
 
-      {orders.length === 0 ? (
-        <Card>
-          <EmptyState
-            icon={<ClipboardList size={22} className="text-white" />}
-            title={tab === 'agenda' ? 'Nothing scheduled' : 'Nothing completed yet'}
-            subtitle={
-              tab === 'agenda' ? 'Attach a new order to get started.' : 'Completed and quoted orders will show up here.'
-            }
-            actionHref="/portal-360/new"
-            actionLabel="Attach order"
-          />
-        </Card>
-      ) : (
-        <Card className="overflow-hidden">
-          <div className="flex flex-col">
-            {orders.map((order) => (
-              <Link
-                key={order.id}
-                href={`/portal-360/order/${order.id}`}
-                className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 transition-colors hover:bg-white/[0.03]"
-                style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}
-              >
-                <div className="flex flex-col gap-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-semibold text-white">
-                      {order.orderNumber ? `#${order.orderNumber}` : 'Order'}
-                    </span>
-                    <Badge variant={STATUS_VARIANT[order.status]}>{STATUS_LABEL[order.status]}</Badge>
-                  </div>
-                  <p className="text-xs text-slate-400">
-                    {order.locationName ?? 'Location not specified'}
-                    {order.address ? ` · ${order.address}` : ''}
-                  </p>
-                </div>
-                <span className="text-xs font-semibold text-slate-400">{orderDateLabel(order)}</span>
-              </Link>
-            ))}
-          </div>
-        </Card>
-      )}
+      <ViewTabs view={view} month={month} />
+
+      {view === 'orders' && <OrdersSection orders={orders} month={month} tab={tab} now={now} />}
+      {view === 'calendar' && <CalendarSection orders={orders} month={month} day={sp.day ?? null} today={today} now={now} />}
+      {view === 'financial' && <FinancialSection invoices={invoices} month={month} today={today} />}
     </div>
   )
 }

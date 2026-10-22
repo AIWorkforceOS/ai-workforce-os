@@ -55,13 +55,15 @@ describe('buildClientOrderInsertRow', () => {
     issuerEmail: 'jane@360.com',
   }
 
+  const baseFields = { requestedDate: '2026-08-20', description: null, priority: null, locationName: null, address: null, approvedAmount: null, approvedHours: null }
+
   it('nunca atribui profissional — employee_id sempre null e source identifica o pedido da 360', () => {
     const row = buildClientOrderInsertRow({
       customer,
-      requestedDate: '2026-08-20',
+      fields: baseFields,
       timezone: 'America/Sao_Paulo',
-      fileUrl: 'https://files/ordem.pdf',
-      fileName: 'ordem.pdf',
+      file: { url: 'https://files/ordem.pdf', name: 'ordem.pdf' },
+      photoUrls: [],
       extraction,
     })
     expect(row.employee_id).toBeNull()
@@ -77,15 +79,43 @@ describe('buildClientOrderInsertRow', () => {
   it('extração null (falhou/sem API key) nunca bloqueia — campos ficam null', () => {
     const row = buildClientOrderInsertRow({
       customer,
-      requestedDate: '2026-08-20',
+      fields: baseFields,
       timezone: 'America/Sao_Paulo',
-      fileUrl: 'https://files/ordem.pdf',
-      fileName: 'ordem.pdf',
+      file: { url: 'https://files/ordem.pdf', name: 'ordem.pdf' },
+      photoUrls: [],
       extraction: null,
     })
     expect(row.service_order_number).toBeNull()
     expect(row.address).toBeNull()
     expect(row.employee_id).toBeNull()
     expect(row.service_order_file_url).toBe('https://files/ordem.pdf')
+  })
+})
+
+import { parseNewOrderFields } from '../order-request'
+
+describe('parseNewOrderFields', () => {
+  const form = (o: Record<string, unknown>) => (k: string) => o[k]
+  const base = { requestedDate: '2026-11-03', description: 'Replace the broken exit sign' }
+  it('aceita só texto (sem arquivo) e normaliza os campos', () => {
+    const r = parseNewOrderFields(form({ ...base, priority: 'High', locationName: ' Store 12 ', approvedAmount: '$1,250.50', approvedHours: '6' }), '2026-11-01', false)
+    expect(r).toEqual({ ok: true, value: { requestedDate: '2026-11-03', description: 'Replace the broken exit sign', priority: 'High', locationName: 'Store 12', address: null, approvedAmount: 1250.5, approvedHours: 6 } })
+  })
+  it('exige arquivo OU descrição', () => {
+    expect(parseNewOrderFields(form({ requestedDate: '2026-11-03' }), '2026-11-01', false)).toMatchObject({ ok: false })
+    expect(parseNewOrderFields(form({ requestedDate: '2026-11-03' }), '2026-11-01', true)).toMatchObject({ ok: true })
+  })
+  it('valida data, prioridade e números', () => {
+    expect(parseNewOrderFields(form({ ...base, requestedDate: '2026-10-01' }), '2026-11-01', false)).toMatchObject({ ok: false })
+    expect(parseNewOrderFields(form({ ...base, priority: 'Whenever' }), '2026-11-01', false)).toMatchObject({ ok: false, error: expect.stringMatching(/priority/i) })
+    expect(parseNewOrderFields(form({ ...base, approvedAmount: '-5' }), '2026-11-01', false)).toMatchObject({ ok: false })
+    expect(parseNewOrderFields(form({ ...base, approvedHours: 'abc' }), '2026-11-01', false)).toMatchObject({ ok: false })
+    expect(parseNewOrderFields(form({ ...base, approvedAmount: '' }), '2026-11-01', false)).toMatchObject({ ok: true })
+  })
+  it('o texto do cliente vira o escopo quando não há documento; o que ele informou vai para client_request', () => {
+    const fields = { requestedDate: '2026-11-03', description: 'Fix the door', priority: 'Low', locationName: 'Store 3', address: '1 Main St', approvedAmount: 300, approvedHours: 4 }
+    const row = buildClientOrderInsertRow({ customer: { id: 'c', unitId: 'u', orgId: 'o' }, fields, timezone: 'America/New_York', file: null, photoUrls: ['https://p/1.jpg'], extraction: null })
+    expect(row).toMatchObject({ service_order_scope_en: 'Fix the door', service_order_priority: 'Low', service_order_location_name: 'Store 3', address: '1 Main St', service_order_file_url: null, employee_id: null })
+    expect(row.custom_fields).toEqual({ client_request: { description: 'Fix the door', approvedAmount: 300, approvedHours: 4, photos: ['https://p/1.jpg'] } })
   })
 })

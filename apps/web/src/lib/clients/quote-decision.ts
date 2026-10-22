@@ -20,9 +20,9 @@ export function decisionPatch(
 }
 
 /** Regra da decisão feita pelo PRÓPRIO cliente no portal: só ordem em Cotação, com algo para aprovar, e uma única vez (desfazer é do administrador). */
-export function clientDecisionBlock(order: { status: string | null; decision: string | null; quoteDescriptionEn: string | null; materialDescription: string | null }): string | null {
+export function clientDecisionBlock(order: { status: string | null; decision: string | null; quoteDescriptionEn: string | null; materialDescription: string | null; materialValue?: number | null }): string | null {
   if (order.status !== 'quote') return 'This order is not waiting for a quote decision.'
   if (order.decision === 'approved' || order.decision === 'rejected') return 'A decision was already recorded for this quote. Contact the office to change it.'
-  if (!order.quoteDescriptionEn?.trim() && !order.materialDescription?.trim()) return 'There is no quote to approve yet.'
+  if (!order.quoteDescriptionEn?.trim() && !order.materialDescription?.trim() && !(order.materialValue != null && order.materialValue > 0)) return 'There is no quote to approve yet.'
   return null
 }
