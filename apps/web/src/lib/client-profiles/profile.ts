@@ -83,3 +83,52 @@ export function pickContractor(profiles: ClientProfile[], clientCompany: string 
   const match = profiles.find((p) => sameClientName(p.name, clientCompany))
   return match ? contractorFromProfile(match) : DEFAULT_CONTRACTOR
 }
+
+/** Quem está vendo/baixando o Sign Off: o técnico (e o gerente da loja na frente dele), o escritório (admin) ou o próprio cliente no portal. */
+export type SignOffViewer = 'technician' | 'office' | 'client'
+
+/** A marca do cliente tem logo própria? (anexada no cadastro, ou o arquivo da 360 que já vem no sistema). Sem logo, o Sign Off sai com a marca da Mawi. */
+export function hasBrandLogo(brand: Pick<ContractorBrand, 'logoUrl' | 'useLocal360Logo'> | null | undefined): boolean {
+  return Boolean(brand && (brand.logoUrl || brand.useLocal360Logo))
+}
+
+/**
+ * Marca do CLIENTE da ordem, ou null quando não há como saber: sem cliente vinculado, ou cliente sem cadastro (a 360 é a única exceção:
+ * continua com o arquivo de logo que já vem no sistema, mesmo sem cadastro).
+ */
+export function clientBrandFor(profiles: ClientProfile[], clientCompany: string | null | undefined): ContractorBrand | null {
+  if (!clientCompany) return null
+  const match = profiles.find((p) => sameClientName(p.name, clientCompany))
+  if (match) return contractorFromProfile(match)
+  return sameClientName(clientCompany, DEFAULT_CLIENT_COMPANY_NAME) ? DEFAULT_CONTRACTOR : null
+}
+
+function formatPhone(raw: string | null | undefined): string {
+  const phone = clean(raw)
+  if (!phone) return ''
+  const digits = phone.replace(/\D/g, '')
+  const pretty = digits.length === 10 ? `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}` : phone
+  return /^phone/i.test(pretty) ? pretty : `Phone # ${pretty}`
+}
+
+/** Marca da Mawi (a empresa que presta o serviço): dados de cobrança da unidade + logo da empresa (ou da unidade). */
+export function mawiBrandFromUnit(unit: { name?: string | null; billing_company_name?: string | null; billing_address?: string | null; billing_phone?: string | null; billing_email?: string | null }, logoUrl: string | null | undefined): ContractorBrand {
+  const name = clean(unit.billing_company_name) || clean(unit.name) || 'Service Provider'
+  const logo = clean(logoUrl).startsWith('https://') ? clean(logoUrl) : null
+  return {
+    lines: [name, clean(unit.billing_address), formatPhone(unit.billing_phone), clean(unit.billing_email)].filter(Boolean),
+    initials: initialsOf(name),
+    logoUrl: logo,
+    useLocal360Logo: false,
+  }
+}
+
+/**
+ * Regra do Sign Off:
+ *  - TÉCNICO (e o gerente da loja, que vê no aparelho dele): SEMPRE a marca da Mawi — nunca nome, logo ou dados do cliente.
+ *  - ESCRITÓRIO e CLIENTE: a marca do cliente quando ele tem logo cadastrada; sem logo (ou sem cadastro), a da Mawi.
+ */
+export function resolveSignOffBrand(viewer: SignOffViewer, clientBrand: ContractorBrand | null, mawi: ContractorBrand): ContractorBrand {
+  if (viewer === 'technician') return mawi
+  return clientBrand && hasBrandLogo(clientBrand) ? clientBrand : mawi
+}

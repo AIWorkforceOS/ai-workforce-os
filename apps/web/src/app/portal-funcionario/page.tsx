@@ -216,7 +216,7 @@ export default async function PortalFuncionarioPage({
                 <div>
                   <p className="text-sm font-semibold text-white">{rec.description ?? 'Serviço'}</p>
                   <p className="mt-0.5 text-[12px] text-slate-400">
-                    {rec.customers?.name ?? 'Sem cliente vinculado'} · {formatDate(rec.service_date, locale)}
+                    {formatDate(rec.service_date, locale)}
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-0.5">

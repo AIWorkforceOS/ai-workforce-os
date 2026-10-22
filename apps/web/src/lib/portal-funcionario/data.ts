@@ -24,12 +24,9 @@ export type PortalAppointment = {
   status: string
   address: string | null
   notes: string | null
-  customers: { name: string } | null
   services: { name: string } | null
   /** Ordem de serviço anexada pelo admin (Fase A Mawi/360) — null quando não há ordem para este agendamento. */
   service_order_number: string | null
-  service_order_file_url: string | null
-  service_order_file_name: string | null
   service_order_summary_pt: string | null
   /** Texto original em inglês (Scope Of Work) — o que consta na ordem de verdade, pro técnico mostrar ao gerente da loja se precisar. Distinto do resumo em português, que é só apoio interno. */
   service_order_scope_en: string | null
@@ -61,7 +58,6 @@ export type PortalServiceRecord = {
   amount_paid_to_employee: number
   payment_status: string
   paid_at: string | null
-  customers: { name: string } | null
 }
 
 export type EmployeePortalData = {
@@ -69,8 +65,9 @@ export type EmployeePortalData = {
   serviceRecords: PortalServiceRecord[]
 }
 
+// REGRA: o técnico nunca recebe nada do cliente (nome, cadastro, arquivo original da ordem com o cabeçalho dele): só a Mawi e a loja do atendimento.
 const APPOINTMENT_SELECT_COLUMNS =
-  'id, unit_id, starts_at, ends_at, status, address, notes, customers(name), services(name), service_order_number, service_order_file_url, service_order_file_name, service_order_summary_pt, service_order_scope_en, service_order_status, service_order_signed_by, service_order_signed_at, service_order_location_name, service_order_signature_url, service_order_part_purchase_link, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_photos, trip_started_at, checked_in_at, work_ended_at'
+  'id, unit_id, starts_at, ends_at, status, address, notes, services(name), service_order_number, service_order_summary_pt, service_order_scope_en, service_order_status, service_order_signed_by, service_order_signed_at, service_order_location_name, service_order_signature_url, service_order_part_purchase_link, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_photos, trip_started_at, checked_in_at, work_ended_at'
 
 /**
  * Busca a agenda e o financeiro de UM funcionário (isolado por
@@ -89,7 +86,7 @@ export async function fetchEmployeePortalData(
       .order('starts_at', { ascending: true }),
     supabase
       .from('service_records')
-      .select('id, service_date, description, amount_due, amount_paid_to_employee, payment_status, paid_at, customers(name)')
+      .select('id, service_date, description, amount_due, amount_paid_to_employee, payment_status, paid_at')
       .eq('employee_id', employeeId)
       .order('service_date', { ascending: false }),
   ])

@@ -49,3 +49,39 @@ describe('carregamento tolerante a falha', () => {
     expect(await loadContractorBrand(client({ data: [profile()], error: null }), 'o1', null)).toBe(DEFAULT_CONTRACTOR)
   })
 })
+
+import { clientBrandFor, hasBrandLogo, mawiBrandFromUnit, resolveSignOffBrand, DEFAULT_CONTRACTOR as DEFAULT_360 } from '../profile'
+
+describe('marca do Sign Off por quem vê', () => {
+  const mawi = mawiBrandFromUnit({ name: 'Mawi Pro — Principal', billing_company_name: 'Mawi Pro Service', billing_address: '4315 E Thunderbird Rd', billing_phone: '9544102114', billing_email: 'info@mawiproservice.com' }, 'https://cdn/mawi.png')
+  const withLogo = { id: '1', org_id: 'o', name: 'ACME', logo_url: 'https://cdn/acme.png', address_line1: '1 Main', address_line2: null, phone: null, email: null, website: null, notes: null, is_active: true }
+  const noLogo = { ...withLogo, logo_url: null }
+
+  it('marca da Mawi sai dos dados de cobrança da unidade, com telefone formatado', () => {
+    expect(mawi.lines).toEqual(['Mawi Pro Service', '4315 E Thunderbird Rd', 'Phone # (954) 410-2114', 'info@mawiproservice.com'])
+    expect(mawi.logoUrl).toBe('https://cdn/mawi.png')
+    expect(mawi.useLocal360Logo).toBe(false)
+  })
+  it('técnico: sempre a Mawi, mesmo que o cliente tenha logo', () => {
+    expect(resolveSignOffBrand('technician', clientBrandFor([withLogo], 'ACME'), mawi)).toBe(mawi)
+    expect(resolveSignOffBrand('technician', DEFAULT_360, mawi)).toBe(mawi)
+  })
+  it('escritório e cliente: marca do cliente só se ele tem logo; senão a Mawi', () => {
+    for (const v of ['office', 'client'] as const) {
+      expect(resolveSignOffBrand(v, clientBrandFor([withLogo], 'ACME'), mawi).lines[0]).toBe('ACME')
+      expect(resolveSignOffBrand(v, clientBrandFor([noLogo], 'ACME'), mawi)).toBe(mawi)
+      expect(resolveSignOffBrand(v, clientBrandFor([], 'Desconhecido'), mawi)).toBe(mawi)
+      expect(resolveSignOffBrand(v, clientBrandFor([withLogo], null), mawi)).toBe(mawi)
+    }
+  })
+  it('a 360 mantém o arquivo de logo que já vem no sistema, mesmo sem cadastro', () => {
+    expect(clientBrandFor([], '360 Service Provider')).toBe(DEFAULT_360)
+    expect(hasBrandLogo(DEFAULT_360)).toBe(true)
+    expect(resolveSignOffBrand('office', clientBrandFor([], '360 service provider'), mawi)).toBe(DEFAULT_360)
+  })
+  it('falha de leitura da unidade vira marca neutra, nunca a de um cliente', () => {
+    const neutral = mawiBrandFromUnit({}, null)
+    expect(neutral.lines).toEqual(['Service Provider'])
+    expect(neutral.logoUrl).toBeNull()
+  })
+})

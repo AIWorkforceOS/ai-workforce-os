@@ -65,7 +65,7 @@ function formatTimeRange(startsAt: string, endsAt: string, locale: string): stri
  * Some da tela quando o admin não anexou nada para este agendamento.
  */
 function ServiceOrderPanel({ appt }: { appt: PortalAppointment }) {
-  const hasOrder = Boolean(appt.service_order_number || appt.service_order_file_url || appt.service_order_summary_pt)
+  const hasOrder = Boolean(appt.service_order_number || appt.service_order_summary_pt)
   if (!hasOrder) return null
 
   return (
@@ -84,17 +84,6 @@ function ServiceOrderPanel({ appt }: { appt: PortalAppointment }) {
 
       {appt.service_order_summary_pt && <p className="text-slate-300">{appt.service_order_summary_pt}</p>}
 
-      {appt.service_order_file_url && (
-        <a
-          href={appt.service_order_file_url}
-          target="_blank"
-          rel="noreferrer"
-          className="flex w-fit items-center gap-1.5 text-xs font-bold text-indigo-300 hover:text-indigo-200"
-        >
-          <FileText size={13} />
-          Ver arquivo original
-        </a>
-      )}
 
       {appt.service_order_status !== 'pending' && appt.service_order_signed_by && (
         <p className="text-[12px] text-slate-400">
@@ -151,7 +140,7 @@ function AppointmentRow({
       >
         <div>
           <p className="text-sm font-semibold text-white">
-            {appt.customers?.name ?? 'Cliente'} {appt.services?.name ? `· ${appt.services.name}` : ''}
+            {appt.service_order_location_name || appt.address || 'Atendimento'} {appt.services?.name ? `· ${appt.services.name}` : ''}
           </p>
           <div className="mt-0.5 flex flex-wrap items-center gap-2">
             <p className="text-[12px] text-slate-400">{formatDateTime(appt.starts_at, locale)}</p>

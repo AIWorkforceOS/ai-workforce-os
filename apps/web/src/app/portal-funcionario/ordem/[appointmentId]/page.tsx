@@ -52,7 +52,7 @@ export default async function ServiceOrderWorkspacePage({
   const quoteAgentEnabled = service ? await isAgentAvailableForEmployee(service, appUser.employeeId, appointment.unit_id).catch(() => false) : false
 
   const hasOrder = Boolean(
-    appointment.service_order_number || appointment.service_order_file_url || appointment.service_order_summary_pt,
+    appointment.service_order_number || appointment.service_order_summary_pt,
   )
   if (!hasOrder) redirect('/portal-funcionario')
 

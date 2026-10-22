@@ -3,6 +3,9 @@ import type { AppUser } from '@/lib/app-user'
 import { createServiceClient } from '@/lib/supabase/service'
 import { resolveClientTargetCustomer } from '@/lib/portal-360/data'
 import { BRANDING_BUCKET } from './constants'
+import { readOrgLogoUrl } from './org-logo'
+
+export { readOrgLogoUrl }
 
 /**
  * Leituras da marca da empresa. TODAS toleram falha: se a migration da marca ainda não existe no banco (ou o servidor não tem a chave de serviço),
@@ -20,20 +23,6 @@ async function brandOrgIdFor(user: AppUser): Promise<string | null> {
     return target?.orgId ?? null
   }
   return null
-}
-
-export async function readOrgLogoUrl(orgId: string | null): Promise<string | null> {
-  if (!orgId) return null
-  try {
-    const service = createServiceClient()
-    if (!service) return null
-    const { data, error } = await service.from('organizations').select('brand_logo_url').eq('id', orgId).maybeSingle()
-    if (error) return null
-    const url = (data as { brand_logo_url?: string | null } | null)?.brand_logo_url
-    return typeof url === 'string' && url.startsWith('https://') ? url : null
-  } catch {
-    return null
-  }
 }
 
 /** Logo própria do usuário logado (ou null = logo do Alizo). Uma consulta por requisição. */

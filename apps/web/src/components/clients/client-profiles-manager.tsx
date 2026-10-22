@@ -110,7 +110,7 @@ function ClientCard({ profile }: { profile: ClientProfile }) {
         currentLogoUrl={profile.logo_url}
         uploadUrl={`/api/client-profiles/${profile.id}/logo`}
         title="Logo do cliente"
-        description="Sai no canto superior da ordem de serviço (PDF) deste cliente. PNG, JPEG ou WebP, até 2 MB."
+        description="Com a logo cadastrada, o Sign Off salvo no sistema (escritório) e o que o cliente baixa no portal dele saem com a logo e os dados deste cliente. SEM logo, saem com os dados e a logo da Mawi. O técnico e o gerente da loja sempre veem o Sign Off da Mawi, nunca o do cliente. PNG, JPEG ou WebP, até 2 MB."
       />
     </div>
   )

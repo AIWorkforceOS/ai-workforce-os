@@ -4,7 +4,9 @@ import { generateServiceOrderPdf } from '@/lib/service-orders/pdf'
 import { generatePhotoReportPdf, type ReportMedia } from '@/lib/service-orders/photo-report'
 import { reportDownloadUrl } from '@/lib/service-orders/report-link'
 import { signOffFileName } from '@/lib/service-orders/signoff-file'
-import { loadContractorBrand } from '@/lib/client-profiles/load'
+import { loadSignOffBrand } from '@/lib/client-profiles/load'
+import { createServiceClient } from '@/lib/supabase/service'
+import { getAppUser } from '@/lib/app-user'
 
 /** Baixar e reduzir dezenas de fotos leva tempo. */
 export const maxDuration = 60
@@ -99,9 +101,19 @@ export async function GET(
     })
   }
 
-  // O PDF sai com a logo e os dados do CLIENTE da ordem (perfil cadastrado); sem perfil, os da 360 como sempre.
-  const contractor = await loadContractorBrand(supabase, appointment.org_id, appointment.customers?.client_company)
-  const pdfBuffer = await generateServiceOrderPdf({ appointment, media, reportDownloadUrl: downloadUrl, contractor })
+  // Marca do Sign Off por quem pede: o TÉCNICO (e o gerente da loja, que vê no aparelho dele) recebe SEMPRE a da Mawi, sem nada do cliente;
+  // o escritório recebe a do cliente quando ele tem logo cadastrada (senão a da Mawi).
+  const appUser = await getAppUser()
+  const viewer = appUser?.role === 'employee' ? 'technician' : 'office'
+  const contractor = await loadSignOffBrand({
+    viewer,
+    service: createServiceClient(),
+    clientReader: supabase,
+    unitId,
+    orgId: appointment.org_id,
+    clientCompany: viewer === 'technician' ? null : appointment.customers?.client_company,
+  })
+  const pdfBuffer = await generateServiceOrderPdf({ appointment, media, reportDownloadUrl: downloadUrl, contractor, hideClientContact: viewer === 'technician' })
 
   return new NextResponse(new Uint8Array(pdfBuffer), {
     status: 200,

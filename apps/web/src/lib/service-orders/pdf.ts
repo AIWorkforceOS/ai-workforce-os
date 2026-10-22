@@ -258,7 +258,7 @@ function addPage(doc: PDFDocument): { page: PDFPage; y: number } {
   return { page, y: PAGE_HEIGHT - MARGIN }
 }
 
-export async function generateServiceOrderPdf(params: { appointment: ServiceOrderPdfAppointment; media?: ReportMedia[]; reportDownloadUrl?: string | null; contractor?: ContractorBrand }): Promise<Buffer> {
+export async function generateServiceOrderPdf(params: { appointment: ServiceOrderPdfAppointment; media?: ReportMedia[]; reportDownloadUrl?: string | null; contractor?: ContractorBrand; hideClientContact?: boolean }): Promise<Buffer> {
   const { appointment: a } = params
   // Dados do CLIENTE da ordem (perfil cadastrado). Sem perfil: o bloco e a logo da 360, como sempre saiu.
   const contractor = params.contractor ?? DEFAULT_CONTRACTOR
@@ -337,11 +337,11 @@ export async function generateServiceOrderPdf(params: { appointment: ServiceOrde
     rightY -= 13
   }
   rightY -= 4
-  if (a.service_order_issuer_name) {
+  if (a.service_order_issuer_name && !params.hideClientContact) {
     drawRight(page, a.service_order_issuer_name, bold, 9.5, DARK, CONTENT_RIGHT, rightY)
     rightY -= 12
   }
-  if (a.service_order_issuer_email) {
+  if (a.service_order_issuer_email && !params.hideClientContact) {
     drawRight(page, a.service_order_issuer_email, font, 8, MUTED, CONTENT_RIGHT, rightY)
     rightY -= 12
   }

@@ -1,7 +1,7 @@
 import { FileText, MapPin } from 'lucide-react'
 import type { PortalAppointment } from '@/lib/portal-funcionario/data'
 
-/** Cabeçalho da ordem (cliente, horário, endereço, descrição, arquivo original). Sem estado: usado na página do servidor E na casca offline. */
+/** Cabeçalho da ordem (loja, horário, endereço, descrição) — nunca mostra o cliente. Sem estado: usado na página do servidor E na casca offline. */
 export function OrderHeader({ appointment, locale = 'pt-BR' }: { appointment: PortalAppointment; locale?: string }) {
   return (
     <div className="rounded-2xl p-4" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
@@ -9,7 +9,7 @@ export function OrderHeader({ appointment, locale = 'pt-BR' }: { appointment: Po
         Ordem de serviço {appointment.service_order_number ? `Nº ${appointment.service_order_number}` : ''}
       </p>
       <p className="mt-1 text-base font-bold text-white">
-        {appointment.customers?.name ?? 'Cliente'} {appointment.services?.name ? `· ${appointment.services.name}` : ''}
+        {appointment.service_order_location_name || appointment.address || 'Atendimento'} {appointment.services?.name ? `· ${appointment.services.name}` : ''}
       </p>
       <p className="mt-1 text-xs text-slate-400">
         {new Date(appointment.starts_at).toLocaleString(locale, { dateStyle: 'short', timeStyle: 'short' })}
@@ -32,18 +32,6 @@ export function OrderHeader({ appointment, locale = 'pt-BR' }: { appointment: Po
           <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Descrição original (inglês) — pra mostrar ao gerente</p>
           <p className="mt-1 whitespace-pre-wrap text-sm text-slate-300">{appointment.service_order_scope_en}</p>
         </div>
-      )}
-      {appointment.service_order_file_url && (
-        <a
-          href={appointment.service_order_file_url}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-3 flex w-fit items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-cyan-300 transition-colors hover:text-cyan-200"
-          style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.25)' }}
-        >
-          <FileText size={13} />
-          {appointment.service_order_file_name || 'Ver arquivo original da ordem'}
-        </a>
       )}
     </div>
   )
