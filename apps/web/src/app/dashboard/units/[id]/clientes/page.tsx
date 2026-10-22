@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/ui/dashboard-ui'
 import { clientNameOf } from '@/lib/billing/by-client'
 import { buildClientOverview, type OverviewOrder } from '@/lib/clients/overview'
+import { intakeAddress } from '@/lib/service-orders/email-intake'
 import { PIPELINE_STAGES } from '@/lib/clients/pipeline'
 import type { Unit } from '@/lib/types'
 
@@ -48,6 +49,10 @@ export default async function ClientsIndexPage({ params }: { params: Promise<{ i
   return (
     <div className="flex flex-col gap-6">
       <PageHeader eyebrow="clientes" title={`Clientes — ${unitRow.name}`} subtitle="Cada cliente com o andamento das ordens dele. Clique para abrir o painel do cliente." />
+      <p className="text-xs text-slate-400">
+        Receber ordens por e-mail:{' '}
+        {process.env.EMAIL_INBOUND_DOMAIN ? <span className="font-mono text-slate-200">{intakeAddress(id, process.env.EMAIL_INBOUND_DOMAIN)}</span> : 'ainda não configurado (domínio de recebimento pendente).'} As ordens chegam na Agenda como “Aguardando aceite”.
+      </p>
       {unlinked > 0 && <p className="text-xs text-amber-400">{unlinked} ordem(ns) ainda sem cliente vinculado — abra a ordem na Agenda e use “Cliente desta ordem”.</p>}
       {clients.length === 0 ? (
         <p className="text-sm text-slate-400">Nenhum cliente cadastrado. Cadastre em “Clientes Facility”.</p>

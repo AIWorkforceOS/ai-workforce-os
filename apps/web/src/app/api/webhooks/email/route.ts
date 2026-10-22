@@ -4,6 +4,7 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { routeInboundMessage } from '@/lib/inbound-router'
 import { getResendApiKey } from '@/lib/email'
 import { logSystemEvent } from '@/lib/system-events'
+import { findIntakeUnitId, ingestOrderEmail, type ReceivedAttachment } from '@/lib/service-orders/email-intake'
 import type { Unit } from '@/lib/types'
 
 export const maxDuration = 60
@@ -156,6 +157,27 @@ export async function POST(request: Request) {
   const inboundDomain = process.env.EMAIL_INBOUND_DOMAIN
   if (!inboundDomain) {
     return NextResponse.json({ error: 'EMAIL_INBOUND_DOMAIN não configurada.' }, { status: 500 })
+  }
+
+  // Ordem de serviço por e-mail (ordens+{unitId}@domínio): vira ordem "aguardando aceite", fora do fluxo de conversa de leads.
+  const intakeUnitId = findIntakeUnitId(toList, inboundDomain)
+  if (intakeUnitId) {
+    const apiKeyForIntake = getResendApiKey()
+    if (!apiKeyForIntake) return NextResponse.json({ error: 'RESEND_API_KEY não configurada.' }, { status: 500 })
+    const { data: intakeUnit } = await supabase.from('units').select('id, org_id').eq('id', intakeUnitId).maybeSingle()
+    if (!intakeUnit) return NextResponse.json({ ok: true, skipped: 'unit_not_found' })
+    const mail = await fetch(`https://api.resend.com/emails/receiving/${emailId}`, { headers: { Authorization: `Bearer ${apiKeyForIntake}` } })
+    if (!mail.ok) return NextResponse.json({ error: 'Falha ao buscar conteúdo do e-mail.' }, { status: 502 })
+    const mailData = (await mail.json().catch(() => null)) as { subject?: string | null; attachments?: ReceivedAttachment[] } | null
+    const outcome = await ingestOrderEmail(
+      { supabase, apiKey: apiKeyForIntake },
+      { unit: intakeUnit as { id: string; org_id: string | null }, emailId, from: fromRaw, subject: mailData?.subject ?? null, receivedAt: body.created_at ?? new Date().toISOString(), attachments: mailData?.attachments ?? [] },
+    )
+    if (!outcome.ok && 'error' in outcome) {
+      await logSystemEvent(supabase, { level: 'error', source: 'resend', eventType: 'order_email_failed', message: `Ordem por e-mail não criada: ${outcome.error}`, metadata: { emailId, unitId: intakeUnitId } })
+      return NextResponse.json({ error: outcome.error }, { status: 500 })
+    }
+    return NextResponse.json({ ok: true, intake: outcome })
   }
 
   const unitId = findUnitIdFromRecipients(toList, inboundDomain)

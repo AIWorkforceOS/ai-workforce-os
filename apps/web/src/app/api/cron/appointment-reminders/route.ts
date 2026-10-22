@@ -67,6 +67,7 @@ export async function GET(request: Request) {
     .select('id, starts_at, units(*)')
     .in('status', ['scheduled', 'confirmed'])
     .is('reminder_sent_at', null)
+    .is('intake_status', null) // ordem por e-mail ainda sem aceite não gera lembrete ao cliente
     .gt('starts_at', now.toISOString())
     .lte('starts_at', lookaheadUntil.toISOString())
     .order('starts_at', { ascending: true })

@@ -138,6 +138,7 @@ export async function fetchClientOrders(supabase: SupabaseClient, clientCompany:
     .from('appointments')
     .select(ORDER_SELECT_COLUMNS)
     .eq('customers.client_company', clientCompany)
+    .is('intake_status', null) // ordem por e-mail ainda sem aceite não aparece para o cliente
     .order('created_at', { ascending: false })
 
   return ((data ?? []) as unknown as ClientOrderRow[]).map(toClientPortalOrder)
@@ -154,6 +155,7 @@ export async function fetchClientOrderById(
     .select(ORDER_SELECT_COLUMNS)
     .eq('id', appointmentId)
     .eq('customers.client_company', clientCompany)
+    .is('intake_status', null)
     .maybeSingle()
 
   const row = data as unknown as ClientOrderRow | null

@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { IntakeDecisionBar } from '@/components/clients/intake-decision-bar'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { CalendarPlus, ClipboardList, MapPin, Search, Trash2, Upload, X } from 'lucide-react'
@@ -518,6 +519,9 @@ export function CalendarView({
                             <MapPin size={11} />
                             {appointment.address}
                           </a>
+                        )}
+                        {appointment.intake_status === 'awaiting_accept' && (
+                          <IntakeDecisionBar unitId={unitId} appointmentId={appointment.id} from={appointment.intake_from ?? null} subject={appointment.intake_subject ?? null} onDone={reload} />
                         )}
                       </div>
 
