@@ -7,6 +7,8 @@ describe('stageOf', () => {
   it('classifica cada etapa', () => {
     expect(stageOf(base)).toBe('agendada')
     expect(stageOf({ ...base, serviceOrderStatus: 'quote' })).toBe('cotacao')
+    expect(stageOf({ ...base, serviceOrderStatus: 'quote', quoteDecision: 'approved' })).toBe('aprovada')
+    expect(stageOf({ ...base, serviceOrderStatus: 'quote', quoteDecision: 'rejected' })).toBe('cotacao')
     expect(stageOf({ ...base, serviceOrderStatus: 'completed' })).toBe('concluida')
     expect(stageOf({ ...base, serviceOrderStatus: 'completed', invoiceId: 'i1', invoiceStatus: 'sent' })).toBe('faturada')
     expect(stageOf({ ...base, serviceOrderStatus: 'completed', invoiceId: 'i1', paid: true })).toBe('recebida')

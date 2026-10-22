@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/ui/dashboard-ui'
 import { normalizeClientName } from '@/lib/client-profiles/profile'
+import { QuoteDecisionButtons } from '@/components/clients/quote-decision-buttons'
 import { groupByStage, PIPELINE_STAGES, type PipelineInput } from '@/lib/clients/pipeline'
 import type { Unit } from '@/lib/types'
 
@@ -29,17 +30,14 @@ export default async function ClientPanelPage({ params }: { params: Promise<{ id
   const { data: customers } = await supabase.from('customers').select('id').eq('unit_id', id).ilike('client_company', clientName).limit(500)
   const customerIds = ((customers ?? []) as { id: string }[]).map((c) => c.id)
 
-  type ApptRow = { id: string; starts_at: string; service_order_status: string | null; service_order_number: string | null; service_order_location_name: string | null; employee: { name: string | null } | null }
+  type ApptRow = { id: string; starts_at: string; service_order_status: string | null; service_order_number: string | null; service_order_location_name: string | null; quote_decision?: string | null; employee: { name: string | null } | null }
   let appts: ApptRow[] = []
   if (customerIds.length > 0) {
-    const { data } = await supabase
-      .from('appointments')
-      .select('id, starts_at, service_order_status, service_order_number, service_order_location_name, employee:employees(name)')
-      .eq('unit_id', id)
-      .in('customer_id', customerIds)
-      .order('starts_at', { ascending: false })
-      .limit(300)
-    appts = (data ?? []) as unknown as ApptRow[]
+    const base = (cols: string) => supabase.from('appointments').select(cols).eq('unit_id', id).in('customer_id', customerIds).order('starts_at', { ascending: false }).limit(300)
+    const cols = 'id, starts_at, service_order_status, service_order_number, service_order_location_name, employee:employees(name)'
+    let result = await base(`${cols}, quote_decision`)
+    if (result.error) result = await base(cols) // migration 103 ainda não aplicada
+    appts = (result.data ?? []) as unknown as ApptRow[]
   }
 
   type RecRow = { appointment_id: string | null; invoice_id: string | null; payment_status: string | null; invoice: { status: string | null } | null }
@@ -58,6 +56,7 @@ export default async function ClientPanelPage({ params }: { params: Promise<{ id
       location: a.service_order_location_name,
       employee: a.employee?.name ?? null,
       serviceOrderStatus: a.service_order_status,
+      quoteDecision: a.quote_decision ?? null,
       invoiceId: rec?.invoice_id ?? null,
       invoiceStatus: rec?.invoice?.status ?? null,
       paid: rec?.payment_status === 'paid',
@@ -86,7 +85,7 @@ export default async function ClientPanelPage({ params }: { params: Promise<{ id
       {orders.length === 0 ? (
         <p className="text-sm text-slate-400">Nenhuma ordem vinculada a este cliente ainda. Abra uma ordem na Agenda e use “Cliente desta ordem” para vincular.</p>
       ) : (
-        <div className="grid gap-4 md:grid-cols-5">
+        <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
           {PIPELINE_STAGES.map((stage) => (
             <section key={stage.key} className="flex flex-col gap-2 rounded-2xl p-3" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
               <h2 className="text-xs font-bold uppercase tracking-wide text-slate-300">
@@ -100,6 +99,7 @@ export default async function ClientPanelPage({ params }: { params: Promise<{ id
                     {fmt(o.startsAt)}
                     {o.employee ? ` · ${o.employee}` : ''}
                   </p>
+                  {(stage.key === 'cotacao' || stage.key === 'aprovada') && <QuoteDecisionButtons unitId={id} appointmentId={o.id} decision={o.quoteDecision ?? null} />}
                 </div>
               ))}
             </section>
