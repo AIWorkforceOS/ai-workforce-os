@@ -7,6 +7,7 @@ import { fetchClientOrderById, type ClientPortalOrderStatus } from '@/lib/portal
 import { Badge, Card, PageHeader, type BadgeVariant } from '@/components/ui/dashboard-ui'
 import { PhotoGallery } from '@/components/portal-360/photo-gallery'
 import { DownloadOriginalButton } from '@/components/portal-360/download-original-button'
+import { QuoteDecisionPanel } from '@/components/portal-360/quote-decision-panel'
 import { QuoteBuilderPanel } from '@/components/service-orders/quote-builder-panel'
 
 const STATUS_LABEL: Record<ClientPortalOrderStatus, string> = {
@@ -142,6 +143,9 @@ export default async function Portal360OrderPage({ params }: { params: Promise<{
             generateUrl={`/api/portal-360/orders/${order.id}/quote`}
             locale="en"
           />
+          <div className="mt-5 border-t pt-4" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+            <QuoteDecisionPanel appointmentId={order.id} decision={order.quoteDecision} decidedAt={order.quoteDecidedAt} />
+          </div>
         </Card>
       )}
     </div>

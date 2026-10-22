@@ -15,3 +15,19 @@ describe('decisionPatch', () => {
     expect(quoteDecisionSchema.safeParse({ decision: 'rejected' }).success).toBe(true)
   })
 })
+
+import { clientDecisionBlock } from '../quote-decision'
+
+describe('clientDecisionBlock', () => {
+  const ok = { status: 'quote', decision: null, quoteDescriptionEn: 'Replace panel', materialDescription: null }
+  it('libera ordem em cotação sem decisão e com conteúdo', () => {
+    expect(clientDecisionBlock(ok)).toBeNull()
+    expect(clientDecisionBlock({ ...ok, quoteDescriptionEn: null, materialDescription: 'painel' })).toBeNull()
+  })
+  it('bloqueia fora de cotação, já decidida ou vazia', () => {
+    expect(clientDecisionBlock({ ...ok, status: 'completed' })).not.toBeNull()
+    expect(clientDecisionBlock({ ...ok, decision: 'approved' })).not.toBeNull()
+    expect(clientDecisionBlock({ ...ok, decision: 'rejected' })).not.toBeNull()
+    expect(clientDecisionBlock({ ...ok, quoteDescriptionEn: ' ', materialDescription: null })).not.toBeNull()
+  })
+})

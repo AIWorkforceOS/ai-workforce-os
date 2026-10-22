@@ -45,6 +45,9 @@ export type ClientPortalOrder = {
   /** Cotação estruturada por IA (migration 082) — en é o que vai pro cliente, pt é só conferência do escritório da 360. */
   quoteDescriptionEn: string | null
   quoteDescriptionPt: string | null
+  /** Decisão do cliente sobre a cotação (migration 103): approved | rejected | null = aguardando. */
+  quoteDecision: string | null
+  quoteDecidedAt: string | null
 }
 
 type ClientOrderRow = {
@@ -74,12 +77,14 @@ type ClientOrderRow = {
   service_order_part_purchase_link: string | null
   service_order_quote_description_en: string | null
   service_order_quote_description_pt: string | null
+  quote_decision: string | null
+  quote_decided_at: string | null
   customers: { name: string; client_company: string | null } | null
   units: { timezone: string | null } | null
 }
 
 const ORDER_SELECT_COLUMNS =
-  'id, unit_id, starts_at, ends_at, status, employee_id, source, address, service_order_requested_date, service_order_status, service_order_number, service_order_location_name, service_order_scope_en, service_order_file_url, service_order_file_name, service_order_signed_by, service_order_signed_at, service_order_signature_url, service_order_photos, created_at, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_part_purchase_link, service_order_quote_description_en, service_order_quote_description_pt, customers!inner(name, client_company), units(timezone)'
+  'id, unit_id, starts_at, ends_at, status, employee_id, source, address, service_order_requested_date, service_order_status, service_order_number, service_order_location_name, service_order_scope_en, service_order_file_url, service_order_file_name, service_order_signed_by, service_order_signed_at, service_order_signature_url, service_order_photos, created_at, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_part_purchase_link, service_order_quote_description_en, service_order_quote_description_pt, quote_decision, quote_decided_at, customers!inner(name, client_company), units(timezone)'
 
 /** Deriva o status visível para a 360 — pura, testável sem banco. */
 export function deriveClientOrderStatus(row: {
@@ -122,6 +127,8 @@ function toClientPortalOrder(row: ClientOrderRow): ClientPortalOrder {
     partPurchaseLink: row.service_order_part_purchase_link,
     quoteDescriptionEn: row.service_order_quote_description_en,
     quoteDescriptionPt: row.service_order_quote_description_pt,
+    quoteDecision: row.quote_decision ?? null,
+    quoteDecidedAt: row.quote_decided_at ?? null,
   }
 }
 
