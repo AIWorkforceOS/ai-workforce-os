@@ -885,6 +885,13 @@ export default function CrmPage() {
                 {selectMode ? 'Cancelar seleção' : 'Excluir leads'}
               </button>
             )}
+            <a
+              href="/dashboard/crm/metricas"
+              className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold text-slate-300 transition-all hover:bg-white/5"
+              style={{ border: '1px solid rgba(255,255,255,0.08)' }}
+            >
+              Métricas
+            </a>
             <button
               onClick={() => setShowImport(true)}
               className="flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-bold text-slate-300 transition-all hover:bg-white/5"
