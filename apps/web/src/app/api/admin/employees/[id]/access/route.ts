@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAppUser } from '@/lib/app-user'
 import { createServiceClient } from '@/lib/supabase/service'
+import { provisionLogin, resetLoginPassword } from '@/lib/auth/provision-login'
 
 /**
  * Cria (ou reseta) o acesso de login de UM funcionário ao Portal do
@@ -9,9 +10,10 @@ import { createServiceClient } from '@/lib/supabase/service'
  * funcionário por fora (WhatsApp, papel etc.) — sem convite/e-mail
  * automático nesta fase.
  *
- *   1. cria/atualiza a conta no Supabase Auth com a senha informada
- *   2. cria/atualiza o registro em public.users com
+ *   1. cria a conta no Supabase Auth com a senha informada (ou redefine a senha do login que ESTE funcionário já tem)
+ *   2. cria o registro em public.users com
  *      role='employee' + employee_id (isola no RLS — migration 052)
+ *   Nunca reaproveita o e-mail de outra pessoa (ver lib/auth/provision-login.ts).
  *
  * Requer SUPABASE_SERVICE_ROLE_KEY.
  */
@@ -41,9 +43,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!email || !password) {
     return NextResponse.json({ error: 'E-mail e senha são obrigatórios.' }, { status: 400 })
   }
-  if (password.length < 8) {
-    return NextResponse.json({ error: 'A senha precisa ter pelo menos 8 caracteres.' }, { status: 400 })
-  }
 
   const { data: employee } = await service
     .from('employees')
@@ -65,52 +64,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
   }
 
-  // Conta de login (Supabase Auth) — senha em texto puro definida pela
-  // unidade, não um link de convite (comportamento explicitamente pedido).
-  const create = await service.auth.admin.createUser({ email, password, email_confirm: true })
-  let authUserId = create.data.user?.id ?? null
-
-  if (create.error) {
-    const alreadyExists = /already|registered|exists/i.test(create.error.message)
-    if (!alreadyExists) {
-      return NextResponse.json({ error: `Erro ao criar conta de login: ${create.error.message}` }, { status: 500 })
-    }
-    // Conta já existe no Supabase Auth (ex.: reset de senha) — descobre o id
-    // via generateLink (mesma técnica usada em /api/admin/users) e atualiza a senha.
-    const link = await service.auth.admin.generateLink({ type: 'recovery', email })
-    if (link.error || !link.data.user?.id) {
-      return NextResponse.json(
-        { error: `Já existe uma conta com este e-mail e não foi possível atualizá-la: ${create.error.message}` },
-        { status: 500 },
-      )
-    }
-    authUserId = link.data.user.id
-    const update = await service.auth.admin.updateUserById(authUserId, { password, email_confirm: true })
-    if (update.error) {
-      return NextResponse.json({ error: `Erro ao atualizar senha: ${update.error.message}` }, { status: 500 })
-    }
+  // Este funcionário já tem login? Então só redefine a senha DELE. Nunca assume uma conta que não é dele (antes, um e-mail de outra pessoa/empresa
+  // tinha a senha trocada e o papel reescrito).
+  const { data: ownLogin } = await service.from('users').select('id, email').eq('employee_id', employee.id).maybeSingle()
+  if (ownLogin) {
+    const reset = await resetLoginPassword(service, (ownLogin as { email: string }).email, password)
+    if (!reset.ok) return NextResponse.json({ error: reset.error }, { status: reset.status })
+    await service.from('users').update({ is_active: true }).eq('id', (ownLogin as { id: string }).id)
+    return NextResponse.json({ ok: true, email: (ownLogin as { email: string }).email, reset: true })
   }
 
-  // Registro de negócio (public.users) — upsert por e-mail, sempre role='employee'
-  // vinculado ao próprio employee_id (nunca herda outro papel/unidade).
-  const { data: existingUser } = await service.from('users').select('id').eq('email', email).maybeSingle()
-  const userPayload = {
+  const created = await provisionLogin(service, {
     email,
-    name: employee.name,
-    org_id: employee.org_id,
-    unit_id: employee.unit_id,
-    employee_id: employee.id,
-    role: 'employee',
-    is_active: true,
-  }
-
-  const upsertError = existingUser
-    ? (await service.from('users').update(userPayload).eq('id', existingUser.id)).error
-    : (await service.from('users').insert(userPayload)).error
-
-  if (upsertError) {
-    return NextResponse.json({ error: `Conta de login criada, mas erro ao vincular ao funcionário: ${upsertError.message}` }, { status: 500 })
-  }
-
+    mode: { kind: 'password', password },
+    row: { name: employee.name, role: 'employee', org_id: employee.org_id, unit_id: employee.unit_id, employee_id: employee.id },
+  })
+  if (!created.ok) return NextResponse.json({ error: created.error }, { status: created.status })
   return NextResponse.json({ ok: true, email })
 }

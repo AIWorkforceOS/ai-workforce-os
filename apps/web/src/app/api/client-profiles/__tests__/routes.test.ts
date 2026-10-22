@@ -136,7 +136,7 @@ describe('POST /api/client-profiles', () => {
 })
 
 describe('PATCH /api/client-profiles/[id]', () => {
-  it('técnico 403; admin edita os dados; o NOME não pode mudar (400); inexistente/outra empresa 404', async () => {
+  it('técnico 403; admin edita os dados; nome vazio (400); inexistente/outra empresa 404', async () => {
     const { PATCH } = await import('../[id]/route')
     const patch = (b: unknown) => PATCH(new Request('http://x', { method: 'PATCH', body: JSON.stringify(b) }), params())
     current = user({ role: 'employee' })
@@ -144,7 +144,7 @@ describe('PATCH /api/client-profiles/[id]', () => {
     current = user()
     expect((await patch({ phone: ' 555-0199 ', address_line1: '' })).status).toBe(200)
     expect(updated.at(-1)!.payload).toEqual({ phone: '555-0199', address_line1: null })
-    expect((await patch({ name: 'Outro nome' })).status).toBe(400)
+    expect((await patch({ name: '   ' })).status).toBe(400)
     updateReturnsRow = false // a RLS não devolve a linha: outra empresa
     expect((await patch({ phone: '1' })).status).toBe(404)
   })

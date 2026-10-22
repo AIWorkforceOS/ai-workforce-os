@@ -85,6 +85,10 @@ export function TeamAccessManager({ users, orgId, currentUserId }: { users: Acce
 
       <div className="mt-5 flex flex-col gap-2 border-t pt-4" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
         <p className="text-xs font-bold text-white">Novo usuário</p>
+        <p className="text-[11px] text-slate-400">
+          Quer criar já com <span className="font-semibold text-slate-200">login e senha</span> (técnico, financeiro, comercial…)? Use{' '}
+          <a href="/dashboard/employees/new" className="font-bold text-cyan-300 underline">Novo funcionário</a>. Abaixo, o convite por e-mail.
+        </p>
         <div className="grid gap-2 sm:grid-cols-3">
           <Input type="email" placeholder="E-mail" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           <Input placeholder="Nome (opcional)" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />

@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { FormSection, Input, Label, Select } from '@/components/ui/dashboard-ui'
+import { MEMBER_ACCESS_OPTIONS, type MemberAccess } from '@/lib/permissions/job-roles'
+import { generateInitialPassword } from '@/lib/auth/provision-login'
 
 type Org = { id: string; name: string }
 type Unit = { id: string; name: string; org_id: string | null }
@@ -42,6 +44,10 @@ export default function NewEmployeePage() {
     unit_id: '',
     is_schedulable: true,
   })
+  const [access, setAccess] = useState<MemberAccess>('none')
+  const [loginKind, setLoginKind] = useState<'password' | 'invite'>('password')
+  const [password, setPassword] = useState('')
+  const [created, setCreated] = useState<{ email: string; password: string | null; setupLink: string | null; access: MemberAccess } | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -61,6 +67,32 @@ export default function NewEmployeePage() {
     e.preventDefault()
     setBusy(true)
     setError(null)
+    if (access !== 'none') {
+      // Pessoa com acesso ao sistema: cadastro + login + permissões num passo só (rota do servidor).
+      if (!form.email.trim()) { setBusy(false); setError('Informe o e-mail: ele é o login da pessoa.'); return }
+      const res = await fetch('/api/admin/team/members', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: form.name,
+          email: form.email,
+          phone: form.phone || undefined,
+          access,
+          login: loginKind === 'password' ? { kind: 'password', password } : { kind: 'invite' },
+          orgId: form.org_id || undefined,
+          unitId: form.unit_id || undefined,
+          specialty: form.specialty.trim() || undefined,
+          defaultPay: form.default_pay.trim() === '' ? null : Number(form.default_pay),
+          defaultPayType: form.default_pay_type,
+          isSchedulable: form.is_schedulable,
+        }),
+      }).catch(() => null)
+      const body = res ? ((await res.json().catch(() => null)) as { error?: string; email?: string; setupLink?: string | null } | null) : null
+      setBusy(false)
+      if (!res || !res.ok) { setError(body?.error ?? 'Não foi possível criar. Tente de novo.'); return }
+      setCreated({ email: body?.email ?? form.email, password: loginKind === 'password' ? password : null, setupLink: body?.setupLink ?? null, access })
+      return
+    }
     const { error: err } = await supabase.from('employees').insert({
       name: form.name,
       email: form.email || null,
@@ -78,6 +110,40 @@ export default function NewEmployeePage() {
     router.push('/dashboard/employees')
     router.refresh()
   }
+
+  if (created) {
+    return (
+      <div className="mx-auto max-w-lg">
+        <div className="rounded-2xl p-5" style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)' }}>
+          <h1 className="text-lg font-black text-white">Pessoa cadastrada com acesso</h1>
+          <p className="mt-2 text-sm text-slate-300">Login: <span className="font-mono font-bold text-white">{created.email}</span></p>
+          {created.password && (
+            <>
+              <p className="mt-1 text-sm text-slate-300">Senha inicial: <span className="font-mono font-bold text-white">{created.password}</span></p>
+              <p className="mt-2 text-xs text-amber-300">Anote e entregue agora: por segurança a senha não fica guardada em lugar nenhum e não aparece de novo. A pessoa pode trocá-la em Configurações.</p>
+            </>
+          )}
+          {created.setupLink && (
+            <>
+              <p className="mt-2 break-all text-xs text-slate-300">Link para a pessoa criar a própria senha: <span className="font-mono text-white">{created.setupLink}</span></p>
+              <p className="mt-2 text-xs text-amber-300">Envie este link por um canal seguro (WhatsApp, e-mail).</p>
+            </>
+          )}
+          <div className="mt-4 flex gap-3">
+            <Link href={created.access === 'technician' ? '/dashboard/employees' : '/dashboard/settings'} className="rounded-xl px-4 py-2 text-sm font-bold text-white" style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)' }}>
+              {created.access === 'technician' ? 'Ver funcionários' : 'Ver usuários e funções'}
+            </Link>
+            <button type="button" onClick={() => { setCreated(null); setPassword(''); setForm(f => ({ ...f, name: '', email: '', phone: '' })) }} className="rounded-xl px-4 py-2 text-sm text-slate-300 hover:bg-white/5" style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
+              Cadastrar outra pessoa
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const officeAccess = access !== 'none' && access !== 'technician'
+  const accessInfo = MEMBER_ACCESS_OPTIONS.find(o => o.value === access)
 
   return (
     <div className="mx-auto max-w-lg">
@@ -104,6 +170,32 @@ export default function NewEmployeePage() {
             </div>
           </div>
 
+          <div className="flex flex-col gap-1.5">
+            <Label>Acesso ao sistema</Label>
+            <Select value={access} onChange={e => setAccess(e.target.value as MemberAccess)}>
+              {MEMBER_ACCESS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </Select>
+            {accessInfo && <p className="text-[11px] text-slate-400">{accessInfo.summary}</p>}
+          </div>
+
+          {access !== 'none' && (
+            <div className="flex flex-col gap-2 rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.03)' }}>
+              <Label>Login e senha</Label>
+              <p className="text-[11px] text-slate-500">O login é o e-mail acima.</p>
+              <div className="flex gap-2 text-xs font-bold">
+                <button type="button" onClick={() => setLoginKind('password')} className={`rounded-lg px-3 py-1.5 ${loginKind === 'password' ? 'bg-white/10 text-white' : 'text-slate-400'}`}>Definir a senha agora</button>
+                <button type="button" onClick={() => setLoginKind('invite')} className={`rounded-lg px-3 py-1.5 ${loginKind === 'invite' ? 'bg-white/10 text-white' : 'text-slate-400'}`}>Gerar link para a pessoa criar a senha</button>
+              </div>
+              {loginKind === 'password' && (
+                <div className="flex gap-2">
+                  <Input value={password} onChange={e => setPassword(e.target.value)} placeholder="Mínimo 8 caracteres" autoComplete="new-password" />
+                  <button type="button" onClick={() => setPassword(generateInitialPassword())} className="shrink-0 rounded-lg px-3 text-xs font-bold text-cyan-300" style={{ border: '1px solid rgba(6,182,212,0.3)' }}>Gerar</button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!officeAccess && (<>
           <div className="flex flex-col gap-1.5">
             <Label>Cargo</Label>
             <Select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
@@ -157,6 +249,7 @@ export default function NewEmployeePage() {
             />
             Atende agenda (aparece pra ser escalado em agendamentos)
           </label>
+          </>)}
 
           {error && <p className="text-sm text-red-400">{error}</p>}
 

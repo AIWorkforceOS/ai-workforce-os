@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 const text = (max: number) => z.string().trim().max(max).transform((v) => (v === '' ? null : v)).nullable().optional()
 
-/** Campos editáveis do perfil do cliente. O NOME não muda depois de criado (é a chave que liga o cliente às ordens). */
+/** Campos editáveis do perfil do cliente. O NOME também pode mudar (renameClientEverywhere atualiza ordens e logins que o usam como vínculo). */
 export const clientProfileFields = {
   address_line1: text(200),
   address_line2: text(200),
@@ -19,4 +19,4 @@ export const createClientProfileSchema = z.object({
   ...clientProfileFields,
 })
 
-export const updateClientProfileSchema = z.object({ ...clientProfileFields }).strict()
+export const updateClientProfileSchema = z.object({ name: z.string().trim().min(1, 'Informe o nome do cliente.').max(120).optional(), ...clientProfileFields }).strict()

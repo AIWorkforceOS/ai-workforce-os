@@ -72,3 +72,16 @@ export function assignableJobRole(value: unknown): JobRole | null | undefined {
   const parsed = parseJobRole(value)
   return parsed ?? undefined // undefined = valor inválido
 }
+
+/** Opções de acesso ao criar uma pessoa nova (tela "Novo funcionário"): o que cada uma enxerga, em palavras simples. */
+export type MemberAccess = 'none' | 'technician' | 'admin' | JobRole | 'viewer'
+
+export const MEMBER_ACCESS_OPTIONS: { value: MemberAccess; label: string; summary: string }[] = [
+  { value: 'none', label: 'Sem acesso ao sistema (só cadastro)', summary: 'A pessoa fica cadastrada para agenda e pagamento, mas não entra no sistema.' },
+  { value: 'technician', label: 'Técnico (Portal do Funcionário)', summary: 'Entra só no Portal do Funcionário: a própria agenda, as ordens dele (loja, escopo, fotos, assinatura, Sign Off da Mawi) e o financeiro dele. Não vê clientes, vendas nem outras áreas.' },
+  { value: 'admin', label: 'Administrador (acesso completo)', summary: 'Vê e altera tudo do painel, inclusive usuários, clientes, financeiro e configurações.' },
+  { value: 'operacional', label: 'Operacional', summary: JOB_ROLE_DESCRIPTION.operacional },
+  { value: 'financeiro', label: 'Financeiro', summary: JOB_ROLE_DESCRIPTION.financeiro },
+  { value: 'comercial', label: 'Comercial', summary: JOB_ROLE_DESCRIPTION.comercial },
+  { value: 'viewer', label: 'Somente visualização', summary: 'Consulta o painel sem alterar nada.' },
+]
