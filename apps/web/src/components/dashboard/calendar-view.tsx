@@ -4,13 +4,15 @@ import Link from 'next/link'
 import { IntakeDecisionBar } from '@/components/clients/intake-decision-bar'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CalendarPlus, ClipboardList, MapPin, Search, Trash2, Upload, X } from 'lucide-react'
+import { CalendarPlus, ClipboardList, FileText, MapPin, Search, Trash2, Upload, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { localDateString, zonedTimeToUtc } from '@/lib/slot-engine'
 import { addDays } from '@/lib/calendar-dates'
 import { RECURRENCE_PILL_LABEL } from '@/lib/scheduling/recurrence'
 import { AppointmentFormModal } from '@/components/dashboard/appointment-form-modal'
 import { ServiceOrderAttachModal } from '@/components/dashboard/service-order-attach-modal'
+import { OrderIntakeModal } from '@/components/dashboard/order-intake-modal'
+import { ADMIN_INTAKE_SOURCE } from '@/lib/service-orders/intake-order'
 import { BulkServiceOrderImportModal } from '@/components/dashboard/bulk-service-order-import-modal'
 import { Badge, Card, Input, Select, StatusPill, type BadgeVariant } from '@/components/ui/dashboard-ui'
 import { CLIENT_PORTAL_SOURCE } from '@/lib/portal-360/constants'
@@ -38,6 +40,7 @@ type ModalState =
   | { mode: 'reschedule'; appointment: AppointmentWithRelations }
   | { mode: 'service-order'; appointment: AppointmentWithRelations }
   | { mode: 'bulk-import' }
+  | { mode: 'order-intake' }
 
 const STATUS_VARIANT: Record<EffectiveDisplayStatus, BadgeVariant> = {
   scheduled: 'cyan',
@@ -129,7 +132,7 @@ function formatTimeRange(startsAt: string, endsAt: string, timezone: string): st
  * Facil-IT, pode mostrar normalmente).
  */
 function isPendingAssignment(appointment: Pick<Appointment, 'employee_id' | 'source'>): boolean {
-  return !appointment.employee_id && (appointment.source === CLIENT_PORTAL_SOURCE || appointment.source === FACILIT_SYNC_SOURCE)
+  return !appointment.employee_id && (appointment.source === CLIENT_PORTAL_SOURCE || appointment.source === FACILIT_SYNC_SOURCE || appointment.source === ADMIN_INTAKE_SOURCE)
 }
 
 function formatRequestedDate(dateStr: string | null): string {
@@ -400,6 +403,16 @@ export function CalendarView({
         <button
           type="button"
           disabled={!canBook}
+          onClick={() => setModal({ mode: 'order-intake' })}
+          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-cyan-300 transition-colors hover:text-cyan-200 disabled:opacity-40"
+          style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.25)' }}
+        >
+          <FileText size={13} />
+          Anexar ordem
+        </button>
+        <button
+          type="button"
+          disabled={!canBook}
           onClick={() => setModal({ mode: 'bulk-import' })}
           className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-indigo-300 transition-colors hover:text-indigo-200 disabled:opacity-40"
           style={{ background: 'rgba(129,140,248,0.08)', border: '1px solid rgba(129,140,248,0.25)' }}
@@ -479,7 +492,9 @@ export function CalendarView({
                             <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: 'rgba(245,158,11,0.15)', color: '#fbbf24' }}>
                               {appointment.source === FACILIT_SYNC_SOURCE
                                 ? `Facil-IT · ${formatTimeRange(appointment.starts_at, appointment.ends_at, timezone)} · Sem técnico atribuído`
-                                : `${clientNameOf(appointment.customer) === NO_CLIENT_LABEL ? 'Client' : clientNameOf(appointment.customer)} requested · ${formatRequestedDate(appointment.service_order_requested_date)} · No technician assigned yet`}
+                                : appointment.source === ADMIN_INTAKE_SOURCE
+                                  ? 'Ordem anexada · Sem técnico atribuído'
+                                  : `${clientNameOf(appointment.customer) === NO_CLIENT_LABEL ? 'Client' : clientNameOf(appointment.customer)} requested · ${formatRequestedDate(appointment.service_order_requested_date)} · No technician assigned yet`}
                             </span>
                           ) : (
                             <>
@@ -645,6 +660,19 @@ export function CalendarView({
         <ServiceOrderAttachModal
           unitId={unitId}
           appointment={modal.appointment}
+          onClose={() => setModal(null)}
+          onSaved={async () => {
+            await reload()
+          }}
+        />
+      )}
+
+      {modal && modal.mode === 'order-intake' && orgId && (
+        <OrderIntakeModal
+          unitId={unitId}
+          orgId={orgId}
+          timezone={timezone}
+          initialDate={todayLocal}
           onClose={() => setModal(null)}
           onSaved={async () => {
             await reload()
