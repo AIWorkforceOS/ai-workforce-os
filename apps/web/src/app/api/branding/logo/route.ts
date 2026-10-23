@@ -40,7 +40,7 @@ export async function POST(request: Request) {
   if (!normalized.ok) return NextResponse.json({ error: normalized.error }, { status: 400 })
 
   const previousUrl = await readOrgLogoUrl(targetOrgId)
-  const path = logoObjectPath(targetOrgId, normalized.hash)
+  const path = logoObjectPath(targetOrgId, normalized.hash, normalized.needsLightEdge)
   const { error: uploadError } = await service.storage.from(BRANDING_BUCKET).upload(path, normalized.data, { contentType: normalized.contentType, upsert: true, cacheControl: '31536000' })
   if (uploadError) return NextResponse.json({ error: 'Não foi possível guardar a logo. Tente de novo.' }, { status: 500 })
   const logoUrl = service.storage.from(BRANDING_BUCKET).getPublicUrl(path).data.publicUrl

@@ -1,3 +1,4 @@
+import { brandedMetadata } from '@/lib/branding/metadata'
 import type { ReactNode } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
@@ -8,6 +9,10 @@ import { PortalOfflineBootstrap } from '@/components/portal-funcionario/portal-o
 import { RefreshAppButton } from '@/components/portal-funcionario/refresh-app-button'
 import { HeaderBrand } from '@/components/brand/brand-logo'
 import { getBrandLogoUrl } from '@/lib/branding/server'
+
+export async function generateMetadata() {
+  return brandedMetadata()
+}
 
 export default async function PortalFuncionarioLayout({ children }: { children: ReactNode }) {
   const supabase = await createClient()

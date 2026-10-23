@@ -52,3 +52,34 @@ describe('logo da empresa: validação e reprocessamento', () => {
     expect(logoObjectPath('org-1', 'abc123def456')).toBe('org-1/logo-abc123def456.png')
   })
 })
+
+import { isDarkOnTransparent } from '../logo-processing'
+
+describe('logo escura sobre transparente (brilho claro no painel escuro)', () => {
+  const png = (bg: { r: number; g: number; b: number; alpha: number }, fg: { r: number; g: number; b: number }) =>
+    sharp({ create: { width: 200, height: 100, channels: 4, background: bg } })
+      .composite([{ input: { create: { width: 120, height: 40, channels: 4, background: { ...fg, alpha: 1 } } }, top: 30, left: 40 }])
+      .png()
+      .toBuffer()
+  it('texto escuro em fundo transparente → precisa de brilho', async () => {
+    expect(await isDarkOnTransparent(await png({ r: 0, g: 0, b: 0, alpha: 0 }, { r: 20, g: 20, b: 30 }))).toBe(true)
+  })
+  it('texto claro em fundo transparente → não precisa', async () => {
+    expect(await isDarkOnTransparent(await png({ r: 0, g: 0, b: 0, alpha: 0 }, { r: 240, g: 240, b: 240 }))).toBe(false)
+  })
+  it('logo com fundo próprio (como a da Mawi, azul-marinho) → nunca precisa', async () => {
+    expect(await isDarkOnTransparent(await png({ r: 5, g: 16, b: 36, alpha: 1 }, { r: 255, g: 255, b: 255 }))).toBe(false)
+  })
+  it('o upload marca a logo no nome do arquivo e a renderização lê essa marca', async () => {
+    const dark = await normalizeLogo(await png({ r: 0, g: 0, b: 0, alpha: 0 }, { r: 20, g: 20, b: 30 }), 'image/png')
+    expect(dark).toMatchObject({ ok: true, needsLightEdge: true })
+    const { logoObjectPath } = await import('../logo-processing')
+    const { logoIsDarkOnTransparent, logoEdgeStyle } = await import('../render')
+    const path = logoObjectPath('org', 'abc123', true)
+    expect(path).toBe('org/logo-abc123-dk.png')
+    expect(logoIsDarkOnTransparent(`https://x/${path}`)).toBe(true)
+    expect(logoIsDarkOnTransparent('https://x/org/logo-abc123.png')).toBe(false)
+    expect(logoEdgeStyle('https://x/org/logo-abc123.png')).toBeUndefined()
+    expect(logoObjectPath('org', 'abc123')).toBe('org/logo-abc123.png')
+  })
+})

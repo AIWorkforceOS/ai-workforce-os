@@ -1,3 +1,4 @@
+import { brandedMetadata } from '@/lib/branding/metadata'
 import type { ReactNode } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
@@ -19,6 +20,10 @@ const ROLE_LABEL_EN: Record<AppRole, string> = {
   viewer: 'Viewer',
   employee: 'Employee',
   client: 'Client',
+}
+
+export async function generateMetadata() {
+  return brandedMetadata()
 }
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {

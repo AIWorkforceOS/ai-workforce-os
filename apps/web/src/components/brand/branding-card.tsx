@@ -1,5 +1,6 @@
 'use client'
 
+import { logoEdgeStyle } from '@/lib/branding/render'
 import { useRef, useState, type ChangeEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { ImagePlus, Trash2 } from 'lucide-react'
@@ -12,7 +13,7 @@ const MAX_BYTES = 2 * 1024 * 1024
  * Logo da empresa: enviar, ver como ficará e remover. A logo enviada substitui a do Alizo em todo o sistema (painéis da equipe,
  * Portal do Funcionário e Portal do Cliente). `orgId` só é usado pelo super admin Alizo (para escolher a empresa).
  */
-export function BrandingCard({ currentLogoUrl, orgId, title = 'Logo da empresa', description, uploadUrl = '/api/branding/logo' }: { currentLogoUrl: string | null; orgId?: string; title?: string; description?: string; /** Endpoint de envio/remoção (padrão: logo da própria empresa; o cadastro de cliente usa o do cliente). */ uploadUrl?: string }) {
+export function BrandingCard({ currentLogoUrl, orgId, title = 'Logo da empresa', description, uploadUrl = '/api/branding/logo', previewOn = 'dark' }: { currentLogoUrl: string | null; orgId?: string; title?: string; description?: string; /** onde a logo aparece: 'dark' = no painel escuro do sistema (logo da empresa); 'paper' = impressa em folha branca (logo de cliente nos PDFs). */ previewOn?: 'dark' | 'paper'; /** Endpoint de envio/remoção (padrão: logo da própria empresa; o cadastro de cliente usa o do cliente). */ uploadUrl?: string }) {
   const router = useRouter()
   const inputRef = useRef<HTMLInputElement>(null)
   const [preview, setPreview] = useState<string | null>(null)
@@ -88,8 +89,8 @@ export function BrandingCard({ currentLogoUrl, orgId, title = 'Logo da empresa',
         <h2 className="text-sm font-bold text-white">{title}</h2>
         <p className="mt-1 text-xs text-slate-400">{description ?? 'A logo que você enviar substitui a do Alizo em todo o sistema: painéis da equipe, Portal do Funcionário e Portal do Cliente. PNG, JPEG ou WebP, até 2 MB.'}</p>
       </div>
-      <div className="flex min-h-[72px] items-center justify-center rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.96)' }} aria-label="Pré-visualização da logo">
-        {shown ? <img src={shown} alt="Logo da empresa" className="max-h-16 max-w-[240px] object-contain" /> : <span className="text-xs font-semibold text-slate-500">Sem logo própria — aparece a logo do Alizo</span>}
+      <div className="flex min-h-[72px] items-center justify-center rounded-xl p-4" style={previewOn === 'paper' ? { background: '#ffffff' } : { background: '#0a0f1e', border: '1px solid rgba(255,255,255,0.08)' }} aria-label="Pré-visualização da logo">
+        {shown ? <img src={shown} alt="Logo da empresa" className="max-h-16 max-w-[240px] rounded-md object-contain" style={previewOn === 'dark' ? logoEdgeStyle(shown) : undefined} /> : <span className="text-xs font-semibold text-slate-500">Sem logo própria — aparece a logo do Alizo</span>}
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <input ref={inputRef} type="file" accept={ACCEPT} onChange={onPick} className="hidden" id="brand-logo-input" />

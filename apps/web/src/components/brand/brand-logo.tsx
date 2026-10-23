@@ -1,13 +1,14 @@
+import { logoEdgeStyle } from '@/lib/branding/render'
+
 /**
- * Logo no cabeçalho/menu. Sem logo própria: a marca do Alizo, exatamente como era. Com logo da empresa: ela substitui a do Alizo
- * (ícone + nome) e fica sobre um fundo claro, para aparecer bem mesmo se a logo tiver letras escuras num painel escuro.
+ * Logo no cabeçalho/menu. Sem logo própria: a marca do Alizo, exatamente como era. Com logo da empresa: ela substitui a do Alizo (ícone + nome) e aparece
+ * SÓ a imagem — sem caixa nem faixa em volta. Logo transparente mostra só o desenho; logo com fundo próprio mostra o próprio fundo. Se o desenho for
+ * escuro sobre transparente, um brilho claro fino (logoEdgeStyle) garante que apareça no painel escuro.
  */
 export function HeaderBrand({ logoUrl }: { logoUrl: string | null }) {
   if (logoUrl) {
     return (
-      <span className="inline-flex items-center rounded-md px-2 py-1" style={{ background: 'rgba(255,255,255,0.96)' }}>
-        <img src={logoUrl} alt="Logo da empresa" className="h-6 max-w-[150px] w-auto object-contain" />
-      </span>
+      <img src={logoUrl} alt="Logo da empresa" className="h-7 max-w-[160px] w-auto rounded-md object-contain" style={logoEdgeStyle(logoUrl)} />
     )
   }
   return (
@@ -21,9 +22,7 @@ export function HeaderBrand({ logoUrl }: { logoUrl: string | null }) {
 export function SidebarBrand({ logoUrl }: { logoUrl: string | null }) {
   if (logoUrl) {
     return (
-      <span className="inline-flex items-center rounded-lg px-3 py-2" style={{ background: 'rgba(255,255,255,0.96)' }}>
-        <img src={logoUrl} alt="Logo da empresa" className="h-9 max-w-[180px] w-auto object-contain" />
-      </span>
+      <img src={logoUrl} alt="Logo da empresa" className="h-11 max-w-[190px] w-auto rounded-lg object-contain" style={logoEdgeStyle(logoUrl)} />
     )
   }
   return <img src="/branding/alizo-logo.png" alt="Alizo" className="h-8 w-auto" />

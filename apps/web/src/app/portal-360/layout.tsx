@@ -1,3 +1,4 @@
+import { brandedMetadata } from '@/lib/branding/metadata'
 import type { ReactNode } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
@@ -12,6 +13,10 @@ import { getBrandLogoUrl } from '@/lib/branding/server'
  * contratante nos EUA (Miami, FL), nunca a equipe da Mawi — mesma
  * decisão já tomada para o PDF final (lib/service-orders/pdf.ts).
  */
+export async function generateMetadata() {
+  return brandedMetadata()
+}
+
 export default async function Portal360Layout({ children }: { children: ReactNode }) {
   const supabase = await createClient()
   const {
