@@ -3,6 +3,7 @@
 import { useEffect, useMemo } from 'react'
 import { ArrowLeft, Download, Share2 } from 'lucide-react'
 import { canShareFiles, downloadPdf, sharePdf } from '@/lib/portal-funcionario/signoff-download'
+import { PdfPagesView } from './pdf-pages-view'
 
 /**
  * Visualizador de PDF DENTRO do app, com botão grande de voltar. No app instalado (sem barra do navegador) abrir o PDF numa nova tela
@@ -44,10 +45,7 @@ export function PdfViewerOverlay({ file, onClose, title }: { file: File; onClose
           {canShare ? 'Salvar/Enviar' : 'Baixar'}
         </button>
       </div>
-      <iframe src={url} title={file.name} className="min-h-0 w-full flex-1 bg-white" />
-      <p className="px-3 py-2 text-center text-[11px] text-slate-400" style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}>
-        Se só a 1ª página aparecer, toque em “Salvar/Enviar” → “Salvar em Arquivos” para ter o PDF completo.
-      </p>
+      <PdfPagesView file={file} fallbackUrl={url} />
     </div>
   )
 }
