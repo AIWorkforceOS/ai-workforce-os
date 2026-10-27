@@ -3,5 +3,8 @@ packages:
   - "packages/*"
   - "packs/*"
   - "tools/*"
+allowBuilds:
+  # pdfjs-dist (visualizador do Sign Off) lista o canvas nativo como opcional; ele só serve para rodar no Node — o navegador não usa. Nunca compilar.
+  canvas: false
 minimumReleaseAgeExclude:
   - svix@1.97.0

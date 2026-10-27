@@ -11,6 +11,12 @@ const nextConfig = {
     // ao navegar entre telas logo após uma edição.
     staleTimes: { dynamic: 0 },
   },
+  webpack: (config) => {
+    // pdf.js (visualizador do Sign Off) lista o módulo nativo "canvas" como opcional, só para rodar no Node. Nós só usamos o pdf.js no navegador (o servidor
+    // apenas compila o componente, sem executá-lo): sem este alias o webpack tenta resolver o módulo nativo e a compilação quebra.
+    config.resolve.alias = { ...config.resolve.alias, canvas: false }
+    return config
+  },
   async headers() {
     return [
       {
