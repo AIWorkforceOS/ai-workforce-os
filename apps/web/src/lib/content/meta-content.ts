@@ -198,3 +198,47 @@ export async function publishInstagramPost(
   )
   return { externalPostId: published.id }
 }
+
+/**
+ * Carrossel no Instagram (2 a 10 imagens): um contêiner filho por imagem (is_carousel_item), espera todos ficarem prontos, um contêiner
+ * CAROUSEL que os reúne (children + legenda), espera de novo e publica.
+ * developers.facebook.com/docs/instagram-api/guides/content-publishing#carousel-posts
+ */
+export async function publishInstagramCarousel(
+  config: SocialConfig,
+  params: { instagramBusinessAccountId: string; imageUrls: string[]; caption: string },
+  pollOpts?: { pollIntervalMs?: number; maxAttempts?: number },
+): Promise<{ externalPostId: string }> {
+  if (params.imageUrls.length < 2 || params.imageUrls.length > 10) throw new Error('Carrossel do Instagram precisa de 2 a 10 imagens.')
+  const children = await Promise.all(
+    params.imageUrls.map((imageUrl) =>
+      socialPost<{ id: string }>(`${params.instagramBusinessAccountId}/media`, config.pageAccessToken, { image_url: imageUrl, is_carousel_item: 'true' }),
+    ),
+  )
+  await Promise.all(children.map((child) => waitForMediaContainerReady(child.id, config.pageAccessToken, pollOpts)))
+  const parent = await socialPost<{ id: string }>(`${params.instagramBusinessAccountId}/media`, config.pageAccessToken, {
+    media_type: 'CAROUSEL',
+    children: children.map((c) => c.id).join(','),
+    caption: params.caption,
+  })
+  await waitForMediaContainerReady(parent.id, config.pageAccessToken, pollOpts)
+  const published = await socialPost<{ id: string }>(`${params.instagramBusinessAccountId}/media_publish`, config.pageAccessToken, { creation_id: parent.id })
+  return { externalPostId: published.id }
+}
+
+/** Várias fotos num único post da Página: sobe cada foto sem publicar (published=false) e cria o post com attached_media. */
+export async function publishFacebookCarousel(
+  config: SocialConfig,
+  params: { imageUrls: string[]; caption: string },
+): Promise<{ externalPostId: string }> {
+  if (params.imageUrls.length < 2) throw new Error('O post com várias fotos precisa de pelo menos 2 imagens.')
+  const photos = await Promise.all(
+    params.imageUrls.map((url) => socialPost<{ id: string }>(`${config.pageId}/photos`, config.pageAccessToken, { url, published: 'false' })),
+  )
+  const attached: Record<string, string> = {}
+  photos.forEach((photo, i) => {
+    attached[`attached_media[${i}]`] = JSON.stringify({ media_fbid: photo.id })
+  })
+  const post = await socialPost<{ id: string }>(`${config.pageId}/feed`, config.pageAccessToken, { message: params.caption, ...attached })
+  return { externalPostId: post.id }
+}

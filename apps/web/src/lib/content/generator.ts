@@ -8,6 +8,7 @@ import { buildCombinedBusinessContext } from '@/lib/interview/engine'
 import { brandKitFrom, compositeLogoOntoImage, type BrandKit } from '@/lib/brand-kit'
 import { resolveContentLanguage } from './language'
 import { buildInstructionPromptBlock, type ContentInstruction } from './instructions'
+import { composeCaption, normalizeCarousel, type CarouselContent } from './carousel'
 import type { AgentConfig, Unit } from '@/lib/types'
 import type { SocialPlatform } from './types'
 
@@ -97,8 +98,10 @@ export function buildCaptionSystemPrompt(params: {
   visualAngle: string
   /** Instrução operacional ativa no dia do post (lib/content/instructions.ts). Ausente = prompt idêntico ao de antes. */
   instruction?: ContentInstruction | null
+  /** Gera o roteiro de um CARROSSEL (capa + slides + CTA) em vez de um post de imagem única. */
+  carousel?: boolean
 }): string {
-  const { config, unit, organizationProfile, platform, pillar, holiday, recentPosts, attachmentsContext, visualAngle, instruction } = params
+  const { config, unit, organizationProfile, platform, pillar, holiday, recentPosts, attachmentsContext, visualAngle, instruction, carousel } = params
   const businessContext = buildCombinedBusinessContext(organizationProfile, config.business_profile)
   // idioma_conteudo (achado real, 2026-08-27): pedido explícito do dono na
   // entrevista/retreinamento ("todos os posts em inglês") tem prioridade
@@ -116,7 +119,7 @@ export function buildCaptionSystemPrompt(params: {
 
   return [
     `Você é ${config.persona_name}, gestor(a) de conteúdo e redes sociais digital da unidade ${unit.name}.`,
-    `Sua tarefa agora: criar UM post orgânico para o ${platformLabel(platform)}${pillar ? `, sobre o pilar de conteúdo "${pillar}"` : ''}.`,
+    `Sua tarefa agora: criar UM ${carousel ? 'CARROSSEL' : 'post'} orgânico para o ${platformLabel(platform)}${pillar ? `, sobre o pilar de conteúdo "${pillar}"` : ''}.`,
     businessContext ??
       'Ainda não há uma ficha de negócio detalhada — escreva algo genérico, seguro e verdadeiro para uma empresa de serviços, sem inventar detalhes específicos.',
     'Aja como um gestor de conteúdo de verdade, não como quem posta por postar: antes de escrever, decida qual ângulo/formato (dica prática, resultado real com problema→solução, bastidores da equipe, prova social, pergunta pro público, educativo, autoridade no assunto etc.) tem mais chance de gerar resultado de negócio de verdade — leads qualificados, confiança, autoridade — para ESTE pilar e para o público-alvo descrito na ficha. Nunca gere um post genérico só para preencher a grade de publicação.',
@@ -126,7 +129,9 @@ export function buildCaptionSystemPrompt(params: {
     // post após post, mesmo com a instrução reforçada. O ângulo agora é
     // DECIDIDO em código (pickNextVisualAngle, mesmo princípio do fix de
     // pickNextPillar) e só imposto aqui — não é mais escolha livre do modelo.
-    `FORMATO VISUAL OBRIGATÓRIO deste post (não é sugestão — não use nenhum outro formato): ${visualAngle}. O image_prompt tem que descrever a cena seguindo EXATAMENTE esse formato.`,
+    carousel
+      ? 'CARROSSEL: capa com gancho forte (título curto), 3 a 6 slides de conteúdo (cada um com UMA ideia: título curto + 1-2 frases), e um slide final de chamada para ação. Texto enxuto, que se lê no celular. Use SOMENTE fatos que estão na ficha da empresa — nunca invente clientes, depoimentos, resultados, números, fotos ou garantias; se faltar dado, fale do método/serviço de forma verdadeira e genérica.'
+      : `FORMATO VISUAL OBRIGATÓRIO deste post (não é sugestão — não use nenhum outro formato): ${visualAngle}. O image_prompt tem que descrever a cena seguindo EXATAMENTE esse formato.`,
     recentPostsContext,
     attachmentsContext || null,
     instruction ? buildInstructionPromptBlock(instruction) : null,
@@ -140,7 +145,9 @@ export function buildCaptionSystemPrompt(params: {
       ? `Data comemorativa: este post vai ao ar em "${holiday}" — aproveite a ocasião no post (legenda e imagem), conectando com o negócio quando fizer sentido, sem forçar. Nunca invente que a empresa está fechada, aberta, com promoção ou horário especial nessa data a menos que isso já esteja escrito na ficha do negócio.`
       : null,
     'FORMATO DA RESPOSTA — responda SOMENTE um JSON válido no formato:',
-    '{"caption": "a legenda pronta para publicar, incluindo call to action se fizer sentido para a empresa", "image_prompt": "descrição em inglês, detalhada e visual, para gerar a imagem que acompanha o post — sem nenhum texto/letra embutido na imagem", "reasoning": "1 frase curta, em português, explicando por que este post faz sentido agora, para o dono da empresa entender"}',
+    carousel
+      ? '{"cover_title": "gancho curto da capa", "cover_subtitle": "1 frase de apoio", "slides": [{"title": "título curto", "body": "1-2 frases"}], "cta_title": "chamada curta", "cta_body": "1 frase dizendo como falar com a empresa", "caption": "legenda do post com call to action", "hashtags": ["5 a 8 hashtags relevantes, sem #"], "reasoning": "1 frase curta, em português, explicando por que este carrossel faz sentido agora, para o dono da empresa entender"} — todos os textos dos slides e a legenda no idioma da legenda indicado acima.'
+      : '{"caption": "a legenda pronta para publicar, incluindo call to action se fizer sentido para a empresa", "image_prompt": "descrição em inglês, detalhada e visual, para gerar a imagem que acompanha o post — sem nenhum texto/letra embutido na imagem", "reasoning": "1 frase curta, em português, explicando por que este post faz sentido agora, para o dono da empresa entender"}',
   ]
     .filter(Boolean)
     .join(' ')
@@ -225,4 +232,55 @@ export async function uploadGeneratedImage(params: {
   if (error) throw new Error(`Falha ao subir a imagem gerada: ${error.message}`)
   const { data } = params.supabase.storage.from('content-media').getPublicUrl(path)
   return data.publicUrl
+}
+
+export type GeneratedCarousel = {
+  content: CarouselContent
+  /** Legenda pronta para publicar (texto + hashtags). */
+  caption: string
+  reasoning: string
+  instructionFormatReason?: string
+  instructionCta?: string
+}
+
+type CarouselOutput = Record<string, unknown> & { caption?: string; reasoning?: string; hashtags?: unknown }
+
+/** Roteiro de um carrossel (capa, slides, CTA, legenda, hashtags) via chat em JSON mode. Só texto: o desenho dos slides é do carousel-render. */
+export async function generateCarouselContent(params: {
+  apiKey: string
+  config: AgentConfig
+  unit: Unit
+  organizationProfile: Record<string, unknown> | null
+  platform: SocialPlatform
+  pillar: string | null
+  holiday?: string | null
+  recentPosts?: RecentPostSummary[]
+  attachmentsContext?: string | null
+  instruction?: ContentInstruction | null
+}): Promise<GeneratedCarousel> {
+  const systemPrompt = buildCaptionSystemPrompt({ ...params, visualAngle: '', carousel: true })
+  const output = await generateStructuredReply<CarouselOutput>({
+    apiKey: params.apiKey,
+    systemPrompt,
+    history: [{ role: 'user', content: 'Gere o carrossel agora.' }],
+    maxTokens: 1500,
+    temperature: 0.8,
+  })
+  const normalized = normalizeCarousel(output)
+  if (!normalized.ok) throw new Error(`A IA devolveu um carrossel inválido: ${normalized.error}`)
+  const caption = (output.caption ?? '').trim()
+  if (!caption) throw new Error('A IA não devolveu a legenda do carrossel.')
+  const reasoning = (output.reasoning ?? '').trim()
+  const extra = params.instruction
+    ? {
+        instructionFormatReason: String(output.instruction_format_reason ?? '').trim() || undefined,
+        instructionCta: String(output.instruction_cta ?? '').trim() || undefined,
+      }
+    : {}
+  return {
+    content: normalized.value,
+    caption: composeCaption(caption, normalized.value.hashtags),
+    reasoning: reasoning || 'Carrossel gerado conforme a frequência configurada pela empresa.',
+    ...extra,
+  }
 }

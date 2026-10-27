@@ -15,6 +15,8 @@ import { fetchActiveAttachments, buildAttachmentsContext } from '@/lib/attachmen
 import { QUOTA_STATUSES, contentPillarsFrom, contentPlatformsFrom, decidePublishAction, pickNextPillar, pickNextPlatform, pickNextVisualAngle } from './planner'
 import { generatePostContent, generatePostImage, uploadGeneratedImage } from './generator'
 import { holidayOnDate } from './holidays'
+import { createCarouselPostDraft } from './carousel-post'
+import { pickPostFormat, type PostFormat } from './carousel'
 import { appliedInstructionFields, fetchConfirmedInstructions, instructionForDay } from './instruction-store'
 import type { ContentPost, SocialAccount, SocialPlatform } from './types'
 import type { AgentConfig, Unit } from '@/lib/types'
@@ -98,6 +100,7 @@ export async function generateWeekPostsForAccount(params: {
       image_prompt: p.image_prompt,
     }))
 
+  const runningFormats: PostFormat[] = []
   const logoUrl = (organizationProfile as { brand_kit?: { logo_url?: string | null } } | null)?.brand_kit?.logo_url ?? null
 
   for (const date of dates) {
@@ -118,22 +121,45 @@ export async function generateWeekPostsForAccount(params: {
       .map((p) => ({ pillar: p.content_pillar, caption: p.caption, imagePrompt: p.image_prompt }))
 
     try {
-      const content = await generatePostContent({
-        apiKey,
-        config,
-        unit,
-        organizationProfile,
-        platform,
-        pillar,
-        holiday: holiday?.name ?? null,
-        recentPosts: recentPostsContext,
-        attachmentsContext,
-        visualAngle,
-        instruction,
-      })
-      const image = await generatePostImage({ apiKey, imagePrompt: content.imagePrompt, logoUrl })
-      const imageUrl = await uploadGeneratedImage({ supabase, unitId: unit.id, base64Image: image.base64Image })
-
+      const format = pickPostFormat(instruction, runningFormats)
+      let content: { caption: string; imagePrompt: string | null; reasoning: string; instructionFormatReason?: string; instructionCta?: string }
+      let imageUrl: string
+      let formatFields: Record<string, unknown> = {}
+      if (format === 'carousel') {
+        const draft = await createCarouselPostDraft({
+          supabase,
+          apiKey,
+          config,
+          unit,
+          organizationProfile,
+          platform,
+          pillar,
+          holiday: holiday?.name ?? null,
+          recentPosts: recentPostsContext,
+          attachmentsContext,
+          instruction,
+        })
+        content = { caption: draft.caption, imagePrompt: null, reasoning: draft.reasoning, instructionFormatReason: draft.instructionFormatReason, instructionCta: draft.instructionCta }
+        imageUrl = draft.imageUrl
+        formatFields = draft.fields
+      } else {
+        const generated = await generatePostContent({
+          apiKey,
+          config,
+          unit,
+          organizationProfile,
+          platform,
+          pillar,
+          holiday: holiday?.name ?? null,
+          recentPosts: recentPostsContext,
+          attachmentsContext,
+          visualAngle,
+          instruction,
+        })
+        const image = await generatePostImage({ apiKey, imagePrompt: generated.imagePrompt, logoUrl })
+        imageUrl = await uploadGeneratedImage({ supabase, unitId: unit.id, base64Image: image.base64Image })
+        content = generated
+      }
       const action = decidePublishAction(account.publishing_mode)
       const scheduledFor = new Date(date)
       scheduledFor.setUTCHours(12, 0, 0, 0) // hora fixa neutra — o que importa é o dia
@@ -154,6 +180,7 @@ export async function generateWeekPostsForAccount(params: {
           reasoning: holiday ? `${content.reasoning} (${holiday.name})` : content.reasoning,
           mode: account.publishing_mode,
           scheduled_for: scheduledFor.toISOString(),
+          ...formatFields,
           ...appliedInstructionFields(instruction, content),
         })
         .select('*')
@@ -162,6 +189,7 @@ export async function generateWeekPostsForAccount(params: {
       if (insertError || !inserted) throw new Error(insertError?.message ?? 'Falha ao gravar o post gerado.')
 
       result.created += 1
+      runningFormats.push(format)
       runningHistory.push({
         platform,
         content_pillar: pillar,

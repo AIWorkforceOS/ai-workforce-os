@@ -1,5 +1,7 @@
 // Tipos do funcionário digital de Conteúdo/Social (migration 040).
 
+import type { StoredCarousel } from './carousel'
+
 export type SocialPlatform = 'instagram' | 'facebook'
 export type SocialConnectionStatus = 'pending_credentials' | 'connected' | 'error' | 'disconnected'
 export type PublishingMode = 'suggestion' | 'autonomous'
@@ -76,6 +78,9 @@ export type ContentPost = {
   instruction_objective?: string | null
   instruction_format_reason?: string | null
   instruction_cta?: string | null
+  /** 'image' (padrão/histórico) ou 'carousel' (migration 111). */
+  format?: 'image' | 'carousel'
+  carousel?: StoredCarousel | null
   created_at: string
   updated_at: string
 }

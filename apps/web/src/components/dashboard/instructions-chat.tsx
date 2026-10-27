@@ -128,8 +128,11 @@ export function InstructionsChat({ unitId }: { unitId: string }) {
             {p.interpretation.restrictions.length > 0 && <li>Restrições: {p.interpretation.restrictions.join('; ')}</li>}
             <li>Prioridade: {p.priority === 'alta' ? 'alta' : 'normal'}</li>
           </ul>
-          {p.interpretation.formats.some((f) => /carrossel|carousel|v[ií]deo|video|reel/i.test(f)) && (
-            <p className="mt-1.5 text-amber-300">Carrossel e vídeo curto ainda estão em desenvolvimento: por enquanto o agente usa imagem única seguindo o mesmo objetivo.</p>
+          {p.interpretation.formats.some((f) => /carross?el|carousel/i.test(f)) && (
+            <p className="mt-1.5 text-amber-300">Carrosséis são criados e ficam aguardando a sua aprovação. A publicação automática de carrossel ainda não foi liberada.</p>
+          )}
+          {p.interpretation.formats.some((f) => /v[ií]deo|video|reel/i.test(f)) && (
+            <p className="mt-1.5 text-amber-300">Vídeo curto ainda está em desenvolvimento: por enquanto o agente não gera vídeo e segue o mesmo objetivo com os outros formatos.</p>
           )}
           {proposal.conflicts.length > 0 && (
             <div className="mt-2 space-y-1 rounded-lg bg-amber-500/10 p-2 text-amber-200">

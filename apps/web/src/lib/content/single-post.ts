@@ -9,6 +9,8 @@ import { fetchActiveAttachments, buildAttachmentsContext } from '@/lib/attachmen
 import { contentPillarsFrom, contentPlatformsFrom, decidePublishAction, pickNextPillar, pickNextPlatform, pickNextVisualAngle } from './planner'
 import { generatePostContent, generatePostImage, uploadGeneratedImage } from './generator'
 import { holidayOnDate } from './holidays'
+import { createCarouselPostDraft } from './carousel-post'
+import { pickPostFormat } from './carousel'
 import { appliedInstructionFields, fetchConfirmedInstructions, instructionForDay, todayKeyFor } from './instruction-store'
 import { publishContentPost } from './publisher'
 import type { ContentPost, SocialAccount, SocialPlatform } from './types'
@@ -61,22 +63,45 @@ export async function generateSinglePostForAccount(params: {
     .map((p) => ({ pillar: p.content_pillar, caption: p.caption, imagePrompt: p.image_prompt }))
 
   try {
-    const content = await generatePostContent({
-      apiKey,
-      config,
-      unit,
-      organizationProfile,
-      platform,
-      pillar,
-      holiday: holiday?.name ?? null,
-      recentPosts: recentPostsContext,
-      attachmentsContext,
-      visualAngle,
-      instruction,
-    })
     const logoUrl = (organizationProfile as { brand_kit?: { logo_url?: string | null } } | null)?.brand_kit?.logo_url ?? null
-    const image = await generatePostImage({ apiKey, imagePrompt: content.imagePrompt, logoUrl })
-    const imageUrl = await uploadGeneratedImage({ supabase, unitId: unit.id, base64Image: image.base64Image })
+    let content: { caption: string; imagePrompt: string | null; reasoning: string; instructionFormatReason?: string; instructionCta?: string }
+    let imageUrl: string
+    let formatFields: Record<string, unknown> = {}
+    if (pickPostFormat(instruction, []) === 'carousel') {
+      const draft = await createCarouselPostDraft({
+        supabase,
+        apiKey,
+        config,
+        unit,
+        organizationProfile,
+        platform,
+        pillar,
+        holiday: holiday?.name ?? null,
+        recentPosts: recentPostsContext,
+        attachmentsContext,
+        instruction,
+      })
+      content = { caption: draft.caption, imagePrompt: null, reasoning: draft.reasoning, instructionFormatReason: draft.instructionFormatReason, instructionCta: draft.instructionCta }
+      imageUrl = draft.imageUrl
+      formatFields = draft.fields
+    } else {
+      const generated = await generatePostContent({
+        apiKey,
+        config,
+        unit,
+        organizationProfile,
+        platform,
+        pillar,
+        holiday: holiday?.name ?? null,
+        recentPosts: recentPostsContext,
+        attachmentsContext,
+        visualAngle,
+        instruction,
+      })
+      const image = await generatePostImage({ apiKey, imagePrompt: generated.imagePrompt, logoUrl })
+      imageUrl = await uploadGeneratedImage({ supabase, unitId: unit.id, base64Image: image.base64Image })
+      content = generated
+    }
 
     const action = decidePublishAction(account.publishing_mode)
     const { data: inserted, error: insertError } = await supabase
@@ -95,6 +120,7 @@ export async function generateSinglePostForAccount(params: {
         reasoning: holiday ? `${content.reasoning} (${holiday.name})` : content.reasoning,
         mode: account.publishing_mode,
         scheduled_for: scheduledFor ? scheduledFor.toISOString() : null,
+        ...formatFields,
         ...appliedInstructionFields(instruction, content),
       })
       .select('*')

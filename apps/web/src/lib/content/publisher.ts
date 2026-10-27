@@ -4,7 +4,8 @@
 // "preso" sem status final).
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { resolveSocialConfig, publishFacebookPhoto, publishInstagramPost, type SocialConfig } from './meta-content'
+import { resolveSocialConfig, publishFacebookCarousel, publishFacebookPhoto, publishInstagramCarousel, publishInstagramPost, type SocialConfig } from './meta-content'
+import { carouselPublishingEnabled } from './carousel'
 import type { ContentPost, SocialAccount } from './types'
 
 export type PublishOutcome = { ok: true; externalPostId: string } | { ok: false; error: string }
@@ -22,14 +23,26 @@ export async function publishContentPost(
 
   if (!post.image_url) return fail('Post sem imagem gerada.')
 
+  // Carrossel só vai à Meta depois que o fluxo for validado numa página de teste (CONTENT_CAROUSEL_PUBLISH=on). Enquanto isso o post
+  // fica como está — NÃO vira 'failed' — e quem chama decide o que mostrar.
+  if (post.format === 'carousel' && !carouselPublishingEnabled()) {
+    return { ok: false, error: 'Publicação de carrossel ainda não liberada: o post segue aprovado e sai quando a publicação for ligada.' }
+  }
+
   try {
     const config = await resolveSocialConfig(account)
     if (!config) return fail('Conta sem token de Página configurado e sem system user global disponível.')
 
+    const slideUrls = post.format === 'carousel' ? (post.carousel?.slide_urls ?? []) : []
+    if (post.format === 'carousel' && slideUrls.length < 2) return fail('Carrossel sem slides desenhados.')
     const result =
-      post.platform === 'instagram'
-        ? await publishInstagramContent(config, account, post)
-        : await publishFacebookPhoto(config, { imageUrl: post.image_url, caption: post.caption })
+      post.format === 'carousel'
+        ? post.platform === 'instagram'
+          ? await publishInstagramCarouselContent(config, account, post, slideUrls)
+          : await publishFacebookCarousel(config, { imageUrls: slideUrls, caption: post.caption })
+        : post.platform === 'instagram'
+          ? await publishInstagramContent(config, account, post)
+          : await publishFacebookPhoto(config, { imageUrl: post.image_url, caption: post.caption })
 
     await supabase
       .from('content_posts')
@@ -78,7 +91,9 @@ export async function publishDueScheduledPosts(
     .select('*')
     .eq('status', 'approved')
     .lt('scheduled_for', dayEnd.toISOString())
-  const posts = (due ?? []) as ContentPost[]
+  // Carrossel aprovado espera a publicação de carrossel ser ligada: não conta como erro nem é tentado todo dia.
+  const carouselsOn = carouselPublishingEnabled()
+  const posts = ((due ?? []) as ContentPost[]).filter((p) => p.format !== 'carousel' || carouselsOn)
 
   let published = 0
   let errors = 0
@@ -108,4 +123,16 @@ async function publishInstagramContent(
     imageUrl: post.image_url!,
     caption: post.caption,
   })
+}
+
+async function publishInstagramCarouselContent(
+  config: SocialConfig,
+  account: SocialAccount,
+  post: ContentPost,
+  slideUrls: string[],
+): Promise<{ externalPostId: string }> {
+  if (!account.instagram_business_account_id) {
+    throw new Error('Nenhuma conta do Instagram vinculada a esta Página.')
+  }
+  return publishInstagramCarousel(config, { instagramBusinessAccountId: account.instagram_business_account_id, imageUrls: slideUrls, caption: post.caption })
 }

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { publishContentPost } from '@/lib/content/publisher'
+import { carouselPublishingEnabled } from '@/lib/content/carousel'
 import type { ContentPost, SocialAccount } from '@/lib/content/types'
 
 export const maxDuration = 60
@@ -91,6 +92,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (scheduledAt > endOfToday) {
       return NextResponse.json({ post: { id: post.id, status: 'approved' }, published: false, scheduled: true })
     }
+  }
+
+  // Carrossel aprovado, mas a publicação de carrossel ainda não foi liberada: fica aprovado (nada vai ao ar, nada falha).
+  if (post.format === 'carousel' && !carouselPublishingEnabled()) {
+    return NextResponse.json({
+      post: { id: post.id, status: 'approved' },
+      published: false,
+      held: true,
+      message: 'Carrossel aprovado. A publicação de carrossel ainda não foi liberada: ele sairá quando for ligada.',
+    })
   }
 
   const service = createServiceClient()
