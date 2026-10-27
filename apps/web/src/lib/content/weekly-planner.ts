@@ -15,6 +15,7 @@ import { fetchActiveAttachments, buildAttachmentsContext } from '@/lib/attachmen
 import { QUOTA_STATUSES, contentPillarsFrom, contentPlatformsFrom, decidePublishAction, pickNextPillar, pickNextPlatform, pickNextVisualAngle } from './planner'
 import { generatePostContent, generatePostImage, uploadGeneratedImage } from './generator'
 import { holidayOnDate } from './holidays'
+import { appliedInstructionFields, fetchConfirmedInstructions, instructionForDay } from './instruction-store'
 import type { ContentPost, SocialAccount, SocialPlatform } from './types'
 import type { AgentConfig, Unit } from '@/lib/types'
 
@@ -54,6 +55,7 @@ export async function generateWeekPostsForAccount(params: {
   const attachments = await fetchActiveAttachments(supabase, unit, 'content_specialist')
   const attachmentsContext = buildAttachmentsContext(attachments)
   const pillars = contentPillarsFrom(config.business_profile ?? {})
+  const instructions = await fetchConfirmedInstructions(supabase, unit.id)
 
   const rangeStart = dates.reduce((min, d) => (d < min ? d : min), dates[0]!)
   const historyStart = new Date(rangeStart.getTime() - 7 * 24 * 60 * 60 * 1000)
@@ -109,6 +111,8 @@ export async function generateWeekPostsForAccount(params: {
     const pillar = pickNextPillar(pillars, runningHistory)
     const visualAngle = pickNextVisualAngle(runningHistory)
     const holiday = holidayOnDate(date)
+    // `date` já é o dia de calendário do post (meia-noite UTC = o dia, como em dateKey): não converter de fuso, ou o dia desloca.
+    const instruction = instructionForDay(instructions, key)
     const recentPostsContext = [...runningHistory]
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       .map((p) => ({ pillar: p.content_pillar, caption: p.caption, imagePrompt: p.image_prompt }))
@@ -125,6 +129,7 @@ export async function generateWeekPostsForAccount(params: {
         recentPosts: recentPostsContext,
         attachmentsContext,
         visualAngle,
+        instruction,
       })
       const image = await generatePostImage({ apiKey, imagePrompt: content.imagePrompt, logoUrl })
       const imageUrl = await uploadGeneratedImage({ supabase, unitId: unit.id, base64Image: image.base64Image })
@@ -149,6 +154,7 @@ export async function generateWeekPostsForAccount(params: {
           reasoning: holiday ? `${content.reasoning} (${holiday.name})` : content.reasoning,
           mode: account.publishing_mode,
           scheduled_for: scheduledFor.toISOString(),
+          ...appliedInstructionFields(instruction, content),
         })
         .select('*')
         .single()

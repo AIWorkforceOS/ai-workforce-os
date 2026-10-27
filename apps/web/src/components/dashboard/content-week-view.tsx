@@ -77,6 +77,7 @@ export function ContentWeekView({
                           <span className="text-[9px] font-bold text-slate-500">{platformLabel(post.platform)}</span>
                         </div>
                         <p className="mt-1 line-clamp-2 text-[10px] leading-snug text-slate-400">{post.caption}</p>
+                        {post.instruction_objective && <p className="mt-0.5 text-[9px] font-bold text-cyan-300" title={post.instruction_objective}>● Instrução aplicada</p>}
                       </div>
                     ))
                   )}

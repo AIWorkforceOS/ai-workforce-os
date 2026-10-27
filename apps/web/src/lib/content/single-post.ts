@@ -9,6 +9,7 @@ import { fetchActiveAttachments, buildAttachmentsContext } from '@/lib/attachmen
 import { contentPillarsFrom, contentPlatformsFrom, decidePublishAction, pickNextPillar, pickNextPlatform, pickNextVisualAngle } from './planner'
 import { generatePostContent, generatePostImage, uploadGeneratedImage } from './generator'
 import { holidayOnDate } from './holidays'
+import { appliedInstructionFields, fetchConfirmedInstructions, instructionForDay, todayKeyFor } from './instruction-store'
 import { publishContentPost } from './publisher'
 import type { ContentPost, SocialAccount, SocialPlatform } from './types'
 import type { AgentConfig, Unit } from '@/lib/types'
@@ -51,6 +52,10 @@ export async function generateSinglePostForAccount(params: {
   const attachments = await fetchActiveAttachments(supabase, unit, 'content_specialist')
   const attachmentsContext = buildAttachmentsContext(attachments)
   const holiday = scheduledFor ? holidayOnDate(scheduledFor) : null
+  const instruction = instructionForDay(
+    await fetchConfirmedInstructions(supabase, unit.id),
+    scheduledFor ? scheduledFor.toISOString().slice(0, 10) : todayKeyFor(unit.timezone || 'America/Phoenix'),
+  )
   const recentPostsContext = [...recentPosts]
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     .map((p) => ({ pillar: p.content_pillar, caption: p.caption, imagePrompt: p.image_prompt }))
@@ -67,6 +72,7 @@ export async function generateSinglePostForAccount(params: {
       recentPosts: recentPostsContext,
       attachmentsContext,
       visualAngle,
+      instruction,
     })
     const logoUrl = (organizationProfile as { brand_kit?: { logo_url?: string | null } } | null)?.brand_kit?.logo_url ?? null
     const image = await generatePostImage({ apiKey, imagePrompt: content.imagePrompt, logoUrl })
@@ -89,6 +95,7 @@ export async function generateSinglePostForAccount(params: {
         reasoning: holiday ? `${content.reasoning} (${holiday.name})` : content.reasoning,
         mode: account.publishing_mode,
         scheduled_for: scheduledFor ? scheduledFor.toISOString() : null,
+        ...appliedInstructionFields(instruction, content),
       })
       .select('*')
       .single()

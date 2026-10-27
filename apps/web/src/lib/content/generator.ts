@@ -7,17 +7,21 @@ import { generateImage, generateStructuredReply } from '@/lib/openai'
 import { buildCombinedBusinessContext } from '@/lib/interview/engine'
 import { brandKitFrom, compositeLogoOntoImage, type BrandKit } from '@/lib/brand-kit'
 import { resolveContentLanguage } from './language'
+import { buildInstructionPromptBlock, type ContentInstruction } from './instructions'
 import type { AgentConfig, Unit } from '@/lib/types'
 import type { SocialPlatform } from './types'
 
 export type { BrandKit }
 
-type CaptionOutput = { caption?: string; image_prompt?: string; reasoning?: string }
+type CaptionOutput = { caption?: string; image_prompt?: string; reasoning?: string; instruction_format_reason?: string; instruction_cta?: string }
 
 export type GeneratedPostContent = {
   caption: string
   imagePrompt: string
   reasoning: string
+  /** Só quando uma instrução operacional estava ativa: por que este formato serve ao objetivo e a CTA usada (prova de "Instrução aplicada"). */
+  instructionFormatReason?: string
+  instructionCta?: string
 }
 
 /** Resumo de um post recente, usado só pra dar contexto ao gerador (evitar repetição) — ver buildRecentPostsContext. */
@@ -91,8 +95,10 @@ export function buildCaptionSystemPrompt(params: {
    * escolhido e só é imposto, igual pillar/platform.
    */
   visualAngle: string
+  /** Instrução operacional ativa no dia do post (lib/content/instructions.ts). Ausente = prompt idêntico ao de antes. */
+  instruction?: ContentInstruction | null
 }): string {
-  const { config, unit, organizationProfile, platform, pillar, holiday, recentPosts, attachmentsContext, visualAngle } = params
+  const { config, unit, organizationProfile, platform, pillar, holiday, recentPosts, attachmentsContext, visualAngle, instruction } = params
   const businessContext = buildCombinedBusinessContext(organizationProfile, config.business_profile)
   // idioma_conteudo (achado real, 2026-08-27): pedido explícito do dono na
   // entrevista/retreinamento ("todos os posts em inglês") tem prioridade
@@ -123,6 +129,7 @@ export function buildCaptionSystemPrompt(params: {
     `FORMATO VISUAL OBRIGATÓRIO deste post (não é sugestão — não use nenhum outro formato): ${visualAngle}. O image_prompt tem que descrever a cena seguindo EXATAMENTE esse formato.`,
     recentPostsContext,
     attachmentsContext || null,
+    instruction ? buildInstructionPromptBlock(instruction) : null,
     'A legenda deve soar humana, natural, sem parecer gerada por IA e sem clichês genéricos de marketing. Use no máximo 2 emojis, só se fizer sentido para o tom da marca.',
     'Nunca invente promoção, preço ou resultado que não esteja na ficha da empresa. Nunca mencione concorrentes. Respeite qualquer proibição registrada na ficha.',
     `Idioma da legenda: escreva a legenda inteiramente em ${detectedLanguage === 'en' ? 'inglês' : 'português'} — esse é o idioma em que o negócio atende seus clientes (configurado na unidade, ou detectado a partir da ficha quando esse dado não existe). O "reasoning" continua em português (é só para o dono da empresa entender, no painel); o "image_prompt" continua em inglês (é só para o gerador de imagem).`,
@@ -151,13 +158,14 @@ export async function generatePostContent(params: {
   recentPosts?: RecentPostSummary[]
   attachmentsContext?: string | null
   visualAngle: string
+  instruction?: ContentInstruction | null
 }): Promise<GeneratedPostContent> {
   const systemPrompt = buildCaptionSystemPrompt(params)
   const output = await generateStructuredReply<CaptionOutput>({
     apiKey: params.apiKey,
     systemPrompt,
     history: [{ role: 'user', content: 'Gere o post agora.' }],
-    maxTokens: 500,
+    maxTokens: params.instruction ? 700 : 500,
     temperature: 0.8,
   })
 
@@ -167,7 +175,13 @@ export async function generatePostContent(params: {
   if (!caption || !imagePrompt) {
     throw new Error('OpenAI não retornou legenda ou prompt de imagem válidos para o post.')
   }
-  return { caption, imagePrompt, reasoning: reasoning || 'Post gerado conforme a frequência configurada pela empresa.' }
+  const base = { caption, imagePrompt, reasoning: reasoning || 'Post gerado conforme a frequência configurada pela empresa.' }
+  if (!params.instruction) return base
+  return {
+    ...base,
+    instructionFormatReason: (output.instruction_format_reason ?? '').trim() || undefined,
+    instructionCta: (output.instruction_cta ?? '').trim() || undefined,
+  }
 }
 
 /**

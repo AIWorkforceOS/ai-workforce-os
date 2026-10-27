@@ -71,6 +71,11 @@ export type ContentPost = {
   external_post_id: string | null
   error_message: string | null
   decided_by: string | null
+  /** Instrução operacional que guiou este post (migration 110); nulo = geração padrão. */
+  instruction_id?: string | null
+  instruction_objective?: string | null
+  instruction_format_reason?: string | null
+  instruction_cta?: string | null
   created_at: string
   updated_at: string
 }

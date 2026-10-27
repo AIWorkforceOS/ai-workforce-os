@@ -15,6 +15,7 @@ import {
 import { ContentPostActions } from '@/components/dashboard/content-post-actions'
 import { ContentWeekActions } from '@/components/dashboard/content-week-actions'
 import { ContentWeekView } from '@/components/dashboard/content-week-view'
+import { InstructionApplied } from '@/components/dashboard/instruction-applied'
 import { BrandKitForm, type BrandKitValue } from '@/components/dashboard/brand-kit-form'
 import { EmployeeHubGate } from '@/components/dashboard/employee-hub-gate'
 import { EmployeeHubTabs } from '@/components/dashboard/employee-hub-tabs'
@@ -24,7 +25,7 @@ import { holidaysInRange } from '@/lib/content/holidays'
 import { CONTENT_STATUS_LABEL, CONTENT_STATUS_VARIANT } from '@/lib/content/status-labels'
 import type { ContentPost, SocialAccount } from '@/lib/content/types'
 import type { AgentConfig, Unit } from '@/lib/types'
-import { ImageOff, Paperclip, Plus, Sparkles } from 'lucide-react'
+import { ImageOff, MessageSquareText, Paperclip, Plus, Sparkles } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -141,6 +142,12 @@ export default async function ContentPage() {
         action={
           <div className="flex items-center gap-2">
             <Link
+              href="/dashboard/content/instrucoes"
+              className="flex items-center gap-1.5 rounded-xl border border-cyan-400/40 bg-cyan-400/10 px-3.5 py-2 text-xs font-bold text-cyan-200 transition-colors hover:bg-cyan-400/20"
+            >
+              <MessageSquareText size={12} /> Instruções
+            </Link>
+            <Link
               href={`/dashboard/equipe-digital/recursos?unit=${firstUnit?.id ?? ''}&employee=content_specialist`}
               className="flex items-center gap-1.5 rounded-xl border border-white/10 px-3.5 py-2 text-xs font-bold text-slate-300 transition-colors hover:bg-white/5"
             >
@@ -223,6 +230,7 @@ export default async function ContentPage() {
                     </div>
                     <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-200">{post.caption}</p>
                     {post.reasoning && <p className="mt-1.5 text-[11px] text-slate-500">{post.reasoning}</p>}
+                    <InstructionApplied objective={post.instruction_objective} formatReason={post.instruction_format_reason} cta={post.instruction_cta} />
                   </div>
                   <div className="flex-shrink-0">
                     <ContentPostActions postId={post.id} initialCaption={post.caption} scheduledFor={post.scheduled_for} />
