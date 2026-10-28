@@ -1,13 +1,16 @@
 // Codificação do MP4 com o ffmpeg empacotado (ffmpeg-static): nenhum serviço externo, nenhum custo além de CPU do servidor. Saída pronta para Reels:
-// H.264 high, yuv420p, 30 fps, 1080×1920, moov no início (faststart) e uma faixa de áudio AAC silenciosa (o vídeo é só texto na tela).
+// H.264 high, yuv420p, 30 fps, 720×1280, moov no início (faststart) e uma faixa de áudio AAC silenciosa (o vídeo é só texto na tela).
 
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { createWriteStream, existsSync } from 'node:fs'
 import { chmod, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { gunzipSync } from 'node:zlib'
+import { Readable, Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
+import { createGunzip } from 'node:zlib'
+import sharp from 'sharp'
 import ffmpegPath from 'ffmpeg-static'
 import { TRANSITION_SECONDS, VIDEO_FPS, buildFilterGraph, planTimeline, type FrameSpec } from './video'
 
@@ -31,6 +34,8 @@ export type FfmpegDeps = {
   cacheDir?: string
   platform?: string
   arch?: string
+  /** Só para testes: origem/hash alternativos. Em produção vale sempre o hash fixado em FFMPEG_DOWNLOADS. */
+  source?: { url: string; sha256: string }
 }
 
 let pending: Promise<string> | null = null
@@ -44,7 +49,7 @@ export async function ensureFfmpeg(deps: FfmpegDeps = {}): Promise<string> {
 
   const platform = deps.platform ?? process.platform
   const arch = deps.arch ?? process.arch
-  const source = FFMPEG_DOWNLOADS[`${platform}-${arch}`]
+  const source = deps.source ?? FFMPEG_DOWNLOADS[`${platform}-${arch}`]
   if (!source) throw new Error(`ffmpeg não está disponível neste servidor (${platform}-${arch}) — não foi possível renderizar o vídeo.`)
 
   const dir = deps.cacheDir ?? join(tmpdir(), `alizo-ffmpeg-${FFMPEG_RELEASE}`)
@@ -58,18 +63,31 @@ export async function ensureFfmpeg(deps: FfmpegDeps = {}): Promise<string> {
   return pending
 }
 
+/** Baixa em streaming (sem segurar o arquivo inteiro na memória: o binário tem 80 MB descompactado), conferindo o hash do arquivo compactado. Só renomeia para o caminho final depois que o hash bate. */
 async function download(source: { url: string; sha256: string }, dir: string, target: string, fetchImpl: typeof fetch): Promise<string> {
   const response = await fetchImpl(source.url, { signal: AbortSignal.timeout(120_000) })
-  if (!response.ok) throw new Error(`Não foi possível baixar o ffmpeg (status ${response.status}).`)
-  const gz = Buffer.from(await response.arrayBuffer())
-  const hash = createHash('sha256').update(gz).digest('hex')
-  if (hash !== source.sha256) throw new Error('O ffmpeg baixado não confere com o hash esperado — não vou executar. O vídeo não foi renderizado.')
+  if (!response.ok || !response.body) throw new Error(`Não foi possível baixar o ffmpeg (status ${response.status}).`)
   await mkdir(dir, { recursive: true })
   const partial = `${target}.${process.pid}.${Date.now()}.part`
-  await writeFile(partial, gunzipSync(gz))
-  await chmod(partial, 0o755)
-  await rename(partial, target)
-  console.info(`[content/video] ffmpeg ${FFMPEG_RELEASE} baixado e verificado (${gz.byteLength} bytes compactados)`)
+  const hash = createHash('sha256')
+  let received = 0
+  const tap = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      hash.update(chunk)
+      received += chunk.length
+      callback(null, chunk)
+    },
+  })
+  try {
+    await pipeline(Readable.fromWeb(response.body as never), tap, createGunzip(), createWriteStream(partial, { mode: 0o755 }))
+    if (hash.digest('hex') !== source.sha256) throw new Error('O ffmpeg baixado não confere com o hash esperado — não vou executar. O vídeo não foi renderizado.')
+    await chmod(partial, 0o755)
+    await rename(partial, target)
+  } catch (error) {
+    await rm(partial, { force: true })
+    throw error
+  }
+  console.info(`[content/video] ffmpeg ${FFMPEG_RELEASE} baixado e verificado (${received} bytes compactados)`)
   return target
 }
 
@@ -96,7 +114,8 @@ export async function encodeVideo(params: { frames: Buffer[]; specs: Pick<FrameS
     const args: string[] = ['-y', '-hide_banner', '-loglevel', 'error']
     for (let i = 0; i < frames.length; i += 1) {
       const file = join(dir, `f${i}.png`)
-      await writeFile(file, frames[i]!)
+      // O ffmpeg recebe os quadros JÁ no tamanho de saída: cada entrada grande custa centenas de MB de memória (medido, ver video.ts).
+      await writeFile(file, await sharp(frames[i]!).resize(width, height, { fit: 'fill' }).png({ compressionLevel: 3 }).toBuffer())
       args.push('-loop', '1', '-framerate', String(VIDEO_FPS), '-t', String(plan[i]!.inputSeconds), '-i', file)
     }
     args.push('-f', 'lavfi', '-t', String(total), '-i', 'anullsrc=r=44100:cl=stereo')
@@ -107,6 +126,8 @@ export async function encodeVideo(params: { frames: Buffer[]; specs: Pick<FrameS
       '-map', `[${outLabel}]`, '-map', `${frames.length}:a`,
       '-t', String(total),
       '-c:v', 'libx264', '-profile:v', 'high', '-preset', 'veryfast', '-crf', '24', '-pix_fmt', 'yuv420p', '-r', String(VIDEO_FPS),
+      // memória limitada (função serverless): poucos threads e lookahead curto
+      '-threads', '2', '-filter_threads', '1', '-filter_complex_threads', '1', '-x264-params', 'rc-lookahead=8:sync-lookahead=0:frame-threads=2',
       '-c:a', 'aac', '-b:a', '48k', '-shortest',
       '-movflags', '+faststart',
       out,

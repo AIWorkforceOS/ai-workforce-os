@@ -1,8 +1,12 @@
 // Vídeo curto vertical (9:16, 15–30 s) do Gestor de Conteúdo (migration 112). Tudo aqui é puro: validação do roteiro que a IA devolve,
 // ajuste de duração, linha do tempo das transições e o filtro do ffmpeg. Desenho dos quadros: video-render.tsx; codificação: video-encode.ts.
 
-export const VIDEO_WIDTH = 1080
-export const VIDEO_HEIGHT = 1920
+// Saída 720×1280 (9:16, aceito pelo Reels): em 1080×1920 o ffmpeg passava de 650 MB e a função da Vercel era encerrada por falta de memória (medido).
+// O layout dos quadros continua desenhado em 1080×1920 (mais nítido, e a capa/prévia usam esse tamanho); o encode reduz os quadros antes do ffmpeg.
+export const VIDEO_WIDTH = 720
+export const VIDEO_HEIGHT = 1280
+export const FRAME_WIDTH = 1080
+export const FRAME_HEIGHT = 1920
 export const VIDEO_FPS = 30
 export const MIN_VIDEO_SECONDS = 15
 export const MAX_VIDEO_SECONDS = 30

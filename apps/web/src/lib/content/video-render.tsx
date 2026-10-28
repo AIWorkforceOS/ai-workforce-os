@@ -3,7 +3,7 @@
 
 import { ImageResponse } from 'next/og'
 import { fetchImageDataUrl, loadFonts, logoSourceFor, readableOn, type SlideBrand } from './carousel-render'
-import { VIDEO_HEIGHT, VIDEO_WIDTH, type FrameSpec } from './video'
+import { FRAME_HEIGHT, FRAME_WIDTH, type FrameSpec } from './video'
 
 const SAFE_TOP = 250
 const SAFE_BOTTOM = 430
@@ -21,11 +21,11 @@ function FrameView({ spec, brand, backgroundDataUrl }: { spec: FrameSpec; brand:
   const accent = photo ? brand.secondary : spec.kind === 'cta' && base === brand.secondary ? text : brand.secondary
   const muted = photo ? 'rgba(255,255,255,0.9)' : text === '#FFFFFF' ? 'rgba(255,255,255,0.86)' : 'rgba(11,18,32,0.82)'
   return (
-    <div style={{ width: VIDEO_WIDTH, height: VIDEO_HEIGHT, display: 'flex', position: 'relative', background: base, fontFamily: 'Liberation, sans-serif' }}>
+    <div style={{ width: FRAME_WIDTH, height: FRAME_HEIGHT, display: 'flex', position: 'relative', background: base, fontFamily: 'Liberation, sans-serif' }}>
       {photo && (
         <>
-          <img src={backgroundDataUrl} width={VIDEO_WIDTH} height={VIDEO_HEIGHT} style={{ position: 'absolute', top: 0, left: 0, objectFit: 'cover' }} alt="" />
-          <div style={{ position: 'absolute', top: 0, left: 0, width: VIDEO_WIDTH, height: VIDEO_HEIGHT, background: 'rgba(5,10,20,0.62)', display: 'flex' }} />
+          <img src={backgroundDataUrl} width={FRAME_WIDTH} height={FRAME_HEIGHT} style={{ position: 'absolute', top: 0, left: 0, objectFit: 'cover' }} alt="" />
+          <div style={{ position: 'absolute', top: 0, left: 0, width: FRAME_WIDTH, height: FRAME_HEIGHT, background: 'rgba(5,10,20,0.62)', display: 'flex' }} />
         </>
       )}
       <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', width: '100%', height: '100%', padding: `${SAFE_TOP}px 90px ${SAFE_BOTTOM}px 90px` }}>
@@ -56,8 +56,8 @@ function FrameView({ spec, brand, backgroundDataUrl }: { spec: FrameSpec; brand:
 
 export async function renderFrame(spec: FrameSpec, brand: SlideBrand, backgroundDataUrl: string | null = null): Promise<Buffer> {
   const response = new ImageResponse(<FrameView spec={spec} brand={brand} backgroundDataUrl={backgroundDataUrl} />, {
-    width: VIDEO_WIDTH,
-    height: VIDEO_HEIGHT,
+    width: FRAME_WIDTH,
+    height: FRAME_HEIGHT,
     fonts: loadFonts(),
   })
   return Buffer.from(await response.arrayBuffer())
