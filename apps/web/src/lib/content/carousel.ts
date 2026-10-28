@@ -128,8 +128,8 @@ const CAROUSEL_RE = /carross?el|carousel/i
 const IMAGE_RE = /imagem|image|foto|post\s+[úu]nico|single/i
 const VIDEO_RE = /v[ií]deo|video|reel/i
 
-/** No máximo isto de vídeos por rodada de planejamento: render é CPU do servidor e a rota tem tempo limitado. */
-export const MAX_VIDEOS_PER_RUN = 2
+/** No máximo isto de vídeos por rodada de planejamento (decisão do dono: 1 por semana — cada vídeo gera ~7 fotografias por IA, custo maior). */
+export const MAX_VIDEOS_PER_RUN = 1
 
 /**
  * Qual formato este post usa? Sem instrução (ou sem pedir nada além de imagem): imagem única, como sempre foi. Com instrução, vale o que ela pede e não proíbe:

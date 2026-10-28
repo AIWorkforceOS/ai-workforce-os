@@ -51,6 +51,11 @@ describe('normalizeVideo (roteiro da IA)', () => {
     expect(normalizeVideo(raw({ cta_title: '' })).ok).toBe(false)
     expect(normalizeVideo(null).ok).toBe(false)
   })
+  it('guarda a descrição visual de cada cena e do fechamento', () => {
+    const v = ok(normalizeVideo(raw({ scenes: raw().scenes.map((s) => ({ ...s, visual: 'Two technicians inspecting a panel' })), cta_visual: 'A team in front of a building' })))
+    expect(v.scenes[0]!.visual).toBe('Two technicians inspecting a panel')
+    expect(v.cta.visual).toBe('A team in front of a building')
+  })
   it('limita cenas e tamanho dos textos', () => {
     const many = Array.from({ length: 12 }, (_, i) => ({ headline: `H${i}`.repeat(40), text: 'x'.repeat(400), seconds: 4 }))
     const v = ok(normalizeVideo(raw({ scenes: many })))
@@ -117,6 +122,10 @@ describe('linha do tempo e filtro do ffmpeg', () => {
     const { filter, outLabel } = buildFilterGraph(specs, { width: 1080, height: 1920 })
     expect(outLabel).toBe('vout')
     expect(filter.match(/zoompan/g)).toHaveLength(5)
+    expect(filter.match(/overlay=/g)).toHaveLength(5) // um texto por cena, por cima do fundo
+    expect(filter).toContain('[5:v]format=yuva420p,fade=t=in:st=0.1:d=0.6:alpha=1[o0]') // textos são as entradas n..2n-1
+    expect(filter).toContain("zoompan=z='min(") // cena 1 aproxima
+    expect(filter).toContain("zoompan=z='max(") // cena 2 afasta
     expect(filter).toContain('[v0][v1]xfade=transition=slideleft:duration=0.5:offset=4[x1]')
     expect(filter).toContain('[x3][v4]xfade=transition=')
     expect(filter.endsWith('[vout]')).toBe(true)
@@ -139,7 +148,7 @@ describe('pickPostFormat com vídeo', () => {
   })
   it('sem vídeo liberado numa rodada, carrossel + vídeo vira só carrossel', () => {
     expect(pickPostFormat(inst(['carrossel', 'vídeo']), ['carousel'], { allowVideo: false })).toBe('carousel')
-    expect(MAX_VIDEOS_PER_RUN).toBe(2)
+    expect(MAX_VIDEOS_PER_RUN).toBe(1)
   })
 })
 

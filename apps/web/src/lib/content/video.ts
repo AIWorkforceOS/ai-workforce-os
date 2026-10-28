@@ -20,6 +20,7 @@ const CTA_MAX = 5
 const HEADLINE_MAX = 60
 const TEXT_MAX = 140
 const SCRIPT_MAX = 900
+const VISUAL_MAX = 400
 
 /** Transições do ffmpeg (xfade) liberadas: todas discretas, nenhuma que prejudique a leitura do texto. */
 export const TRANSITIONS = ['fade', 'slideleft', 'wipeleft', 'dissolve', 'slideright', 'fadeblack'] as const
@@ -31,15 +32,17 @@ export type VideoScene = {
   seconds: number
   /** Transição usada ao ENTRAR nesta cena (ignorada na primeira). */
   transition: Transition
-  /** Foto real escolhida pelo dono. Sem ela, o fundo é a cor da marca. */
+  /** Imagem de fundo da cena (foto gerada para a cena ou escolhida pelo dono). Sem ela, o fundo é a cor da marca. */
   background_url?: string | null
+  /** Descrição (em inglês) da fotografia desta cena — o que foi usado para gerar a imagem. */
+  visual?: string
 }
 
 export type VideoContent = {
   /** Roteiro corrido (para o dono ler/gravar ou para uma narração futura). O vídeo sai mudo, só com texto na tela. */
   script: string
   scenes: VideoScene[]
-  cta: { headline: string; text: string; seconds: number; background_url?: string | null }
+  cta: { headline: string; text: string; seconds: number; background_url?: string | null; visual?: string }
   hashtags: string[]
 }
 
@@ -51,6 +54,9 @@ export type StoredVideo = VideoContent & {
   /** Registro de custo/diagnóstico da renderização (CPU do servidor, sem serviço pago). */
   render_ms?: number
   size_bytes?: number
+  /** Imagens geradas para as cenas e o custo estimado (qualidade média). */
+  images_generated?: number
+  image_cost_usd?: number
 }
 
 function clean(value: unknown, max: number): string {
@@ -105,6 +111,7 @@ export function normalizeVideo(raw: unknown): { ok: true; value: VideoContent } 
         text: clean(o.text, TEXT_MAX),
         seconds: clamp(Number.isFinite(seconds) ? seconds : 4, SCENE_MIN, SCENE_MAX),
         transition: transitionAt(i),
+        visual: clean(o.visual, VISUAL_MAX) || undefined,
       }
     })
     .filter((s) => s.headline || s.text)
@@ -116,7 +123,7 @@ export function normalizeVideo(raw: unknown): { ok: true; value: VideoContent } 
   const content: VideoContent = {
     script: clean(r.script, SCRIPT_MAX),
     scenes,
-    cta: { headline: ctaHeadline, text: clean(r.cta_body, TEXT_MAX), seconds: clamp(Number.isFinite(ctaSeconds) ? ctaSeconds : 4, CTA_MIN, CTA_MAX) },
+    cta: { headline: ctaHeadline, text: clean(r.cta_body, TEXT_MAX), seconds: clamp(Number.isFinite(ctaSeconds) ? ctaSeconds : 4, CTA_MIN, CTA_MAX), visual: clean(r.cta_visual, VISUAL_MAX) || undefined },
     hashtags: cleanHashtags(r.hashtags),
   }
   const total = videoDuration(content)
@@ -139,6 +146,7 @@ export function normalizeVideoEdit(raw: unknown): { ok: true; value: VideoConten
         seconds: clamp(Number.isFinite(seconds) ? seconds : 4, SCENE_MIN, SCENE_MAX),
         transition,
         background_url: bg(o.background_url),
+        visual: clean(o.visual, VISUAL_MAX) || undefined,
       }
     })
     .filter((s) => s.headline || s.text)
@@ -149,7 +157,7 @@ export function normalizeVideoEdit(raw: unknown): { ok: true; value: VideoConten
   const content: VideoContent = {
     script: clean(r.script, SCRIPT_MAX),
     scenes,
-    cta: { headline: clean(cta.headline, HEADLINE_MAX), text: clean(cta.text, TEXT_MAX), seconds: clamp(Number.isFinite(ctaSeconds) ? ctaSeconds : 4, CTA_MIN, CTA_MAX), background_url: bg(cta.background_url) },
+    cta: { headline: clean(cta.headline, HEADLINE_MAX), text: clean(cta.text, TEXT_MAX), seconds: clamp(Number.isFinite(ctaSeconds) ? ctaSeconds : 4, CTA_MIN, CTA_MAX), background_url: bg(cta.background_url), visual: clean(cta.visual, VISUAL_MAX) || undefined },
     hashtags: cleanHashtags(r.hashtags),
   }
   if (!content.cta.headline) return { ok: false, error: 'O fechamento precisa de uma chamada para ação.' }
@@ -186,8 +194,12 @@ export function planTimeline(specs: Pick<FrameSpec, 'seconds' | 'transition'>[],
   })
 }
 
+const OVERLAY_FADE_START = 0.1
+const OVERLAY_FADE_SECONDS = 0.6
+
 /**
- * Filtro do ffmpeg: movimento lento (zoom) em cada quadro + transições entre eles. As transições usam o `transition` da cena que ENTRA.
+ * Filtro do ffmpeg em CAMADAS. Entradas: primeiro os `n` fundos (foto ou cor), depois os `n` textos (PNG transparente). Em cada cena o fundo tem movimento lento
+ * (zoom que entra nas cenas ímpares e sai nas pares) e o texto entra com fade + deslize para cima; depois as cenas se ligam por transições (xfade).
  * Retorna o filter_complex e o rótulo final do vídeo.
  */
 export function buildFilterGraph(
@@ -197,21 +209,25 @@ export function buildFilterGraph(
   const fps = opts.fps ?? VIDEO_FPS
   const t = opts.transitionSeconds ?? TRANSITION_SECONDS
   const plan = planTimeline(specs, t)
+  const n = plan.length
+  const slide = Math.round(opts.height * 0.035) // deslize do texto: ~3,5% da altura
   const parts: string[] = []
   plan.forEach((clip, i) => {
-    const frames = Math.round(clip.inputSeconds * fps)
-    // zoom de 100% a ~108% ao longo do clipe, centralizado
-    const step = (0.08 / Math.max(frames, 1)).toFixed(6)
-    parts.push(`[${i}:v]zoompan=z='min(1+${step}*on,1.08)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${opts.width}x${opts.height}:fps=${fps},setsar=1,format=yuv420p[v${i}]`)
+    const frames = Math.max(1, Math.round(clip.inputSeconds * fps))
+    const step = (0.1 / frames).toFixed(6)
+    const zoom = i % 2 === 0 ? `min(1+${step}*on,1.1)` : `max(1.1-${step}*on,1)`
+    parts.push(`[${i}:v]zoompan=z='${zoom}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${opts.width}x${opts.height}:fps=${fps},setsar=1,format=yuv420p[b${i}]`)
+    parts.push(`[${n + i}:v]format=yuva420p,fade=t=in:st=${OVERLAY_FADE_START}:d=${OVERLAY_FADE_SECONDS}:alpha=1[o${i}]`)
+    parts.push(`[b${i}][o${i}]overlay=x=0:y='clip(${slide}*(1-(t-${OVERLAY_FADE_START})/${OVERLAY_FADE_SECONDS}),0,${slide})':format=auto,format=yuv420p[v${i}]`)
   })
   let current = 'v0'
-  for (let i = 1; i < plan.length; i += 1) {
+  for (let i = 1; i < n; i += 1) {
     const prev = plan[i - 1]!
-    const label = i === plan.length - 1 ? 'vout' : `x${i}`
+    const label = i === n - 1 ? 'vout' : `x${i}`
     parts.push(`[${current}][v${i}]xfade=transition=${plan[i]!.transitionIn}:duration=${t}:offset=${prev.offsetOut}[${label}]`)
     current = label
   }
-  if (plan.length === 1) parts.push(`[v0]null[vout]`)
+  if (n === 1) parts.push(`[v0]null[vout]`)
   return { filter: parts.join(';'), outLabel: 'vout' }
 }
 

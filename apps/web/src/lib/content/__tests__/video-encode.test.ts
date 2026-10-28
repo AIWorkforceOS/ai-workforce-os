@@ -75,14 +75,16 @@ describe('encodeVideo (ffmpeg de verdade, em miniatura)', () => {
     if (!bin) return ctx.skip()
     const W = 270
     const H = 480
-    const frame = (color: string) => sharp({ create: { width: W, height: H, channels: 3, background: color } }).png().toBuffer()
-    const frames = await Promise.all(['#021E44', '#0B993F', '#333333'].map(frame))
+    const solid = (color: string) => sharp({ create: { width: W, height: H, channels: 3, background: color } }).jpeg().toBuffer()
+    const clear = () => sharp({ create: { width: W, height: H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer()
+    const backgrounds = await Promise.all(['#021E44', '#0B993F', '#333333'].map(solid))
+    const overlays = await Promise.all([clear(), clear(), clear()])
     const specs = [
       { seconds: 2, transition: 'fade' as const },
       { seconds: 2, transition: 'slideleft' as const },
       { seconds: 3, transition: 'dissolve' as const },
     ]
-    const out = await encodeVideo({ frames, specs, width: W, height: H })
+    const out = await encodeVideo({ backgrounds, overlays, specs, width: W, height: H })
     expect(out.bytes).toBeGreaterThan(1000)
     expect(out.mp4.subarray(4, 8).toString()).toBe('ftyp')
 
@@ -100,11 +102,12 @@ describe('encodeVideo (ffmpeg de verdade, em miniatura)', () => {
     }
   }, 60_000)
 
-  it('quadros maiores que a saída são reduzidos antes do ffmpeg (a saída tem o tamanho pedido)', async (ctx) => {
+  it('camadas maiores que a saída são reduzidas antes do ffmpeg (a saída tem o tamanho pedido) e o texto aparece por cima', async (ctx) => {
     const bin = await binary()
     if (!bin) return ctx.skip()
-    const big = await sharp({ create: { width: 540, height: 960, channels: 3, background: '#021E44' } }).png().toBuffer()
-    const out = await encodeVideo({ frames: [big, big], specs: [{ seconds: 2, transition: 'fade' }, { seconds: 2, transition: 'fade' }], width: 270, height: 480 })
+    const bg = await sharp({ create: { width: 540, height: 960, channels: 3, background: '#021E44' } }).jpeg().toBuffer()
+    const ov = await sharp({ create: { width: 540, height: 960, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } }).png().toBuffer()
+    const out = await encodeVideo({ backgrounds: [bg, bg], overlays: [ov, ov], specs: [{ seconds: 2, transition: 'fade' }, { seconds: 2, transition: 'fade' }], width: 270, height: 480 })
     const dir = await mkdtemp(join(tmpdir(), 'vt-'))
     try {
       const file = join(dir, 'o.mp4')
@@ -117,6 +120,7 @@ describe('encodeVideo (ffmpeg de verdade, em miniatura)', () => {
   }, 60_000)
 
   it('quadros e cenas que não batem dão erro, sem rodar o ffmpeg', async () => {
-    await expect(encodeVideo({ frames: [], specs: [], width: 10, height: 10 })).rejects.toThrow(/não batem/)
+    await expect(encodeVideo({ backgrounds: [], overlays: [], specs: [], width: 10, height: 10 })).rejects.toThrow(/não batem/)
+    await expect(encodeVideo({ backgrounds: [Buffer.from('a')], overlays: [], specs: [{ seconds: 2, transition: 'fade' }], width: 10, height: 10 })).rejects.toThrow(/não batem/)
   })
 })

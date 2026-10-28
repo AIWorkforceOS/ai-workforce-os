@@ -39,10 +39,10 @@ describe('planejamento semanal com vídeo', () => {
     expect((posts[0]!.video as { mp4_url: string }).mp4_url).toBe('https://cdn/v.mp4')
   })
 
-  it('no máximo 2 vídeos por rodada; os demais dias seguem o que sobrar (imagem)', async () => {
+  it('no máximo 1 vídeo por rodada (1 por semana); os demais dias seguem o que sobrar (imagem)', async () => {
     const { posts, createVideoPostDraft } = await run(['vídeo curto'], [utc(2026, 11, 3), utc(2026, 11, 4), utc(2026, 11, 5), utc(2026, 11, 6)])
-    expect(createVideoPostDraft).toHaveBeenCalledTimes(2)
-    expect(posts.map((p) => p.format ?? 'image')).toEqual(['video', 'video', 'image', 'image'])
+    expect(createVideoPostDraft).toHaveBeenCalledTimes(1)
+    expect(posts.map((p) => p.format ?? 'image')).toEqual(['video', 'image', 'image', 'image'])
   })
 
   it('erro de renderização aparece no resultado e NENHUM post quebrado é criado', async () => {

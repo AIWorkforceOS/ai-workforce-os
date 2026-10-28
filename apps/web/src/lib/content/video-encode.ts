@@ -102,30 +102,45 @@ function run(bin: string, args: string[]): Promise<void> {
   })
 }
 
-/** Junta os quadros (PNG, mesma ordem de `specs`) num MP4 com movimento e transições. */
-export async function encodeVideo(params: { frames: Buffer[]; specs: Pick<FrameSpec, 'seconds' | 'transition'>[]; width: number; height: number }): Promise<EncodeResult> {
-  const { frames, specs, width, height } = params
-  if (frames.length !== specs.length || frames.length === 0) throw new Error('Quadros e cenas não batem.')
+/**
+ * Junta as camadas num MP4: para cada cena um FUNDO (foto/cor, com zoom lento) e um TEXTO (PNG transparente que entra animado), ligadas por transições.
+ * Tudo entra no ffmpeg JÁ no tamanho de saída: cada entrada grande custa centenas de MB de memória (medido, ver video.ts).
+ */
+export async function encodeVideo(params: {
+  backgrounds: Buffer[]
+  overlays: Buffer[]
+  specs: Pick<FrameSpec, 'seconds' | 'transition'>[]
+  width: number
+  height: number
+}): Promise<EncodeResult> {
+  const { backgrounds, overlays, specs, width, height } = params
+  const n = specs.length
+  if (n === 0 || backgrounds.length !== n || overlays.length !== n) throw new Error('Quadros e cenas não batem.')
   const started = Date.now()
   const dir = await mkdtemp(join(tmpdir(), 'alizo-video-'))
   try {
     const plan = planTimeline(specs, TRANSITION_SECONDS)
     const total = specs.reduce((sum, s) => sum + s.seconds, 0)
     const args: string[] = ['-y', '-hide_banner', '-loglevel', 'error']
-    for (let i = 0; i < frames.length; i += 1) {
-      const file = join(dir, `f${i}.png`)
-      // O ffmpeg recebe os quadros JÁ no tamanho de saída: cada entrada grande custa centenas de MB de memória (medido, ver video.ts).
-      await writeFile(file, await sharp(frames[i]!).resize(width, height, { fit: 'fill' }).png({ compressionLevel: 3 }).toBuffer())
-      args.push('-loop', '1', '-framerate', String(VIDEO_FPS), '-t', String(plan[i]!.inputSeconds), '-i', file)
+    const addInput = (file: string, seconds: number) => args.push('-loop', '1', '-framerate', String(VIDEO_FPS), '-t', String(seconds), '-i', file)
+    for (let i = 0; i < n; i += 1) {
+      const file = join(dir, `b${i}.jpg`)
+      await writeFile(file, await sharp(backgrounds[i]!).resize(width, height, { fit: 'cover' }).jpeg({ quality: 88 }).toBuffer())
+      addInput(file, plan[i]!.inputSeconds)
+    }
+    for (let i = 0; i < n; i += 1) {
+      const file = join(dir, `o${i}.png`)
+      await writeFile(file, await sharp(overlays[i]!).resize(width, height, { fit: 'fill' }).png({ compressionLevel: 3 }).toBuffer())
+      addInput(file, plan[i]!.inputSeconds)
     }
     args.push('-f', 'lavfi', '-t', String(total), '-i', 'anullsrc=r=44100:cl=stereo')
     const { filter, outLabel } = buildFilterGraph(specs, { width, height })
     const out = join(dir, 'out.mp4')
     args.push(
       '-filter_complex', filter,
-      '-map', `[${outLabel}]`, '-map', `${frames.length}:a`,
+      '-map', `[${outLabel}]`, '-map', `${2 * n}:a`,
       '-t', String(total),
-      '-c:v', 'libx264', '-profile:v', 'high', '-preset', 'veryfast', '-crf', '24', '-pix_fmt', 'yuv420p', '-r', String(VIDEO_FPS),
+      '-c:v', 'libx264', '-profile:v', 'high', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p', '-r', String(VIDEO_FPS),
       // memória limitada (função serverless): poucos threads e lookahead curto
       '-threads', '2', '-filter_threads', '1', '-filter_complex_threads', '1', '-x264-params', 'rc-lookahead=8:sync-lookahead=0:frame-threads=2',
       '-c:a', 'aac', '-b:a', '48k', '-shortest',

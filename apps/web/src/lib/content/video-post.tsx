@@ -5,9 +5,10 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { brandKitFrom } from '@/lib/brand-kit'
 import { generateVideoContent, type RecentPostSummary } from './generator'
 import { brandFrom, prepareLogo } from './carousel-render'
+import { applySceneImages, generateSceneImageUrls, SCENE_IMAGE_COST_USD, visualsFor } from './video-images'
 import { resolveContentLanguage } from './language'
 import { buildFrameSpecs, videoDuration, VIDEO_HEIGHT, VIDEO_WIDTH, type StoredVideo, type VideoContent } from './video'
-import { renderFrames } from './video-render'
+import { composePoster, renderBackgrounds, renderOverlays } from './video-render'
 import { encodeVideo } from './video-encode'
 import type { ContentInstruction } from './instructions'
 import type { SocialPlatform } from './types'
@@ -32,11 +33,13 @@ export async function renderAndStoreVideo(params: {
   const logo = kit?.logo_url ? await prepareLogo(kit.logo_url) : null
   const brand = brandFrom({ name: params.unit.name, primary: kit?.primary_color, secondary: kit?.secondary_color, logo, lang: params.lang })
   const specs = buildFrameSpecs(params.content)
-  const frames = await renderFrames(specs, brand)
-  const encoded = await encodeVideo({ frames, specs, width: VIDEO_WIDTH, height: VIDEO_HEIGHT })
+  const overlays = await renderOverlays(specs, brand)
+  const { buffers: backgrounds, failed } = await renderBackgrounds(specs, brand)
+  if (failed > 0) console.warn(`[content/video] ${failed} imagem(ns) de fundo não baixaram; essas cenas saíram com a cor da marca`)
+  const encoded = await encodeVideo({ backgrounds, overlays, specs, width: VIDEO_WIDTH, height: VIDEO_HEIGHT })
   const mp4_url = await upload(params.supabase, params.unit.id, encoded.mp4, 'mp4', 'video/mp4')
-  const poster_url = await upload(params.supabase, params.unit.id, frames[0]!, 'png', 'image/png')
-  console.info(`[content/video] render ok: ${videoDuration(params.content)}s, ${encoded.bytes} bytes, ${encoded.durationMs} ms (ffmpeg local, sem custo externo)`)
+  const poster_url = await upload(params.supabase, params.unit.id, await composePoster(backgrounds[0]!, overlays[0]!), 'png', 'image/png')
+  console.info(`[content/video] render ok: ${videoDuration(params.content)}s, ${encoded.bytes} bytes, ${encoded.durationMs} ms (ffmpeg local)`)
   return { ...params.content, mp4_url, poster_url, duration: videoDuration(params.content), lang: params.lang, render_ms: encoded.durationMs, size_bytes: encoded.bytes }
 }
 
@@ -68,7 +71,14 @@ export async function createVideoPostDraft(params: {
   const explicit = (params.config.business_profile as Record<string, unknown> | null)?.idioma_conteudo
   const lang: 'pt' | 'en' =
     explicit === 'pt' || explicit === 'en' ? explicit : resolveContentLanguage(params.unit.default_conversation_language, [params.organizationProfile, params.config.business_profile])
-  const stored = await renderAndStoreVideo({ supabase, unit: params.unit, organizationProfile: params.organizationProfile, content: generated.content, lang })
+  // Uma fotografia por cena (+ fechamento) gerada a partir da descrição visual do roteiro (custo estimado registrado no vídeo e a cada imagem).
+  const visuals = visualsFor(generated.content)
+  const urls = await generateSceneImageUrls({ supabase, apiKey: params.apiKey, unitId: params.unit.id, visuals })
+  const content = applySceneImages(generated.content, urls)
+  const stored = await renderAndStoreVideo({ supabase, unit: params.unit, organizationProfile: params.organizationProfile, content, lang })
+  const generatedCount = urls.filter(Boolean).length
+  stored.images_generated = generatedCount
+  stored.image_cost_usd = Math.round(generatedCount * SCENE_IMAGE_COST_USD * 1000) / 1000
   return {
     caption: generated.caption,
     reasoning: generated.reasoning,

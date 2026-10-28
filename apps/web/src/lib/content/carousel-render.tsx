@@ -102,6 +102,11 @@ async function fetchImage(url: string, what: string): Promise<{ bytes: Buffer; t
   return { bytes, type }
 }
 
+/** Baixa uma imagem como Buffer (com as mesmas validações de tipo e tamanho). */
+export async function fetchImageBuffer(url: string, what: string): Promise<Buffer> {
+  return (await fetchImage(url, what)).bytes
+}
+
 export async function fetchImageDataUrl(url: string, what: string): Promise<string> {
   const { bytes, type } = await fetchImage(url, what)
   return `data:${type};base64,${bytes.toString('base64')}`
