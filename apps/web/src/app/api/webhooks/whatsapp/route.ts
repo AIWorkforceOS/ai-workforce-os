@@ -11,7 +11,7 @@ import {
 } from '@/lib/inbound-router'
 import { getBase64FromMediaMessage, resolveWhatsappChannelByInstanceName, syncWhatsappPhoneIfConnected, type EvolutionUnitConfig } from '@/lib/evolution'
 import { getMessagingChannel } from '@/lib/channels/messaging-channel'
-import { getOpenAIApiKey, transcribeAudio } from '@/lib/openai'
+import { generateStructuredReplyFromImage, getOpenAIApiKey, transcribeAudio } from '@/lib/openai'
 import { logOpenAIAudioUsage } from '@/lib/api-usage'
 import { logSystemEvent } from '@/lib/system-events'
 import { recordHumanIntervention } from '@/lib/human-intervention'
@@ -27,7 +27,17 @@ const AUDIO_FALLBACK_MESSAGE: Record<'pt' | 'en', string> = {
   en: "I couldn't quite catch that audio — could you send it as text instead?",
 }
 
-type ExtractedMessage = { kind: 'text'; text: string } | { kind: 'audio'; messageId: string; mimeType: string }
+const IMAGE_FALLBACK_MESSAGE: Record<'pt' | 'en', string> = {
+  pt: 'Não consegui analisar essa imagem agora. Pode me dizer por texto o que você precisa que eu observe nela?',
+  en: "I couldn't analyze that image right now. Could you tell me what you need me to look at in it?",
+}
+
+const MAX_INBOUND_IMAGE_BYTES = 10 * 1024 * 1024
+
+type ExtractedMessage =
+  | { kind: 'text'; text: string }
+  | { kind: 'audio'; messageId: string; mimeType: string }
+  | { kind: 'image'; messageId: string; mimeType: string; caption: string | null }
 
 function extractInboundMessage(
   message: Record<string, unknown> | undefined,
@@ -37,13 +47,135 @@ function extractInboundMessage(
   if (typeof message.conversation === 'string') return { kind: 'text', text: message.conversation }
   const extended = message.extendedTextMessage as { text?: string } | undefined
   if (extended?.text) return { kind: 'text', text: extended.text }
-  const image = message.imageMessage as { caption?: string } | undefined
-  if (image?.caption) return { kind: 'text', text: image.caption }
+  const image = message.imageMessage as { caption?: string; mimetype?: string } | undefined
+  if (image && messageId) {
+    return {
+      kind: 'image',
+      messageId,
+      mimeType: image.mimetype ?? 'image/jpeg',
+      caption: image.caption?.trim() || null,
+    }
+  }
   const audio = message.audioMessage as { mimetype?: string } | undefined
   if (audio && messageId) {
     return { kind: 'audio', messageId, mimeType: audio.mimetype ?? 'audio/ogg' }
   }
   return null
+}
+
+type ImageAnalysis = { description?: string; visible_text?: string; uncertainty?: string }
+
+/**
+ * Transforma a foto recebida em contexto textual seguro para o motor de
+ * conversa. A imagem não é persistida: baixa da Evolution, envia à visão e
+ * mantém apenas a descrição no histórico normal da conversa.
+ */
+async function analyzeInboundImage(params: {
+  supabase: SupabaseClient
+  unit: Unit
+  evolutionConfig: EvolutionUnitConfig
+  messageId: string
+  mimeType: string
+  caption: string | null
+  incomingPhone: string
+}): Promise<string | null> {
+  const { supabase, unit, evolutionConfig, messageId, mimeType, caption, incomingPhone } = params
+  const locale = unitDefaultLocale(unit)
+  const apiKey = getOpenAIApiKey()
+  const messagingChannel = getMessagingChannel(unit, null, evolutionConfig)
+
+  const fail = async (eventType: string, message: string) => {
+    await logSystemEvent(supabase, {
+      level: 'error',
+      source: 'openai',
+      eventType,
+      message,
+      orgId: unit.org_id,
+      unitId: unit.id,
+    })
+    if (messagingChannel) {
+      try {
+        await messagingChannel.sendMessage(incomingPhone, IMAGE_FALLBACK_MESSAGE[locale])
+      } catch (error) {
+        console.error(
+          `[webhook_whatsapp] falha ao enviar fallback de imagem: ${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
+    }
+    return null
+  }
+
+  if (!apiKey) {
+    return fail(
+      'image_analysis_skipped',
+      `Imagem recebida na unidade "${unit.name}" mas OpenAI não está configurada — análise não é possível.`,
+    )
+  }
+
+  try {
+    const media = await getBase64FromMediaMessage(evolutionConfig, messageId)
+    if (!media) {
+      return fail(
+        'image_analysis_failed',
+        `Imagem recebida na unidade "${unit.name}" mas a Evolution API não devolveu o conteúdo (mensagem "${messageId}").`,
+      )
+    }
+
+    const imageBytes = Buffer.byteLength(media.base64, 'base64')
+    if (imageBytes <= 0 || imageBytes > MAX_INBOUND_IMAGE_BYTES) {
+      return fail(
+        'image_analysis_rejected',
+        `Imagem recebida na unidade "${unit.name}" tem tamanho inválido para análise (${imageBytes} bytes).`,
+      )
+    }
+
+    const resolvedMimeType = media.mimetype?.startsWith('image/') ? media.mimetype : mimeType
+    const analysis = await generateStructuredReplyFromImage<ImageAnalysis>({
+      apiKey,
+      systemPrompt: [
+        'Você analisa imagens recebidas por WhatsApp para um funcionário digital continuar o atendimento.',
+        'Descreva apenas fatos realmente visíveis e transcreva textos legíveis; nunca invente nomes, preços, documentos, diagnósticos ou intenções.',
+        'Se algo estiver ilegível ou incerto, informe em uncertainty.',
+        'Responda em JSON com description, visible_text e uncertainty, todos strings.',
+      ].join(' '),
+      imageUrl: `data:${resolvedMimeType};base64,${media.base64}`,
+      userText: caption
+        ? `Legenda enviada pelo cliente: ${caption}\nAnalise a imagem considerando a legenda, sem assumir que ela está correta.`
+        : 'Analise a imagem para que o atendimento consiga responder ao cliente.',
+      maxTokens: 700,
+    })
+
+    const parts = [
+      caption ? `Legenda do cliente: ${caption}` : null,
+      analysis.description?.trim() ? `Conteúdo observado na imagem: ${analysis.description.trim()}` : null,
+      analysis.visible_text?.trim() ? `Texto visível na imagem: ${analysis.visible_text.trim()}` : null,
+      analysis.uncertainty?.trim() ? `Limitações da leitura: ${analysis.uncertainty.trim()}` : null,
+    ].filter((part): part is string => Boolean(part))
+
+    if (parts.length === 0) {
+      return fail(
+        'image_analysis_empty',
+        `A análise da imagem recebida na unidade "${unit.name}" não retornou conteúdo utilizável.`,
+      )
+    }
+
+    await logSystemEvent(supabase, {
+      level: 'info',
+      source: 'openai',
+      eventType: 'image_analyzed',
+      message: `Imagem recebida por WhatsApp analisada na unidade "${unit.name}".`,
+      orgId: unit.org_id,
+      unitId: unit.id,
+      metadata: { image_bytes: imageBytes, had_caption: Boolean(caption) },
+    })
+
+    return parts.join('\n')
+  } catch (error) {
+    return fail(
+      'image_analysis_failed',
+      `Falha ao analisar imagem na unidade "${unit.name}": ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
 }
 
 /**
@@ -357,6 +489,20 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, audioTranscriptionFailed: true })
       }
       text = transcribed
+    } else if (extracted.kind === 'image') {
+      const analyzed = await analyzeInboundImage({
+        supabase,
+        unit: unitRow,
+        evolutionConfig: resolvedChannel.config,
+        messageId: extracted.messageId,
+        mimeType: extracted.mimeType,
+        caption: extracted.caption,
+        incomingPhone,
+      })
+      if (!analyzed) {
+        return NextResponse.json({ ok: true, imageAnalysisFailed: true })
+      }
+      text = analyzed
     } else {
       text = extracted.text
     }

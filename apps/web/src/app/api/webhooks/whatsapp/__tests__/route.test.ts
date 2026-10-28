@@ -303,4 +303,86 @@ describe('POST /api/webhooks/whatsapp — reentrega do provedor não duplica res
     const { data: conversationsAfter } = await supabase.from('conversations').select('*')
     expect((conversationsAfter as unknown[]).length).toBe(0)
   })
+
+  it('analisa imagem sem legenda e entrega a descrição ao fluxo normal da conversa', async () => {
+    const unit = buildUnit()
+    const { supabase } = createFakeSupabase({
+      units: [unit as unknown as Record<string, unknown>],
+    })
+    const getBase64FromMediaMessage = vi.fn(async () => ({
+      base64: Buffer.from('imagem-de-teste').toString('base64'),
+      mimetype: 'image/jpeg',
+    }))
+    const generateStructuredReplyFromImage = vi.fn(async () => ({
+      description: 'Uma placa com o horário de atendimento.',
+      visible_text: 'Segunda a sexta, 8h às 18h',
+      uncertainty: '',
+    }))
+
+    vi.doMock('@/lib/supabase/service', () => ({ createServiceClient: () => supabase }))
+    vi.doMock('@/lib/evolution', () => ({
+      getEvolutionConfig: () => ({ apiUrl: 'https://fake-evolution.test', apiKey: 'fake', instanceName: 'test-instance' }),
+      resolveWhatsappChannelByInstanceName: vi.fn(async () => ({
+        unit,
+        agentType: null,
+        channel: {
+          agentType: null,
+          config: { apiUrl: 'https://fake-evolution.test', apiKey: 'fake', instanceName: 'test-instance' },
+          whatsappPhone: unit.whatsapp_phone,
+          persistPhone: vi.fn(async () => {}),
+        },
+      })),
+      resolveWhatsappChannel: vi.fn(async () => null),
+      getBase64FromMediaMessage,
+      syncWhatsappPhoneIfConnected: vi.fn(async () => unit.whatsapp_phone),
+      sendWhatsAppMessage,
+      sendTypingPresence: vi.fn(async () => ({ ok: true })),
+      sendRecordingPresence: vi.fn(async () => ({ ok: true })),
+      sendWhatsAppAudio: vi.fn(async () => ({ ok: true })),
+      sendWhatsAppDocument: vi.fn(async () => ({ ok: true })),
+    }))
+    vi.doMock('@/lib/openai', () => ({
+      getOpenAIApiKey: () => 'fake-key',
+      generateChatReply,
+      generateStructuredReply: vi.fn(async () => ({})),
+      generateStructuredReplyFromImage,
+      transcribeAudio: vi.fn(),
+      synthesizeSpeech: vi.fn(),
+    }))
+
+    const { POST } = await import('../route')
+    const response = await POST(
+      new Request('http://localhost/api/webhooks/whatsapp', {
+        method: 'POST',
+        body: JSON.stringify({
+          instance: 'test-instance',
+          data: {
+            key: { id: 'IMAGE-MSG-1', remoteJid: '5511987654321@s.whatsapp.net', fromMe: false },
+            message: { imageMessage: { mimetype: 'image/jpeg' } },
+          },
+        }),
+      }),
+    )
+
+    expect(response.status).toBe(200)
+    expect(getBase64FromMediaMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ instanceName: 'test-instance' }),
+      'IMAGE-MSG-1',
+    )
+    expect(generateStructuredReplyFromImage).toHaveBeenCalledWith(
+      expect.objectContaining({ imageUrl: expect.stringMatching(/^data:image\/jpeg;base64,/) }),
+    )
+    expect(sendWhatsAppMessage).toHaveBeenCalledTimes(1)
+
+    const { data: conversations } = await supabase.from('conversations').select('*')
+    expect(conversations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          direction: 'inbound',
+          content: expect.stringContaining('Uma placa com o horário de atendimento.'),
+          external_message_id: 'IMAGE-MSG-1',
+        }),
+      ]),
+    )
+  })
 })
