@@ -11,6 +11,7 @@ import { generatePostContent, generatePostImage, uploadGeneratedImage } from './
 import { holidayOnDate } from './holidays'
 import { createCarouselPostDraft } from './carousel-post'
 import { pickPostFormat } from './carousel'
+import { createVideoPostDraft } from './video-post'
 import { appliedInstructionFields, fetchConfirmedInstructions, instructionForDay, todayKeyFor } from './instruction-store'
 import { publishContentPost } from './publisher'
 import type { ContentPost, SocialAccount, SocialPlatform } from './types'
@@ -67,8 +68,26 @@ export async function generateSinglePostForAccount(params: {
     let content: { caption: string; imagePrompt: string | null; reasoning: string; instructionFormatReason?: string; instructionCta?: string }
     let imageUrl: string
     let formatFields: Record<string, unknown> = {}
-    if (pickPostFormat(instruction, []) === 'carousel') {
+    const format = pickPostFormat(instruction, [])
+    if (format === 'carousel') {
       const draft = await createCarouselPostDraft({
+        supabase,
+        apiKey,
+        config,
+        unit,
+        organizationProfile,
+        platform,
+        pillar,
+        holiday: holiday?.name ?? null,
+        recentPosts: recentPostsContext,
+        attachmentsContext,
+        instruction,
+      })
+      content = { caption: draft.caption, imagePrompt: null, reasoning: draft.reasoning, instructionFormatReason: draft.instructionFormatReason, instructionCta: draft.instructionCta }
+      imageUrl = draft.imageUrl
+      formatFields = draft.fields
+    } else if (format === 'video') {
+      const draft = await createVideoPostDraft({
         supabase,
         apiKey,
         config,

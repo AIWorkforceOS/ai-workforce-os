@@ -122,22 +122,38 @@ export function composeCaption(text: string, hashtags: string[]): string {
   return full.length <= CAPTION_MAX ? full : `${full.slice(0, CAPTION_MAX - 1).trimEnd()}…`
 }
 
-export type PostFormat = 'image' | 'carousel'
+export type PostFormat = 'image' | 'carousel' | 'video'
 
 const CAROUSEL_RE = /carross?el|carousel/i
 const IMAGE_RE = /imagem|image|foto|post\s+[úu]nico|single/i
+const VIDEO_RE = /v[ií]deo|video|reel/i
+
+/** No máximo isto de vídeos por rodada de planejamento: render é CPU do servidor e a rota tem tempo limitado. */
+export const MAX_VIDEOS_PER_RUN = 2
 
 /**
- * Imagem única ou carrossel? Sem instrução (ou sem pedir carrossel): imagem, como sempre foi. Pedindo só carrossel: sempre carrossel.
- * Pedindo carrossel E imagem: alterna dentro do lote (`previous` = formatos já gerados no mesmo lote, mais recente por último).
+ * Qual formato este post usa? Sem instrução (ou sem pedir nada além de imagem): imagem única, como sempre foi. Com instrução, vale o que ela pede e não proíbe:
+ * um só formato pedido → sempre ele; vários → revezam na ordem carrossel, imagem, vídeo (`previous` = formatos já gerados no mesmo lote, o mais recente por último).
+ * `allowVideo: false` tira o vídeo da roda (limite por rodada).
  */
-export function pickPostFormat(instruction: Pick<ContentInstruction, 'interpretation'> | null, previous: PostFormat[]): PostFormat {
+export function pickPostFormat(
+  instruction: Pick<ContentInstruction, 'interpretation'> | null,
+  previous: PostFormat[],
+  opts: { allowVideo?: boolean } = {},
+): PostFormat {
   if (!instruction) return 'image'
-  const formats = instruction.interpretation.formats
-  if (instruction.interpretation.avoid_formats.some((f) => CAROUSEL_RE.test(f))) return 'image'
-  if (!formats.some((f) => CAROUSEL_RE.test(f))) return 'image'
-  if (!formats.some((f) => IMAGE_RE.test(f))) return 'carousel'
-  return previous[previous.length - 1] === 'carousel' ? 'image' : 'carousel'
+  const { formats, avoid_formats: avoid } = instruction.interpretation
+  const wants = (re: RegExp) => formats.some((f) => re.test(f))
+  const avoids = (re: RegExp) => avoid.some((f) => re.test(f))
+  const requested: PostFormat[] = []
+  if (wants(CAROUSEL_RE) && !avoids(CAROUSEL_RE)) requested.push('carousel')
+  if (wants(IMAGE_RE) && !avoids(IMAGE_RE)) requested.push('image')
+  if (wants(VIDEO_RE) && !avoids(VIDEO_RE) && opts.allowVideo !== false) requested.push('video')
+  if (requested.length === 0) return 'image'
+  if (requested.length === 1) return requested[0]!
+  const last = previous[previous.length - 1]
+  const at = last ? requested.indexOf(last) : -1
+  return requested[(at + 1) % requested.length]!
 }
 
 /**

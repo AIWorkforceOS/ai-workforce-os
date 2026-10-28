@@ -16,7 +16,8 @@ import { QUOTA_STATUSES, contentPillarsFrom, contentPlatformsFrom, decidePublish
 import { generatePostContent, generatePostImage, uploadGeneratedImage } from './generator'
 import { holidayOnDate } from './holidays'
 import { createCarouselPostDraft } from './carousel-post'
-import { pickPostFormat, type PostFormat } from './carousel'
+import { MAX_VIDEOS_PER_RUN, pickPostFormat, type PostFormat } from './carousel'
+import { createVideoPostDraft } from './video-post'
 import { appliedInstructionFields, fetchConfirmedInstructions, instructionForDay } from './instruction-store'
 import type { ContentPost, SocialAccount, SocialPlatform } from './types'
 import type { AgentConfig, Unit } from '@/lib/types'
@@ -121,12 +122,29 @@ export async function generateWeekPostsForAccount(params: {
       .map((p) => ({ pillar: p.content_pillar, caption: p.caption, imagePrompt: p.image_prompt }))
 
     try {
-      const format = pickPostFormat(instruction, runningFormats)
+      const format = pickPostFormat(instruction, runningFormats, { allowVideo: runningFormats.filter((f) => f === 'video').length < MAX_VIDEOS_PER_RUN })
       let content: { caption: string; imagePrompt: string | null; reasoning: string; instructionFormatReason?: string; instructionCta?: string }
       let imageUrl: string
       let formatFields: Record<string, unknown> = {}
       if (format === 'carousel') {
         const draft = await createCarouselPostDraft({
+          supabase,
+          apiKey,
+          config,
+          unit,
+          organizationProfile,
+          platform,
+          pillar,
+          holiday: holiday?.name ?? null,
+          recentPosts: recentPostsContext,
+          attachmentsContext,
+          instruction,
+        })
+        content = { caption: draft.caption, imagePrompt: null, reasoning: draft.reasoning, instructionFormatReason: draft.instructionFormatReason, instructionCta: draft.instructionCta }
+        imageUrl = draft.imageUrl
+        formatFields = draft.fields
+      } else if (format === 'video') {
+        const draft = await createVideoPostDraft({
           supabase,
           apiKey,
           config,

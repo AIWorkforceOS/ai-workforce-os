@@ -9,6 +9,7 @@ import { brandKitFrom, compositeLogoOntoImage, type BrandKit } from '@/lib/brand
 import { resolveContentLanguage } from './language'
 import { buildInstructionPromptBlock, type ContentInstruction } from './instructions'
 import { composeCaption, normalizeCarousel, type CarouselContent } from './carousel'
+import { normalizeVideo, type VideoContent } from './video'
 import type { AgentConfig, Unit } from '@/lib/types'
 import type { SocialPlatform } from './types'
 
@@ -100,8 +101,10 @@ export function buildCaptionSystemPrompt(params: {
   instruction?: ContentInstruction | null
   /** Gera o roteiro de um CARROSSEL (capa + slides + CTA) em vez de um post de imagem única. */
   carousel?: boolean
+  /** Gera o roteiro de um VÍDEO curto vertical (cenas + CTA). */
+  video?: boolean
 }): string {
-  const { config, unit, organizationProfile, platform, pillar, holiday, recentPosts, attachmentsContext, visualAngle, instruction, carousel } = params
+  const { config, unit, organizationProfile, platform, pillar, holiday, recentPosts, attachmentsContext, visualAngle, instruction, carousel, video } = params
   const businessContext = buildCombinedBusinessContext(organizationProfile, config.business_profile)
   // idioma_conteudo (achado real, 2026-08-27): pedido explícito do dono na
   // entrevista/retreinamento ("todos os posts em inglês") tem prioridade
@@ -119,7 +122,7 @@ export function buildCaptionSystemPrompt(params: {
 
   return [
     `Você é ${config.persona_name}, gestor(a) de conteúdo e redes sociais digital da unidade ${unit.name}.`,
-    `Sua tarefa agora: criar UM ${carousel ? 'CARROSSEL' : 'post'} orgânico para o ${platformLabel(platform)}${pillar ? `, sobre o pilar de conteúdo "${pillar}"` : ''}.`,
+    `Sua tarefa agora: criar UM ${video ? 'VÍDEO CURTO VERTICAL (Reels)' : carousel ? 'CARROSSEL' : 'post'} orgânico para o ${platformLabel(platform)}${pillar ? `, sobre o pilar de conteúdo "${pillar}"` : ''}.`,
     businessContext ??
       'Ainda não há uma ficha de negócio detalhada — escreva algo genérico, seguro e verdadeiro para uma empresa de serviços, sem inventar detalhes específicos.',
     'Aja como um gestor de conteúdo de verdade, não como quem posta por postar: antes de escrever, decida qual ângulo/formato (dica prática, resultado real com problema→solução, bastidores da equipe, prova social, pergunta pro público, educativo, autoridade no assunto etc.) tem mais chance de gerar resultado de negócio de verdade — leads qualificados, confiança, autoridade — para ESTE pilar e para o público-alvo descrito na ficha. Nunca gere um post genérico só para preencher a grade de publicação.',
@@ -129,8 +132,10 @@ export function buildCaptionSystemPrompt(params: {
     // post após post, mesmo com a instrução reforçada. O ângulo agora é
     // DECIDIDO em código (pickNextVisualAngle, mesmo princípio do fix de
     // pickNextPillar) e só imposto aqui — não é mais escolha livre do modelo.
-    carousel
-      ? 'CARROSSEL: capa com gancho forte (título curto), 3 a 6 slides de conteúdo (cada um com UMA ideia: título curto + 1-2 frases), e um slide final de chamada para ação. Texto enxuto, que se lê no celular. Use SOMENTE fatos que estão na ficha da empresa — nunca invente clientes, depoimentos, resultados, números, fotos ou garantias; se faltar dado, fale do método/serviço de forma verdadeira e genérica.'
+    video
+      ? 'VÍDEO CURTO VERTICAL (9:16, 15 a 30 segundos, sem áudio: só texto na tela). Cena 1 é o GANCHO (fala direto com o problema/desejo do público nos primeiros 3 segundos), depois 3 a 5 cenas com UMA ideia cada (headline de no máximo 8 palavras + 1 frase de apoio) e um fechamento com chamada para ação. Cada cena dura 3 a 6 segundos e a soma de todas as cenas + fechamento fica entre 18 e 28 segundos. Use SOMENTE fatos que estão na ficha da empresa — nunca invente clientes, depoimentos, resultados, números, fotos ou garantias. Não cite canais de contato (telefone, WhatsApp, e-mail, site, endereço) que não estejam na ficha da empresa: na chamada para ação diga só “fale com a gente” ou o canal que consta na ficha.'
+      : carousel
+      ? 'CARROSSEL: capa com gancho forte (título curto), 3 a 6 slides de conteúdo (cada um com UMA ideia: título curto + 1-2 frases), e um slide final de chamada para ação. Texto enxuto, que se lê no celular. Use SOMENTE fatos que estão na ficha da empresa — nunca invente clientes, depoimentos, resultados, números, fotos ou garantias; se faltar dado, fale do método/serviço de forma verdadeira e genérica. Não cite canais de contato (telefone, WhatsApp, e-mail, site, endereço) que não estejam na ficha da empresa: na chamada para ação diga só “fale com a gente” ou o canal que consta na ficha.'
       : `FORMATO VISUAL OBRIGATÓRIO deste post (não é sugestão — não use nenhum outro formato): ${visualAngle}. O image_prompt tem que descrever a cena seguindo EXATAMENTE esse formato.`,
     recentPostsContext,
     attachmentsContext || null,
@@ -145,7 +150,9 @@ export function buildCaptionSystemPrompt(params: {
       ? `Data comemorativa: este post vai ao ar em "${holiday}" — aproveite a ocasião no post (legenda e imagem), conectando com o negócio quando fizer sentido, sem forçar. Nunca invente que a empresa está fechada, aberta, com promoção ou horário especial nessa data a menos que isso já esteja escrito na ficha do negócio.`
       : null,
     'FORMATO DA RESPOSTA — responda SOMENTE um JSON válido no formato:',
-    carousel
+    video
+      ? '{"script": "roteiro corrido do vídeo, 3 a 6 frases", "scenes": [{"headline": "até 8 palavras", "text": "1 frase de apoio", "seconds": 4}], "cta_title": "chamada curta", "cta_body": "1 frase dizendo como falar com a empresa", "cta_seconds": 4, "caption": "legenda do post com call to action", "hashtags": ["5 a 8 hashtags relevantes, sem #"], "reasoning": "1 frase curta, em português, explicando por que este vídeo faz sentido agora, para o dono da empresa entender"} — todos os textos das cenas e a legenda no idioma da legenda indicado acima.'
+      : carousel
       ? '{"cover_title": "gancho curto da capa", "cover_subtitle": "1 frase de apoio", "slides": [{"title": "título curto", "body": "1-2 frases"}], "cta_title": "chamada curta", "cta_body": "1 frase dizendo como falar com a empresa", "caption": "legenda do post com call to action", "hashtags": ["5 a 8 hashtags relevantes, sem #"], "reasoning": "1 frase curta, em português, explicando por que este carrossel faz sentido agora, para o dono da empresa entender"} — todos os textos dos slides e a legenda no idioma da legenda indicado acima.'
       : '{"caption": "a legenda pronta para publicar, incluindo call to action se fizer sentido para a empresa", "image_prompt": "descrição em inglês, detalhada e visual, para gerar a imagem que acompanha o post — sem nenhum texto/letra embutido na imagem", "reasoning": "1 frase curta, em português, explicando por que este post faz sentido agora, para o dono da empresa entender"}',
   ]
@@ -281,6 +288,54 @@ export async function generateCarouselContent(params: {
     content: normalized.value,
     caption: composeCaption(caption, normalized.value.hashtags),
     reasoning: reasoning || 'Carrossel gerado conforme a frequência configurada pela empresa.',
+    ...extra,
+  }
+}
+
+export type GeneratedVideo = {
+  content: VideoContent
+  caption: string
+  reasoning: string
+  instructionFormatReason?: string
+  instructionCta?: string
+}
+
+/** Roteiro de um vídeo curto (cenas, CTA, legenda, hashtags) via chat em JSON mode. Só texto: quadros e MP4 são do video-render/video-encode. */
+export async function generateVideoContent(params: {
+  apiKey: string
+  config: AgentConfig
+  unit: Unit
+  organizationProfile: Record<string, unknown> | null
+  platform: SocialPlatform
+  pillar: string | null
+  holiday?: string | null
+  recentPosts?: RecentPostSummary[]
+  attachmentsContext?: string | null
+  instruction?: ContentInstruction | null
+}): Promise<GeneratedVideo> {
+  const systemPrompt = buildCaptionSystemPrompt({ ...params, visualAngle: '', video: true })
+  const output = await generateStructuredReply<CarouselOutput>({
+    apiKey: params.apiKey,
+    systemPrompt,
+    history: [{ role: 'user', content: 'Gere o vídeo agora.' }],
+    maxTokens: 1500,
+    temperature: 0.8,
+  })
+  const normalized = normalizeVideo(output)
+  if (!normalized.ok) throw new Error(`A IA devolveu um vídeo inválido: ${normalized.error}`)
+  const caption = (output.caption ?? '').trim()
+  if (!caption) throw new Error('A IA não devolveu a legenda do vídeo.')
+  const reasoning = (output.reasoning ?? '').trim()
+  const extra = params.instruction
+    ? {
+        instructionFormatReason: String(output.instruction_format_reason ?? '').trim() || undefined,
+        instructionCta: String(output.instruction_cta ?? '').trim() || undefined,
+      }
+    : {}
+  return {
+    content: normalized.value,
+    caption: composeCaption(caption, normalized.value.hashtags),
+    reasoning: reasoning || 'Vídeo gerado conforme a frequência configurada pela empresa.',
     ...extra,
   }
 }

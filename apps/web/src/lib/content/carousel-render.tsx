@@ -64,7 +64,7 @@ export function brandFrom(params: { name: string; primary?: string | null; secon
 type Font = { name: string; data: Buffer; weight: 400 | 700; style: 'normal' }
 let fontCache: Font[] | null = null
 
-function loadFonts(): Font[] {
+export function loadFonts(): Font[] {
   if (fontCache) return fontCache
   try {
     fontCache = [

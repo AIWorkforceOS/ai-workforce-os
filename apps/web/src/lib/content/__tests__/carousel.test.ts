@@ -94,7 +94,7 @@ describe('pickPostFormat', () => {
   it('sem instrução ou sem pedir carrossel: imagem única, como sempre foi', () => {
     expect(pickPostFormat(null, [])).toBe('image')
     expect(pickPostFormat(inst([]), [])).toBe('image')
-    expect(pickPostFormat(inst(['vídeo curto']), [])).toBe('image')
+    expect(pickPostFormat(inst(['vídeo curto']), [], { allowVideo: false })).toBe('image')
   })
   it('pedindo só carrossel: sempre carrossel; pedindo carrossel e imagem: alterna', () => {
     expect(pickPostFormat(inst(['carrossel']), ['carousel'])).toBe('carousel')

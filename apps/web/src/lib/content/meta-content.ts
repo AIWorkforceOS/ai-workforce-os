@@ -242,3 +242,29 @@ export async function publishFacebookCarousel(
   const post = await socialPost<{ id: string }>(`${config.pageId}/feed`, config.pageAccessToken, { message: params.caption, ...attached })
   return { externalPostId: post.id }
 }
+
+/**
+ * Reels no Instagram: contêiner REELS com video_url, espera o processamento (vídeo demora bem mais que imagem: até ~3 min) e publica.
+ * developers.facebook.com/docs/instagram-api/guides/content-publishing#reels-posts
+ */
+export async function publishInstagramReel(
+  config: SocialConfig,
+  params: { instagramBusinessAccountId: string; videoUrl: string; caption: string },
+  pollOpts: { pollIntervalMs?: number; maxAttempts?: number } = { pollIntervalMs: 3000, maxAttempts: 60 },
+): Promise<{ externalPostId: string }> {
+  const container = await socialPost<{ id: string }>(`${params.instagramBusinessAccountId}/media`, config.pageAccessToken, {
+    media_type: 'REELS',
+    video_url: params.videoUrl,
+    caption: params.caption,
+    share_to_feed: 'true',
+  })
+  await waitForMediaContainerReady(container.id, config.pageAccessToken, pollOpts)
+  const published = await socialPost<{ id: string }>(`${params.instagramBusinessAccountId}/media_publish`, config.pageAccessToken, { creation_id: container.id })
+  return { externalPostId: published.id }
+}
+
+/** Vídeo na Página do Facebook por URL (a Meta baixa o arquivo). */
+export async function publishFacebookVideo(config: SocialConfig, params: { videoUrl: string; caption: string }): Promise<{ externalPostId: string }> {
+  const result = await socialPost<{ id: string }>(`${config.pageId}/videos`, config.pageAccessToken, { file_url: params.videoUrl, description: params.caption })
+  return { externalPostId: result.id }
+}

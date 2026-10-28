@@ -132,7 +132,7 @@ export function InstructionsChat({ unitId }: { unitId: string }) {
             <p className="mt-1.5 text-amber-300">Carrosséis são criados e ficam aguardando a sua aprovação. A publicação automática de carrossel ainda não foi liberada.</p>
           )}
           {p.interpretation.formats.some((f) => /v[ií]deo|video|reel/i.test(f)) && (
-            <p className="mt-1.5 text-amber-300">Vídeo curto ainda está em desenvolvimento: por enquanto o agente não gera vídeo e segue o mesmo objetivo com os outros formatos.</p>
+            <p className="mt-1.5 text-amber-300">Vídeos curtos (9:16, só texto na tela) são criados e ficam aguardando a sua aprovação — no máximo 2 por rodada de planejamento. A publicação automática de vídeo ainda não foi liberada.</p>
           )}
           {proposal.conflicts.length > 0 && (
             <div className="mt-2 space-y-1 rounded-lg bg-amber-500/10 p-2 text-amber-200">

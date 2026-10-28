@@ -49,7 +49,7 @@ describe('planejamento semanal com carrossel', () => {
   })
 
   it('sem instrução ou sem carrossel: tudo como antes (imagem única, sem coluna format)', async () => {
-    for (const formats of [null, ['vídeo curto']]) {
+    for (const formats of [null, ['stories', 'enquete']]) {
       vi.resetModules()
       const { posts, createCarouselPostDraft } = await run(formats, [utc(2026, 11, 3)])
       expect(createCarouselPostDraft).not.toHaveBeenCalled()

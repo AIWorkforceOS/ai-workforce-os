@@ -17,6 +17,7 @@ import { ContentWeekActions } from '@/components/dashboard/content-week-actions'
 import { ContentWeekView } from '@/components/dashboard/content-week-view'
 import { InstructionApplied } from '@/components/dashboard/instruction-applied'
 import { CarouselEditor } from '@/components/dashboard/carousel-editor'
+import { VideoEditor } from '@/components/dashboard/video-editor'
 import { BrandKitForm, type BrandKitValue } from '@/components/dashboard/brand-kit-form'
 import { EmployeeHubGate } from '@/components/dashboard/employee-hub-gate'
 import { EmployeeHubTabs } from '@/components/dashboard/employee-hub-tabs'
@@ -222,6 +223,7 @@ export default async function ContentPage() {
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge variant="cyan">{platformLabel(post.platform)}</Badge>
                       {post.format === 'carousel' && <Badge variant="green">Carrossel</Badge>}
+                      {post.format === 'video' && <Badge variant="green">Vídeo</Badge>}
                       {post.content_pillar && <Badge variant="purple">{post.content_pillar}</Badge>}
                       {post.scheduled_for && (
                         <Badge variant="blue">Agendado {new Date(post.scheduled_for).toLocaleDateString('pt-BR')}</Badge>
@@ -234,6 +236,9 @@ export default async function ContentPage() {
                     {post.reasoning && <p className="mt-1.5 text-[11px] text-slate-500">{post.reasoning}</p>}
                     {post.format === 'carousel' && post.carousel && (
                       <CarouselEditor postId={post.id} unitId={post.unit_id} carousel={post.carousel} editable={post.status === 'pending_approval' || post.status === 'draft'} />
+                    )}
+                    {post.format === 'video' && post.video && (
+                      <VideoEditor postId={post.id} unitId={post.unit_id} video={post.video} editable={post.status === 'pending_approval' || post.status === 'draft'} />
                     )}
                     <InstructionApplied objective={post.instruction_objective} formatReason={post.instruction_format_reason} cta={post.instruction_cta} />
                   </div>

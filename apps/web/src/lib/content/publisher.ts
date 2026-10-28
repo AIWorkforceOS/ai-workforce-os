@@ -4,8 +4,9 @@
 // "preso" sem status final).
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { resolveSocialConfig, publishFacebookCarousel, publishFacebookPhoto, publishInstagramCarousel, publishInstagramPost, type SocialConfig } from './meta-content'
+import { resolveSocialConfig, publishFacebookCarousel, publishFacebookPhoto, publishFacebookVideo, publishInstagramCarousel, publishInstagramPost, publishInstagramReel, type SocialConfig } from './meta-content'
 import { carouselPublishingEnabled } from './carousel'
+import { videoPublishingEnabled } from './video'
 import type { ContentPost, SocialAccount } from './types'
 
 export type PublishOutcome = { ok: true; externalPostId: string } | { ok: false; error: string }
@@ -23,6 +24,11 @@ export async function publishContentPost(
 
   if (!post.image_url) return fail('Post sem imagem gerada.')
 
+  // Vídeo: mesma regra do carrossel (CONTENT_VIDEO_PUBLISH=on). Desligada, o post segue aprovado e nada falha.
+  if (post.format === 'video' && !videoPublishingEnabled()) {
+    return { ok: false, error: 'Publicação de vídeo ainda não liberada: o post segue aprovado e sai quando a publicação for ligada.' }
+  }
+
   // Carrossel só vai à Meta depois que o fluxo for validado numa página de teste (CONTENT_CAROUSEL_PUBLISH=on). Enquanto isso o post
   // fica como está — NÃO vira 'failed' — e quem chama decide o que mostrar.
   if (post.format === 'carousel' && !carouselPublishingEnabled()) {
@@ -32,6 +38,20 @@ export async function publishContentPost(
   try {
     const config = await resolveSocialConfig(account)
     if (!config) return fail('Conta sem token de Página configurado e sem system user global disponível.')
+
+    if (post.format === 'video') {
+      const videoUrl = post.video?.mp4_url
+      if (!videoUrl) return fail('Vídeo sem arquivo renderizado.')
+      const videoResult =
+        post.platform === 'instagram'
+          ? await publishInstagramReelContent(config, account, post, videoUrl)
+          : await publishFacebookVideo(config, { videoUrl, caption: post.caption })
+      await supabase
+        .from('content_posts')
+        .update({ status: 'published', published_at: new Date().toISOString(), external_post_id: videoResult.externalPostId, error_message: null })
+        .eq('id', post.id)
+      return { ok: true, externalPostId: videoResult.externalPostId }
+    }
 
     const slideUrls = post.format === 'carousel' ? (post.carousel?.slide_urls ?? []) : []
     if (post.format === 'carousel' && slideUrls.length < 2) return fail('Carrossel sem slides desenhados.')
@@ -93,7 +113,8 @@ export async function publishDueScheduledPosts(
     .lt('scheduled_for', dayEnd.toISOString())
   // Carrossel aprovado espera a publicação de carrossel ser ligada: não conta como erro nem é tentado todo dia.
   const carouselsOn = carouselPublishingEnabled()
-  const posts = ((due ?? []) as ContentPost[]).filter((p) => p.format !== 'carousel' || carouselsOn)
+  const videosOn = videoPublishingEnabled()
+  const posts = ((due ?? []) as ContentPost[]).filter((p) => (p.format !== 'carousel' || carouselsOn) && (p.format !== 'video' || videosOn))
 
   let published = 0
   let errors = 0
@@ -135,4 +156,11 @@ async function publishInstagramCarouselContent(
     throw new Error('Nenhuma conta do Instagram vinculada a esta Página.')
   }
   return publishInstagramCarousel(config, { instagramBusinessAccountId: account.instagram_business_account_id, imageUrls: slideUrls, caption: post.caption })
+}
+
+async function publishInstagramReelContent(config: SocialConfig, account: SocialAccount, post: ContentPost, videoUrl: string): Promise<{ externalPostId: string }> {
+  if (!account.instagram_business_account_id) {
+    throw new Error('Nenhuma conta do Instagram vinculada a esta Página.')
+  }
+  return publishInstagramReel(config, { instagramBusinessAccountId: account.instagram_business_account_id, videoUrl, caption: post.caption })
 }

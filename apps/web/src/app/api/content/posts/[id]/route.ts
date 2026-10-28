@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { publishContentPost } from '@/lib/content/publisher'
 import { carouselPublishingEnabled } from '@/lib/content/carousel'
+import { videoPublishingEnabled } from '@/lib/content/video'
 import type { ContentPost, SocialAccount } from '@/lib/content/types'
 
 export const maxDuration = 60
@@ -92,6 +93,21 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (scheduledAt > endOfToday) {
       return NextResponse.json({ post: { id: post.id, status: 'approved' }, published: false, scheduled: true })
     }
+  }
+
+  // Vídeo: a publicação de Reels demora (a Meta processa o arquivo), mais do que esta rota aguenta. Aprovado, ele fica agendado para o cron
+  // publicar — e só se a publicação de vídeo estiver ligada; senão fica aprovado, sem ir ao ar e sem falhar.
+  if (post.format === 'video') {
+    if (!videoPublishingEnabled()) {
+      return NextResponse.json({
+        post: { id: post.id, status: 'approved' },
+        published: false,
+        held: true,
+        message: 'Vídeo aprovado. A publicação de vídeo ainda não foi liberada: ele sairá quando for ligada.',
+      })
+    }
+    if (!post.scheduled_for) await supabase.from('content_posts').update({ scheduled_for: new Date().toISOString() }).eq('id', post.id)
+    return NextResponse.json({ post: { id: post.id, status: 'approved' }, published: false, scheduled: true })
   }
 
   // Carrossel aprovado, mas a publicação de carrossel ainda não foi liberada: fica aprovado (nada vai ao ar, nada falha).
