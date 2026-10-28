@@ -106,6 +106,15 @@ export async function GET(request: Request) {
   })
 }
 
+function preserveVideoSettings(before: unknown, after: unknown): unknown {
+  const old = (before ?? {}) as Record<string, unknown>
+  const next = { ...((after ?? {}) as Record<string, unknown>) }
+  for (const key of ['video_rotacao', 'nome_nos_videos']) {
+    if (old[key] !== undefined && next[key] === undefined) next[key] = old[key]
+  }
+  return next
+}
+
 export async function POST(request: Request) {
   const appUser = await getAppUser()
   if (!appUser) return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 })
@@ -167,7 +176,8 @@ export async function POST(request: Request) {
         // Nunca toca interview_status/is_active aqui — funcionário já ativo
         // continua ativo durante todo o retreinamento (ver comentário no topo).
         retrain_transcript: result.done ? [] : result.transcript,
-        business_profile: result.profile,
+        // Ajustes do dono que a conversa não reescreve (rotação de temas dos vídeos e nome da empresa nos vídeos) sobrevivem ao retreinamento.
+        business_profile: preserveVideoSettings(config.business_profile, result.profile),
         ...(result.done ? { last_trained_at: new Date().toISOString() } : {}),
       }
     : {

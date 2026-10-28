@@ -334,6 +334,8 @@ export async function synthesizeSpeech(params: {
   apiKey: string
   text: string
   voice?: string
+  /** Direção de tom/ritmo (gpt-4o-mini-tts). Sem ela, vale o padrão de nota de voz do WhatsApp. */
+  instructions?: string
 }): Promise<{ base64Audio: string; mimeType: string }> {
   const response = await fetch('https://api.openai.com/v1/audio/speech', {
     method: 'POST',
@@ -346,6 +348,7 @@ export async function synthesizeSpeech(params: {
       input: params.text,
       voice: params.voice ?? 'shimmer',
       instructions:
+        params.instructions ??
         'Fale em tom natural, caloroso e humano, como uma pessoa de verdade numa nota de voz do WhatsApp — nem robótico nem apressado, com entonação e ritmo variados.',
       response_format: 'opus',
     }),

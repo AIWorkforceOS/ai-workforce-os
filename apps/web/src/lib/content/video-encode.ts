@@ -12,6 +12,7 @@ import { pipeline } from 'node:stream/promises'
 import { createGunzip } from 'node:zlib'
 import sharp from 'sharp'
 import ffmpegPath from 'ffmpeg-static'
+import { musicSource } from './video-audio'
 import { TRANSITION_SECONDS, VIDEO_FPS, buildFilterGraph, planTimeline, type FrameSpec } from './video'
 
 const FFMPEG_TIMEOUT_MS = 240_000
@@ -93,6 +94,37 @@ async function download(source: { url: string; sha256: string }, dir: string, ta
 
 export type EncodeResult = { mp4: Buffer; durationMs: number; bytes: number }
 
+/** Mixagem: narração (se houver) por cima da trilha ambiente, ambas com entrada/saída suaves. Rótulo de saída: [aout]. */
+export function buildAudioGraph(params: { total: number; voiceInput: number | null; voiceTempo?: number }): string {
+  const { total, voiceInput } = params
+  const tempo = params.voiceTempo && params.voiceTempo > 1.001 ? `,atempo=${params.voiceTempo.toFixed(3)}` : ''
+  const fadeOut = Math.max(0, total - 2).toFixed(2)
+  const music = (volume: number) => `${musicSource(total)},lowpass=f=1400,volume=${volume},afade=t=in:d=1.5,afade=t=out:st=${fadeOut}:d=2`
+  if (voiceInput === null) return `${music(0.22)}[aout]`
+  return [
+    `[${voiceInput}:a]aresample=44100,aformat=channel_layouts=stereo${tempo},adelay=600|600,apad=whole_dur=${total.toFixed(2)}[voice]`,
+    `${music(0.14)}[mus]`,
+    '[voice][mus]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[aout]',
+  ].join(';')
+}
+
+/** Duração (s) de um arquivo de áudio lida da saída do ffmpeg; null se não conseguir. */
+async function probeSeconds(bin: string, file: string): Promise<number | null> {
+  return new Promise((resolve) => {
+    execFile(bin, ['-hide_banner', '-i', file], { timeout: 20000 }, (_error, _stdout, stderr) => {
+      const m = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(String(stderr))
+      resolve(m ? Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) : null)
+    })
+  })
+}
+
+/** Quanto acelerar a narração para caber (com 0,6 s de entrada e 1 s de folga no fim): no máximo 1,15x — acima disso fica apressada, melhor cortar o fim. */
+export function narrationTempo(narrationSeconds: number | null, total: number): number {
+  if (!narrationSeconds) return 1
+  const room = total - 1.6
+  return room > 0 && narrationSeconds > room ? Math.min(1.15, narrationSeconds / room) : 1
+}
+
 function run(bin: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     execFile(bin, args, { timeout: FFMPEG_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 }, (error, _stdout, stderr) => {
@@ -112,8 +144,10 @@ export async function encodeVideo(params: {
   specs: Pick<FrameSpec, 'seconds' | 'transition'>[]
   width: number
   height: number
+  /** Narração (áudio já pronto). Sem ela o vídeo leva só a trilha de fundo. */
+  narration?: Buffer | null
 }): Promise<EncodeResult> {
-  const { backgrounds, overlays, specs, width, height } = params
+  const { backgrounds, overlays, specs, width, height, narration } = params
   const n = specs.length
   if (n === 0 || backgrounds.length !== n || overlays.length !== n) throw new Error('Quadros e cenas não batem.')
   const started = Date.now()
@@ -133,21 +167,31 @@ export async function encodeVideo(params: {
       await writeFile(file, await sharp(overlays[i]!).resize(width, height, { fit: 'fill' }).png({ compressionLevel: 3 }).toBuffer())
       addInput(file, plan[i]!.inputSeconds)
     }
-    args.push('-f', 'lavfi', '-t', String(total), '-i', 'anullsrc=r=44100:cl=stereo')
-    const { filter, outLabel } = buildFilterGraph(specs, { width, height })
+    const ffmpeg = await ensureFfmpeg()
+    let voiceTempo = 1
+    if (narration) {
+      const file = join(dir, 'voice.opus')
+      await writeFile(file, narration)
+      args.push('-i', file)
+      const seconds = await probeSeconds(ffmpeg, file)
+      voiceTempo = narrationTempo(seconds, total)
+      console.info(`[content/video] narração: ${seconds ?? '?'} s para ${total} s de vídeo (velocidade ${voiceTempo.toFixed(2)}x)`)
+    }
+    const { filter: videoFilter, outLabel } = buildFilterGraph(specs, { width, height })
+    const filter = `${videoFilter};${buildAudioGraph({ total, voiceInput: narration ? 2 * n : null, voiceTempo })}`
     const out = join(dir, 'out.mp4')
     args.push(
       '-filter_complex', filter,
-      '-map', `[${outLabel}]`, '-map', `${2 * n}:a`,
+      '-map', `[${outLabel}]`, '-map', '[aout]',
       '-t', String(total),
       '-c:v', 'libx264', '-profile:v', 'high', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p', '-r', String(VIDEO_FPS),
       // memória limitada (função serverless): poucos threads e lookahead curto
       '-threads', '2', '-filter_threads', '1', '-filter_complex_threads', '1', '-x264-params', 'rc-lookahead=8:sync-lookahead=0:frame-threads=2',
-      '-c:a', 'aac', '-b:a', '48k', '-shortest',
+      '-c:a', 'aac', '-b:a', '96k',
       '-movflags', '+faststart',
       out,
     )
-    await run(await ensureFfmpeg(), args)
+    await run(ffmpeg, args)
     const mp4 = await readFile(out)
     return { mp4, durationMs: Date.now() - started, bytes: mp4.byteLength }
   } finally {

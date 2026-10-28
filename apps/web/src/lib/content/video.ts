@@ -21,6 +21,7 @@ const HEADLINE_MAX = 60
 const TEXT_MAX = 140
 const SCRIPT_MAX = 900
 const VISUAL_MAX = 400
+const SETTING_MAX = 300
 
 /** Transições do ffmpeg (xfade) liberadas: todas discretas, nenhuma que prejudique a leitura do texto. */
 export const TRANSITIONS = ['fade', 'slideleft', 'wipeleft', 'dissolve', 'slideright', 'fadeblack'] as const
@@ -39,8 +40,12 @@ export type VideoScene = {
 }
 
 export type VideoContent = {
-  /** Roteiro corrido (para o dono ler/gravar ou para uma narração futura). O vídeo sai mudo, só com texto na tela. */
+  /** Roteiro corrido: é a NARRAÇÃO falada do vídeo (voz sintetizada a cada renderização). Editar aqui muda a voz. */
   script: string
+  /** Cenário comum (equipe, uniforme, local, luz, em inglês) repetido em toda foto para as cenas parecerem do mesmo dia de filmagem. */
+  setting?: string
+  /** Nome da empresa mostrado no fechamento do vídeo (ficha: nome_nos_videos). Sem ele, vale o nome da unidade. */
+  brand_name?: string
   scenes: VideoScene[]
   cta: { headline: string; text: string; seconds: number; background_url?: string | null; visual?: string }
   hashtags: string[]
@@ -122,6 +127,7 @@ export function normalizeVideo(raw: unknown): { ok: true; value: VideoContent } 
   const ctaSeconds = Number(r.cta_seconds)
   const content: VideoContent = {
     script: clean(r.script, SCRIPT_MAX),
+    setting: clean(r.setting, SETTING_MAX) || undefined,
     scenes,
     cta: { headline: ctaHeadline, text: clean(r.cta_body, TEXT_MAX), seconds: clamp(Number.isFinite(ctaSeconds) ? ctaSeconds : 4, CTA_MIN, CTA_MAX), visual: clean(r.cta_visual, VISUAL_MAX) || undefined },
     hashtags: cleanHashtags(r.hashtags),
@@ -133,7 +139,7 @@ export function normalizeVideo(raw: unknown): { ok: true; value: VideoContent } 
 /** Edição vinda do navegador: nunca confia no cliente; duração fora de 15–30 s é erro (o dono decide), não correção silenciosa. */
 export function normalizeVideoEdit(raw: unknown): { ok: true; value: VideoContent } | { ok: false; error: string } {
   if (!raw || typeof raw !== 'object') return { ok: false, error: 'Dados inválidos.' }
-  const r = raw as { script?: unknown; scenes?: unknown; cta?: Record<string, unknown>; hashtags?: unknown }
+  const r = raw as { script?: unknown; setting?: unknown; scenes?: unknown; cta?: Record<string, unknown>; hashtags?: unknown }
   const bg = (v: unknown) => (typeof v === 'string' && /^https:\/\//.test(v) ? v : null)
   const scenes = (Array.isArray(r.scenes) ? r.scenes : [])
     .map((s, i) => {
@@ -156,6 +162,7 @@ export function normalizeVideoEdit(raw: unknown): { ok: true; value: VideoConten
   const ctaSeconds = Number(cta.seconds)
   const content: VideoContent = {
     script: clean(r.script, SCRIPT_MAX),
+    setting: clean(r.setting, SETTING_MAX) || undefined,
     scenes,
     cta: { headline: clean(cta.headline, HEADLINE_MAX), text: clean(cta.text, TEXT_MAX), seconds: clamp(Number.isFinite(ctaSeconds) ? ctaSeconds : 4, CTA_MIN, CTA_MAX), background_url: bg(cta.background_url), visual: clean(cta.visual, VISUAL_MAX) || undefined },
     hashtags: cleanHashtags(r.hashtags),

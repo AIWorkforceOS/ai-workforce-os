@@ -124,3 +124,32 @@ describe('encodeVideo (ffmpeg de verdade, em miniatura)', () => {
     await expect(encodeVideo({ backgrounds: [Buffer.from('a')], overlays: [], specs: [{ seconds: 2, transition: 'fade' }], width: 10, height: 10 })).rejects.toThrow(/não batem/)
   })
 })
+
+describe('áudio do vídeo', () => {
+  it('sem narração só a trilha de fundo, com entrada e saída suaves', async () => {
+    const { buildAudioGraph } = await import('../video-encode')
+    const g = buildAudioGraph({ total: 20, voiceInput: null })
+    expect(g).toContain('aevalsrc=')
+    expect(g).toContain('afade=t=in')
+    expect(g).toContain('afade=t=out:st=18.00')
+    expect(g.endsWith('[aout]')).toBe(true)
+    expect(g).not.toContain('amix')
+  })
+
+  it('com narração a voz entra por cima da trilha, que fica mais baixa', async () => {
+    const { buildAudioGraph } = await import('../video-encode')
+    const g = buildAudioGraph({ total: 24, voiceInput: 8, voiceTempo: 1.08 })
+    expect(g).toContain('[8:a]')
+    expect(g).toContain('atempo=1.080')
+    expect(g).toContain('amix=inputs=2:duration=first')
+    expect(g).toContain('volume=0.14')
+  })
+
+  it('só acelera a narração quando ela passa do vídeo, no máximo 1,15x', async () => {
+    const { narrationTempo } = await import('../video-encode')
+    expect(narrationTempo(null, 24)).toBe(1)
+    expect(narrationTempo(18, 24)).toBe(1)
+    expect(narrationTempo(24, 24)).toBeCloseTo(24 / 22.4, 3)
+    expect(narrationTempo(40, 24)).toBe(1.15)
+  })
+})

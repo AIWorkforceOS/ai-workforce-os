@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
+import { getOpenAIApiKey } from '@/lib/openai'
 import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
 import { normalizeVideoEdit } from '@/lib/content/video'
 import { renderAndStoreVideo } from '@/lib/content/video-post'
@@ -38,7 +39,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   let stored
   try {
     const organizationProfile = await fetchOrganizationBusinessProfile(supabase, (unit as Unit).org_id ?? '')
-    stored = await renderAndStoreVideo({ supabase: service, unit: unit as Unit, organizationProfile, content: edit.value, lang: post.video?.lang ?? 'pt' })
+    stored = await renderAndStoreVideo({ supabase: service, unit: unit as Unit, organizationProfile, content: { ...edit.value, brand_name: post.video?.brand_name }, lang: post.video?.lang ?? 'pt', apiKey: getOpenAIApiKey() })
   } catch (error) {
     console.error('[content/video edit]', error)
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Não foi possível renderizar o vídeo.' }, { status: 502 })

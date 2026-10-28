@@ -325,3 +325,28 @@ describe('generatePostImage — composição do logo', () => {
     ).rejects.toThrow('Não foi possível baixar o logo da marca')
   })
 })
+
+describe('buildCaptionSystemPrompt — vídeo com tema da rotação', () => {
+  const base = { config: { ...config, business_profile: { nome_nos_videos: 'Mawi Building Services' } } as AgentConfig, unit, organizationProfile: null, platform: 'instagram' as const, pillar: 'Serviços de Manutenção Comercial', visualAngle: '' }
+
+  it('o tema do dono manda: aparece como obrigatório e o pilar sai do pedido', () => {
+    const prompt = buildCaptionSystemPrompt({ ...base, video: true, videoTheme: 'limpeza' })
+    expect(prompt).toContain('TEMA OBRIGATÓRIO deste vídeo')
+    expect(prompt).toContain('limpeza')
+    expect(prompt).not.toContain('sobre o pilar de conteúdo')
+    expect(prompt).toContain('“Mawi Building Services”')
+  })
+
+  it('sem tema o pedido continua como antes, com o pilar', () => {
+    const prompt = buildCaptionSystemPrompt({ ...base, video: true })
+    expect(prompt).not.toContain('TEMA OBRIGATÓRIO')
+    expect(prompt).toContain('sobre o pilar de conteúdo "Serviços de Manutenção Comercial"')
+  })
+
+  it('o roteiro é a narração e as cenas formam uma história contínua com cenário comum', () => {
+    const prompt = buildCaptionSystemPrompt({ ...base, video: true })
+    expect(prompt).toContain('NARRAÇÃO')
+    expect(prompt).toContain('"setting"')
+    expect(prompt).toContain('UMA história contínua')
+  })
+})

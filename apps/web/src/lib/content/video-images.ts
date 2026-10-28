@@ -24,8 +24,9 @@ const FALLBACK_VISUALS = [
   'A team of professionals in navy uniforms standing confidently in front of a modern commercial building, friendly and professional',
 ]
 
-export function scenePrompt(visual: string): string {
-  return `${visual.trim().replace(/[.\s]+$/, '')}. ${STYLE}`
+export function scenePrompt(visual: string, setting?: string): string {
+  const shared = setting ? ` Same shoot, same people and same place across all scenes: ${setting.trim().replace(/[.\s]+$/, '')}.` : ''
+  return `${visual.trim().replace(/[.\s]+$/, '')}.${shared} ${STYLE}`
 }
 
 const BRANDING_RE = /\b(logos?|brand(ing|ed)?|texts?|signs?|signage|letter(s|ing)?|written|caption(s|ed)?|banners?|labels?|slogans?|wordmarks?)\b/i
@@ -67,10 +68,10 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, index: nu
  * Gera e sobe as imagens (cenas + fechamento). Uma que falhe vira `null` (a cena sai com fundo de cor); se falhar mais da metade, o vídeo inteiro falha com erro
  * claro — um vídeo "profissional" com a maioria das cenas sem imagem não serve.
  */
-export async function generateSceneImageUrls(params: { supabase: SupabaseClient; apiKey: string; unitId: string; visuals: string[] }): Promise<(string | null)[]> {
+export async function generateSceneImageUrls(params: { supabase: SupabaseClient; apiKey: string; unitId: string; visuals: string[]; setting?: string }): Promise<(string | null)[]> {
   const results = await mapLimit(params.visuals, CONCURRENCY, async (visual) => {
     try {
-      const image = await generateImage({ apiKey: params.apiKey, prompt: scenePrompt(visual), size: '1024x1536', quality: 'medium' })
+      const image = await generateImage({ apiKey: params.apiKey, prompt: scenePrompt(visual, params.setting), size: '1024x1536', quality: 'medium' })
       return await uploadGeneratedImage({ supabase: params.supabase, unitId: params.unitId, base64Image: image.base64Image })
     } catch (error) {
       console.error('[content/video] falha ao gerar a imagem de uma cena:', error instanceof Error ? error.message : error)

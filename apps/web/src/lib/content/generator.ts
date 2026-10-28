@@ -103,8 +103,10 @@ export function buildCaptionSystemPrompt(params: {
   carousel?: boolean
   /** Gera o roteiro de um VÍDEO curto vertical (cenas + CTA). */
   video?: boolean
+  /** Tema obrigatório do vídeo (rotação mensal da ficha, ex. "manutenção" ou "limpeza"). */
+  videoTheme?: string | null
 }): string {
-  const { config, unit, organizationProfile, platform, pillar, holiday, recentPosts, attachmentsContext, visualAngle, instruction, carousel, video } = params
+  const { config, unit, organizationProfile, platform, pillar, holiday, recentPosts, attachmentsContext, visualAngle, instruction, carousel, video, videoTheme } = params
   const businessContext = buildCombinedBusinessContext(organizationProfile, config.business_profile)
   // idioma_conteudo (achado real, 2026-08-27): pedido explícito do dono na
   // entrevista/retreinamento ("todos os posts em inglês") tem prioridade
@@ -118,11 +120,12 @@ export function buildCaptionSystemPrompt(params: {
       ? explicitContentLanguage
       : resolveContentLanguage(unit.default_conversation_language, [organizationProfile, config.business_profile])
   const brandKit = brandKitFrom(organizationProfile)
+  const nameInVideos = typeof (config.business_profile as Record<string, unknown> | null)?.nome_nos_videos === 'string' ? String((config.business_profile as Record<string, unknown>).nome_nos_videos).trim().slice(0, 80) : ''
   const recentPostsContext = buildRecentPostsContext(recentPosts)
 
   return [
     `Você é ${config.persona_name}, gestor(a) de conteúdo e redes sociais digital da unidade ${unit.name}.`,
-    `Sua tarefa agora: criar UM ${video ? 'VÍDEO CURTO VERTICAL (Reels)' : carousel ? 'CARROSSEL' : 'post'} orgânico para o ${platformLabel(platform)}${pillar ? `, sobre o pilar de conteúdo "${pillar}"` : ''}.`,
+    `Sua tarefa agora: criar UM ${video ? 'VÍDEO CURTO VERTICAL (Reels)' : carousel ? 'CARROSSEL' : 'post'} orgânico para o ${platformLabel(platform)}${pillar && !(video && videoTheme) ? `, sobre o pilar de conteúdo "${pillar}"` : ''}.`,
     businessContext ??
       'Ainda não há uma ficha de negócio detalhada — escreva algo genérico, seguro e verdadeiro para uma empresa de serviços, sem inventar detalhes específicos.',
     'Aja como um gestor de conteúdo de verdade, não como quem posta por postar: antes de escrever, decida qual ângulo/formato (dica prática, resultado real com problema→solução, bastidores da equipe, prova social, pergunta pro público, educativo, autoridade no assunto etc.) tem mais chance de gerar resultado de negócio de verdade — leads qualificados, confiança, autoridade — para ESTE pilar e para o público-alvo descrito na ficha. Nunca gere um post genérico só para preencher a grade de publicação.',
@@ -133,13 +136,16 @@ export function buildCaptionSystemPrompt(params: {
     // DECIDIDO em código (pickNextVisualAngle, mesmo princípio do fix de
     // pickNextPillar) e só imposto aqui — não é mais escolha livre do modelo.
     video
-      ? 'VÍDEO CURTO VERTICAL (9:16, 18 a 28 segundos, sem áudio: texto curto na tela sobre fotografias em tela cheia). Pense como um diretor de campanha de uma empresa de serviços para empresas: cena 1 é o GANCHO (fale direto com a dor/desejo do gestor de facilities ou do dono do estabelecimento nos primeiros 3 segundos), depois 3 a 5 cenas com UMA ideia cada (headline de no máximo 8 palavras + 1 frase de apoio) e um fechamento com chamada para ação. Cada cena dura 3 a 6 segundos. Para CADA cena (e para o fechamento) descreva em \"visual\" a FOTOGRAFIA de fundo, em inglês: quem aparece e o que faz (técnicos de manutenção de uniforme azul-marinho inspecionando painel elétrico, equipe de limpeza em um escritório amplo, gestor de facilities percorrendo um prédio comercial, técnico de ar-condicionado no telhado etc.), onde e a luz — realista, de campanha profissional, variada entre as cenas, ligada ao sentido da headline. NA DESCRIÇÃO VISUAL NUNCA peça logo, texto, placas, letreiros, nome ou marca da empresa (a marca é aplicada depois por nós; o gerador de imagem desenha logos falsos): pessoas de uniforme azul-marinho liso e sem nome. Use SOMENTE fatos que estão na ficha da empresa nos textos — nunca invente clientes, depoimentos, resultados, números ou garantias (as imagens são ilustrativas, o texto não pode afirmar nada que a ficha não diga). Não cite canais de contato (telefone, WhatsApp, e-mail, site, endereço) que não estejam na ficha da empresa: na chamada para ação use só um convite genérico (o equivalente a “entre em contato”) ou o canal que consta na ficha — SEMPRE no idioma da legenda.'
+      ? 'VÍDEO CURTO VERTICAL (9:16, 18 a 28 segundos, com NARRAÇÃO falada e música de fundo, mais texto curto na tela sobre fotografias em tela cheia). O vídeo conta UMA história contínua, como um comercial filmado num único dia: problema → equipe chega → solução → empresa aliviada, cada cena puxando a próxima (a headline de uma cena prepara a seguinte; nada de lista de dicas soltas). Pense como um diretor de campanha de uma empresa de serviços para empresas: cena 1 é o GANCHO (fale direto com a dor/desejo do gestor de facilities ou do dono do estabelecimento nos primeiros 3 segundos), depois 3 a 5 cenas com UMA ideia cada (headline de no máximo 8 palavras + 1 frase de apoio) e um fechamento com chamada para ação. Cada cena dura 3 a 6 segundos. O campo "script" é a NARRAÇÃO exata que será falada por uma voz, em primeira pessoa do plural (“nós”) ou impessoal, num texto corrido que acompanha as cenas na ordem, com cerca de 2 palavras por segundo do vídeo (para 24 s, uns 45 palavras), sem emojis, sem hashtags, sem listas e sem repetir a headline palavra por palavra. O campo "setting" descreve em inglês o CENÁRIO COMUM de todas as fotos (a mesma equipe de 2 técnicos de uniforme azul-marinho liso, o mesmo prédio comercial, a mesma hora do dia e luz), para as cenas parecerem do mesmo dia de filmagem. Para CADA cena (e para o fechamento) descreva em \"visual\" a FOTOGRAFIA de fundo, em inglês: quem aparece e o que faz (técnicos de manutenção de uniforme azul-marinho inspecionando painel elétrico, equipe de limpeza em um escritório amplo, gestor de facilities percorrendo um prédio comercial, técnico de ar-condicionado no telhado etc.), onde e a luz — realista, de campanha profissional, variada entre as cenas, ligada ao sentido da headline. NA DESCRIÇÃO VISUAL NUNCA peça logo, texto, placas, letreiros, nome ou marca da empresa (a marca é aplicada depois por nós; o gerador de imagem desenha logos falsos): pessoas de uniforme azul-marinho liso e sem nome. Use SOMENTE fatos que estão na ficha da empresa nos textos — nunca invente clientes, depoimentos, resultados, números ou garantias (as imagens são ilustrativas, o texto não pode afirmar nada que a ficha não diga). Não cite canais de contato (telefone, WhatsApp, e-mail, site, endereço) que não estejam na ficha da empresa: na chamada para ação use só um convite genérico (o equivalente a “entre em contato”) ou o canal que consta na ficha — SEMPRE no idioma da legenda.'
       : carousel
       ? 'CARROSSEL: capa com gancho forte (título curto), 3 a 6 slides de conteúdo (cada um com UMA ideia: título curto + 1-2 frases), e um slide final de chamada para ação. Texto enxuto, que se lê no celular. Use SOMENTE fatos que estão na ficha da empresa — nunca invente clientes, depoimentos, resultados, números, fotos ou garantias; se faltar dado, fale do método/serviço de forma verdadeira e genérica. Não cite canais de contato (telefone, WhatsApp, e-mail, site, endereço) que não estejam na ficha da empresa: na chamada para ação use só um convite genérico (o equivalente a “entre em contato”) ou o canal que consta na ficha — SEMPRE no idioma da legenda.'
       : `FORMATO VISUAL OBRIGATÓRIO deste post (não é sugestão — não use nenhum outro formato): ${visualAngle}. O image_prompt tem que descrever a cena seguindo EXATAMENTE esse formato.`,
     recentPostsContext,
     attachmentsContext || null,
     instruction ? buildInstructionPromptBlock(instruction) : null,
+    video && videoTheme
+      ? `TEMA OBRIGATÓRIO deste vídeo (definido pelo dono, não é sugestão e prevalece sobre qualquer pilar ou proporção citados na ficha): ${videoTheme}. Toda a história, as fotos e a chamada para ação devem ser sobre ${videoTheme} para empresas e gestores de facilities, usando só os serviços que a ficha da empresa diz que ela oferece.${nameInVideos ? ` Sempre que citar o nome da empresa (narração, textos, legenda e hashtags), use exatamente “${nameInVideos}” — nunca o nome da unidade ou da divisão.` : ''}`
+      : null,
     'A legenda deve soar humana, natural, sem parecer gerada por IA e sem clichês genéricos de marketing. Use no máximo 2 emojis, só se fizer sentido para o tom da marca.',
     'Nunca invente promoção, preço ou resultado que não esteja na ficha da empresa. Nunca mencione concorrentes. Respeite qualquer proibição registrada na ficha.',
     `Idioma da legenda: escreva a legenda inteiramente em ${detectedLanguage === 'en' ? 'inglês' : 'português'} — esse é o idioma em que o negócio atende seus clientes (configurado na unidade, ou detectado a partir da ficha quando esse dado não existe). O "reasoning" continua em português (é só para o dono da empresa entender, no painel); o "image_prompt" continua em inglês (é só para o gerador de imagem).`,
@@ -151,7 +157,7 @@ export function buildCaptionSystemPrompt(params: {
       : null,
     'FORMATO DA RESPOSTA — responda SOMENTE um JSON válido no formato:',
     video
-      ? '{"script": "roteiro corrido do vídeo, 3 a 6 frases", "scenes": [{"headline": "até 8 palavras", "text": "1 frase de apoio", "seconds": 4, "visual": "descrição em inglês da fotografia desta cena: quem, fazendo o quê, onde, luz"}], "cta_title": "chamada curta", "cta_body": "1 frase dizendo como falar com a empresa", "cta_seconds": 4, "cta_visual": "descrição em inglês da fotografia do fechamento", "caption": "legenda do post com call to action", "hashtags": ["5 a 8 hashtags relevantes, sem #"], "reasoning": "1 frase curta, em português, explicando por que este vídeo faz sentido agora, para o dono da empresa entender"} — todos os textos das cenas e a legenda no idioma da legenda indicado acima.'
+      ? '{"script": "narração falada do vídeo, texto corrido na ordem das cenas", "setting": "cenário comum das fotos, em inglês", "scenes": [{"headline": "até 8 palavras", "text": "1 frase de apoio", "seconds": 4, "visual": "descrição em inglês da fotografia desta cena: quem, fazendo o quê, onde, luz"}], "cta_title": "chamada curta", "cta_body": "1 frase dizendo como falar com a empresa", "cta_seconds": 4, "cta_visual": "descrição em inglês da fotografia do fechamento", "caption": "legenda do post com call to action", "hashtags": ["5 a 8 hashtags relevantes, sem #"], "reasoning": "1 frase curta, em português, explicando por que este vídeo faz sentido agora, para o dono da empresa entender"} — todos os textos das cenas e a legenda no idioma da legenda indicado acima.'
       : carousel
       ? '{"cover_title": "gancho curto da capa", "cover_subtitle": "1 frase de apoio", "slides": [{"title": "título curto", "body": "1-2 frases"}], "cta_title": "chamada curta", "cta_body": "1 frase dizendo como falar com a empresa", "caption": "legenda do post com call to action", "hashtags": ["5 a 8 hashtags relevantes, sem #"], "reasoning": "1 frase curta, em português, explicando por que este carrossel faz sentido agora, para o dono da empresa entender"} — todos os textos dos slides e a legenda no idioma da legenda indicado acima.'
       : '{"caption": "a legenda pronta para publicar, incluindo call to action se fizer sentido para a empresa", "image_prompt": "descrição em inglês, detalhada e visual, para gerar a imagem que acompanha o post — sem nenhum texto/letra embutido na imagem", "reasoning": "1 frase curta, em português, explicando por que este post faz sentido agora, para o dono da empresa entender"}',
@@ -312,13 +318,14 @@ export async function generateVideoContent(params: {
   recentPosts?: RecentPostSummary[]
   attachmentsContext?: string | null
   instruction?: ContentInstruction | null
+  videoTheme?: string | null
 }): Promise<GeneratedVideo> {
   const systemPrompt = buildCaptionSystemPrompt({ ...params, visualAngle: '', video: true })
   const output = await generateStructuredReply<CarouselOutput>({
     apiKey: params.apiKey,
     systemPrompt,
     history: [{ role: 'user', content: 'Gere o vídeo agora.' }],
-    maxTokens: 1500,
+    maxTokens: 1800,
     temperature: 0.8,
   })
   const normalized = normalizeVideo(output)
