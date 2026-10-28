@@ -33,14 +33,52 @@ Corpo JSON:
   "reporterPhone": "+5511999999999",
   "category": "bug",
   "title": "Resumo curto",
-  "description": "Relato completo, caminho percorrido e erro exibido"
+  "description": "Relato completo, caminho percorrido e erro exibido",
+  "mediaConsent": true,
+  "media": [
+    {
+      "kind": "image",
+      "mimeType": "image/jpeg",
+      "base64": "conteudo-base64",
+      "caption": "Tela enviada pelo cliente",
+      "sourceMessageId": "id-da-mensagem-no-parceiro"
+    }
+  ]
 }
 ```
+
+`media` é opcional, aceita no máximo três imagens ou áudios e exige
+`mediaConsent: true`. Imagens têm limite de 8 MB e áudios de 16 MB. Os arquivos
+são enviados ao provedor de IA para leitura e descartados ao fim da requisição;
+o banco guarda somente a descrição da imagem ou a transcrição do áudio.
 
 Autorização: `Authorization: Bearer <SUPPORT_PARTNER_API_TOKEN>`.
 
 Resposta `201` cria um chamado; `200` devolve o chamado já existente para o
 mesmo `externalReference`. A resposta contém `id`, `protocol` e `created`.
 
-Este endpoint é somente de entrada. Diagnóstico, proposta de reparo,
-autorização explícita e execução são etapas separadas e auditadas.
+Para acompanhar o chamado, o servidor parceiro pode consultar:
+
+```text
+GET /api/integrations/support/cases?orgId=<uuid>&externalReference=<referência>
+Authorization: Bearer <SUPPORT_PARTNER_API_TOKEN>
+```
+
+A resposta contém `id`, `protocol`, `status`, `repairProposal`, `resolution`,
+`updatedAt` e `resolvedAt`. O parceiro deve consultar periodicamente enquanto o
+chamado estiver aberto e, quando `status` for `resolved`, entregar `resolution`
+ao cliente na conversa original.
+
+Este endpoint não autoriza nem executa reparos. Uma proposta criada pelo TI
+muda o chamado para `awaiting_authorization`; a autorização deve ser feita por
+um administrador autenticado no painel da Alizo. Só depois disso o TI pode
+registrar a resolução final. Todo o fluxo fica auditado.
+
+## Estados relevantes para a Kai
+
+- `open` ou `investigating`: informar que o TI está analisando.
+- `awaiting_authorization`: informar que existe uma proposta aguardando uma
+  autorização humana no painel.
+- `authorized` ou `repairing`: informar que o reparo autorizado está em curso.
+- `resolved`: responder ao cliente com o texto de `resolution`.
+- `closed`: informar que o atendimento foi encerrado.

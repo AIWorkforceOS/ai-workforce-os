@@ -35,6 +35,7 @@ export async function openSupportCase(
       .from('support_cases')
       .select('id, protocol')
       .eq('source_system', input.sourceSystem ?? 'partner')
+      .eq('org_id', input.orgId)
       .eq('external_reference', input.externalReference)
       .maybeSingle()
     if (externalCase) {
@@ -79,6 +80,23 @@ export async function openSupportCase(
     })
     .select('id, protocol')
     .single()
+
+  if (error?.code === '23505' && input.externalReference) {
+    const { data: concurrentCase } = await supabase
+      .from('support_cases')
+      .select('id, protocol')
+      .eq('source_system', input.sourceSystem ?? 'partner')
+      .eq('org_id', input.orgId)
+      .eq('external_reference', input.externalReference)
+      .maybeSingle()
+    if (concurrentCase) {
+      return {
+        id: concurrentCase.id as string,
+        protocol: concurrentCase.protocol as string,
+        created: false,
+      }
+    }
+  }
 
   if (error || !data) throw new Error(error?.message ?? 'Não foi possível criar o chamado TI.')
 
