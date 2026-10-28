@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServiceClient } from '@/lib/supabase/service'
-import { getEvolutionConfig, getInstanceStatus, legacyWhatsappChannel, type EvolutionUnitConfig } from '@/lib/evolution'
+import {
+  ensureWebhookConfigured,
+  getInstanceStatus,
+  legacyWhatsappChannel,
+  syncWhatsappPhoneIfConnected,
+} from '@/lib/evolution'
 import { sendWhatsappDisconnectedEmail } from '@/lib/email'
 import { logSystemEvent } from '@/lib/system-events'
 import type { Unit } from '@/lib/types'
@@ -10,7 +15,7 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 120
 
 /**
- * Verificação diária de saúde do WhatsApp de cada unidade (pedido do
+ * Verificação de saúde do WhatsApp de cada unidade (pedido do
  * Vinicius, 2026-09-08): "temos que ter algum tipo de notificação quando o
  * whats desconectar pq o cliente não vai saber o que aconteceu e como
  * resolver". Achado real que motivou isso: o WhatsApp da unidade "Smarter
@@ -22,8 +27,9 @@ export const maxDuration = 120
  * ar) — sempre por e-mail, pro dono da unidade (organizations.owner_email,
  * mesmo destino já usado pelos alertas do TI interno).
  *
- * Roda 1x/dia (mesma limitação de cron do resto do produto — o plano
- * Vercel atual não tem cron por hora, ver manager-agenda-digest/route.ts).
+ * Na Vercel Hobby roda 1x/dia (limite atual do plano). A mesma rota pode
+ * ser chamada com mais frequência por um monitor externo confiável usando
+ * CRON_SECRET, sem criar outro mecanismo de recuperação concorrente.
  * Cooldown de 20h por (unidade, canal) via system_events, pra não mandar
  * o mesmo aviso 2x no mesmo dia se o cron for re-executado — mas manda de
  * novo no dia seguinte enquanto continuar desconectado, até ser resolvido.
@@ -51,61 +57,71 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Serviço não configurado.' }, { status: 500 })
   }
 
-  const [{ data: unitsData }, { data: channelsData }] = await Promise.all([
-    supabase.from('units').select('*').eq('is_active', true),
-    supabase.from('unit_whatsapp_channels').select('unit_id, agent_type, evolution_instance_name'),
-  ])
+  const { data: unitsData } = await supabase.from('units').select('*').eq('is_active', true)
   const units = (unitsData ?? []) as Unit[]
-  const dedicatedChannels = (channelsData ?? []) as { unit_id: string; agent_type: string; evolution_instance_name: string }[]
 
   let checked = 0
   let disconnected = 0
   let alertsSent = 0
   let errors = 0
+  let webhooksVerified = 0
+  let repairFailures = 0
 
   for (const unit of units) {
-    const channels: { agentType: string | null; config: EvolutionUnitConfig }[] = []
+    // Desde a migration 113 existe um único número compartilhado por unidade.
+    // Linhas dedicadas antigas não podem voltar a ser tratadas como conexões
+    // independentes, pois isso causaria alertas duplicados e instâncias órfãs.
+    if (!unit.whatsapp_phone) continue
+    const channel = legacyWhatsappChannel(supabase, unit)
+    if (!channel) continue
 
-    if (unit.whatsapp_phone) {
-      const legacy = legacyWhatsappChannel(supabase, unit)
-      if (legacy) channels.push({ agentType: null, config: legacy.config })
-    }
-    for (const row of dedicatedChannels.filter((c) => c.unit_id === unit.id)) {
-      const config = getEvolutionConfig(unit, row.evolution_instance_name)
-      if (config) channels.push({ agentType: row.agent_type, config })
-    }
-
-    for (const channel of channels) {
-      checked += 1
-      try {
-        const status = await getInstanceStatus(channel.config)
-        if (status === 'open') continue
-
-        disconnected += 1
-        const sent = await alertIfNeeded(supabase, unit, channel.agentType)
-        if (sent) alertsSent += 1
-      } catch (error) {
-        errors += 1
-        await logSystemEvent(supabase, {
-          level: 'warning',
-          source: 'cron',
-          eventType: 'whatsapp_health_check_status_failed',
-          message: `Falha ao checar status do WhatsApp da unidade "${unit.name}"${channel.agentType ? ` (canal ${channel.agentType})` : ''}: ${error instanceof Error ? error.message : 'erro desconhecido'}`,
+    checked += 1
+    try {
+      const status = await getInstanceStatus(channel.config)
+      if (status === 'open') {
+        await syncWhatsappPhoneIfConnected(supabase, unit, channel)
+        const webhookOk = await ensureWebhookConfigured(channel.config, {
+          supabase,
           orgId: unit.org_id,
           unitId: unit.id,
         })
+        if (webhookOk) webhooksVerified += 1
+        else repairFailures += 1
+        continue
       }
+
+      disconnected += 1
+      const sent = await alertIfNeeded(supabase, unit, null)
+      if (sent) alertsSent += 1
+    } catch (error) {
+      errors += 1
+      await logSystemEvent(supabase, {
+        level: 'warning',
+        source: 'cron',
+        eventType: 'whatsapp_health_check_status_failed',
+        message: `Falha ao checar status do WhatsApp da unidade "${unit.name}": ${error instanceof Error ? error.message : 'erro desconhecido'}`,
+        orgId: unit.org_id,
+        unitId: unit.id,
+      })
     }
   }
 
   await logSystemEvent(supabase, {
-    level: disconnected > 0 ? 'warning' : 'info',
+    level: disconnected > 0 || errors > 0 || repairFailures > 0 ? 'warning' : 'info',
     source: 'cron',
     eventType: 'whatsapp_health_check_run',
-    message: `Verificação de saúde do WhatsApp executada: ${checked} canal(is) checado(s), ${disconnected} desconectado(s), ${alertsSent} aviso(s) enviado(s), ${errors} erro(s).`,
+    message: `Verificação de saúde do WhatsApp executada: ${checked} canal(is) checado(s), ${webhooksVerified} webhook(s) confirmado(s), ${repairFailures} reparo(s) com falha, ${disconnected} desconectado(s), ${alertsSent} aviso(s) enviado(s), ${errors} erro(s).`,
   })
 
-  return NextResponse.json({ ok: true, checked, disconnected, alertsSent, errors })
+  return NextResponse.json({
+    ok: errors === 0 && repairFailures === 0,
+    checked,
+    webhooksVerified,
+    repairFailures,
+    disconnected,
+    alertsSent,
+    errors,
+  })
 }
 
 const AGENT_LABEL: Record<string, string> = {

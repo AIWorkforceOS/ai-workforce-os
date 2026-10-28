@@ -10,11 +10,8 @@ process.env.CRON_SECRET = 'test-secret'
 // e-mail (nunca por WhatsApp, é o canal que está fora do ar).
 
 const getInstanceStatus = vi.fn()
-const getEvolutionConfig = vi.fn((unit: { id: string }, instanceNameOverride?: string) => ({
-  apiUrl: 'https://evolution.example.com',
-  apiKey: 'key',
-  instanceName: instanceNameOverride ?? `unit-${unit.id}`,
-}))
+const ensureWebhookConfigured = vi.fn(async () => true)
+const syncWhatsappPhoneIfConnected = vi.fn(async () => '5521999999999')
 const legacyWhatsappChannel = vi.fn((_supabase: unknown, unit: { id: string }) => ({
   agentType: null,
   config: { apiUrl: 'https://evolution.example.com', apiKey: 'key', instanceName: `unit-${unit.id}` },
@@ -37,7 +34,12 @@ function makeUnitRow(overrides: Record<string, unknown> = {}) {
 
 async function loadRoute(supabase: unknown) {
   vi.doMock('@/lib/supabase/service', () => ({ createServiceClient: () => supabase }))
-  vi.doMock('@/lib/evolution', () => ({ getEvolutionConfig, getInstanceStatus, legacyWhatsappChannel }))
+  vi.doMock('@/lib/evolution', () => ({
+    ensureWebhookConfigured,
+    getInstanceStatus,
+    legacyWhatsappChannel,
+    syncWhatsappPhoneIfConnected,
+  }))
   vi.doMock('@/lib/email', () => ({ sendWhatsappDisconnectedEmail }))
   return import('../route')
 }
@@ -52,6 +54,9 @@ describe('GET /api/cron/whatsapp-health-check', () => {
   beforeEach(() => {
     vi.resetModules()
     getInstanceStatus.mockReset()
+    ensureWebhookConfigured.mockClear()
+    ensureWebhookConfigured.mockResolvedValue(true)
+    syncWhatsappPhoneIfConnected.mockClear()
     sendWhatsappDisconnectedEmail.mockClear()
     sendWhatsappDisconnectedEmail.mockResolvedValue({ ok: true })
   })
@@ -74,7 +79,7 @@ describe('GET /api/cron/whatsapp-health-check', () => {
     const res = await GET(makeRequest())
     const body = await res.json()
 
-    expect(body).toEqual({ ok: true, checked: 1, disconnected: 0, alertsSent: 0, errors: 0 })
+    expect(body).toEqual({ ok: true, checked: 1, webhooksVerified: 1, repairFailures: 0, disconnected: 0, alertsSent: 0, errors: 0 })
     expect(sendWhatsappDisconnectedEmail).not.toHaveBeenCalled()
     expect(db.system_events?.some((e) => e.event_type === 'whatsapp_disconnected_alert_sent')).toBe(false)
   })
@@ -90,7 +95,7 @@ describe('GET /api/cron/whatsapp-health-check', () => {
     const res = await GET(makeRequest())
     const body = await res.json()
 
-    expect(body).toEqual({ ok: true, checked: 1, disconnected: 1, alertsSent: 1, errors: 0 })
+    expect(body).toEqual({ ok: true, checked: 1, webhooksVerified: 0, repairFailures: 0, disconnected: 1, alertsSent: 1, errors: 0 })
     expect(sendWhatsappDisconnectedEmail).toHaveBeenCalledWith(
       expect.objectContaining({ to: 'dono@smarter.com', unitName: 'Smarter Matriz', agentLabel: null }),
     )
@@ -117,12 +122,12 @@ describe('GET /api/cron/whatsapp-health-check', () => {
     const res = await GET(makeRequest())
     const body = await res.json()
 
-    expect(body).toEqual({ ok: true, checked: 1, disconnected: 1, alertsSent: 0, errors: 0 })
+    expect(body).toEqual({ ok: true, checked: 1, webhooksVerified: 0, repairFailures: 0, disconnected: 1, alertsSent: 0, errors: 0 })
     expect(sendWhatsappDisconnectedEmail).not.toHaveBeenCalled()
     expect(db.system_events).toHaveLength(2) // o antigo + o run summary, nenhum alert_sent novo
   })
 
-  it('canal dedicado (unit_whatsapp_channels) desconectado usa o rótulo do funcionário no e-mail', async () => {
+  it('ignora canais dedicados antigos para não monitorar duas instâncias da mesma unidade', async () => {
     getInstanceStatus.mockResolvedValue('close')
     const { supabase } = createFakeSupabase({
       units: [makeUnitRow({ whatsapp_phone: null })],
@@ -134,8 +139,8 @@ describe('GET /api/cron/whatsapp-health-check', () => {
     const res = await GET(makeRequest())
     const body = await res.json()
 
-    expect(body).toEqual({ ok: true, checked: 1, disconnected: 1, alertsSent: 1, errors: 0 })
-    expect(sendWhatsappDisconnectedEmail).toHaveBeenCalledWith(expect.objectContaining({ agentLabel: 'Recepcionista' }))
+    expect(body).toEqual({ ok: true, checked: 0, webhooksVerified: 0, repairFailures: 0, disconnected: 0, alertsSent: 0, errors: 0 })
+    expect(sendWhatsappDisconnectedEmail).not.toHaveBeenCalled()
   })
 
   it('unidade sem WhatsApp configurado nunca — não checa nada (não é desconexão, nunca conectou)', async () => {
@@ -149,7 +154,7 @@ describe('GET /api/cron/whatsapp-health-check', () => {
     const res = await GET(makeRequest())
     const body = await res.json()
 
-    expect(body).toEqual({ ok: true, checked: 0, disconnected: 0, alertsSent: 0, errors: 0 })
+    expect(body).toEqual({ ok: true, checked: 0, webhooksVerified: 0, repairFailures: 0, disconnected: 0, alertsSent: 0, errors: 0 })
     expect(sendWhatsappDisconnectedEmail).not.toHaveBeenCalled()
   })
 
@@ -164,7 +169,7 @@ describe('GET /api/cron/whatsapp-health-check', () => {
     const res = await GET(makeRequest())
     const body = await res.json()
 
-    expect(body).toEqual({ ok: true, checked: 1, disconnected: 1, alertsSent: 0, errors: 0 })
+    expect(body).toEqual({ ok: true, checked: 1, webhooksVerified: 0, repairFailures: 0, disconnected: 1, alertsSent: 0, errors: 0 })
     expect(sendWhatsappDisconnectedEmail).not.toHaveBeenCalled()
     expect(db.system_events?.some((e) => e.event_type === 'whatsapp_health_check_no_owner_email')).toBe(true)
   })
@@ -181,7 +186,19 @@ describe('GET /api/cron/whatsapp-health-check', () => {
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(body).toEqual({ ok: true, checked: 1, disconnected: 0, alertsSent: 0, errors: 1 })
+    expect(body).toEqual({ ok: false, checked: 1, webhooksVerified: 0, repairFailures: 0, disconnected: 0, alertsSent: 0, errors: 1 })
     expect(db.system_events?.some((e) => e.event_type === 'whatsapp_health_check_status_failed')).toBe(true)
+  })
+
+  it('sessão aberta com falha ao reparar webhook fica visível como degradada', async () => {
+    getInstanceStatus.mockResolvedValue('open')
+    ensureWebhookConfigured.mockResolvedValue(false)
+    const { supabase } = createFakeSupabase({ units: [makeUnitRow()] })
+    const { GET } = await loadRoute(supabase)
+
+    const res = await GET(makeRequest())
+    const body = await res.json()
+
+    expect(body).toEqual({ ok: false, checked: 1, webhooksVerified: 0, repairFailures: 1, disconnected: 0, alertsSent: 0, errors: 0 })
   })
 })
