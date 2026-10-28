@@ -205,10 +205,10 @@ describe('processReceptionistInbound — handoff "ti"', () => {
     })
 
     expect(result.handled).toBe(true)
-    expect(answerTechSupportQuestionMock).toHaveBeenCalledWith(supabase, {
+    expect(answerTechSupportQuestionMock).toHaveBeenCalledWith(supabase, expect.objectContaining({
       unit,
       question: 'Como eu conecto o WhatsApp da minha unidade?',
-    })
+    }))
 
     const finalSystemPrompt = generateChatReplyMock.mock.calls[0]?.[0]?.systemPrompt as string
     expect(finalSystemPrompt).toContain(TI_ANSWER)
@@ -283,10 +283,10 @@ describe('processReceptionistProspectInbound — handoff "ti"', () => {
     })
 
     expect(result.handled).toBe(true)
-    expect(answerTechSupportQuestionMock).toHaveBeenCalledWith(supabase, {
+    expect(answerTechSupportQuestionMock).toHaveBeenCalledWith(supabase, expect.objectContaining({
       unit,
       question: 'Como eu conecto o WhatsApp da minha unidade?',
-    })
+    }))
 
     const finalSystemPrompt = generateChatReplyMock.mock.calls[0]?.[0]?.systemPrompt as string
     expect(finalSystemPrompt).toContain(TI_ANSWER)

@@ -26,6 +26,7 @@ import {
   Search,
   PieChart,
   Camera,
+  LifeBuoy,
 } from 'lucide-react'
 import type { Locale } from '@/lib/i18n/config'
 import type { ManagementMode } from '@/lib/types'
@@ -116,6 +117,7 @@ export const navGroups: { label: Record<Locale, string>; items: NavItem[] }[] = 
       { href: '/dashboard/email-marketing', label: { pt: 'E-mail marketing', en: 'Email marketing' }, icon: Mail },
       { href: '/dashboard/facilit', label: { pt: 'Facil-IT (360)', en: 'Facil-IT (360)' }, icon: Link2, facilitOnly: true },
       { href: '/dashboard/settings', label: { pt: 'Configurações gerais', en: 'General settings' }, icon: Settings },
+      { href: '/dashboard/support', label: { pt: 'Suporte TI', en: 'IT support' }, icon: LifeBuoy },
       { href: '/dashboard/units', label: { pt: 'Unidades', en: 'Units' }, icon: MapPin },
       { href: '/dashboard/messaging/connect', label: { pt: 'Canal de mensagens (SMS)', en: 'Messaging channel (SMS)' }, icon: Smartphone },
       { href: '/dashboard/organizations', label: { pt: 'Clientes (empresas)', en: 'Clients (companies)' }, icon: Building2, superOnly: true },

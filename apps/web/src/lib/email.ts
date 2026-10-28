@@ -153,6 +153,29 @@ export async function sendTechnicalAlertEmail(params: {
   })
 }
 
+export async function sendSupportAuthorizationEmail(params: {
+  to: string
+  protocol: string
+  proposal: string
+}): Promise<SendResult> {
+  const from = defaultFrom()
+  if (!from) return { ok: false, error: 'EMAIL_FROM_DOMAIN não está configurada.' }
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://www.alizoai.com').replace(/\/+$/, '')
+
+  return sendEmail({
+    to: params.to,
+    from,
+    subject: `[${params.protocol}] Autorização necessária para o reparo`,
+    html: `
+      ${emailBrandHeader()}
+      <p>O diagnóstico do chamado <strong>${escapeHtml(params.protocol)}</strong> foi concluído.</p>
+      <p><strong>Reparo proposto:</strong> ${escapeHtml(params.proposal)}</p>
+      <p>Nenhuma alteração será feita sem sua autorização explícita.</p>
+      <p><a href="${appUrl}/dashboard/support">Revisar e autorizar no painel</a></p>
+    `,
+  })
+}
+
 /**
  * Aviso ao dono da Alizo (super admin) quando o checkout self-service bloqueia
  * uma tentativa de compra por falta de processadora ativa naquela região —

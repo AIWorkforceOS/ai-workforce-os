@@ -5,6 +5,7 @@ import { logSystemEvent } from '@/lib/system-events'
 import { buildAccountContext } from '@/lib/chat/account-context'
 import { unitDefaultLocale } from '@/lib/i18n/config'
 import type { Unit } from '@/lib/types'
+import { openSupportCase, type SupportChannel } from '@/lib/ti/cases'
 
 // Funcionário TI interno — não entra no catálogo de vendas (sem
 // agent_configs, sem tela de contratação): é uma capacidade interna,
@@ -17,7 +18,7 @@ import type { Unit } from '@/lib/types'
 // mensagem, uma resposta já completa em vez do handoff genérico "vou
 // verificar com o time".
 
-export type TechSupportOutcome = { answer: string; filedIncident: boolean }
+export type TechSupportOutcome = { answer: string; filedIncident: boolean; protocol?: string }
 
 type TechSupportClassification = {
   kind?: 'guidance' | 'error_report'
@@ -57,10 +58,10 @@ function buildHypothesisPrompt(params: { accountContext: string | null; eventsSu
     .join(' ')
 }
 
-function acknowledgmentText(locale: 'pt' | 'en'): string {
+function acknowledgmentText(locale: 'pt' | 'en', protocol: string): string {
   return locale === 'en'
-    ? "I've logged this issue with all the details and already notified the technical team — they'll look into the cause and get it fixed as soon as possible."
-    : 'Registrei esse problema agora com todos os detalhes e já avisei o time técnico — eles vão analisar a causa e resolver o quanto antes.'
+    ? `I've logged this issue as ${protocol} and notified the technical team. Diagnosis is read-only; if a repair is needed, we will describe it and ask for your authorization before changing anything.`
+    : `Registrei esse problema no chamado ${protocol} e avisei o time técnico. O diagnóstico é somente leitura; se for necessário reparar algo, vamos explicar o que será feito e pedir sua autorização antes de qualquer alteração.`
 }
 
 async function fetchRecentUnitEvents(
@@ -82,6 +83,7 @@ async function handleErrorReport(
   apiKey: string,
   unit: Unit,
   reportedProblem: string,
+  context: { channel: SupportChannel; reporterUserId?: string | null; reporterEmail?: string | null; reporterPhone?: string | null },
 ): Promise<TechSupportOutcome> {
   const [accountContext, recentEvents] = await Promise.all([
     buildAccountContext(supabase, unit.org_id),
@@ -99,6 +101,19 @@ async function handleErrorReport(
     history: [{ role: 'user', content: `Problema relatado: ${reportedProblem}` }],
   })
 
+  const supportCase = await openSupportCase(supabase, {
+    orgId: unit.org_id!,
+    unitId: unit.id,
+    reporterUserId: context.reporterUserId,
+    reporterEmail: context.reporterEmail,
+    reporterPhone: context.reporterPhone,
+    channel: context.channel,
+    category: 'bug',
+    title: reportedProblem,
+    description: reportedProblem,
+    diagnosis: hypothesis,
+  })
+
   await logSystemEvent(supabase, {
     level: 'warning',
     source: 'ti',
@@ -106,16 +121,15 @@ async function handleErrorReport(
     message: `Problema relatado na unidade "${unit.name}": ${reportedProblem}`,
     orgId: unit.org_id,
     unitId: unit.id,
-    metadata: { hypothesis },
+    metadata: { hypothesis, support_case_id: supportCase.id, protocol: supportCase.protocol },
   })
 
   if (unit.org_id) {
-    const { data: org } = await supabase.from('organizations').select('owner_email').eq('id', unit.org_id).maybeSingle()
-    const ownerEmail = (org as { owner_email: string | null } | null)?.owner_email
+    const supportEmail = process.env.SUPPORT_ALERT_EMAIL || 'suporte@alizo.com.br'
 
-    if (ownerEmail) {
+    if (supportEmail) {
       const emailResult = await sendTechnicalAlertEmail({
-        to: ownerEmail,
+        to: supportEmail,
         unitName: unit.name,
         problem: `Relatado pelo cliente: "${reportedProblem}"`,
         impact: `Hipótese de causa raiz (gerada pelo TI interno): ${hypothesis}`,
@@ -133,7 +147,11 @@ async function handleErrorReport(
     }
   }
 
-  return { answer: acknowledgmentText(unitDefaultLocale(unit)), filedIncident: true }
+  return {
+    answer: acknowledgmentText(unitDefaultLocale(unit), supportCase.protocol),
+    filedIncident: true,
+    protocol: supportCase.protocol,
+  }
 }
 
 /**
@@ -146,7 +164,14 @@ async function handleErrorReport(
  */
 export async function answerTechSupportQuestion(
   supabase: SupabaseClient,
-  params: { unit: Unit; question: string },
+  params: {
+    unit: Unit
+    question: string
+    channel?: SupportChannel
+    reporterUserId?: string | null
+    reporterEmail?: string | null
+    reporterPhone?: string | null
+  },
 ): Promise<TechSupportOutcome> {
   const { unit, question } = params
   const apiKey = getOpenAIApiKey()
@@ -162,7 +187,13 @@ export async function answerTechSupportQuestion(
   const reportedProblem = classification.reported_problem?.trim() || question
 
   if (classification.kind === 'error_report') {
-    return handleErrorReport(supabase, apiKey, unit, reportedProblem)
+    if (!unit.org_id) throw new Error('A unidade não está vinculada a uma organização.')
+    return handleErrorReport(supabase, apiKey, unit, reportedProblem, {
+      channel: params.channel ?? 'whatsapp',
+      reporterUserId: params.reporterUserId,
+      reporterEmail: params.reporterEmail,
+      reporterPhone: params.reporterPhone,
+    })
   }
 
   const accountContext = await buildAccountContext(supabase, unit.org_id)

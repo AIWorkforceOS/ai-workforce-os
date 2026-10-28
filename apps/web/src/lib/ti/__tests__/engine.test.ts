@@ -117,7 +117,7 @@ describe('answerTechSupportQuestion — modo error_report', () => {
     classification = { kind: 'error_report', reported_problem: 'Apareceu "Internal Server Error" ao tentar gerar a fatura.' }
   })
 
-  it('registra o incidente, manda o e-mail de alerta pro dono da org e devolve um reconhecimento com filedIncident true', async () => {
+  it('cria protocolo, registra o incidente, alerta o TI Alizo e devolve um reconhecimento', async () => {
     const unit = buildUnit()
     const { supabase, db } = createFakeSupabase({
       organizations: [{ id: unit.org_id!, owner_email: 'dono@empresa.com' }],
@@ -131,6 +131,7 @@ describe('answerTechSupportQuestion — modo error_report', () => {
     })
 
     expect(result.filedIncident).toBe(true)
+    expect(result.protocol).toMatch(/^TI-[A-F0-9]{8}$/)
     expect(result.answer.length).toBeGreaterThan(0)
     expect(result.answer).not.toBe(GUIDANCE_ANSWER)
 
@@ -141,7 +142,7 @@ describe('answerTechSupportQuestion — modo error_report', () => {
       problem: string
       impact: string
     }
-    expect(emailArgs.to).toBe('dono@empresa.com')
+    expect(emailArgs.to).toBe('suporte@alizo.com.br')
     expect(emailArgs.unitName).toBe(unit.name)
     expect(emailArgs.problem).toContain('Internal Server Error')
     expect(emailArgs.impact).toContain(HYPOTHESIS_TEXT)
@@ -149,5 +150,11 @@ describe('answerTechSupportQuestion — modo error_report', () => {
     const incidentEvents = (db.system_events ?? []).filter((row) => row.event_type === 'ti_incident_reported')
     expect(incidentEvents).toHaveLength(1)
     expect(incidentEvents[0]?.unit_id).toBe(unit.id)
+
+    const supportCases = db.support_cases ?? []
+    expect(supportCases).toHaveLength(1)
+    expect(supportCases[0]?.protocol).toBe(result.protocol)
+    expect(supportCases[0]?.diagnosis).toContain(HYPOTHESIS_TEXT)
+    expect(db.support_case_messages).toHaveLength(2)
   })
 })

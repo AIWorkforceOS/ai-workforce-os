@@ -3,6 +3,9 @@ import { generateChatReply, generateChatReplyWithTools, getOpenAIApiKey, type Ch
 import { createClient } from '@/lib/supabase/server'
 import { buildAccountContext } from '@/lib/chat/account-context'
 import { CHAT_TOOLS, executeChatTool, type ChatClientAction } from '@/lib/chat/actions'
+import { getAppUser } from '@/lib/app-user'
+import { answerTechSupportQuestion } from '@/lib/ti/engine'
+import type { Unit } from '@/lib/types'
 
 /** Modos autenticados em que a Kai pode executar ações reais (gerar QR do WhatsApp, retestar conexão) em vez de só orientar. */
 const TOOL_ENABLED_MODES = new Set(['support', 'traffic', 'content'])
@@ -208,6 +211,7 @@ export async function POST(req: NextRequest) {
     // dashboard (autenticado). O modo 'sales' roda na landing pública, sem
     // login — nunca busca contexto nem ganha ferramentas.
     let authenticatedSupabase: Awaited<ReturnType<typeof createClient>> | null = null
+    let authenticatedUser: Awaited<ReturnType<typeof getAppUser>> = null
     if (mode !== 'sales') {
       try {
         const supabase = await createClient()
@@ -217,6 +221,7 @@ export async function POST(req: NextRequest) {
 
         if (user) {
           authenticatedSupabase = supabase
+          authenticatedUser = await getAppUser()
           const accountContext = await buildAccountContext(supabase)
           if (accountContext) {
             systemPrompt = `${accountContext}\n\n${systemPrompt}`
@@ -230,7 +235,27 @@ export async function POST(req: NextRequest) {
     let reply: string
     let actions: ChatClientAction[] = []
     try {
-      if (authenticatedSupabase && TOOL_ENABLED_MODES.has(mode)) {
+      if (mode === 'support' && authenticatedSupabase && authenticatedUser?.orgId) {
+        let unitQuery = authenticatedSupabase.from('units').select('*').eq('org_id', authenticatedUser.orgId).eq('is_active', true)
+        unitQuery = authenticatedUser.unitId
+          ? unitQuery.eq('id', authenticatedUser.unitId)
+          : unitQuery.order('created_at', { ascending: true }).limit(1)
+        const { data: unit } = await unitQuery.maybeSingle()
+        const question = [...messages].reverse().find((message) => message.role === 'user')?.content?.trim()
+
+        if (!unit || !question) {
+          reply = 'Não consegui identificar uma unidade ativa nesta conta. Confirme o cadastro da unidade ou fale com suporte@alizo.com.br.'
+        } else {
+          const outcome = await answerTechSupportQuestion(authenticatedSupabase, {
+            unit: unit as Unit,
+            question,
+            channel: 'dashboard',
+            reporterUserId: authenticatedUser.id,
+            reporterEmail: authenticatedUser.email,
+          })
+          reply = outcome.answer
+        }
+      } else if (authenticatedSupabase && TOOL_ENABLED_MODES.has(mode)) {
         const supabase = authenticatedSupabase
         const result = await generateChatReplyWithTools<ChatClientAction | undefined>({
           apiKey,

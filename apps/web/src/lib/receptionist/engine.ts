@@ -433,7 +433,13 @@ export async function processReceptionistInbound(params: {
 
   if (rawHandoff === 'ti') {
     try {
-      const tiResult = await answerTechSupportQuestion(supabase, { unit, question: incomingText })
+      const tiResult = await answerTechSupportQuestion(supabase, {
+        unit,
+        question: incomingText,
+        channel,
+        reporterEmail: customer.email,
+        reporterPhone: customer.phone ?? recipient,
+      })
       tiAnswerContext = `CONTEXTO DESTA RESPOSTA (TI interno já verificou e respondeu${tiResult.filedIncident ? '; um chamado técnico já foi registrado para o time' : ''} — baseie sua resposta ao cliente estritamente nisso, com naturalidade, sem inventar nada além disso): ${tiResult.answer}`
     } catch (error) {
       console.error(`[receptionist_engine] TI interno falhou ao responder: ${error instanceof Error ? error.message : String(error)}`)
@@ -851,7 +857,13 @@ export async function processReceptionistProspectInbound(params: {
 
   if (rawHandoff === 'ti') {
     try {
-      const tiResult = await answerTechSupportQuestion(supabase, { unit, question: incomingText })
+      const tiResult = await answerTechSupportQuestion(supabase, {
+        unit,
+        question: incomingText,
+        channel,
+        reporterEmail: lead.email,
+        reporterPhone: lead.phone ?? recipient,
+      })
       tiAnswerContext = `CONTEXTO DESTA RESPOSTA (TI interno já verificou e respondeu${tiResult.filedIncident ? '; um chamado técnico já foi registrado para o time' : ''} — baseie sua resposta à pessoa estritamente nisso, com naturalidade, sem inventar nada além disso): ${tiResult.answer}`
     } catch (error) {
       console.error(`[receptionist_engine] TI interno falhou ao responder (prospecto): ${error instanceof Error ? error.message : String(error)}`)
