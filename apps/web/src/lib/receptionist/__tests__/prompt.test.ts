@@ -32,6 +32,12 @@ function baseConfig(businessProfile: Record<string, unknown> = {}): AgentConfig 
 }
 
 describe('buildReceptionistSystemPrompt', () => {
+  it('define a Recepcionista como porta de entrada com transferência contextual', () => {
+    const prompt = buildReceptionistSystemPrompt(baseConfig(), unit, null)
+    expect(prompt).toContain('PORTA DE ENTRADA principal')
+    expect(prompt).toContain('não precisar repetir tudo')
+  })
+
   it('inclui a ficha do negócio quando existe business_profile', () => {
     const prompt = buildReceptionistSystemPrompt(baseConfig({ tipo_negocio: 'clínica odontológica' }), unit, null)
     expect(prompt).toContain('clínica odontológica')

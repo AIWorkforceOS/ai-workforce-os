@@ -3,6 +3,7 @@ import {
   assignWhatsappConversation,
   getWhatsappConversationRoute,
   whatsappContactKey,
+  retainReceptionistOwnership,
 } from '@/lib/whatsapp-conversation-routing'
 import { createFakeSupabase } from './fake-supabase'
 import type { Unit } from '@/lib/types'
@@ -63,6 +64,29 @@ describe('WhatsApp compartilhado — propriedade da conversa', () => {
     })
     await expect(getWhatsappConversationRoute(supabase, 'unit-2', '5511999998888', null)).resolves.toMatchObject({
       agent_type: 'receptionist',
+    })
+  })
+
+  it('não desfaz um handoff da Recepcionista para o Sales', async () => {
+    const { supabase } = createFakeSupabase()
+    await assignWhatsappConversation({ supabase, unit, phone: '5511999998888', email: null, agentType: 'receptionist' })
+    await assignWhatsappConversation({
+      supabase,
+      unit,
+      phone: '5511999998888',
+      email: null,
+      agentType: 'sdr',
+      reason: 'Cliente pediu proposta',
+      summary: 'Recepção coletou o contexto comercial.',
+    })
+
+    await retainReceptionistOwnership({ supabase, unit, phone: '5511999998888', email: null })
+
+    const route = await getWhatsappConversationRoute(supabase, unit.id, '5511999998888', null)
+    expect(route).toMatchObject({
+      agent_type: 'sdr',
+      previous_agent_type: 'receptionist',
+      handoff_reason: 'Cliente pediu proposta',
     })
   })
 })

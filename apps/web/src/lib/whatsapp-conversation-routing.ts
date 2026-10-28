@@ -89,3 +89,29 @@ export async function assignWhatsappConversation(params: {
   )
 }
 
+/**
+ * Mantém a Recepcionista como dona da conversa somente enquanto nenhum
+ * handoff ocorreu durante o processamento da mensagem. Isso fecha a corrida
+ * em que handoffToSales atribuía o SDR e, logo depois, o roteador sobrescrevia
+ * a atribuição de volta para receptionist.
+ */
+export async function retainReceptionistOwnership(params: {
+  supabase: SupabaseClient
+  unit: Pick<Unit, 'id' | 'org_id'>
+  phone: string | null
+  email: string | null
+  lastMessageAt?: string
+}): Promise<void> {
+  const { supabase, unit, phone, email, lastMessageAt } = params
+  const current = await getWhatsappConversationRoute(supabase, unit.id, phone, email)
+  if (current && current.agent_type !== 'triage' && current.agent_type !== 'receptionist') return
+
+  await assignWhatsappConversation({
+    supabase,
+    unit,
+    phone,
+    email,
+    agentType: 'receptionist',
+    lastMessageAt,
+  })
+}

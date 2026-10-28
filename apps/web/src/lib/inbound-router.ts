@@ -17,6 +17,7 @@ import { getMessagingChannel } from '@/lib/channels/messaging-channel'
 import {
   assignWhatsappConversation,
   getWhatsappConversationRoute,
+  retainReceptionistOwnership,
 } from '@/lib/whatsapp-conversation-routing'
 import type { ChannelType } from '@/lib/channels/messaging-channel'
 import type { Customer, Lead, Unit } from '@/lib/types'
@@ -153,8 +154,8 @@ async function handleUnknownInbound(params: UnknownInboundContext): Promise<Reco
   const apiKey = getOpenAIApiKey()
   // Todos os setores usam a mesma instância da unidade; o agentType aqui
   // identifica apenas a função que responderá, não outro número físico.
-  const sdrChannel = channel === 'whatsapp' ? await resolveWhatsappChannel(supabase, unit, 'sdr') : null
-  const messagingChannel = getMessagingChannel(unit, supabase, sdrChannel?.config ?? null)
+  const receptionistChannel = channel === 'whatsapp' ? await resolveWhatsappChannel(supabase, unit, 'receptionist') : null
+  const messagingChannel = getMessagingChannel(unit, supabase, receptionistChannel?.config ?? null)
 
   if (!apiKey || !messagingChannel) return
 
@@ -193,14 +194,19 @@ async function handleUnknownInbound(params: UnknownInboundContext): Promise<Reco
     maxTokens: 120,
   }).catch(() => ({ route: 'unclear' as const }))
 
-  if (firstTouchIntent.route === 'receptionist' || firstTouchIntent.route === 'recruiting') {
+  // A Recepcionista é sempre a porta de entrada de um contato novo. Esta
+  // pré-classificação vira contexto de triagem, não autorização para pular
+  // direto para Sales/Recruiter. Ela responde primeiro e, se necessário,
+  // executa o handoff com histórico pelo próprio motor.
+  const initialRoute = firstTouchIntent.route ?? 'unclear'
+  if (initialRoute) {
     await assignWhatsappConversation({
       supabase,
       unit,
       phone: incomingPhone,
       email: incomingEmail,
       agentType: 'receptionist',
-      reason: firstTouchIntent.reason ?? 'Triagem do WhatsApp compartilhado',
+      reason: `Recepção inicial: ${('reason' in firstTouchIntent ? firstTouchIntent.reason : null) ?? initialRoute}`,
       summary: text.slice(0, 500),
       lastMessageAt: sentAt,
     })
@@ -970,26 +976,25 @@ export async function routeInboundMessage(params: InboundRouteParams): Promise<R
       wasAudioMessage,
       inboundMessageId: (inboundRow as { id: string } | null)?.id,
     })
-    await assignWhatsappConversation({
+    await retainReceptionistOwnership({
       supabase,
       unit: unitRow,
       phone: incomingPhone,
       email: incomingEmail,
-      agentType: 'receptionist',
       lastMessageAt: sentAt,
     })
     return { ok: true, routed: 'receptionist', handled: result.handled }
   }
 
-  // ── Rota 3: número desconhecido ou em triagem ──────────────────────
-  // (triagem: lead com source='unknown_inbound' e status='contacted')
+  // ── Rota 3: contato novo começa sempre na Recepcionista ────────────
+  // Ela resolve o que souber e faz o handoff com histórico quando preciso.
   if (!lead || (lead.source === 'unknown_inbound' && lead.status === 'contacted')) {
     await assignWhatsappConversation({
       supabase,
       unit: unitRow,
       phone: incomingPhone,
       email: incomingEmail,
-      agentType: 'triage',
+      agentType: 'receptionist',
       lastMessageAt: sentAt,
     })
     const triageResult = await handleUnknownInbound({
@@ -1003,7 +1008,7 @@ export async function routeInboundMessage(params: InboundRouteParams): Promise<R
       sentAt,
       wasAudioMessage,
     })
-    return triageResult ?? { ok: true, routed: 'unknown_inbound_screening' }
+    return triageResult ?? { ok: true, routed: 'receptionist' }
   }
 
   await supabase.from('conversations').insert({
@@ -1204,12 +1209,11 @@ export async function routeReceptionistChannelMessage(
       wasAudioMessage,
       inboundMessageId: (inboundRow as { id: string } | null)?.id,
     })
-    await assignWhatsappConversation({
+    await retainReceptionistOwnership({
       supabase,
       unit: unitRow,
       phone: incomingPhone,
       email: incomingEmail,
-      agentType: 'receptionist',
       lastMessageAt: sentAt,
     })
     return { ok: true, routed: 'receptionist', handled: result.handled }
@@ -1243,12 +1247,11 @@ export async function routeReceptionistChannelMessage(
     wasAudioMessage,
     inboundMessageId: (inboundLeadRow as { id: string } | null)?.id,
   })
-  await assignWhatsappConversation({
+  await retainReceptionistOwnership({
     supabase,
     unit: unitRow,
     phone: incomingPhone,
     email: incomingEmail,
-    agentType: 'receptionist',
     lastMessageAt: sentAt,
   })
   return { ok: true, routed: 'receptionist_prospect', handled: result.handled }

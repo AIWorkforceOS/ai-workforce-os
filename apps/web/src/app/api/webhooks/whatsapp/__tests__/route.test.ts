@@ -74,6 +74,26 @@ function buildEvolutionPayload(messageId: string) {
   }
 }
 
+function buildReceptionistConfig() {
+  return {
+    id: 'agent-config-receptionist',
+    unit_id: 'unit-1',
+    agent_type: 'receptionist',
+    persona_name: 'Ana',
+    persona_tone: 'friendly',
+    daily_limit: 50,
+    active_hours: { start: '00:00', end: '23:59', days: [0, 1, 2, 3, 4, 5, 6] },
+    escalation_rules: { after_messages: 999, keywords: [] },
+    sectors: [],
+    is_active: true,
+    business_profile: {},
+    interview_status: 'completed',
+    interview_transcript: [],
+    created_at: '',
+    updated_at: '',
+  }
+}
+
 describe('POST /api/webhooks/whatsapp — reentrega do provedor não duplica resposta', () => {
   beforeEach(() => {
     vi.resetModules()
@@ -84,6 +104,7 @@ describe('POST /api/webhooks/whatsapp — reentrega do provedor não duplica res
   it('primeira entrega processa e responde normalmente; reentrega idêntica (mesmo external_message_id) não reprocessa nem manda segunda resposta', async () => {
     const { supabase } = createFakeSupabase({
       units: [buildUnit() as unknown as Record<string, unknown>],
+      agent_configs: [buildReceptionistConfig()],
     })
 
     vi.doMock('@/lib/supabase/service', () => ({
@@ -133,7 +154,7 @@ describe('POST /api/webhooks/whatsapp — reentrega do provedor não duplica res
     // ── 1ª entrega: processa normalmente e manda a resposta ──────────
     const firstResponse = await POST(makeRequest())
     const firstBody = await firstResponse.json()
-    expect(firstBody).toMatchObject({ ok: true, routed: 'unknown_inbound_screening' })
+    expect(firstBody).toMatchObject({ ok: true, routed: 'receptionist_prospect' })
     expect(sendWhatsAppMessage).toHaveBeenCalledTimes(1)
 
     const { data: conversationsAfterFirst } = await supabase
@@ -308,6 +329,7 @@ describe('POST /api/webhooks/whatsapp — reentrega do provedor não duplica res
     const unit = buildUnit()
     const { supabase } = createFakeSupabase({
       units: [unit as unknown as Record<string, unknown>],
+      agent_configs: [buildReceptionistConfig()],
     })
     const getBase64FromMediaMessage = vi.fn(async () => ({
       base64: Buffer.from('imagem-de-teste').toString('base64'),
