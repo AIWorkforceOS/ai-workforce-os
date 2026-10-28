@@ -4,15 +4,13 @@ import { localDateString } from '@/lib/slot-engine'
 import type { Unit } from '@/lib/types'
 
 // Bug real (regressão do commit 5924ad9, investigado direto em produção):
-// alguém que escreve pela primeira vez na instância WhatsApp DEDICADA da
-// Recepcionista (migration 051, unit_whatsapp_channels agent_type=
-// 'receptionist') e ainda não é cliente cadastrado precisa ser atendido —
+// alguém que escreve pela primeira vez no WhatsApp COMPARTILHADO da unidade
+// e já pede um serviço precisa ser direcionado pela triagem à Recepcionista —
 // inclusive conseguir marcar um serviço — sem que a IA peça pra ela "se
 // cadastrar" antes. Este teste exercita o handler HTTP de verdade
 // (route.ts) com um payload real de mensagem de número desconhecido pedindo
-// um agendamento, e confirma ponta a ponta: a mensagem é roteada direto pro
-// motor da Recepcionista (nunca cai na triagem genérica de número
-// desconhecido, que existia pro número compartilhado do Sales Rep), o
+// um agendamento, e confirma ponta a ponta: a triagem reconhece o assunto e
+// chama o motor da Recepcionista sem pedir para o contato repetir, o
 // cadastro do cliente é criado pela própria IA (não pedido à pessoa), o
 // agendamento é gravado de verdade, e o texto de sistema mandado ao modelo
 // proíbe explicitamente pedir cadastro à pessoa.
@@ -24,6 +22,9 @@ const generateChatReply = vi.fn(async ({ systemPrompt }: { systemPrompt: string 
   return 'Prontinho! Já deixei seu Corte de Cabelo marcado — qualquer coisa me chama por aqui.'
 })
 const generateStructuredReply = vi.fn(async ({ systemPrompt }: { systemPrompt: string }) => {
+  if (systemPrompt.includes('ROTEAMENTO_COMPARTILHADO_WHATSAPP')) {
+    return { route: 'receptionist', reason: 'Pedido de agendamento' }
+  }
   // Extrator de intenção do prospecto (ver buildProspectIntentExtractorPrompt) —
   // identificado pelo campo "appointment_action" que só esse prompt pede.
   if (systemPrompt.includes('appointment_action')) {
@@ -112,7 +113,7 @@ function buildEvolutionPayload(messageId: string, text: string) {
   }
 }
 
-describe('POST /api/webhooks/whatsapp — canal dedicado da Recepcionista, número desconhecido', () => {
+describe('POST /api/webhooks/whatsapp — número compartilhado, triagem para Recepcionista', () => {
   beforeEach(() => {
     vi.resetModules()
     sendWhatsAppMessage.mockClear()
@@ -205,9 +206,7 @@ describe('POST /api/webhooks/whatsapp — canal dedicado da Recepcionista, núme
 
     expect(body).toMatchObject({ ok: true, routed: 'receptionist_prospect', handled: true })
 
-    // Respondeu de verdade, sem travar pedindo nada — e nunca através da
-    // triagem genérica de número desconhecido (Rota 3), que é só pro
-    // número compartilhado/instância do Sales Rep.
+    // Respondeu de verdade sem pedir que a pessoa repita o motivo do contato.
     expect(sendWhatsAppMessage).toHaveBeenCalledTimes(1)
 
     // O cadastro foi criado pela própria IA (auto-provisionamento), nunca

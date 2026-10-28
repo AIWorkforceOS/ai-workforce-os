@@ -4,7 +4,6 @@ import {
   normalizePhone,
   phonesMatch,
   routeInboundMessage,
-  routeReceptionistChannelMessage,
   isRecentOutboundEcho,
   findCustomerContext,
   findCandidateByIdentifier,
@@ -304,7 +303,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unidade não encontrada para esta instância.' }, { status: 404 })
   }
 
-  const { unit: unitRow, agentType, channel: resolvedChannel } = resolution
+  const { unit: unitRow, channel: resolvedChannel } = resolution
 
   // Tudo a partir daqui (self-heal, transcrição de áudio, roteamento) pode
   // falhar por motivos externos (timeout da OpenAI, erro da Evolution API,
@@ -382,11 +381,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, billingBlocked: true })
     }
 
-    // Instância dedicada à Recepcionista (migration 051): toda mensagem
-    // nesse número é dela, sem passar pela triagem genérica de Rota 3 —
-    // ver routeReceptionistChannelMessage. Qualquer outro agent_type (ou
-    // número compartilhado, sem canal dedicado) mantém o comportamento
-    // atual (cascata completa em routeInboundMessage).
     const routeParams = {
       supabase,
       unit: unitRow,
@@ -398,10 +392,7 @@ export async function POST(request: Request) {
       sentAt,
       wasAudioMessage: extracted.kind === 'audio',
     }
-    const result =
-      agentType === 'receptionist'
-        ? await routeReceptionistChannelMessage(routeParams)
-        : await routeInboundMessage(routeParams)
+    const result = await routeInboundMessage(routeParams)
 
     return NextResponse.json(result)
   } catch (error) {

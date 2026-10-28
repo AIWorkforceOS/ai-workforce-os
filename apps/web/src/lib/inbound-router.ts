@@ -14,6 +14,10 @@ import { logSystemEvent } from '@/lib/system-events'
 import { fetchOrganizationBusinessProfile } from '@/lib/organizations'
 import { resolveWhatsappChannel } from '@/lib/evolution'
 import { getMessagingChannel } from '@/lib/channels/messaging-channel'
+import {
+  assignWhatsappConversation,
+  getWhatsappConversationRoute,
+} from '@/lib/whatsapp-conversation-routing'
 import type { ChannelType } from '@/lib/channels/messaging-channel'
 import type { Customer, Lead, Unit } from '@/lib/types'
 import type { Candidate, JobCandidate, JobOpening } from '@/lib/recruiter/types'
@@ -144,15 +148,11 @@ type UnknownInboundContext = {
   wasAudioMessage?: boolean
 }
 
-async function handleUnknownInbound(params: UnknownInboundContext): Promise<void> {
+async function handleUnknownInbound(params: UnknownInboundContext): Promise<Record<string, unknown> | void> {
   const { supabase, unit, channel, incomingPhone, incomingEmail, text, externalMessageId, sentAt, wasAudioMessage } = params
   const apiKey = getOpenAIApiKey()
-  // Instância dedicada ao Sales Rep (migration 051), quando existir — esta
-  // triagem (Rota 3) só é alcançada por mensagens que chegaram pela
-  // instância dedicada do Sales Rep ou pelo número compartilhado histórico
-  // (a Recepcionista tem seu próprio desvio antes de chegar aqui, ver
-  // app/api/webhooks/whatsapp/route.ts), então resolver a dedicada do
-  // Sales Rep aqui sempre bate com a instância certa.
+  // Todos os setores usam a mesma instância da unidade; o agentType aqui
+  // identifica apenas a função que responderá, não outro número físico.
   const sdrChannel = channel === 'whatsapp' ? await resolveWhatsappChannel(supabase, unit, 'sdr') : null
   const messagingChannel = getMessagingChannel(unit, supabase, sdrChannel?.config ?? null)
 
@@ -169,6 +169,88 @@ async function handleUnknownInbound(params: UnknownInboundContext): Promise<void
       unitId: unit.id,
     })
     return
+  }
+
+  // No número compartilhado, a primeira mensagem já pode trazer contexto
+  // suficiente ("quero agendar", "vim falar da proposta", "procuro uma
+  // vaga"). Classifica antes de fazer uma pergunta genérica para evitar que
+  // o cliente repita o que acabou de dizer.
+  const firstTouchIntent = await generateStructuredReply<{
+    route?: 'receptionist' | 'sales' | 'recruiting' | 'unclear'
+    reason?: string
+  }>({
+    apiKey,
+    systemPrompt: [
+      'ROTEAMENTO_COMPARTILHADO_WHATSAPP',
+      'Classifique a primeira mensagem recebida no WhatsApp único da empresa.',
+      'receptionist = suporte, atendimento, cliente atual, dúvida geral, pedido ou agendamento.',
+      'sales = proposta, orçamento comercial, compra, contratação de serviço ou resposta a prospecção.',
+      'recruiting = vaga, currículo, candidato, contratação de funcionário ou processo seletivo.',
+      'unclear = não há informação suficiente.',
+      'Responda somente JSON: {"route":"receptionist"|"sales"|"recruiting"|"unclear","reason":"resumo curto"}.',
+    ].join(' '),
+    history: [{ role: 'user', content: text }],
+    maxTokens: 120,
+  }).catch(() => ({ route: 'unclear' as const }))
+
+  if (firstTouchIntent.route === 'receptionist' || firstTouchIntent.route === 'recruiting') {
+    await assignWhatsappConversation({
+      supabase,
+      unit,
+      phone: incomingPhone,
+      email: incomingEmail,
+      agentType: 'receptionist',
+      reason: firstTouchIntent.reason ?? 'Triagem do WhatsApp compartilhado',
+      summary: text.slice(0, 500),
+      lastMessageAt: sentAt,
+    })
+    return routeReceptionistChannelMessage(params)
+  }
+
+  if (firstTouchIntent.route === 'sales') {
+    const { data: insertedLead, error: leadError } = await supabase
+      .from('leads')
+      .insert({
+        unit_id: unit.id,
+        phone: incomingPhone,
+        email: incomingEmail,
+        company_name: `Contato (${incomingPhone.slice(-4)})`,
+        contact_name: null,
+        source: 'shared_whatsapp_triage',
+        status: 'replied',
+        last_contacted_at: sentAt,
+      })
+      .select()
+      .single()
+
+    if (!leadError && insertedLead) {
+      const lead = insertedLead as Lead
+      await supabase.from('conversations').insert({
+        lead_id: lead.id,
+        unit_id: unit.id,
+        channel,
+        direction: 'inbound',
+        content: text,
+        external_message_id: externalMessageId,
+        status: 'delivered',
+        sent_at: sentAt,
+      })
+      await assignWhatsappConversation({
+        supabase,
+        unit,
+        phone: incomingPhone,
+        email: incomingEmail,
+        agentType: 'sdr',
+        reason: firstTouchIntent.reason ?? 'Interesse comercial identificado na triagem',
+        summary: text.slice(0, 500),
+        lastMessageAt: sentAt,
+      })
+      const result = await processInboundMessage({ supabase, unit, lead, incomingText: text, wasAudioMessage })
+      if (result.dealHandoffReady) {
+        await handleSalesDealHandoff(supabase, { leadId: lead.id, unit }).catch(() => undefined)
+      }
+      return { ok: true, routed: 'sdr', triaged: true }
+    }
   }
 
   // Procura por um lead em triagem (source = 'unknown_inbound' e status = 'contacted')
@@ -678,6 +760,34 @@ export async function routeInboundMessage(params: InboundRouteParams): Promise<R
     return { ok: true, duplicate: true, echo: true }
   }
 
+  const existingRoute = await getWhatsappConversationRoute(
+    supabase,
+    unitRow.id,
+    incomingPhone,
+    incomingEmail,
+  )
+
+  // Uma pessoa da equipe assumiu a conversa: o WhatsApp continua recebendo
+  // e auditando eventos, mas nenhum funcionário digital responde até a
+  // propriedade ser liberada explicitamente.
+  if (existingRoute?.agent_type === 'human') {
+    await logSystemEvent(supabase, {
+      level: 'info',
+      source: 'system',
+      eventType: 'whatsapp_routed_to_human',
+      message: `Mensagem recebida de ${incomingPhone ?? incomingEmail ?? 'contato'}; conversa está sob responsabilidade humana.`,
+      orgId: unitRow.org_id,
+      unitId: unitRow.id,
+    })
+    return { ok: true, routed: 'human', skipped: 'human_owner' }
+  }
+
+  // Continuidade real: depois que a Recepção assume um contato, mensagens
+  // seguintes voltam direto para ela no mesmo número, sem repetir triagem.
+  if (existingRoute?.agent_type === 'receptionist') {
+    return routeReceptionistChannelMessage(params)
+  }
+
   // Contextos possíveis
   const candidateContext = await findCandidateContext(supabase, unitRow, incomingPhone, incomingEmail)
 
@@ -711,7 +821,7 @@ export async function routeInboundMessage(params: InboundRouteParams): Promise<R
   }
 
   // ── Rota 1: candidato em triagem ──────────────────────────────────
-  if (candidateContext && routeToCandidate) {
+  if (candidateContext && routeToCandidate && (!existingRoute || existingRoute.agent_type === 'recruiter')) {
     const { candidate, jc, job } = candidateContext
 
     await supabase.from('candidate_messages').insert({
@@ -747,11 +857,19 @@ export async function routeInboundMessage(params: InboundRouteParams): Promise<R
       text,
       wasAudioMessage,
     })
+    await assignWhatsappConversation({
+      supabase,
+      unit: unitRow,
+      phone: incomingPhone,
+      email: incomingEmail,
+      agentType: 'recruiter',
+      lastMessageAt: sentAt,
+    })
     return { ok: true, routed: 'recruiter_candidate' }
   }
 
   // ── Rota 2: empresa com vaga ativa no Recruiter ───────────────────
-  if (lead && recruiterJob) {
+  if (lead && recruiterJob && (!existingRoute || existingRoute.agent_type === 'recruiter')) {
     await supabase.from('conversations').insert({
       lead_id: lead.id,
       unit_id: unitRow.id,
@@ -805,6 +923,14 @@ export async function routeInboundMessage(params: InboundRouteParams): Promise<R
         }
       }
     }
+    await assignWhatsappConversation({
+      supabase,
+      unit: unitRow,
+      phone: incomingPhone,
+      email: incomingEmail,
+      agentType: 'recruiter',
+      lastMessageAt: sentAt,
+    })
     return { ok: true, routed: 'recruiter_company' }
   }
 
@@ -815,7 +941,7 @@ export async function routeInboundMessage(params: InboundRouteParams): Promise<R
   // priorizando esse processo, igual ao comportamento de antes desta
   // rota existir.
   const customer = await findCustomerContext(supabase, unitRow, incomingPhone, incomingEmail)
-  if (customer) {
+  if (customer && existingRoute?.agent_type !== 'sdr') {
     const { data: inboundRow } = await supabase
       .from('customer_messages')
       .insert({
@@ -844,13 +970,29 @@ export async function routeInboundMessage(params: InboundRouteParams): Promise<R
       wasAudioMessage,
       inboundMessageId: (inboundRow as { id: string } | null)?.id,
     })
+    await assignWhatsappConversation({
+      supabase,
+      unit: unitRow,
+      phone: incomingPhone,
+      email: incomingEmail,
+      agentType: 'receptionist',
+      lastMessageAt: sentAt,
+    })
     return { ok: true, routed: 'receptionist', handled: result.handled }
   }
 
   // ── Rota 3: número desconhecido ou em triagem ──────────────────────
   // (triagem: lead com source='unknown_inbound' e status='contacted')
   if (!lead || (lead.source === 'unknown_inbound' && lead.status === 'contacted')) {
-    await handleUnknownInbound({
+    await assignWhatsappConversation({
+      supabase,
+      unit: unitRow,
+      phone: incomingPhone,
+      email: incomingEmail,
+      agentType: 'triage',
+      lastMessageAt: sentAt,
+    })
+    const triageResult = await handleUnknownInbound({
       supabase,
       unit: unitRow,
       channel,
@@ -861,7 +1003,7 @@ export async function routeInboundMessage(params: InboundRouteParams): Promise<R
       sentAt,
       wasAudioMessage,
     })
-    return { ok: true, routed: 'unknown_inbound_screening' }
+    return triageResult ?? { ok: true, routed: 'unknown_inbound_screening' }
   }
 
   await supabase.from('conversations').insert({
@@ -892,6 +1034,15 @@ export async function routeInboundMessage(params: InboundRouteParams): Promise<R
     lead: updatedLead,
     incomingText: text,
     wasAudioMessage,
+  })
+
+  await assignWhatsappConversation({
+    supabase,
+    unit: unitRow,
+    phone: incomingPhone,
+    email: incomingEmail,
+    agentType: 'sdr',
+    lastMessageAt: sentAt,
   })
 
   if (result.dealHandoffReady) {
@@ -1053,6 +1204,14 @@ export async function routeReceptionistChannelMessage(
       wasAudioMessage,
       inboundMessageId: (inboundRow as { id: string } | null)?.id,
     })
+    await assignWhatsappConversation({
+      supabase,
+      unit: unitRow,
+      phone: incomingPhone,
+      email: incomingEmail,
+      agentType: 'receptionist',
+      lastMessageAt: sentAt,
+    })
     return { ok: true, routed: 'receptionist', handled: result.handled }
   }
 
@@ -1083,6 +1242,14 @@ export async function routeReceptionistChannelMessage(
     recipient,
     wasAudioMessage,
     inboundMessageId: (inboundLeadRow as { id: string } | null)?.id,
+  })
+  await assignWhatsappConversation({
+    supabase,
+    unit: unitRow,
+    phone: incomingPhone,
+    email: incomingEmail,
+    agentType: 'receptionist',
+    lastMessageAt: sentAt,
   })
   return { ok: true, routed: 'receptionist_prospect', handled: result.handled }
 }

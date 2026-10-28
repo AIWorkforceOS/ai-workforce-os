@@ -59,34 +59,11 @@ export type ResolvedWhatsappChannel = {
 export async function resolveWhatsappChannel(
   supabase: SupabaseClient,
   unit: Unit,
-  agentType: string,
+  _agentType: string,
 ): Promise<ResolvedWhatsappChannel | null> {
-  const { data } = await supabase
-    .from('unit_whatsapp_channels')
-    .select('evolution_instance_name, whatsapp_phone')
-    .eq('unit_id', unit.id)
-    .eq('agent_type', agentType)
-    .maybeSingle()
-
-  const dedicated = data as { evolution_instance_name: string; whatsapp_phone: string | null } | null
-
-  if (dedicated) {
-    const config = getEvolutionConfig(unit, dedicated.evolution_instance_name)
-    if (!config) return null
-    return {
-      agentType,
-      config,
-      whatsappPhone: dedicated.whatsapp_phone,
-      persistPhone: async (phone: string) => {
-        await supabase
-          .from('unit_whatsapp_channels')
-          .update({ whatsapp_phone: phone })
-          .eq('unit_id', unit.id)
-          .eq('agent_type', agentType)
-      },
-    }
-  }
-
+  // Todos os funcionários da unidade falam pelo mesmo número. O agentType
+  // continua no contrato para não quebrar os motores existentes, mas não
+  // escolhe mais um transporte/WhatsApp diferente.
   return legacyWhatsappChannel(supabase, unit)
 }
 
@@ -420,6 +397,15 @@ export async function forceReconnectInstance(config: EvolutionUnitConfig, logCon
   })
   await ensureWebhookConfigured(config, logContext)
   return evolutionFetch(config, `/instance/connect/${config.instanceName}`)
+}
+
+/** Remove uma instância antiga sem falhar quando ela já não existe. */
+export async function deleteEvolutionInstanceIfExists(config: EvolutionUnitConfig): Promise<void> {
+  try {
+    await evolutionFetch(config, `/instance/delete/${config.instanceName}`, { method: 'DELETE' })
+  } catch (error) {
+    if (!(error instanceof EvolutionApiError) || error.status !== 404) throw error
+  }
 }
 
 /**

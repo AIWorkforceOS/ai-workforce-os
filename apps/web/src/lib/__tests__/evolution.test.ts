@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ensureWebhookConfigured, forceReconnectInstance, getInstanceStatus, sendWhatsAppMessage, type EvolutionUnitConfig } from '@/lib/evolution'
+import {
+  ensureWebhookConfigured,
+  forceReconnectInstance,
+  getInstanceStatus,
+  resolveWhatsappChannel,
+  sendWhatsAppMessage,
+  type EvolutionUnitConfig,
+} from '@/lib/evolution'
 import { createFakeSupabase } from './fake-supabase'
+import type { Unit } from '@/lib/types'
 
 // Cobre a auditoria de bloqueio do WhatsApp (2026-07-30): antes deste fix,
 // evolutionFetch chamava `fetch` sem nenhum timeout — uma Evolution API que
@@ -12,6 +20,37 @@ import { createFakeSupabase } from './fake-supabase'
 // quando ele dispara, a chamada rejeita em vez de ficar pendurada para sempre.
 
 const config: EvolutionUnitConfig = { apiUrl: 'https://evolution.example.com', apiKey: 'key', instanceName: 'unit-1' }
+
+describe('WhatsApp compartilhado por unidade', () => {
+  it('usa a instância da unidade para todos os funcionários, mesmo com canais dedicados antigos', async () => {
+    const { supabase } = createFakeSupabase({
+      unit_whatsapp_channels: [
+        {
+          unit_id: 'unit-1',
+          agent_type: 'receptionist',
+          evolution_instance_name: 'instancia-antiga-recepcao',
+          whatsapp_phone: '5511000000000',
+        },
+      ],
+    })
+    const unit = {
+      id: 'unit-1',
+      slug: 'matriz',
+      evolution_api_url: 'https://evolution.example.com',
+      evolution_api_key: 'key',
+      evolution_instance_name: 'instancia-compartilhada',
+      whatsapp_phone: '5511999999999',
+    } as Unit
+
+    const sales = await resolveWhatsappChannel(supabase, unit, 'sdr')
+    const reception = await resolveWhatsappChannel(supabase, unit, 'receptionist')
+
+    expect(sales?.config.instanceName).toBe('instancia-compartilhada')
+    expect(reception?.config.instanceName).toBe('instancia-compartilhada')
+    expect(sales?.whatsappPhone).toBe('5511999999999')
+    expect(reception?.whatsappPhone).toBe('5511999999999')
+  })
+})
 
 afterEach(() => {
   vi.unstubAllGlobals()

@@ -12,6 +12,7 @@ import { ensureLeadEnrichment } from '@/lib/leads/enrichment'
 import { logSystemEvent } from '@/lib/system-events'
 import { syncLeadToSmarterCrm } from '@/lib/sales/smarter-crm'
 import type { AgentConfig, Lead, Unit } from '@/lib/types'
+import { assignWhatsappConversation } from '@/lib/whatsapp-conversation-routing'
 
 /**
  * Fonte de prospecção fria automática (Google Maps, lib/prospecting/engine.ts)
@@ -179,6 +180,24 @@ export async function triggerFirstContact(
 
     const sentAt = new Date().toISOString()
     await supabase.from('leads').update({ status: 'contacted', last_contacted_at: sentAt }).eq('id', lead.id)
+    if (enrichedLead.phone) {
+      await assignWhatsappConversation({
+        supabase,
+        unit,
+        phone: enrichedLead.phone,
+        email: enrichedLead.email,
+        agentType: 'sdr',
+        reason: handoffContext?.reason ?? 'Conversa iniciada pelo Comercial',
+        summary: handoffContext
+          ? handoffContext.history
+              .slice(-6)
+              .map((item) => `${item.role}: ${item.content}`)
+              .join('\n')
+              .slice(0, 2000)
+          : null,
+        lastMessageAt: sentAt,
+      })
+    }
     await syncLeadToSmarterCrm(
       supabase,
       unit,

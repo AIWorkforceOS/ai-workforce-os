@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { ensureDedicatedWhatsappChannel, forceReconnectInstance, getEvolutionConfig } from '@/lib/evolution'
+import {
+  deleteEvolutionInstanceIfExists,
+  ensureDedicatedWhatsappChannel,
+  forceReconnectInstance,
+  getEvolutionConfig,
+} from '@/lib/evolution'
 import type { Unit } from '@/lib/types'
 
 /**
@@ -42,6 +47,27 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   try {
+    // A tela atual usa um único WhatsApp compartilhado. Ao resetar esse
+    // canal, encerra também instâncias dedicadas antigas para que dois
+    // números não continuem processando a mesma unidade em paralelo.
+    if (!agentType) {
+      const { data: oldChannels } = await supabase
+        .from('unit_whatsapp_channels')
+        .select('evolution_instance_name')
+        .eq('unit_id', id)
+
+      for (const oldChannel of (oldChannels ?? []) as { evolution_instance_name: string }[]) {
+        if (oldChannel.evolution_instance_name === config.instanceName) continue
+        const oldConfig = getEvolutionConfig(unitRow, oldChannel.evolution_instance_name)
+        if (oldConfig) await deleteEvolutionInstanceIfExists(oldConfig)
+      }
+
+      const { error: cleanupError } = await supabase.from('unit_whatsapp_channels').delete().eq('unit_id', id)
+      if (cleanupError) {
+        throw new Error(`Não foi possível limpar as conexões antigas: ${cleanupError.message}`)
+      }
+    }
+
     const data = await forceReconnectInstance(config, { supabase, orgId: unitRow.org_id, unitId: unitRow.id })
     const qrCode = data?.base64 ?? data?.qrcode?.base64 ?? null
     const pairingCode = data?.pairingCode ?? data?.qrcode?.pairingCode ?? null

@@ -180,11 +180,11 @@ export function WhatsAppConnection({
     <Card className="flex w-full flex-col gap-4 p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-sm font-bold text-white">{label ? `WhatsApp · ${label}` : 'WhatsApp'}</h2>
+          <h2 className="text-sm font-bold text-white">{label ? `WhatsApp · ${label}` : 'WhatsApp compartilhado da unidade'}</h2>
           <p className="mt-1 text-sm text-slate-400">
             {label
               ? `Conecte o número deste funcionário escaneando um QR code — igual ao WhatsApp Web. Use um número diferente do dos outros funcionários desta unidade.`
-              : 'Conecte o número desta unidade escaneando um QR code — igual ao WhatsApp Web.'}
+              : 'Conecte um único número da empresa. A triagem do Alizo direciona cada conversa ao funcionário digital responsável.'}
           </p>
         </div>
         <span className="rounded-full px-2.5 py-1 text-xs font-bold" style={STATUS_STYLE[status]}>

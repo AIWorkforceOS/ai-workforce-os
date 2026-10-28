@@ -4,6 +4,7 @@ import { logSystemEvent, shouldNotifyForEvent } from '@/lib/system-events'
 import { triggerFirstContact } from '@/lib/leads/lead-intake'
 import type { ChatMessage } from '@/lib/openai'
 import type { Lead, Unit } from '@/lib/types'
+import { assignWhatsappConversation } from '@/lib/whatsapp-conversation-routing'
 
 // Handoff Receptionist → time humano (item 4 do pedido): mecanismo
 // deliberadamente mais simples do que lib/sales/deal-handoff.ts (que
@@ -157,6 +158,19 @@ export async function handoffToSales(
   try {
     const lead = await findOrCreateHandoffLead(supabase, unit, contact)
     if (!lead) return
+    await assignWhatsappConversation({
+      supabase,
+      unit,
+      phone: contact.phone,
+      email: contact.email,
+      agentType: 'sdr',
+      reason,
+      summary: history
+        .slice(-6)
+        .map((message) => `${message.role}: ${message.content}`)
+        .join('\n')
+        .slice(0, 2000),
+    })
     await triggerFirstContact(supabase, unit, lead, { history, reason, fromPersonaName })
   } catch (error) {
     await logSystemEvent(supabase, {
