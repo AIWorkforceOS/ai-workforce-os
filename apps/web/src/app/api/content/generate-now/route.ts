@@ -17,7 +17,7 @@ import type { AgentConfig, Unit } from '@/lib/types'
 // MEDIA_TIMEOUT_MS (lib/openai.ts, 60s→90s) — 90s (imagem, pior caso) +
 // 30s (texto) + ~20s (espera do Instagram) + composição/upload/publicação
 // não cabiam mais nos 120s antigos.
-export const maxDuration = 180
+export const maxDuration = 300
 
 /**
  * Botão "Criar conteúdo agora" (pedido do Vinicius, 2026-08-23): gera UM
@@ -28,20 +28,24 @@ export const maxDuration = 180
  * geração de verdade roda com o service role (mesmo padrão de
  * content/posts/[id]/route.ts).
  *
- * POST { unit_id, social_account_id? }
+ * POST { unit_id, social_account_id?, format?: 'image' | 'carousel' | 'video' }
+ *   `format` = botões "Criar vídeo agora" / "Criar carrossel agora": gera esse formato e o post vai para a fila de aprovação (nunca publica na hora).
  */
 export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 })
 
-  let body: { unit_id?: string; social_account_id?: string }
+  let body: { unit_id?: string; social_account_id?: string; format?: string }
   try {
     body = await request.json()
   } catch {
     return NextResponse.json({ error: 'JSON inválido.' }, { status: 400 })
   }
   if (!body.unit_id) return NextResponse.json({ error: 'unit_id é obrigatório.' }, { status: 400 })
+  if (body.format !== undefined && body.format !== 'image' && body.format !== 'carousel' && body.format !== 'video') {
+    return NextResponse.json({ error: "format deve ser 'image', 'carousel' ou 'video'." }, { status: 400 })
+  }
 
   // RLS de units já restringe a leitura à(s) unidade(s) que este usuário pode acessar.
   const { data: unit } = await supabase.from('units').select('*').eq('id', body.unit_id).maybeSingle()
@@ -94,6 +98,7 @@ export async function POST(request: Request) {
     unit: unit as Unit,
     account: account as SocialAccount,
     recentPosts,
+    forceFormat: body.format,
   })
 
   if (!outcome.ok) return NextResponse.json({ error: outcome.error }, { status: 502 })

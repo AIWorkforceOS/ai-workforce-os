@@ -10,7 +10,7 @@ import { contentPillarsFrom, contentPlatformsFrom, decidePublishAction, pickNext
 import { generatePostContent, generatePostImage, uploadGeneratedImage } from './generator'
 import { holidayOnDate } from './holidays'
 import { createCarouselPostDraft } from './carousel-post'
-import { pickPostFormat } from './carousel'
+import { pickPostFormat, type PostFormat } from './carousel'
 import { createVideoPostDraft } from './video-post'
 import { appliedInstructionFields, fetchConfirmedInstructions, instructionForDay, todayKeyFor } from './instruction-store'
 import { publishContentPost } from './publisher'
@@ -35,6 +35,11 @@ export async function generateSinglePostForAccount(params: {
   account: SocialAccount
   recentPosts: Pick<ContentPost, 'platform' | 'content_pillar' | 'visual_angle' | 'created_at' | 'caption' | 'image_prompt'>[]
   scheduledFor?: Date | null
+  /**
+   * Formato escolhido por um clique humano ("Criar vídeo agora"/"Criar carrossel agora"). Ignora o rodízio da instrução e, por ser pedido manual de
+   * conteúdo novo, SEMPRE vai para a fila de aprovação: nunca publica na hora, mesmo em conta autônoma.
+   */
+  forceFormat?: PostFormat
 }): Promise<SinglePostResult> {
   const { supabase, apiKey, config, unit, account, recentPosts, scheduledFor } = params
   const profile = config.business_profile ?? {}
@@ -68,7 +73,7 @@ export async function generateSinglePostForAccount(params: {
     let content: { caption: string; imagePrompt: string | null; reasoning: string; instructionFormatReason?: string; instructionCta?: string }
     let imageUrl: string
     let formatFields: Record<string, unknown> = {}
-    const format = pickPostFormat(instruction, [])
+    const format = params.forceFormat ?? pickPostFormat(instruction, [])
     if (format === 'carousel') {
       const draft = await createCarouselPostDraft({
         supabase,
@@ -122,7 +127,7 @@ export async function generateSinglePostForAccount(params: {
       content = generated
     }
 
-    const action = decidePublishAction(account.publishing_mode)
+    const action = params.forceFormat ? 'queue' : decidePublishAction(account.publishing_mode)
     const { data: inserted, error: insertError } = await supabase
       .from('content_posts')
       .insert({

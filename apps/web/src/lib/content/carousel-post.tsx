@@ -6,6 +6,8 @@ import { brandKitFrom } from '@/lib/brand-kit'
 import { generateCarouselContent, uploadGeneratedImage, type RecentPostSummary } from './generator'
 import { buildSlideSpecs, type CarouselContent, type StoredCarousel } from './carousel'
 import { brandFrom, prepareLogo, renderSlides } from './carousel-render'
+import { buildCombinedBusinessContext } from '@/lib/interview/engine'
+import { applyBackgrounds, generateBackdropUrls, libraryPhotoUrls, wantsSlideBackgrounds } from './slide-backgrounds'
 import { resolveContentLanguage } from './language'
 import type { ContentInstruction } from './instructions'
 import type { SocialPlatform } from './types'
@@ -55,16 +57,36 @@ export async function createCarouselPostDraft(params: {
 }): Promise<CarouselPostDraft> {
   const { supabase, ...rest } = params
   const generated = await generateCarouselContent(rest)
+  // "Sempre com imagens de fundo" (instrução do dono): fotos reais da biblioteca primeiro; sem elas, fundos gerados por IA (custo registrado).
+  let content = generated.content
+  let backgrounds: 'library' | 'ai' | undefined
+  if (wantsSlideBackgrounds(params.instruction ?? null)) {
+    const photos = await libraryPhotoUrls(supabase, params.unit)
+    if (photos.length > 0) {
+      content = applyBackgrounds(content, photos)
+      backgrounds = 'library'
+    } else {
+      const urls = await generateBackdropUrls({
+        supabase,
+        apiKey: params.apiKey,
+        unitId: params.unit.id,
+        companyContext: buildCombinedBusinessContext(params.organizationProfile, params.config.business_profile),
+        objective: params.instruction?.objective ?? 'conteúdo institucional',
+      })
+      content = applyBackgrounds(content, urls)
+      backgrounds = 'ai'
+    }
+  }
   // Mesmo critério de idioma do texto do post (generator.ts): pedido explícito da empresa > idioma da unidade > detectado da ficha.
   const explicit = (params.config.business_profile as Record<string, unknown> | null)?.idioma_conteudo
   const lang: 'pt' | 'en' =
     explicit === 'pt' || explicit === 'en' ? explicit : resolveContentLanguage(params.unit.default_conversation_language, [params.organizationProfile, params.config.business_profile])
-  const stored = await renderAndStoreCarousel({ supabase, unit: params.unit, organizationProfile: params.organizationProfile, content: generated.content, lang })
+  const stored = await renderAndStoreCarousel({ supabase, unit: params.unit, organizationProfile: params.organizationProfile, content, lang })
   return {
     caption: generated.caption,
     reasoning: generated.reasoning,
     imageUrl: stored.slide_urls[0]!,
-    fields: { format: 'carousel', carousel: stored },
+    fields: { format: 'carousel', carousel: backgrounds ? { ...stored, backgrounds } : stored },
     instructionFormatReason: generated.instructionFormatReason,
     instructionCta: generated.instructionCta,
   }

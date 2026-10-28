@@ -125,6 +125,7 @@ export function InstructionsChat({ unitId }: { unitId: string }) {
             <li>Período: {brDate(p.starts_on)} {p.ends_on ? `a ${brDate(p.ends_on)}` : '(sem data final)'}</li>
             {p.interpretation.formats.length > 0 && <li>Formatos: {p.interpretation.formats.join(', ')}</li>}
             {p.interpretation.cta && <li>Chamada para ação: {p.interpretation.cta}</li>}
+            {p.interpretation.slide_backgrounds && <li>Carrosséis com imagens de fundo nos slides</li>}
             {p.interpretation.restrictions.length > 0 && <li>Restrições: {p.interpretation.restrictions.join('; ')}</li>}
             <li>Prioridade: {p.priority === 'alta' ? 'alta' : 'normal'}</li>
           </ul>

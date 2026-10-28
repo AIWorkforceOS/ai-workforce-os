@@ -106,4 +106,20 @@ describe('POST /api/content/generate-now', () => {
     const res = await POST(makeRequest({ unit_id: 'unit-1' }))
     expect(res.status).toBe(502)
   })
+
+  it('format=video: repassa o formato forçado; formato inválido dá 400 sem gerar nada', async () => {
+    const { supabase } = createFakeSupabase({
+      units: [{ id: 'unit-1' }],
+      agent_configs: [{ id: 'cfg-1', unit_id: 'unit-1', agent_type: 'content_specialist', is_active: true }],
+      social_accounts: [{ id: 'acc-1', unit_id: 'unit-1', is_active: true, connection_status: 'connected' }],
+    })
+    Object.assign(supabase, { auth: { getUser: async () => ({ data: { user: { id: 'auth-1' } } }) } })
+    const { POST } = await loadRoute(supabase)
+
+    expect((await POST(makeRequest({ unit_id: 'unit-1', format: 'gif' }))).status).toBe(400)
+    expect(generateSinglePostForAccountMock).not.toHaveBeenCalled()
+
+    expect((await POST(makeRequest({ unit_id: 'unit-1', format: 'video' }))).status).toBe(200)
+    expect(generateSinglePostForAccountMock).toHaveBeenCalledWith(expect.objectContaining({ forceFormat: 'video' }))
+  })
 })

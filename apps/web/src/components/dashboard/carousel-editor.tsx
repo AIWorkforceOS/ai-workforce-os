@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowDown, ArrowUp, ImagePlus, Loader2, Trash2 } from 'lucide-react'
+import { MediaLightbox } from '@/components/dashboard/media-lightbox'
 import { MAX_CONTENT_SLIDES, MIN_CONTENT_SLIDES, moveSlide, type CarouselSlideInput, type StoredCarousel } from '@/lib/content/carousel'
 
 const field = 'w-full rounded-lg bg-white/5 px-2.5 py-1.5 text-xs text-white outline-none ring-1 ring-white/10 focus:ring-cyan-400/50'
@@ -18,6 +19,7 @@ export function CarouselEditor({ postId, unitId, carousel, editable }: { postId:
   const [slides, setSlides] = useState<CarouselSlideInput[]>(carousel.slides)
   const [cta, setCta] = useState(carousel.cta)
   const [busy, setBusy] = useState(false)
+  const [viewer, setViewer] = useState<number | null>(null)
   const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
 
   async function upload(file: File): Promise<string | null> {
@@ -61,9 +63,19 @@ export function CarouselEditor({ postId, unitId, carousel, editable }: { postId:
       <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">Carrossel · {carousel.slide_urls.length} slides</p>
       <div className="mt-1.5 flex gap-2 overflow-x-auto pb-1">
         {carousel.slide_urls.map((url, i) => (
-          <img key={url} src={url} alt={`Slide ${i + 1}`} className="h-36 w-auto flex-shrink-0 rounded-lg" style={{ border: '1px solid rgba(255,255,255,0.1)' }} />
+          <button key={url} type="button" onClick={() => setViewer(i)} className="flex-shrink-0 cursor-zoom-in" aria-label={`Ver o slide ${i + 1} em tamanho grande`}>
+            <img src={url} alt={`Slide ${i + 1}`} className="h-36 w-auto rounded-lg" style={{ border: '1px solid rgba(255,255,255,0.1)' }} />
+          </button>
         ))}
       </div>
+      {viewer !== null && (
+        <MediaLightbox
+          items={carousel.slide_urls.map((src, i) => ({ type: 'image' as const, src, alt: `Slide ${i + 1} de ${carousel.slide_urls.length}` }))}
+          index={viewer}
+          onIndex={setViewer}
+          onClose={() => setViewer(null)}
+        />
+      )}
 
       {editable && !open && (
         <button type="button" onClick={() => setOpen(true)} className="mt-2 rounded-lg border border-white/10 px-3 py-1.5 text-[11px] font-bold text-slate-300 hover:bg-white/5">

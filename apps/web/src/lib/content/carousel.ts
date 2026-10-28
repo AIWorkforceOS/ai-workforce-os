@@ -24,7 +24,7 @@ export type CarouselContent = {
 }
 
 /** Conteúdo + os slides já desenhados (mesma ordem: capa, conteúdo…, CTA). */
-export type StoredCarousel = CarouselContent & { slide_urls: string[]; /** Idioma dos rótulos fixos dos slides; ausente = português. */ lang?: 'pt' | 'en' }
+export type StoredCarousel = CarouselContent & { slide_urls: string[]; /** Idioma dos rótulos fixos dos slides; ausente = português. */ lang?: 'pt' | 'en'; /** Origem das imagens de fundo: fotos da biblioteca ou geradas por IA. Ausente = sem imagens de fundo. */ backgrounds?: 'library' | 'ai' }
 
 export type SlideSpec = {
   kind: 'cover' | 'content' | 'cta'

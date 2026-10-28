@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowDown, ArrowUp, ImagePlus, Loader2, Trash2 } from 'lucide-react'
+import { MediaLightbox } from '@/components/dashboard/media-lightbox'
 import { moveSlide } from '@/lib/content/carousel'
 import { MAX_SCENES, MAX_VIDEO_SECONDS, MIN_SCENES, MIN_VIDEO_SECONDS, TRANSITIONS, videoDuration, type StoredVideo, type VideoScene } from '@/lib/content/video'
 
@@ -20,6 +21,7 @@ export function VideoEditor({ postId, unitId, video, editable }: { postId: strin
   const [scenes, setScenes] = useState<VideoScene[]>(video.scenes)
   const [cta, setCta] = useState(video.cta)
   const [busy, setBusy] = useState(false)
+  const [watch, setWatch] = useState(false)
   const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
 
   const total = videoDuration({ scenes, cta })
@@ -67,6 +69,10 @@ export function VideoEditor({ postId, unitId, video, editable }: { postId: strin
         Vídeo vertical · {video.duration} s · {video.scenes.length + 1} cenas · sem áudio
       </p>
       <video src={video.mp4_url} poster={video.poster_url} controls playsInline preload="metadata" className="mt-1.5 max-h-[420px] rounded-lg" style={{ aspectRatio: '9 / 16', border: '1px solid rgba(255,255,255,0.1)' }} />
+      <button type="button" onClick={() => setWatch(true)} className="mt-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-[11px] font-bold text-slate-300 hover:bg-white/5">
+        Assistir em tela grande
+      </button>
+      {watch && <MediaLightbox items={[{ type: 'video', src: video.mp4_url, poster: video.poster_url, alt: 'Vídeo do post' }]} index={0} onIndex={() => undefined} onClose={() => setWatch(false)} />}
       {video.script && <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">Roteiro: {video.script}</p>}
 
       {editable && !open && (

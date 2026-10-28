@@ -5,6 +5,7 @@
 import { ImageResponse } from 'next/og'
 import sharp from 'sharp'
 import { isDarkOnTransparent } from '@/lib/branding/logo-processing'
+import { lightenDarkPixels } from './logo-light'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { SlideSpec } from './carousel'
@@ -12,7 +13,19 @@ import type { SlideSpec } from './carousel'
 export const SLIDE_WIDTH = 1080
 export const SLIDE_HEIGHT = 1350
 
-export type SlideLogo = { dataUrl: string; width: number; height: number; /** Logo escura sobre transparente: some em fundo escuro, então ganha uma placa clara por trás. */ darkOnTransparent: boolean }
+export type SlideLogo = {
+  dataUrl: string
+  width: number
+  height: number
+  /** Logo escura sobre transparente: some em fundo escuro. Nunca ganha placa/faixa branca — usa `lightDataUrl` (pixels escuros clareados) sobre fundo escuro. */
+  darkOnTransparent: boolean
+  lightDataUrl?: string
+}
+
+/** A logo que vai no slide: a versão clara (sem placa) quando a logo é escura e o fundo é escuro; senão a original. */
+export function logoSourceFor(logo: SlideLogo, backgroundIsDark: boolean): string {
+  return logo.darkOnTransparent && backgroundIsDark && logo.lightDataUrl ? logo.lightDataUrl : logo.dataUrl
+}
 
 export type SlideBrand = {
   name: string
@@ -104,11 +117,13 @@ export async function prepareLogo(url: string): Promise<SlideLogo> {
   const w = meta.width ?? 1
   const h = meta.height ?? 1
   const scale = Math.min(LOGO_MAX_HEIGHT / h, LOGO_MAX_WIDTH / w)
+  const darkOnTransparent = await isDarkOnTransparent(bytes)
   return {
     dataUrl: `data:${type};base64,${bytes.toString('base64')}`,
     width: Math.max(1, Math.round(w * scale)),
     height: Math.max(1, Math.round(h * scale)),
-    darkOnTransparent: await isDarkOnTransparent(bytes),
+    darkOnTransparent,
+    lightDataUrl: darkOnTransparent ? `data:image/png;base64,${(await lightenDarkPixels(bytes)).toString('base64')}` : undefined,
   }
 }
 
@@ -122,9 +137,10 @@ function titleSize(kind: SlideSpec['kind'], text: string): number {
 function SlideView({ spec, brand, backgroundDataUrl }: { spec: SlideSpec; brand: SlideBrand; backgroundDataUrl: string | null }) {
   const photo = backgroundDataUrl !== null
   // Com foto: véu escuro por cima para o texto branco sempre ler bem. Sem foto: cor da marca.
-  const base = spec.kind === 'cta' ? brand.secondary : brand.primary
+  // Com logo escura-sobre-transparente, o fechamento também usa o fundo da marca (escuro): a logo clara precisa de fundo escuro para aparecer.
+  const base = spec.kind === 'cta' && !brand.logo?.darkOnTransparent ? brand.secondary : brand.primary
   const text = photo ? '#FFFFFF' : readableOn(base)
-  const accent = photo ? brand.secondary : spec.kind === 'cta' ? text : brand.secondary
+  const accent = photo ? brand.secondary : spec.kind === 'cta' && base === brand.secondary ? text : brand.secondary
   const muted = photo ? 'rgba(255,255,255,0.88)' : text === '#FFFFFF' ? 'rgba(255,255,255,0.85)' : 'rgba(11,18,32,0.82)'
   return (
     <div style={{ width: SLIDE_WIDTH, height: SLIDE_HEIGHT, display: 'flex', position: 'relative', background: base, fontFamily: 'Liberation, sans-serif' }}>
@@ -138,16 +154,7 @@ function SlideView({ spec, brand, backgroundDataUrl }: { spec: SlideSpec; brand:
       <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', width: '100%', height: '100%', padding: '84px 84px 72px 104px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           {brand.logo ? (
-            <div
-              style={{
-                display: 'flex',
-                padding: brand.logo.darkOnTransparent ? '10px 18px' : 0,
-                borderRadius: 18,
-                background: brand.logo.darkOnTransparent ? 'rgba(255,255,255,0.95)' : 'transparent',
-              }}
-            >
-              <img src={brand.logo.dataUrl} width={brand.logo.width} height={brand.logo.height} alt="" />
-            </div>
+            <img src={logoSourceFor(brand.logo, text === '#FFFFFF')} width={brand.logo.width} height={brand.logo.height} alt="" />
           ) : (
             <div style={{ display: 'flex', fontSize: 34, fontWeight: 700, color: text }}>{brand.name}</div>
           )}
@@ -164,7 +171,7 @@ function SlideView({ spec, brand, backgroundDataUrl }: { spec: SlideSpec; brand:
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 30, color: muted }}>
           <div style={{ display: 'flex', fontWeight: 700 }}>{spec.kind === 'cta' ? brand.name : ''}</div>
-          <div style={{ display: 'flex', fontWeight: 700, color: accent }}>{spec.kind === 'cover' ? (brand.lang === 'en' ? 'Swipe →' : 'Deslize →') : spec.kind === 'content' ? '→' : ''}</div>
+          <div style={{ display: 'flex', fontWeight: 700, color: photo ? '#FFFFFF' : accent }}>{spec.kind === 'cover' ? (brand.lang === 'en' ? 'Swipe →' : 'Deslize →') : spec.kind === 'content' ? '→' : ''}</div>
         </div>
       </div>
     </div>

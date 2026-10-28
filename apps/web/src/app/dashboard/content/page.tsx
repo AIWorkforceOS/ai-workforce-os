@@ -18,6 +18,8 @@ import { ContentWeekView } from '@/components/dashboard/content-week-view'
 import { InstructionApplied } from '@/components/dashboard/instruction-applied'
 import { CarouselEditor } from '@/components/dashboard/carousel-editor'
 import { VideoEditor } from '@/components/dashboard/video-editor'
+import { MediaThumb } from '@/components/dashboard/media-lightbox'
+import { mediaItemsForPost } from '@/lib/content/media-items'
 import { BrandKitForm, type BrandKitValue } from '@/components/dashboard/brand-kit-form'
 import { EmployeeHubGate } from '@/components/dashboard/employee-hub-gate'
 import { EmployeeHubTabs } from '@/components/dashboard/employee-hub-tabs'
@@ -204,11 +206,10 @@ export default async function ContentPage() {
                 >
                   <div className="flex-shrink-0">
                     {post.image_url ? (
-                      <img
-                        src={post.image_url}
-                        alt="Imagem gerada para o post"
+                      <MediaThumb
+                        items={mediaItemsForPost(post)}
+                        thumbSrc={post.image_url}
                         className="h-32 w-32 rounded-xl object-cover"
-                        style={{ border: '1px solid rgba(255,255,255,0.08)' }}
                       />
                     ) : (
                       <div

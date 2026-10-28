@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CalendarRange, Loader2, Sparkles } from 'lucide-react'
+import { CalendarRange, Film, GalleryHorizontal, Loader2, Sparkles } from 'lucide-react'
 import { Card, CardHeader, brandGradient } from '@/components/ui/dashboard-ui'
 
 // Botões de geração + escolha dos dias de publicação (pedido do Vinicius,
@@ -25,6 +25,7 @@ export function ContentWeekActions({ unitId, initialPostingDays }: { unitId: str
   const [postingDays, setPostingDays] = useState<number[]>(initialPostingDays)
   const [savingDays, setSavingDays] = useState(false)
   const [busyNow, setBusyNow] = useState(false)
+  const [busyFormat, setBusyFormat] = useState<'carousel' | 'video' | null>(null)
   const [busyWeek, setBusyWeek] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -67,6 +68,31 @@ export function ContentWeekActions({ unitId, initialPostingDays }: { unitId: str
     }
   }
 
+  // "Criar vídeo agora" / "Criar carrossel agora": um post desse formato, direto para a fila de aprovação (nunca publica sozinho).
+  async function generateFormat(format: 'carousel' | 'video') {
+    setBusyFormat(format)
+    setError(null)
+    setMessage(null)
+    try {
+      const response = await fetch('/api/content/generate-now', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unit_id: unitId, format }),
+      })
+      const data = (await response.json()) as { error?: string }
+      if (!response.ok) {
+        setError(data.error ?? `Não foi possível criar o ${format === 'video' ? 'vídeo' : 'carrossel'}.`)
+        return
+      }
+      setMessage(`${format === 'video' ? 'Vídeo' : 'Carrossel'} criado — está na fila de aprovação logo abaixo. Abra para ver${format === 'video' ? ' e assistir' : ''} antes de aprovar.`)
+      router.refresh()
+    } catch {
+      setError('Erro de rede ou tempo esgotado. Atualize a página: o conteúdo pode ter sido criado.')
+    } finally {
+      setBusyFormat(null)
+    }
+  }
+
   async function generateWeek() {
     setBusyWeek(true)
     setError(null)
@@ -98,7 +124,7 @@ export function ContentWeekActions({ unitId, initialPostingDays }: { unitId: str
       <div className="flex flex-wrap gap-3">
         <button
           onClick={generateNow}
-          disabled={busyNow || busyWeek}
+          disabled={busyNow || busyWeek || busyFormat !== null}
           className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-black text-white disabled:opacity-60"
           style={{ background: brandGradient, boxShadow: '0 4px 12px rgba(6,182,212,0.3)' }}
         >
@@ -106,8 +132,26 @@ export function ContentWeekActions({ unitId, initialPostingDays }: { unitId: str
           {busyNow ? 'Gerando...' : 'Criar conteúdo agora'}
         </button>
         <button
+          onClick={() => generateFormat('video')}
+          disabled={busyNow || busyWeek || busyFormat !== null}
+          className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-slate-200 disabled:opacity-60"
+          style={{ border: '1px solid rgba(6,182,212,0.45)' }}
+        >
+          {busyFormat === 'video' ? <Loader2 size={14} className="animate-spin" /> : <Film size={14} />}
+          {busyFormat === 'video' ? 'Criando o vídeo (até ~1 min)...' : 'Criar vídeo agora'}
+        </button>
+        <button
+          onClick={() => generateFormat('carousel')}
+          disabled={busyNow || busyWeek || busyFormat !== null}
+          className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-slate-200 disabled:opacity-60"
+          style={{ border: '1px solid rgba(6,182,212,0.45)' }}
+        >
+          {busyFormat === 'carousel' ? <Loader2 size={14} className="animate-spin" /> : <GalleryHorizontal size={14} />}
+          {busyFormat === 'carousel' ? 'Criando o carrossel...' : 'Criar carrossel agora'}
+        </button>
+        <button
           onClick={generateWeek}
-          disabled={busyNow || busyWeek}
+          disabled={busyNow || busyWeek || busyFormat !== null}
           className="flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-slate-200 disabled:opacity-60"
           style={{ border: '1px solid rgba(255,255,255,0.12)' }}
         >

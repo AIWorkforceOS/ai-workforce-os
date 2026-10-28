@@ -2,7 +2,7 @@
 // mas pensado para Reels: texto grande, curto, e fora das faixas que a interface do Instagram cobre (topo ~250 px, base ~420 px).
 
 import { ImageResponse } from 'next/og'
-import { fetchImageDataUrl, loadFonts, readableOn, type SlideBrand } from './carousel-render'
+import { fetchImageDataUrl, loadFonts, logoSourceFor, readableOn, type SlideBrand } from './carousel-render'
 import { VIDEO_HEIGHT, VIDEO_WIDTH, type FrameSpec } from './video'
 
 const SAFE_TOP = 250
@@ -16,9 +16,9 @@ function headlineSize(text: string): number {
 
 function FrameView({ spec, brand, backgroundDataUrl }: { spec: FrameSpec; brand: SlideBrand; backgroundDataUrl: string | null }) {
   const photo = backgroundDataUrl !== null
-  const base = spec.kind === 'cta' ? brand.secondary : brand.primary
+  const base = spec.kind === 'cta' && !brand.logo?.darkOnTransparent ? brand.secondary : brand.primary
   const text = photo ? '#FFFFFF' : readableOn(base)
-  const accent = photo ? brand.secondary : spec.kind === 'cta' ? text : brand.secondary
+  const accent = photo ? brand.secondary : spec.kind === 'cta' && base === brand.secondary ? text : brand.secondary
   const muted = photo ? 'rgba(255,255,255,0.9)' : text === '#FFFFFF' ? 'rgba(255,255,255,0.86)' : 'rgba(11,18,32,0.82)'
   return (
     <div style={{ width: VIDEO_WIDTH, height: VIDEO_HEIGHT, display: 'flex', position: 'relative', background: base, fontFamily: 'Liberation, sans-serif' }}>
@@ -31,9 +31,7 @@ function FrameView({ spec, brand, backgroundDataUrl }: { spec: FrameSpec; brand:
       <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', width: '100%', height: '100%', padding: `${SAFE_TOP}px 90px ${SAFE_BOTTOM}px 90px` }}>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           {brand.logo ? (
-            <div style={{ display: 'flex', alignSelf: 'flex-start', padding: brand.logo.darkOnTransparent ? '10px 18px' : 0, borderRadius: 18, background: brand.logo.darkOnTransparent ? 'rgba(255,255,255,0.95)' : 'transparent' }}>
-              <img src={brand.logo.dataUrl} width={brand.logo.width} height={brand.logo.height} alt="" />
-            </div>
+            <img src={logoSourceFor(brand.logo, text === '#FFFFFF')} width={brand.logo.width} height={brand.logo.height} alt="" style={{ alignSelf: 'flex-start' }} />
           ) : (
             <div style={{ display: 'flex', fontSize: 40, fontWeight: 700, color: text }}>{brand.name}</div>
           )}
