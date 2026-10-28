@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import {
   deleteEvolutionInstanceIfExists,
-  ensureDedicatedWhatsappChannel,
   forceReconnectInstance,
   getEvolutionConfig,
 } from '@/lib/evolution'
@@ -18,7 +17,7 @@ import type { Unit } from '@/lib/types'
  * forceReconnectInstance em lib/evolution.ts pro porquê disso não é
  * o comportamento padrão de "Conectar").
  */
-export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
 
@@ -33,11 +32,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
   const unitRow = unit as Unit
 
-  const body = await request.json().catch(() => null)
-  const agentType: string | null = typeof body?.agentType === 'string' ? body.agentType : null
-
-  const dedicated = agentType ? await ensureDedicatedWhatsappChannel(supabase, unitRow, agentType) : null
-  const config = agentType ? dedicated?.config ?? null : getEvolutionConfig(unitRow)
+  const config = getEvolutionConfig(unitRow)
 
   if (!config) {
     return NextResponse.json(
@@ -50,22 +45,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // A tela atual usa um único WhatsApp compartilhado. Ao resetar esse
     // canal, encerra também instâncias dedicadas antigas para que dois
     // números não continuem processando a mesma unidade em paralelo.
-    if (!agentType) {
-      const { data: oldChannels } = await supabase
-        .from('unit_whatsapp_channels')
-        .select('evolution_instance_name')
-        .eq('unit_id', id)
+    const { data: oldChannels } = await supabase
+      .from('unit_whatsapp_channels')
+      .select('evolution_instance_name')
+      .eq('unit_id', id)
 
-      for (const oldChannel of (oldChannels ?? []) as { evolution_instance_name: string }[]) {
-        if (oldChannel.evolution_instance_name === config.instanceName) continue
-        const oldConfig = getEvolutionConfig(unitRow, oldChannel.evolution_instance_name)
-        if (oldConfig) await deleteEvolutionInstanceIfExists(oldConfig)
-      }
+    for (const oldChannel of (oldChannels ?? []) as { evolution_instance_name: string }[]) {
+      if (oldChannel.evolution_instance_name === config.instanceName) continue
+      const oldConfig = getEvolutionConfig(unitRow, oldChannel.evolution_instance_name)
+      if (oldConfig) await deleteEvolutionInstanceIfExists(oldConfig)
+    }
 
-      const { error: cleanupError } = await supabase.from('unit_whatsapp_channels').delete().eq('unit_id', id)
-      if (cleanupError) {
-        throw new Error(`Não foi possível limpar as conexões antigas: ${cleanupError.message}`)
-      }
+    const { error: cleanupError } = await supabase.from('unit_whatsapp_channels').delete().eq('unit_id', id)
+    if (cleanupError) {
+      throw new Error(`Não foi possível limpar as conexões antigas: ${cleanupError.message}`)
     }
 
     const data = await forceReconnectInstance(config, { supabase, orgId: unitRow.org_id, unitId: unitRow.id })

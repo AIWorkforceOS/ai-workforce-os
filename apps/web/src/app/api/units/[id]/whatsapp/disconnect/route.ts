@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { disconnectInstance, legacyWhatsappChannel, resolveWhatsappChannel } from '@/lib/evolution'
+import { disconnectInstance, legacyWhatsappChannel } from '@/lib/evolution'
 import type { Unit } from '@/lib/types'
 
-/** `agentType` no corpo (opcional): ver apps/web/src/app/api/units/[id]/whatsapp/connect/route.ts. */
-export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+/** Desconecta o único número compartilhado da unidade. */
+export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
 
@@ -21,9 +21,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
   const unitRow = unit as Unit
 
-  const body = await request.json().catch(() => null)
-  const agentType: string | null = typeof body?.agentType === 'string' ? body.agentType : null
-  const channel = agentType ? await resolveWhatsappChannel(supabase, unitRow, agentType) : legacyWhatsappChannel(supabase, unitRow)
+  const channel = legacyWhatsappChannel(supabase, unitRow)
 
   if (!channel) {
     return NextResponse.json({ error: 'Evolution API não configurada para esta unidade.' }, { status: 400 })

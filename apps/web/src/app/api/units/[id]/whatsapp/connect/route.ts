@@ -1,17 +1,14 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { connectInstance, ensureDedicatedWhatsappChannel, getEvolutionConfig } from '@/lib/evolution'
+import { connectInstance, getEvolutionConfig } from '@/lib/evolution'
 import type { Unit } from '@/lib/types'
 
 /**
- * `agentType` no corpo (opcional): quando informado, conecta uma instância
- * DEDICADA a esse funcionário (migration 051, unit_whatsapp_channels) —
- * usado pela tela de conexão quando a unidade tem mais de um funcionário
- * elegível a WhatsApp (ex.: Sales Rep e Recepcionista, cada um com seu
- * próprio número). Omitido, mantém o comportamento histórico (número
- * único compartilhado da unidade, units.evolution_instance_name).
+ * Conecta o único número compartilhado da unidade. O corpo é ignorado de
+ * propósito para manter compatibilidade com telas antigas que ainda enviam
+ * `agentType`.
  */
-export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
 
@@ -26,11 +23,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
   const unitRow = unit as Unit
 
-  const body = await request.json().catch(() => null)
-  const agentType: string | null = typeof body?.agentType === 'string' ? body.agentType : null
-
-  const dedicated = agentType ? await ensureDedicatedWhatsappChannel(supabase, unitRow, agentType) : null
-  const config = agentType ? dedicated?.config ?? null : getEvolutionConfig(unitRow)
+  // Ignora agentType inclusive de telas antigas em cache: desde a migration
+  // 113 toda a unidade usa um único número compartilhado.
+  const config = getEvolutionConfig(unitRow)
 
   if (!config) {
     // Sem Evolution central (env) nem dedicada (unidade): situação de
@@ -43,9 +38,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   // Comportamento histórico (sem agentType): salva o nome de instância
   // auto-gerado de volta pra unidade, pro webhook conseguir identificá-la.
-  // Com agentType, ensureDedicatedWhatsappChannel já garante a linha em
-  // unit_whatsapp_channels.
-  if (!agentType && !unitRow.evolution_instance_name) {
+  if (!unitRow.evolution_instance_name) {
     await supabase
       .from('units')
       .update({ evolution_instance_name: config.instanceName })

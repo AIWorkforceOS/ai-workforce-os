@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { ensureWebhookConfigured, getInstanceStatus, legacyWhatsappChannel, resolveWhatsappChannel, syncWhatsappPhoneIfConnected } from '@/lib/evolution'
+import { ensureWebhookConfigured, getInstanceStatus, legacyWhatsappChannel, syncWhatsappPhoneIfConnected } from '@/lib/evolution'
 import type { Unit } from '@/lib/types'
 
-/** `?agentType=` (opcional): ver connect/route.ts — mesma disambiguação por funcionário. */
-export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+/** Consulta o único número compartilhado da unidade. */
+export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
 
@@ -21,8 +21,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   }
   const unitRow = unit as Unit
 
-  const agentType = new URL(request.url).searchParams.get('agentType')
-  const channel = agentType ? await resolveWhatsappChannel(supabase, unitRow, agentType) : legacyWhatsappChannel(supabase, unitRow)
+  const channel = legacyWhatsappChannel(supabase, unitRow)
 
   if (!channel) {
     return NextResponse.json({ status: 'not_configured' })
