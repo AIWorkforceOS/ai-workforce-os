@@ -2,19 +2,75 @@
 // H.264 high, yuv420p, 30 fps, 1080×1920, moov no início (faststart) e uma faixa de áudio AAC silenciosa (o vídeo é só texto na tela).
 
 import { execFile } from 'node:child_process'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { existsSync } from 'node:fs'
+import { chmod, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { gunzipSync } from 'node:zlib'
 import ffmpegPath from 'ffmpeg-static'
 import { TRANSITION_SECONDS, VIDEO_FPS, buildFilterGraph, planTimeline, type FrameSpec } from './video'
 
 const FFMPEG_TIMEOUT_MS = 240_000
 
-/** Caminho do ffmpeg: o do pacote, ou FFMPEG_PATH (para quem quiser usar um próprio). Sem nenhum dos dois, erro claro (o post não é criado). */
-export function resolveFfmpeg(env: Record<string, string | undefined> = process.env): string {
-  const path = env.FFMPEG_PATH || ffmpegPath
-  if (!path) throw new Error('ffmpeg não está disponível neste servidor — não foi possível renderizar o vídeo.')
-  return path
+// O binário do ffmpeg (80 MB descompactado) NÃO vai dentro das funções: a Vercel recusa o deploy com ele empacotado (testado em prévia, 2026-10-27).
+// Em produção o servidor baixa uma vez o MESMO binário oficial do ffmpeg-static, confere o hash fixado aqui e o guarda em /tmp (reaproveitado
+// enquanto a instância estiver quente). Em desenvolvimento/CI o binário do pacote já está no disco e é usado direto.
+const FFMPEG_RELEASE = 'b6.1.1'
+const FFMPEG_DOWNLOADS: Record<string, { url: string; sha256: string }> = {
+  'linux-x64': {
+    url: `https://github.com/eugeneware/ffmpeg-static/releases/download/${FFMPEG_RELEASE}/ffmpeg-linux-x64.gz`,
+    sha256: 'bfe8a8fc511530457b528c48d77b5737527b504a3797a9bc4866aeca69c2dffa',
+  },
+}
+
+export type FfmpegDeps = {
+  env?: Record<string, string | undefined>
+  bundledPath?: string | null
+  fetchImpl?: typeof fetch
+  cacheDir?: string
+  platform?: string
+  arch?: string
+}
+
+let pending: Promise<string> | null = null
+
+/** Caminho de um ffmpeg executável: FFMPEG_PATH → binário do pacote (se estiver no disco) → cópia baixada em /tmp (baixa e confere o hash se faltar). */
+export async function ensureFfmpeg(deps: FfmpegDeps = {}): Promise<string> {
+  const env = deps.env ?? process.env
+  if (env.FFMPEG_PATH) return env.FFMPEG_PATH
+  const bundled = deps.bundledPath === undefined ? ffmpegPath : deps.bundledPath
+  if (bundled && existsSync(bundled)) return bundled
+
+  const platform = deps.platform ?? process.platform
+  const arch = deps.arch ?? process.arch
+  const source = FFMPEG_DOWNLOADS[`${platform}-${arch}`]
+  if (!source) throw new Error(`ffmpeg não está disponível neste servidor (${platform}-${arch}) — não foi possível renderizar o vídeo.`)
+
+  const dir = deps.cacheDir ?? join(tmpdir(), `alizo-ffmpeg-${FFMPEG_RELEASE}`)
+  const target = join(dir, 'ffmpeg')
+  if (existsSync(target)) return target
+  if (!pending) {
+    pending = download(source, dir, target, deps.fetchImpl ?? fetch).finally(() => {
+      pending = null
+    })
+  }
+  return pending
+}
+
+async function download(source: { url: string; sha256: string }, dir: string, target: string, fetchImpl: typeof fetch): Promise<string> {
+  const response = await fetchImpl(source.url, { signal: AbortSignal.timeout(120_000) })
+  if (!response.ok) throw new Error(`Não foi possível baixar o ffmpeg (status ${response.status}).`)
+  const gz = Buffer.from(await response.arrayBuffer())
+  const hash = createHash('sha256').update(gz).digest('hex')
+  if (hash !== source.sha256) throw new Error('O ffmpeg baixado não confere com o hash esperado — não vou executar. O vídeo não foi renderizado.')
+  await mkdir(dir, { recursive: true })
+  const partial = `${target}.${process.pid}.${Date.now()}.part`
+  await writeFile(partial, gunzipSync(gz))
+  await chmod(partial, 0o755)
+  await rename(partial, target)
+  console.info(`[content/video] ffmpeg ${FFMPEG_RELEASE} baixado e verificado (${gz.byteLength} bytes compactados)`)
+  return target
 }
 
 export type EncodeResult = { mp4: Buffer; durationMs: number; bytes: number }
@@ -55,7 +111,7 @@ export async function encodeVideo(params: { frames: Buffer[]; specs: Pick<FrameS
       '-movflags', '+faststart',
       out,
     )
-    await run(resolveFfmpeg(), args)
+    await run(await ensureFfmpeg(), args)
     const mp4 = await readFile(out)
     return { mp4, durationMs: Date.now() - started, bytes: mp4.byteLength }
   } finally {

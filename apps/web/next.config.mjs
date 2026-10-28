@@ -10,15 +10,9 @@ const nextConfig = {
     // outra aba etc.), então zerar o staleTime evita ver dado desatualizado
     // ao navegar entre telas logo após uma edição.
     staleTimes: { dynamic: 0 },
-    // ffmpeg-static localiza o binário pelo próprio __dirname: não pode ser empacotado pelo webpack, e o arquivo precisa ir junto das funções que
-    // renderizam vídeo (cron e edição). Sem isso o servidor não acha o ffmpeg e a renderização falha com erro claro.
+    // ffmpeg-static não pode ser empacotado pelo webpack. O binário em si NÃO é incluído nas funções (a Vercel recusa o deploy com ele,
+    // ~80 MB): o servidor baixa e verifica o mesmo binário em tempo de execução — ver lib/content/video-encode.ts.
     serverComponentsExternalPackages: ['ffmpeg-static'],
-    outputFileTracingIncludes: {
-      '/api/cron/content': ['./node_modules/ffmpeg-static/ffmpeg'],
-      '/api/content/generate-week': ['./node_modules/ffmpeg-static/ffmpeg'],
-      '/api/content/generate-now': ['./node_modules/ffmpeg-static/ffmpeg'],
-      '/api/content/posts/[id]/video': ['./node_modules/ffmpeg-static/ffmpeg'],
-    },
   },
   webpack: (config) => {
     // pdf.js (visualizador do Sign Off) lista o módulo nativo "canvas" como opcional, só para rodar no Node. Nós só usamos o pdf.js no navegador (o servidor

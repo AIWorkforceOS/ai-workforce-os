@@ -4,22 +4,53 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import sharp from 'sharp'
-import { describe, expect, it } from 'vitest'
-import { encodeVideo, resolveFfmpeg } from '../video-encode'
+import { describe, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
+import { existsSync } from 'node:fs'
+import { gzipSync } from 'node:zlib'
+import { encodeVideo, ensureFfmpeg } from '../video-encode'
 
 const run = promisify(execFile)
 
 async function binary(): Promise<string | null> {
   try {
-    return resolveFfmpeg()
+    return await ensureFfmpeg()
   } catch {
     return null
   }
 }
 
-describe('resolveFfmpeg', () => {
-  it('FFMPEG_PATH tem prioridade; sem nenhum caminho, erro claro', () => {
-    expect(resolveFfmpeg({ FFMPEG_PATH: '/x/ffmpeg' })).toBe('/x/ffmpeg')
+describe('ensureFfmpeg', () => {
+  it('FFMPEG_PATH tem prioridade; depois o binário do pacote, se estiver no disco', async () => {
+    expect(await ensureFfmpeg({ env: { FFMPEG_PATH: '/x/ffmpeg' }, bundledPath: null })).toBe('/x/ffmpeg')
+    expect(await ensureFfmpeg({ env: {}, bundledPath: process.execPath })).toBe(process.execPath)
+  })
+
+  it('sem binário no disco, baixa, confere o hash, guarda e reaproveita (não baixa de novo)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ff-cache-'))
+    try {
+      const gz = gzipSync(Buffer.from('#!/bin/sh\necho ffmpeg-falso'))
+      const sha = createHash('sha256').update(gz).digest('hex')
+      const fetchImpl = vi.fn(async () => new Response(gz, { status: 200 }))
+      const deps = { env: {}, bundledPath: null, cacheDir: dir, platform: 'linux', arch: 'x64', fetchImpl: fetchImpl as unknown as typeof fetch }
+      // o hash fixado no código é o do binário oficial real; o falso do teste deve ser RECUSADO
+      await expect(ensureFfmpeg(deps)).rejects.toThrow(/não confere com o hash/)
+      expect(existsSync(join(dir, 'ffmpeg'))).toBe(false)
+      expect(sha).not.toBe('')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('falha com mensagem clara em plataforma sem binário e em download com erro', async () => {
+    await expect(ensureFfmpeg({ env: {}, bundledPath: null, platform: 'win32', arch: 'x64', cacheDir: join(tmpdir(), 'nada-ff') })).rejects.toThrow(/não está disponível/)
+    const dir = await mkdtemp(join(tmpdir(), 'ff-cache-'))
+    try {
+      const fetchImpl = vi.fn(async () => new Response('x', { status: 503 }))
+      await expect(ensureFfmpeg({ env: {}, bundledPath: null, cacheDir: dir, platform: 'linux', arch: 'x64', fetchImpl: fetchImpl as unknown as typeof fetch })).rejects.toThrow(/status 503/)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })
 
