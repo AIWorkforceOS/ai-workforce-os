@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/dashboard-ui'
 import { TestChat } from '@/components/dashboard/test-chat'
 import { PreActivationTest } from '@/components/dashboard/pre-activation-test'
 import { fetchOrganizationVerticalKey } from '@/lib/organizations'
+import { CERTIFICATION_SCENARIOS } from '@/lib/agent-certification-scenarios'
 import { VERTICAL_TEMPLATES } from '@/lib/verticals/catalog'
 import type { AgentConfig, Unit } from '@/lib/types'
 
@@ -103,7 +104,8 @@ export default async function TestAgentPage({ params }: { params: { configId: st
 
   const chatAgentType = configRow.agent_type as ChatTestableAgentType
   const verticalKey = await fetchOrganizationVerticalKey(supabase, unitRow.org_id)
-  const testScenarios = verticalKey ? (VERTICAL_TEMPLATES[verticalKey]?.testScenarios ?? []) : []
+  const verticalScenarios = verticalKey ? (VERTICAL_TEMPLATES[verticalKey]?.testScenarios ?? []) : []
+  const testScenarios = [...CERTIFICATION_SCENARIOS[chatAgentType], ...verticalScenarios]
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">

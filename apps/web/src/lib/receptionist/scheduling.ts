@@ -72,6 +72,23 @@ export async function loadActiveServices(supabase: SupabaseClient, unit: Unit): 
   return (data as Service[] | null) ?? []
 }
 
+export function buildServicesKnowledgeContext(services: Service[]): string {
+  if (services.length === 0) {
+    return 'CATÁLOGO DE SERVIÇOS: nenhum serviço ativo está cadastrado. Não invente serviço, preço, duração nem disponibilidade; informe que precisa confirmar com a equipe.'
+  }
+  const rows = services.map((service) => ({
+    nome: service.name,
+    descricao: service.description,
+    preco: service.price,
+    observacao_preco: service.price_notes,
+    duracao_minutos: service.duration_minutes,
+    regras_agendamento: service.booking_rules,
+    regras_cancelamento: service.cancellation_rules,
+    dados_necessarios: service.customer_requirements,
+  }))
+  return `CATÁLOGO DE SERVIÇOS — fonte de verdade: ${JSON.stringify(rows)}. Nunca invente ou complete preço, prazo, duração, disponibilidade, promoção ou regra ausente. Se um campo estiver vazio, diga que precisa confirmar.`
+}
+
 /**
  * Casa o nome de serviço citado em texto livre pelo cliente com o
  * catálogo da unidade: match exato, depois por substring nos dois

@@ -70,6 +70,26 @@ export async function extractAttachmentPdfText(fileUrl: string, fileName: string
       throw new Error(`não foi possível baixar o PDF para extração (status ${fileResponse.status})`)
     }
     const arrayBuffer = await fileResponse.arrayBuffer()
+    try {
+      const pdfjs = await import('pdfjs-dist/legacy/build/pdf.js')
+      const document = await pdfjs.getDocument({ data: new Uint8Array(arrayBuffer), disableFontFace: true }).promise
+      const pages: string[] = []
+      for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) {
+        const page = await document.getPage(pageNumber)
+        const content = await page.getTextContent()
+        const text = content.items
+          .map((item) => ('str' in item ? item.str : ''))
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+        if (text) pages.push(`[Página ${pageNumber}] ${text}`)
+      }
+      if (pages.length > 0) return pages.join('\n\n')
+    } catch {
+      // PDFs escaneados, protegidos ou malformados podem não ser lidos
+      // localmente. Nesses casos usamos o leitor de arquivos do modelo como
+      // fallback, sem perder o upload nem fingir que o documento foi lido.
+    }
     const base64Pdf = Buffer.from(arrayBuffer).toString('base64')
 
     const raw = await generateStructuredReplyFromPdf<{ text?: unknown }>({
@@ -144,7 +164,28 @@ export async function extractAttachmentImageDescription(fileUrl: string, fileNam
  * antes disso o funcionário só sabia QUANDO enviar um material, nunca o
  * que estava escrito dentro dele.
  */
-export function buildAttachmentsContext(attachments: EmployeeAttachment[]): string {
+function normalizedTerms(query: string): string[] {
+  return [...new Set(query.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '').match(/[a-z0-9]{3,}/g) ?? [])]
+}
+
+function relevantDocumentText(text: string, query?: string | null): string {
+  if (!query?.trim()) return truncateAttachmentText(text)
+  const chunks = text.match(/[\s\S]{1,1800}(?:\s|$)/g) ?? [text]
+  const terms = normalizedTerms(query)
+  return chunks
+    .map((chunk, index) => ({
+      chunk,
+      index,
+      score: terms.reduce((total, term) => total + (chunk.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(term) ? 1 : 0), 0),
+    }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, 3)
+    .sort((a, b) => a.index - b.index)
+    .map(({ chunk }) => chunk.trim())
+    .join('\n[…trecho seguinte…]\n')
+}
+
+export function buildAttachmentsContext(attachments: EmployeeAttachment[], query?: string | null): string {
   if (attachments.length === 0) return ''
 
   const kindLabel = (kind: EmployeeAttachment['kind']) =>
@@ -153,7 +194,7 @@ export function buildAttachmentsContext(attachments: EmployeeAttachment[]): stri
   const list = attachments
     .map((a) => {
       const base = `id "${a.id}": "${a.title}" (${kindLabel(a.kind)}) — quando usar: ${a.usage_instructions}`
-      const content = a.extracted_text ? ` — conteúdo do documento: ${truncateAttachmentText(a.extracted_text)}` : ''
+      const content = a.extracted_text ? ` — trechos relevantes do documento: ${relevantDocumentText(a.extracted_text, query)}` : ''
       return `${base}${content}`
     })
     .join('; ')

@@ -130,6 +130,8 @@ export function NewUnitForm({
       // qualquer falha e mascarou uma violação de RLS por dias.
       if (insertError?.code === '42501') {
         setError('Sua conta não tem permissão para criar unidades. Fale com a equipe Alizo (a correção de permissão é a migration 031).')
+      } else if (insertError?.message?.includes('plan_unit_limit_reached')) {
+        setError(insertError.message.split('plan_unit_limit_reached:')[1]?.trim() ?? 'Seu plano atingiu o limite de unidades. Faça upgrade para continuar.')
       } else if (insertError?.code === '23505') {
         setError('Este slug já está em uso (inclusive por outra empresa) — edite o campo Slug e tente de novo.')
       } else {

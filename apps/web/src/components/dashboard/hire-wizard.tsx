@@ -12,6 +12,7 @@ import { TestChat } from '@/components/dashboard/test-chat'
 import { WhatsAppConnectStep } from '@/components/dashboard/whatsapp-connect-step'
 import { SeoAuditRunButton } from '@/components/dashboard/seo-audit-run-button'
 import { EMPLOYEE_WIZARD_META, type WizardAgentType } from '@/lib/employee-wizard-meta'
+import { CERTIFICATION_SCENARIOS } from '@/lib/agent-certification-scenarios'
 import type { AgentConfig, AgentTone, Unit } from '@/lib/types'
 
 // Wizard de contratação genérico — estende pros outros 5 funcionários
@@ -168,7 +169,7 @@ export function HireWizard({
                 unitId={unit.id}
                 agentType={agentType}
                 personaName={config.persona_name}
-                testScenarios={[]}
+                testScenarios={CERTIFICATION_SCENARIOS[agentType]}
               />
             )}
             <button
@@ -244,7 +245,11 @@ function AboutStep({
       : await supabase.from('agent_configs').insert(payload).select('*').single()
     setSaving(false)
     if (saveError || !data) {
-      setError('Não foi possível salvar. Tente de novo — se persistir, fale com suporte@alizo.com.br.')
+      setError(
+        saveError?.message?.includes('plan_agent_limit_reached')
+          ? (saveError.message.split('plan_agent_limit_reached:')[1]?.trim() ?? 'Seu plano atingiu o limite de funcionários digitais. Faça upgrade para continuar.')
+          : 'Não foi possível salvar. Tente de novo — se persistir, fale com suporte@alizo.com.br.',
+      )
       return
     }
     onSaved(data as AgentConfig)

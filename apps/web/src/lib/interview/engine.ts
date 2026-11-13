@@ -149,9 +149,12 @@ export const INTERVIEW_PLAYBOOKS: Record<InterviewAgentType, InterviewPlaybook> 
       'quais dados mínimos você deve pedir quando um cliente novo aparece (nome e telefone sempre; o que mais faz sentido pedir para ESTE negócio, ex.: endereço, e-mail)',
       'se a empresa já separa os clientes por algum tipo de marcação/categoria (ex.: VIP, inadimplente, novo) e quais são essas categorias',
       'qual o horário de funcionamento da empresa e o que fazer com contatos fora desse horário',
+      'quais serviços podem ser agendados, seus preços ou regra de preço sob consulta, duração, o que está incluído e quais dados pedir ao cliente',
+      'quais são as regras de agendamento, cancelamento e reagendamento — incluindo antecedência, multas, exceções e situações que exigem confirmação humana',
+      'quais informações você jamais pode inventar (preço, prazo, disponibilidade, promoção ou condição comercial) e o que responder quando a fonte de verdade não tiver a resposta',
     ],
     profileSchema:
-      '{"tipo_negocio": string, "como_atende_hoje": string, "tarefas_automaticas": string[], "quando_avisar_humano": string, "quem_avisar": string, "dados_minimos_cliente": string[], "tags_clientes": string[], "horario_funcionamento": string, "observacoes": string[]}',
+      '{"tipo_negocio": string, "como_atende_hoje": string, "tarefas_automaticas": string[], "quando_avisar_humano": string, "quem_avisar": string, "dados_minimos_cliente": string[], "tags_clientes": string[], "horario_funcionamento": string, "servicos_regras": string, "politica_agendamento": string, "informacoes_proibidas_inventar": string[], "observacoes": string[]}',
   },
 }
 

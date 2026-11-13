@@ -21,6 +21,7 @@ export function MobileSidebar({
   facilitEnabled = false,
   jobRole = null,
   brandLogoUrl = null,
+  contractedAgentTypes,
 }: {
   brandLogoUrl?: string | null
   userEmail: string
@@ -29,6 +30,7 @@ export function MobileSidebar({
   managementMode?: ManagementMode
   facilitEnabled?: boolean
   jobRole?: JobRole | null
+  contractedAgentTypes?: string[]
 }) {
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
@@ -80,6 +82,7 @@ export function MobileSidebar({
               facilitEnabled={facilitEnabled}
               jobRole={jobRole}
               brandLogoUrl={brandLogoUrl}
+              contractedAgentTypes={contractedAgentTypes}
               onNavigate={() => setOpen(false)}
             />
           </div>

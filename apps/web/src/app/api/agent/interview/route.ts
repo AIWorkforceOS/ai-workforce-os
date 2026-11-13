@@ -5,7 +5,8 @@ import { getAppUser } from '@/lib/app-user'
 import { getOpenAIApiKey } from '@/lib/openai'
 import { buildOrganizationProfileUpdate, INTERVIEW_PLAYBOOKS, isInterviewAgentType, runInterviewTurn } from '@/lib/interview/engine'
 import { fetchActiveAttachments, buildAttachmentsContext } from '@/lib/attachments'
-import type { AgentConfig, InterviewTranscriptEntry, Organization, Unit } from '@/lib/types'
+import { evaluateEmployeeCertification } from '@/lib/interview/certification'
+import type { AgentConfig, InterviewTranscriptEntry, Organization, Service, Unit } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -184,9 +185,21 @@ export async function POST(request: Request) {
         interview_transcript: result.transcript,
         business_profile: result.profile,
         interview_status: result.done ? 'completed' : 'in_progress',
-        // Entrevista concluída = funcionário pronto pra trabalhar
-        ...(result.done ? { is_active: true, last_trained_at: new Date().toISOString() } : {}),
+        ...(result.done ? { is_active: false, last_trained_at: new Date().toISOString() } : {}),
       }
+
+  if (result.done) {
+    const { data: services } = await supabase.from('services').select('*').eq('unit_id', unit.id).eq('is_active', true)
+    const certification = evaluateEmployeeCertification({
+      config: { ...config, business_profile: result.profile, interview_status: 'completed' },
+      verticalKey: organization?.vertical_key as Parameters<typeof evaluateEmployeeCertification>[0]['verticalKey'],
+      services: (services ?? []) as Service[],
+      scenarioReviewCompleted: false,
+    })
+    update.certification_status = certification.status
+    update.certification_issues = certification.issues
+    update.certified_at = null
+  }
 
   const { error: saveError } = await supabase.from('agent_configs').update(update).eq('id', config.id)
   if (saveError) {

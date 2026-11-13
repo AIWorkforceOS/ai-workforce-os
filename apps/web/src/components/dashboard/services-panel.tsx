@@ -20,6 +20,11 @@ type ServiceFormState = {
   buffer_minutes: string
   capacity_per_slot: string
   price: string
+  description: string
+  price_notes: string
+  booking_rules: string
+  cancellation_rules: string
+  customer_requirements: string
 }
 
 const EMPTY_FORM: ServiceFormState = {
@@ -28,6 +33,11 @@ const EMPTY_FORM: ServiceFormState = {
   buffer_minutes: '0',
   capacity_per_slot: '1',
   price: '',
+  description: '',
+  price_notes: '',
+  booking_rules: '',
+  cancellation_rules: '',
+  customer_requirements: '',
 }
 
 function formatPrice(price: number | null) {
@@ -63,6 +73,11 @@ export function ServicesPanel({
       buffer_minutes: String(service.buffer_minutes),
       capacity_per_slot: String(service.capacity_per_slot),
       price: service.price === null ? '' : String(service.price),
+      description: service.description ?? '',
+      price_notes: service.price_notes ?? '',
+      booking_rules: service.booking_rules ?? '',
+      cancellation_rules: service.cancellation_rules ?? '',
+      customer_requirements: service.customer_requirements ?? '',
     })
   }
 
@@ -78,6 +93,11 @@ export function ServicesPanel({
       buffer_minutes: Number(form.buffer_minutes) || 0,
       capacity_per_slot: Number(form.capacity_per_slot) || 1,
       price: form.price.trim() === '' ? null : Number(form.price),
+      description: form.description.trim() || null,
+      price_notes: form.price_notes.trim() || null,
+      booking_rules: form.booking_rules.trim() || null,
+      cancellation_rules: form.cancellation_rules.trim() || null,
+      customer_requirements: form.customer_requirements.trim() || null,
     }
 
     if (editingId) {
@@ -194,6 +214,26 @@ export function ServicesPanel({
                 onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))}
                 placeholder="Sem preço fixo"
               />
+            </div>
+            <div className="flex flex-col gap-1.5 sm:col-span-2">
+              <Label htmlFor="serviceDescription">O que está incluído *</Label>
+              <Input id="serviceDescription" required value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Descreva exatamente o serviço oferecido" />
+            </div>
+            <div className="flex flex-col gap-1.5 sm:col-span-2">
+              <Label htmlFor="servicePriceNotes">Observação de preço</Label>
+              <Input id="servicePriceNotes" value={form.price_notes} onChange={(e) => setForm((f) => ({ ...f, price_notes: e.target.value }))} placeholder="Ex.: sob consulta; varia conforme avaliação" />
+            </div>
+            <div className="flex flex-col gap-1.5 sm:col-span-2">
+              <Label htmlFor="serviceBookingRules">Regras para agendar *</Label>
+              <Input id="serviceBookingRules" required value={form.booking_rules} onChange={(e) => setForm((f) => ({ ...f, booking_rules: e.target.value }))} placeholder="Antecedência, horários e restrições" />
+            </div>
+            <div className="flex flex-col gap-1.5 sm:col-span-2">
+              <Label htmlFor="serviceCancellationRules">Cancelamento e reagendamento *</Label>
+              <Input id="serviceCancellationRules" required value={form.cancellation_rules} onChange={(e) => setForm((f) => ({ ...f, cancellation_rules: e.target.value }))} placeholder="Prazo, multa ou condições" />
+            </div>
+            <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-4">
+              <Label htmlFor="serviceRequirements">O que pedir ao cliente</Label>
+              <Input id="serviceRequirements" value={form.customer_requirements} onChange={(e) => setForm((f) => ({ ...f, customer_requirements: e.target.value }))} placeholder="Dados ou preparo necessário antes do atendimento" />
             </div>
           </div>
 

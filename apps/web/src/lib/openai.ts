@@ -4,6 +4,29 @@ export function getOpenAIApiKey(): string | null {
   return process.env.OPENAI_API_KEY || null
 }
 
+function cleanBase64Payload(value: string): string {
+  const comma = value.indexOf(',')
+  return value.startsWith('data:') && comma >= 0 ? value.slice(comma + 1) : value
+}
+
+function normalizeAudioMimeType(value: string): string {
+  const mime = value.split(';')[0]?.trim().toLowerCase() || 'audio/ogg'
+  if (mime === 'audio/ogg' || mime === 'audio/opus') return 'audio/ogg'
+  if (mime === 'audio/mp4' || mime === 'audio/m4a' || mime === 'audio/x-m4a') return 'audio/mp4'
+  if (mime === 'audio/mpeg' || mime === 'audio/mp3') return 'audio/mpeg'
+  if (mime === 'audio/wav' || mime === 'audio/x-wav') return 'audio/wav'
+  if (mime === 'audio/webm') return 'audio/webm'
+  return mime.startsWith('audio/') ? mime : 'audio/ogg'
+}
+
+function audioExtension(mimeType: string): string {
+  if (mimeType === 'audio/mpeg') return 'mp3'
+  if (mimeType === 'audio/mp4') return 'm4a'
+  if (mimeType === 'audio/wav') return 'wav'
+  if (mimeType === 'audio/webm') return 'webm'
+  return 'ogg'
+}
+
 // Fase 14 (observabilidade, briefing): "nenhuma requisição deve ficar presa
 // indefinidamente" — nenhuma das chamadas à OpenAI neste arquivo tinha
 // timeout antes disso; uma resposta travada do provedor prendia a
@@ -296,11 +319,12 @@ export async function transcribeAudio(params: {
   base64Audio: string
   mimeType: string
 }): Promise<{ text: string; durationSeconds: number }> {
-  const audioBuffer = Buffer.from(params.base64Audio, 'base64')
-  const extension = params.mimeType.includes('ogg') ? 'ogg' : params.mimeType.split('/')[1]?.split(';')[0] || 'ogg'
+  const mimeType = normalizeAudioMimeType(params.mimeType)
+  const audioBuffer = Buffer.from(cleanBase64Payload(params.base64Audio), 'base64')
+  if (audioBuffer.length === 0) throw new Error('Áudio vazio ou inválido.')
 
   const formData = new FormData()
-  formData.append('file', new Blob([audioBuffer], { type: params.mimeType }), `audio.${extension}`)
+  formData.append('file', new Blob([audioBuffer], { type: mimeType }), `audio.${audioExtension(mimeType)}`)
   formData.append('model', 'whisper-1')
   formData.append('response_format', 'verbose_json')
 

@@ -22,6 +22,7 @@ const ORG_WIDE_VALUE = ''
 
 /** Funcionários que hoje sabem ler a biblioteca de materiais na conversa (ver relatório da migration 062) — os demais ficam disponíveis para seleção desde já, sem exigir nova migration quando forem conectados. */
 export const EMPLOYEE_OPTIONS: { value: string; label: string }[] = [
+  { value: 'kai', label: 'Kai — suporte do AI Workforce' },
   { value: 'receptionist', label: 'Recepcionista' },
   { value: 'sdr', label: 'SDR / Vendas' },
   { value: 'recruiter', label: 'Recrutador' },

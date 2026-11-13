@@ -27,6 +27,7 @@ import {
   PieChart,
   Camera,
   LifeBuoy,
+  ShieldCheck,
 } from 'lucide-react'
 import type { Locale } from '@/lib/i18n/config'
 import type { ManagementMode } from '@/lib/types'
@@ -42,6 +43,15 @@ export type NavItem = {
   fullManagementOnly?: boolean
   /** visível apenas quando organizations.facilit_integration_enabled = true (Mawi Pro, migration 083) — integração específica desse cliente */
   facilitOnly?: boolean
+}
+
+const EMPLOYEE_TYPE_BY_PATH: Record<string, string> = {
+  '/dashboard/agents': 'sdr',
+  '/dashboard/recruiter': 'recruiter',
+  '/dashboard/receptionist': 'receptionist',
+  '/dashboard/content': 'content_specialist',
+  '/dashboard/traffic': 'traffic_specialist',
+  '/dashboard/seo': 'seo_specialist',
 }
 
 // Arquitetura de navegação por FUNCIONÁRIO DIGITAL, não por objetivo do
@@ -124,6 +134,7 @@ export const navGroups: { label: Record<Locale, string>; items: NavItem[] }[] = 
       { href: '/dashboard/financial', label: { pt: 'Cobranças', en: 'Billing' }, icon: FileText, superOnly: true },
       { href: '/dashboard/sales', label: { pt: 'Vendas Alizo', en: 'Alizo sales' }, icon: ShoppingCart, exact: true, superOnly: true },
       { href: '/dashboard/sales/payments', label: { pt: 'Pagamentos (setup)', en: 'Payments (setup)' }, icon: CreditCard, superOnly: true },
+      { href: '/dashboard/system-health', label: { pt: 'Saúde do sistema', en: 'System health' }, icon: ShieldCheck, superOnly: true },
       { href: '/dashboard/sales/financeiro', label: { pt: 'DRE (interno Alizo)', en: 'P&L (Alizo internal)' }, icon: PieChart, superOnly: true },
     ],
   },
@@ -139,6 +150,7 @@ export function getVisibleNavGroups({
   managementMode = 'digital_employees',
   facilitEnabled = false,
   jobRole = null,
+  contractedAgentTypes,
 }: {
   role?: string
   unitId?: string | null
@@ -147,6 +159,8 @@ export function getVisibleNavGroups({
   facilitEnabled?: boolean
   /** users.job_role (migration 104): função de escritório que restringe um admin; null = completo */
   jobRole?: JobRole | null
+  /** Tipos já contratados pela organização. Quando informado, oculta funcionários ainda não contratados. */
+  contractedAgentTypes?: string[]
 }): { label: Record<Locale, string>; items: NavItem[] }[] {
   const isSuperAdmin = role === 'super_admin'
   const fullManagement = managementMode === 'full_management' && !isSuperAdmin
@@ -155,13 +169,16 @@ export function getVisibleNavGroups({
     .map((group) => ({
       ...group,
       items: group.items
-        .filter(
-          (item) =>
+        .filter((item) => {
+          const employeeType = EMPLOYEE_TYPE_BY_PATH[item.href]
+          return (
             (isSuperAdmin || !item.superOnly) &&
             (fullManagement || !item.fullManagementOnly) &&
             (facilitEnabled || !item.facilitOnly) &&
-            canAccessModule(jobRole, moduleForPath(item.href)),
-        )
+            (isSuperAdmin || contractedAgentTypes === undefined || !employeeType || contractedAgentTypes.includes(employeeType)) &&
+            canAccessModule(jobRole, moduleForPath(item.href))
+          )
+        })
         .map((item) => {
           // Dono de unidade não gerencia a lista de unidades — vai direto pra sua
           if (item.href === '/dashboard/units' && unitId) {

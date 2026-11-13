@@ -245,6 +245,10 @@ export type AgentConfig = {
   last_trained_at?: string | null
   /** conversa de retreinamento em andamento, zerada quando concluída — migration 029 */
   retrain_transcript?: InterviewTranscriptEntry[] | null
+  certification_status?: 'ready' | 'missing_information' | 'requires_review'
+  certification_issues?: string[] | null
+  certified_at?: string | null
+  certification_version?: number
   created_at: string
   updated_at: string
 }
@@ -361,6 +365,11 @@ export type Service = {
   /** quantos agendamentos simultâneos o mesmo slot comporta */
   capacity_per_slot: number
   price: number | null
+  description?: string | null
+  price_notes?: string | null
+  booking_rules?: string | null
+  cancellation_rules?: string | null
+  customer_requirements?: string | null
   is_active: boolean
   created_at: string
   updated_at: string

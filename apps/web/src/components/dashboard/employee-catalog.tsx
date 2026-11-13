@@ -403,6 +403,11 @@ function EmployeeCatalogCard({
           {trainingScore !== null && trainingScore !== undefined && (
             <span className="text-[10px] font-bold text-slate-500">Treinamento: {trainingScore}%</span>
           )}
+          {activation?.config && (
+            <span className={`text-[10px] font-bold ${activation.config.certification_status === 'ready' ? 'text-emerald-400' : activation.config.certification_status === 'requires_review' ? 'text-amber-400' : 'text-red-400'}`}>
+              {activation.config.certification_status === 'ready' ? 'Pronto' : activation.config.certification_status === 'requires_review' ? 'Requer revisão' : 'Faltam informações'}
+            </span>
+          )}
         </div>
       </div>
 
@@ -455,6 +460,9 @@ function EmployeeCatalogCard({
       </div>
       {trainConfigId && (
         <div className="flex flex-col gap-1.5">
+          {activation?.config && activation.config.certification_status !== 'ready' && (
+            <CertificationButton config={activation.config} />
+          )}
           <div className="flex items-center gap-2">
             <Link
               href={`/dashboard/equipe-digital/${trainConfigId}/entrevista`}
@@ -486,6 +494,39 @@ function EmployeeCatalogCard({
         </div>
       )}
     </Card>
+  )
+}
+
+function CertificationButton({ config }: { config: AgentConfig }) {
+  const router = useRouter()
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  async function review() {
+    if (!window.confirm('Confirma que executou os testes orientados, conferiu as respostas e corrigiu qualquer informação incorreta?')) return
+    setBusy(true)
+    setMessage(null)
+    const response = await fetch('/api/agent/certification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ configId: config.id, scenarioReviewCompleted: true }),
+    })
+    const body = await response.json().catch(() => null)
+    setBusy(false)
+    if (!response.ok) {
+      const issues = Array.isArray(body?.issues) ? body.issues.join(' ') : body?.error
+      setMessage(issues || 'Ainda faltam informações para ativar.')
+      return
+    }
+    setMessage('Certificação aprovada. Funcionário ativado.')
+    router.refresh()
+  }
+  return (
+    <div className="rounded-xl p-2.5" style={{ border: '1px solid rgba(245,158,11,0.3)', background: 'rgba(245,158,11,0.06)' }}>
+      <button type="button" onClick={review} disabled={busy} className="w-full rounded-lg px-3 py-2 text-xs font-black text-amber-200 disabled:opacity-50">
+        {busy ? 'Revisando prontidão…' : 'Confirmar testes e certificar'}
+      </button>
+      {message && <p className="mt-1 text-[10px] leading-relaxed text-slate-400">{message}</p>}
+    </div>
   )
 }
 
@@ -599,7 +640,7 @@ function ActivateForm({ agentType, config, unitId, askName, defaultName }: Activ
       active_hours: config?.active_hours ?? { start: '08:00', end: '18:00', days: [1, 2, 3, 4, 5] },
       // Só liga direto quem já passou pela entrevista de contratação;
       // os demais são salvos inativos e seguem pra entrevista.
-      is_active: interviewDone,
+      is_active: interviewDone && config?.certification_status === 'ready',
     }
     const { data, error: saveError } = config
       ? await supabase.from('agent_configs').update(payload).eq('id', config.id).select('id').single()
@@ -610,6 +651,18 @@ function ActivateForm({ agentType, config, unitId, askName, defaultName }: Activ
       return
     }
     if (interviewDone) {
+      if (config?.certification_status !== 'ready') {
+        const certificationResponse = await fetch('/api/agent/certification', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ configId: data.id }),
+        })
+        const certificationBody = await certificationResponse.json().catch(() => null)
+        if (!certificationResponse.ok) {
+          setError(Array.isArray(certificationBody?.issues) ? certificationBody.issues.join(' ') : certificationBody?.error ?? 'Ainda faltam informações para ativar.')
+          return
+        }
+      }
       router.refresh()
       return
     }
@@ -635,7 +688,7 @@ function ActivateForm({ agentType, config, unitId, askName, defaultName }: Activ
         style={{ background: brandGradient, boxShadow: '0 4px 10px rgba(6,182,212,0.25)' }}
       >
         {busy ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
-        {busy ? 'Um instante...' : interviewDone ? 'Ativar agora' : 'Contratar e entrevistar'}
+        {busy ? 'Um instante...' : interviewDone ? 'Revisar prontidão' : 'Contratar e entrevistar'}
       </button>
       {!interviewDone && (
         <p className="text-[10px] leading-snug text-slate-500">
@@ -697,7 +750,9 @@ function CloneTrainingForm({
       unit_id: unitId,
       agent_type: agentType,
       persona_name: (askName ? name.trim() : defaultName) || defaultName,
-      is_active: true,
+      is_active: false,
+      certification_status: 'requires_review',
+      certification_issues: ['Revisar o catálogo e os cenários desta unidade antes de ativar.'],
       ...cloned,
     }
     const { error: saveError } = config

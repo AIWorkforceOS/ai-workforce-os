@@ -875,7 +875,7 @@ export async function processInboundMessage(params: {
   // (schema com attachment_id) — sem nenhum configurado, mantém o caminho
   // de texto puro de sempre (generateChatReply), sem custo/risco extra.
   const attachments = await fetchActiveAttachments(supabase, unit, 'sdr')
-  const attachmentsContext = buildAttachmentsContext(attachments)
+  const attachmentsContext = buildAttachmentsContext(attachments, incomingText)
 
   let reply: string
   let chosenAttachment: EmployeeAttachment | null = null

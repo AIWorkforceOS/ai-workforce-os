@@ -66,7 +66,7 @@ export function getIntegrationsConfigStatus(): IntegrationConfigStatus[] {
       label: 'Google Maps (prospecção)',
       configured: has('GOOGLE_MAPS_API_KEY'),
       detail: 'Busca de empresas por região. Env: GOOGLE_MAPS_API_KEY',
-      testable: false,
+      testable: true,
     },
     {
       key: 'resend',

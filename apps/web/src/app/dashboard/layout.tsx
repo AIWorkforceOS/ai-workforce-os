@@ -95,12 +95,18 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const facilitEnabled = await fetchOrganizationFacilitEnabled(supabase, appUser.orgId)
   // Logo própria da empresa (substitui a do Alizo); null = logo do Alizo. Nunca quebra a página se a leitura falhar.
   const brandLogoUrl = await getBrandLogoUrl(appUser)
+  const { data: contractedAgents } = appUser.isSuperAdmin
+    ? { data: null }
+    : await supabase.from('agent_configs').select('agent_type')
+  const contractedAgentTypes = appUser.isSuperAdmin
+    ? undefined
+    : [...new Set((contractedAgents ?? []).map((agent) => agent.agent_type).filter(Boolean))]
 
   return (
     <div className="flex h-dvh overflow-hidden" style={{ background: '#0a0f1e' }}>
       {/* Sidebar fixa — só em desktop; em mobile vira drawer (MobileSidebar no header) */}
       <div className="hidden flex-shrink-0 lg:flex">
-        <Sidebar userEmail={email} role={appUser.role} unitId={appUser.unitId} managementMode={managementMode} facilitEnabled={facilitEnabled} jobRole={appUser.jobRole} brandLogoUrl={brandLogoUrl} />
+        <Sidebar userEmail={email} role={appUser.role} unitId={appUser.unitId} managementMode={managementMode} facilitEnabled={facilitEnabled} jobRole={appUser.jobRole} brandLogoUrl={brandLogoUrl} contractedAgentTypes={contractedAgentTypes} />
       </div>
 
       <div className="flex flex-1 flex-col overflow-hidden">
@@ -116,7 +122,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           }}
         >
           <div className="flex items-center gap-2">
-            <MobileSidebar userEmail={email} role={appUser.role} unitId={appUser.unitId} managementMode={managementMode} facilitEnabled={facilitEnabled} jobRole={appUser.jobRole} brandLogoUrl={brandLogoUrl} />
+            <MobileSidebar userEmail={email} role={appUser.role} unitId={appUser.unitId} managementMode={managementMode} facilitEnabled={facilitEnabled} jobRole={appUser.jobRole} brandLogoUrl={brandLogoUrl} contractedAgentTypes={contractedAgentTypes} />
             <HeaderBrand logoUrl={brandLogoUrl} />
             <span style={{ color: 'rgba(255,255,255,0.2)' }}>/</span>
             <span className="rounded-md px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider"

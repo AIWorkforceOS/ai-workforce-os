@@ -34,6 +34,16 @@ const IMAGE_FALLBACK_MESSAGE: Record<'pt' | 'en', string> = {
 
 const MAX_INBOUND_IMAGE_BYTES = 10 * 1024 * 1024
 
+function cleanMediaBase64(value: string): string {
+  const comma = value.indexOf(',')
+  return value.startsWith('data:') && comma >= 0 ? value.slice(comma + 1) : value
+}
+
+function normalizeImageMimeType(value: string): string {
+  const mime = value.split(';')[0]?.trim().toLowerCase() || 'image/jpeg'
+  return ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(mime) ? mime : 'image/jpeg'
+}
+
 type ExtractedMessage =
   | { kind: 'text'; text: string }
   | { kind: 'audio'; messageId: string; mimeType: string }
@@ -121,7 +131,8 @@ async function analyzeInboundImage(params: {
       )
     }
 
-    const imageBytes = Buffer.byteLength(media.base64, 'base64')
+    const cleanBase64 = cleanMediaBase64(media.base64)
+    const imageBytes = Buffer.byteLength(cleanBase64, 'base64')
     if (imageBytes <= 0 || imageBytes > MAX_INBOUND_IMAGE_BYTES) {
       return fail(
         'image_analysis_rejected',
@@ -129,7 +140,7 @@ async function analyzeInboundImage(params: {
       )
     }
 
-    const resolvedMimeType = media.mimetype?.startsWith('image/') ? media.mimetype : mimeType
+    const resolvedMimeType = normalizeImageMimeType(media.mimetype?.startsWith('image/') ? media.mimetype : mimeType)
     const analysis = await generateStructuredReplyFromImage<ImageAnalysis>({
       apiKey,
       systemPrompt: [
@@ -138,7 +149,7 @@ async function analyzeInboundImage(params: {
         'Se algo estiver ilegível ou incerto, informe em uncertainty.',
         'Responda em JSON com description, visible_text e uncertainty, todos strings.',
       ].join(' '),
-      imageUrl: `data:${resolvedMimeType};base64,${media.base64}`,
+      imageUrl: `data:${resolvedMimeType};base64,${cleanBase64}`,
       userText: caption
         ? `Legenda enviada pelo cliente: ${caption}\nAnalise a imagem considerando a legenda, sem assumir que ela está correta.`
         : 'Analise a imagem para que o atendimento consiga responder ao cliente.',
@@ -237,8 +248,8 @@ async function transcribeInboundAudio(params: {
 
     const { text, durationSeconds } = await transcribeAudio({
       apiKey: openaiKey,
-      base64Audio: media.base64,
-      mimeType: media.mimetype ?? mimeType,
+      base64Audio: cleanMediaBase64(media.base64),
+      mimeType: (media.mimetype ?? mimeType).split(';')[0] || 'audio/ogg',
     })
 
     if (!text) {

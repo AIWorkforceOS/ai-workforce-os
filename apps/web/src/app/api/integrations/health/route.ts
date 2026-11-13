@@ -36,6 +36,27 @@ async function check(
   }
 }
 
+async function checkGoogleMaps(apiKey: string | undefined): Promise<HealthResult> {
+  if (!apiKey) return { key: 'google_maps', label: 'Google Maps', ok: false, detail: 'Env var não configurada.' }
+  try {
+    const url = new URL('https://maps.googleapis.com/maps/api/place/autocomplete/json')
+    url.searchParams.set('input', 'Alizo')
+    url.searchParams.set('types', 'establishment')
+    url.searchParams.set('key', apiKey)
+    const response = await fetchWithTimeout(url.toString(), {})
+    const body = await response.json().catch(() => null) as { status?: string; error_message?: string } | null
+    const ok = response.ok && (body?.status === 'OK' || body?.status === 'ZERO_RESULTS')
+    return {
+      key: 'google_maps',
+      label: 'Google Maps',
+      ok,
+      detail: ok ? 'Chave, API e faturamento respondendo normalmente.' : (body?.error_message || `Google retornou ${body?.status || response.status}.`),
+    }
+  } catch (err) {
+    return { key: 'google_maps', label: 'Google Maps', ok: false, detail: err instanceof Error && err.name === 'AbortError' ? 'Timeout (6s).' : 'Erro de conexão.' }
+  }
+}
+
 /**
  * Teste ao vivo das integrações externas. Restrito a super_admin —
  * dispara chamadas reais (baratas) às APIs para confirmar que as
@@ -51,6 +72,7 @@ export async function POST() {
   const evolutionUrl = process.env.EVOLUTION_API_URL?.replace(/\/+$/, '')
   const evolutionKey = process.env.EVOLUTION_API_KEY
   const resendKey = process.env.RESEND_API_KEY
+  const googleMapsKey = process.env.GOOGLE_MAPS_API_KEY
 
   const results = await Promise.all([
     check('openai', 'OpenAI', Boolean(openaiKey), () =>
@@ -68,6 +90,7 @@ export async function POST() {
         headers: { Authorization: `Bearer ${resendKey}` },
       }),
     ),
+    checkGoogleMaps(googleMapsKey),
   ])
 
   return NextResponse.json({ results })

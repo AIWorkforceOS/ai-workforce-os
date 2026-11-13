@@ -24,6 +24,7 @@ export function Sidebar({
   facilitEnabled = false,
   jobRole = null,
   brandLogoUrl = null,
+  contractedAgentTypes,
   onNavigate,
 }: {
   /** Logo própria da empresa (substitui a do Alizo). */
@@ -38,6 +39,7 @@ export function Sidebar({
   facilitEnabled?: boolean
   /** função de escritório (migration 104) — esconde do menu o que a função não acessa */
   jobRole?: JobRole | null
+  contractedAgentTypes?: string[]
   /** chamado ao clicar num link — usado pelo drawer mobile pra fechar */
   onNavigate?: () => void
 }) {
@@ -45,7 +47,7 @@ export function Sidebar({
   const router = useRouter()
   const locale = useLocale()
 
-  const visibleGroups = getVisibleNavGroups({ role, unitId, managementMode, facilitEnabled, jobRole })
+  const visibleGroups = getVisibleNavGroups({ role, unitId, managementMode, facilitEnabled, jobRole, contractedAgentTypes })
 
   async function handleSignOut() {
     const supabase = createClient()

@@ -5,6 +5,8 @@ import { buildAccountContext } from '@/lib/chat/account-context'
 import { CHAT_TOOLS, executeChatTool, type ChatClientAction } from '@/lib/chat/actions'
 import { getAppUser } from '@/lib/app-user'
 import { answerTechSupportQuestion } from '@/lib/ti/engine'
+import { buildAttachmentsContext } from '@/lib/attachments'
+import type { EmployeeAttachment } from '@/lib/types'
 import type { Unit } from '@/lib/types'
 
 /** Modos autenticados em que a Kai pode executar ações reais (gerar QR do WhatsApp, retestar conexão) em vez de só orientar. */
@@ -225,6 +227,17 @@ export async function POST(req: NextRequest) {
           const accountContext = await buildAccountContext(supabase)
           if (accountContext) {
             systemPrompt = `${accountContext}\n\n${systemPrompt}`
+          }
+          if (authenticatedUser?.orgId) {
+            const { data: kaiMaterials } = await supabase
+              .from('employee_attachments')
+              .select('*')
+              .eq('org_id', authenticatedUser.orgId)
+              .overlaps('applicable_employees', ['kai'])
+              .eq('is_active', true)
+            const lastQuestion = messages.at(-1)?.content ?? ''
+            const knowledge = buildAttachmentsContext((kaiMaterials ?? []) as EmployeeAttachment[], lastQuestion)
+            if (knowledge) systemPrompt = `${knowledge}\n\n${systemPrompt}`
           }
         }
       } catch (err) {

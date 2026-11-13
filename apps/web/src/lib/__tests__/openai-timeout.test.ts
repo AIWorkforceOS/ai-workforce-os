@@ -51,6 +51,22 @@ describe('lib/openai.ts — toda chamada tem timeout (Fase 14)', () => {
     expect(options.signal).toBeInstanceOf(AbortSignal)
   })
 
+  it('transcribeAudio normaliza data URL e codec do áudio do WhatsApp antes de enviar', async () => {
+    const fetchMock = mockFetchOnce({ text: 'mensagem compreendida', duration: 2 })
+    const payload = Buffer.from('audio-valido').toString('base64')
+    await transcribeAudio({
+      apiKey: 'k',
+      base64Audio: `data:audio/ogg;codecs=opus;base64,${payload}`,
+      mimeType: 'audio/ogg; codecs=opus',
+    })
+
+    const form = fetchMock.mock.calls[0]![1]!.body as FormData
+    const file = form.get('file') as File
+    expect(file.type).toBe('audio/ogg')
+    expect(file.name).toBe('audio.ogg')
+    expect(file.size).toBe(Buffer.from('audio-valido').length)
+  })
+
   it('synthesizeSpeech passa signal (AbortSignal) pro fetch', async () => {
     const fetchMock = mockFetchOnce({})
     await synthesizeSpeech({ apiKey: 'k', text: 'oi' })

@@ -34,6 +34,7 @@ import {
   executeCancelAppointment,
   executeReschedule,
   executeBooking,
+  buildServicesKnowledgeContext,
 } from './scheduling'
 import type { AgentConfig, Customer, EmployeeAttachment, Lead, Service, Unit } from '@/lib/types'
 import type { CustomerMessage, UpcomingAppointment } from './types'
@@ -536,7 +537,8 @@ export async function processReceptionistInbound(params: {
     fetchActiveAttachments(supabase, unit, 'receptionist'),
     fetchOpenJobOpenings(supabase, unit),
   ])
-  const attachmentsContext = buildAttachmentsContext(attachments)
+  const attachmentsContext = buildAttachmentsContext(attachments, incomingText)
+  const servicesContext = buildServicesKnowledgeContext(services)
   const jobOpeningsContext = buildJobOpeningsContext(openJobs)
   const basePrompt = buildReceptionistSystemPrompt(config, unit, organizationProfile)
 
@@ -549,6 +551,7 @@ export async function processReceptionistInbound(params: {
         systemPrompt: [
           basePrompt,
           extraContext,
+          servicesContext,
           attachmentsContext,
           jobOpeningsContext,
           'Responda SOMENTE um JSON válido: {"reply": string, "attachment_id": string|null}. O campo "reply" é a mensagem normal que você mandaria ao cliente, seguindo à risca as regras de tom, tamanho e idioma já combinadas acima. O campo "attachment_id" é o id do material a enviar agora (ver MATERIAIS DISPONÍVEIS PARA ENVIAR acima), ou null se nenhum se aplica a esta mensagem.',
@@ -564,7 +567,7 @@ export async function processReceptionistInbound(params: {
     } else {
       reply = await generateChatReply({
         apiKey,
-        systemPrompt: [basePrompt, extraContext, jobOpeningsContext].filter(Boolean).join(' '),
+        systemPrompt: [basePrompt, extraContext, servicesContext, jobOpeningsContext].filter(Boolean).join(' '),
         history,
       })
     }
@@ -950,7 +953,8 @@ export async function processReceptionistProspectInbound(params: {
     fetchActiveAttachments(supabase, unit, 'receptionist'),
     fetchOpenJobOpenings(supabase, unit),
   ])
-  const attachmentsContext = buildAttachmentsContext(attachments)
+  const attachmentsContext = buildAttachmentsContext(attachments, incomingText)
+  const servicesContext = buildServicesKnowledgeContext(services)
   const jobOpeningsContext = buildJobOpeningsContext(openJobs)
   const basePrompt = buildReceptionistSystemPrompt(config, unit, organizationProfile)
 
@@ -963,6 +967,7 @@ export async function processReceptionistProspectInbound(params: {
         systemPrompt: [
           basePrompt,
           extraContext,
+          servicesContext,
           attachmentsContext,
           jobOpeningsContext,
           'Responda SOMENTE um JSON válido: {"reply": string, "attachment_id": string|null}. O campo "reply" é a mensagem normal que você mandaria, seguindo à risca as regras de tom, tamanho e idioma já combinadas acima. O campo "attachment_id" é o id do material a enviar agora (ver MATERIAIS DISPONÍVEIS PARA ENVIAR acima), ou null se nenhum se aplica a esta mensagem.',
@@ -978,7 +983,7 @@ export async function processReceptionistProspectInbound(params: {
     } else {
       reply = await generateChatReply({
         apiKey,
-        systemPrompt: [basePrompt, extraContext, jobOpeningsContext].filter(Boolean).join(' '),
+        systemPrompt: [basePrompt, extraContext, servicesContext, jobOpeningsContext].filter(Boolean).join(' '),
         history,
       })
     }

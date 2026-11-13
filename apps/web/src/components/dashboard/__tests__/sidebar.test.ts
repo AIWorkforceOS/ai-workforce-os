@@ -10,6 +10,19 @@ function allHrefs(groups: ReturnType<typeof getVisibleNavGroups>): string[] {
 }
 
 describe('getVisibleNavGroups', () => {
+  it('mostra somente os funcionários contratados quando a organização informa seus tipos', () => {
+    const hrefs = allHrefs(getVisibleNavGroups({
+      role: 'admin',
+      contractedAgentTypes: ['receptionist', 'content_specialist'],
+    }))
+
+    expect(hrefs).toContain('/dashboard/receptionist')
+    expect(hrefs).toContain('/dashboard/content')
+    expect(hrefs).not.toContain('/dashboard/agents')
+    expect(hrefs).not.toContain('/dashboard/recruiter')
+    expect(hrefs).toContain('/dashboard/equipe-digital')
+  })
+
   it('admin comum (management_mode=digital_employees) não vê Clientes nem Agenda, mas vê Operação', () => {
     const groups = getVisibleNavGroups({ role: 'admin', managementMode: 'digital_employees' })
     const hrefs = allHrefs(groups)
