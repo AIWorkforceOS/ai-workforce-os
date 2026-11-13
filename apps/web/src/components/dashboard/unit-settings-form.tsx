@@ -3,7 +3,7 @@
 import { useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import type { MessagingChannelType, Unit } from '@/lib/types'
+import type { MessagingChannelType, Unit, WhatsappConnectionMode } from '@/lib/types'
 import type { Locale } from '@/lib/i18n/config'
 import { FormSection, Input, Label, Select } from '@/components/ui/dashboard-ui'
 
@@ -20,6 +20,9 @@ export function UnitSettingsForm({ unit, showAdvanced = false }: { unit: Unit; s
   const logoInputRef = useRef<HTMLInputElement>(null)
   const [messagingChannel, setMessagingChannel] = useState<MessagingChannelType>(
     unit.messaging_channel === 'sms' ? 'sms' : 'whatsapp',
+  )
+  const [whatsappConnectionMode, setWhatsappConnectionMode] = useState<WhatsappConnectionMode>(
+    unit.whatsapp_connection_mode ?? 'economy',
   )
   const [language, setLanguage] = useState<Locale>(unit.default_conversation_language === 'en' ? 'en' : 'pt')
   const [evolutionApiUrl, setEvolutionApiUrl] = useState(unit.evolution_api_url ?? '')
@@ -113,6 +116,7 @@ export function UnitSettingsForm({ unit, showAdvanced = false }: { unit: Unit; s
         email_reply_to: emailReplyTo || null,
         logo_url: logoUrl || null,
         messaging_channel: messagingChannel,
+        whatsapp_connection_mode: whatsappConnectionMode,
         default_conversation_language: language,
         // Campos técnicos: só o painel interno (equipe Alizo) mexe neles.
         // Sem eles a unidade usa o servidor central de WhatsApp da Alizo.
@@ -227,6 +231,36 @@ export function UnitSettingsForm({ unit, showAdvanced = false }: { unit: Unit; s
             até 2MB.
           </p>
         </div>
+
+        {messagingChannel === 'whatsapp' && (
+          <div className="flex flex-col gap-2 rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <Label htmlFor="whatsappConnectionMode">Modalidade do WhatsApp</Label>
+            <Select
+              id="whatsappConnectionMode"
+              value={whatsappConnectionMode}
+              onChange={(e) => setWhatsappConnectionMode(e.target.value as WhatsappConnectionMode)}
+            >
+              <option value="economy">Econômica — conexão por QR Code</option>
+              <option value="official_requested">Oficial Premium — solicitar ativação</option>
+              {unit.whatsapp_connection_mode === 'official' && (
+                <option value="official">Oficial Premium — ativa</option>
+              )}
+            </Select>
+            {whatsappConnectionMode === 'economy' ? (
+              <p className="text-xs text-slate-500">
+                Menor custo e conexão rápida. Usa uma sessão semelhante ao WhatsApp Web, com verificação de saúde e reconexão, mas ainda pode exigir novo QR Code em alguns casos.
+              </p>
+            ) : whatsappConnectionMode === 'official' ? (
+              <p className="text-xs text-emerald-400">
+                API oficial da Meta ativa. Não depende de QR Code e tem cobrança de mensagens feita pela Meta.
+              </p>
+            ) : (
+              <p className="text-xs text-amber-300">
+                A equipe Alizo validará a conta Meta, o número e a forma de pagamento antes de ativar. Até lá, a conexão atual por QR continua funcionando e não será apagada.
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="messagingChannel">Canal de mensagens</Label>

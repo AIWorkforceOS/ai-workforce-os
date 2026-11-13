@@ -649,6 +649,35 @@ export async function processReceptionistInbound(params: {
       eventType: channel === 'email' ? 'resend_send_failed' : channel === 'sms' ? 'twilio_send_failed' : 'evolution_send_failed',
       message: `Falha ao enviar resposta via ${channelLabel(channel)}: ${error instanceof Error ? error.message : 'erro desconhecido'}`,
     })
+    // Contingência real: se o canal de telefone cair, não perde a resposta
+    // já produzida. Usa o e-mail cadastrado do cliente e registra que a
+    // entrega mudou de canal. Não tenta e-mail quando o próprio e-mail foi
+    // o canal que falhou, evitando loop.
+    if (channel !== 'email' && customer.email) {
+      const emailChannel = getEmailChannel(unit)
+      if (emailChannel) {
+        try {
+          await emailChannel.sendMessage(customer.email, outgoingText, {
+            attachment: attachmentPayload,
+            personaName: config.persona_name,
+            subject: `${config.persona_name} · continuidade do seu atendimento`,
+          })
+          await logSystemEvent(supabase, {
+            level: 'warning',
+            source: 'system',
+            eventType: 'receptionist_channel_fallback_email',
+            message: `Resposta da Recepcionista entregue por e-mail porque ${channelLabel(channel)} falhou.`,
+            orgId: unit.org_id,
+            unitId: unit.id,
+            metadata: { customerId: customer.id, failedChannel: channel },
+          })
+          return { handled: true }
+        } catch {
+          // O alerta técnico acima já contém a falha primária. O monitor de
+          // e-mail registra a falha secundária pelo próprio canal.
+        }
+      }
+    }
     return failed
   }
 

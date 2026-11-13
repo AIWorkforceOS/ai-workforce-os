@@ -1,6 +1,7 @@
 import type { Locale } from '@/lib/i18n/config'
 
 export type MessagingChannelType = 'whatsapp' | 'sms'
+export type WhatsappConnectionMode = 'economy' | 'official_requested' | 'official'
 
 // ------------------------------------------------------------
 // Agenda Inteligente (Fase 2, migration 026)
@@ -65,6 +66,8 @@ export type Unit = {
   evolution_api_url: string | null
   evolution_api_key: string | null
   evolution_instance_name: string | null
+  /** economy = QR/Evolution; official_requested = aguardando onboarding Meta; official = Cloud API ativa. */
+  whatsapp_connection_mode?: WhatsappConnectionMode
   /** Canal de mensagens escolhido pela unidade. Null = padrão histórico (whatsapp). */
   messaging_channel: MessagingChannelType | null
   twilio_account_sid: string | null
