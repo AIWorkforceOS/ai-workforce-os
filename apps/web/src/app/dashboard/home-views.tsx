@@ -132,8 +132,9 @@ export async function ClientHome({ firstName, unitId }: { firstName: string; uni
   const unitRows = unitId ? allUnits.filter((u) => u.id === unitId) : allUnits
   const configRows = unitId ? allConfigs.filter((c) => c.unit_id === unitId) : allConfigs
   const ownUnit = unitId ? unitRows[0] : undefined
-  const setup = computeSetupStatus(unitRows, configRows, channelRows)
-  const unitsWithoutWhatsApp = unitRows.filter((u) => u.is_active && !unitHasWhatsapp(u, channelRows, 'sdr'))
+  const primaryAgentType = configRows.find((config) => config.is_active)?.agent_type ?? configRows[0]?.agent_type ?? 'sdr'
+  const setup = computeSetupStatus(unitRows, configRows, channelRows, primaryAgentType)
+  const unitsWithoutWhatsApp = unitRows.filter((u) => u.is_active && !unitHasWhatsapp(u, channelRows, primaryAgentType))
   const summaryRows = ((summary ?? []) as DashboardSummaryRow[])
     .filter((r) => r.unit_id != null)
     .sort((a, b) => Number(b.total_leads) - Number(a.total_leads))
@@ -152,6 +153,8 @@ export async function ClientHome({ firstName, unitId }: { firstName: string; uni
 
   const sdrConfig = configRows.find((c) => c.agent_type === 'sdr')
   const receptionistConfig = configRows.find((c) => c.agent_type === 'receptionist')
+  const recruiterConfig = configRows.find((c) => c.agent_type === 'recruiter')
+  const trafficConfig = configRows.find((c) => c.agent_type === 'traffic_specialist')
   const contentConfig = configRows.find((c) => c.agent_type === 'content_specialist')
   const contentActive = !!contentConfig?.is_active
   const seoConfig = configRows.find((c) => c.agent_type === 'seo_specialist')
@@ -288,7 +291,7 @@ export async function ClientHome({ firstName, unitId }: { firstName: string; uni
             : `Seus funcionários digitais (${setup.employeesActive} de ${setup.employeesTotal} ativos)`}
         </SectionLabel>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <EmployeeCard
+          {sdrConfig && <EmployeeCard
             icon={Bot}
             name={sdrConfig?.persona_name ? `${sdrConfig.persona_name} · AI Sales Representative` : 'AI Sales Representative'}
             desc="Atende seus clientes no WhatsApp, responde dúvidas e agenda conversas."
@@ -296,8 +299,8 @@ export async function ClientHome({ firstName, unitId }: { firstName: string; uni
             stateLabel={sdrStateLabel}
             href={sdrActive ? '/dashboard/agents' : '/dashboard/onboarding'}
             cta={sdrActive ? 'Ver detalhes' : 'Configurar'}
-          />
-          <EmployeeCard
+          />}
+          {receptionistConfig && <EmployeeCard
             icon={Headset}
             name={receptionistConfig?.persona_name ? `${receptionistConfig.persona_name} · AI Receptionist` : 'AI Receptionist'}
             desc="Recebe quem já é cliente, mantém o cadastro em dia e acompanha cada atendimento."
@@ -305,26 +308,26 @@ export async function ClientHome({ firstName, unitId }: { firstName: string; uni
             stateLabel={receptionistStateLabel}
             href={receptionistActive ? '/dashboard/receptionist' : '/dashboard/equipe-digital'}
             cta={receptionistActive ? 'Ver atendimento' : 'Ativar e configurar'}
-          />
-          <EmployeeCard
+          />}
+          {recruiterConfig && <EmployeeCard
             icon={Briefcase}
             name="Recrutador (RH)"
             desc="Divulga vagas, faz triagem de candidatos e entrega os melhores pra você."
-            state={(openJobs ?? 0) > 0 ? 'active' : 'off'}
+            state={recruiterConfig.is_active ? 'active' : 'partial'}
             stateLabel={(openJobs ?? 0) > 0 ? `${openJobs} vaga(s) em andamento` : 'Nenhuma vaga aberta'}
-            href={(openJobs ?? 0) > 0 ? '/dashboard/recruiter' : '/dashboard/equipe-digital'}
-            cta={(openJobs ?? 0) > 0 ? 'Acompanhar vagas' : 'Ativar e configurar'}
-          />
-          <EmployeeCard
+            href={recruiterConfig.is_active ? '/dashboard/recruiter' : '/dashboard/equipe-digital'}
+            cta={recruiterConfig.is_active ? 'Acompanhar vagas' : 'Concluir configuração'}
+          />}
+          {trafficConfig && <EmployeeCard
             icon={Megaphone}
             name="Tráfego pago"
             desc="Cuida dos seus anúncios no Instagram/Facebook e Google, otimizando o investimento."
-            state={(adAccounts ?? 0) > 0 ? 'active' : 'off'}
+            state={trafficConfig.is_active ? 'active' : 'partial'}
             stateLabel={(adAccounts ?? 0) > 0 ? `${adAccounts} conta(s) de anúncio` : 'Contas não conectadas'}
-            href={(adAccounts ?? 0) > 0 ? '/dashboard/traffic' : '/dashboard/equipe-digital'}
-            cta={(adAccounts ?? 0) > 0 ? 'Ver desempenho' : 'Ativar e configurar'}
-          />
-          <EmployeeCard
+            href={trafficConfig.is_active ? '/dashboard/traffic' : '/dashboard/equipe-digital'}
+            cta={trafficConfig.is_active ? 'Ver desempenho' : 'Concluir configuração'}
+          />}
+          {contentConfig && <EmployeeCard
             icon={FileText}
             name={contentConfig?.persona_name ? `${contentConfig.persona_name} · Conteúdo/Social` : 'Conteúdo/Social'}
             desc="Cria posts e mantém suas redes sociais ativas, no ritmo que você definir."
@@ -332,8 +335,8 @@ export async function ClientHome({ firstName, unitId }: { firstName: string; uni
             stateLabel={contentActive ? 'Trabalhando' : contentConfig ? 'Configurado — falta ligar' : 'Não contratado'}
             href={contentActive ? '/dashboard/content' : '/dashboard/equipe-digital'}
             cta={contentActive ? 'Ver conteúdo' : 'Ativar e configurar'}
-          />
-          <EmployeeCard
+          />}
+          {seoConfig && <EmployeeCard
             icon={Search}
             name={seoConfig?.persona_name ? `${seoConfig.persona_name} · SEO` : 'SEO'}
             desc="Acompanha seu posicionamento no Google e sugere melhorias pra aparecer mais."
@@ -341,7 +344,7 @@ export async function ClientHome({ firstName, unitId }: { firstName: string; uni
             stateLabel={seoActive ? 'Trabalhando' : seoConfig ? 'Configurado — falta ligar' : 'Não contratado'}
             href={seoActive ? '/dashboard/seo' : '/dashboard/equipe-digital'}
             cta={seoActive ? 'Ver desempenho' : 'Ativar e configurar'}
-          />
+          />}
         </div>
       </div>
 
@@ -418,7 +421,7 @@ export async function ClientHome({ firstName, unitId }: { firstName: string; uni
                     {unit.name}
                   </Link>
                 </div>
-                {unitHasWhatsapp(unit, channelRows, 'sdr') ? (
+                {unitHasWhatsapp(unit, channelRows, primaryAgentType) ? (
                   <span className="flex flex-shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold" style={{ background: 'rgba(34,197,94,0.12)', color: '#4ade80' }}>
                     <CheckCircle2 size={10} /> Conectado
                   </span>

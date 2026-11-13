@@ -13,6 +13,7 @@ import { InterviewChat } from '@/components/dashboard/interview-chat'
 import { WhatsAppConnectStep } from '@/components/dashboard/whatsapp-connect-step'
 import type { AgentConfig, AgentTone, ManagementMode, Unit } from '@/lib/types'
 import type { SetupStep } from '@/lib/setup-status'
+import { EMPLOYEE_WIZARD_META, type WizardAgentType } from '@/lib/employee-wizard-meta'
 
 const brandGradient = 'linear-gradient(135deg, #06b6d4 0%, #4361ee 100%)'
 
@@ -37,6 +38,7 @@ export function OnboardingWizard({
   firstName,
   orgId,
   initialManagementMode,
+  agentType,
 }: {
   unit: Unit | null
   config: AgentConfig | null
@@ -46,12 +48,14 @@ export function OnboardingWizard({
   orgId: string | null
   /** organizations.management_mode — null = ainda não escolheu */
   initialManagementMode: ManagementMode | null
+  agentType: WizardAgentType
 }) {
   const router = useRouter()
+  const employeeMeta = EMPLOYEE_WIZARD_META[agentType]
 
-  const whatsappDone = initialSteps.find((s) => s.id === 'whatsapp')?.done ?? false
-  const agentDone = initialSteps.find((s) => s.id === 'agent')?.done ?? false
-  const activeDone = initialSteps.find((s) => s.id === 'active')?.done ?? false
+  const [whatsappDone, setWhatsappDone] = useState(initialSteps.find((s) => s.id === 'whatsapp')?.done ?? false)
+  const [agentDone, setAgentDone] = useState(initialSteps.find((s) => s.id === 'agent')?.done ?? false)
+  const [activeDone, setActiveDone] = useState(initialSteps.find((s) => s.id === 'active')?.done ?? false)
 
   // A escolha de modo vive na org; sem org não há o que perguntar.
   const stepMeta = orgId ? STEP_META : STEP_META.filter((s) => s.id !== 'mode')
@@ -75,6 +79,12 @@ export function OnboardingWizard({
   }
   const completedCount = [whatsappDone, agentDone, activeDone].filter(Boolean).length
   const progress = Math.round((completedCount / 3) * 100)
+  const canAdvance = step === 'welcome'
+    || step === 'test'
+    || (step === 'mode' && managementMode !== null)
+    || (step === 'whatsapp' && whatsappDone)
+    || (step === 'agent' && agentDone)
+    || (step === 'done' && activeDone)
 
   if (!unit) {
     return (
@@ -180,24 +190,24 @@ export function OnboardingWizard({
               {step === 'whatsapp' && (
                 <WhatsAppConnectStep
                   unitId={unit.id}
-                  agentType="sdr"
+                  agentType={agentType}
                   alreadyConnected={whatsappDone}
-                  onConnected={() => { router.refresh() }}
+                  onConnected={() => { setWhatsappDone(true); router.refresh() }}
                   connectedHint="Seu número já está ligado à plataforma. Agora vamos montar o funcionário que vai atender por ele."
                 />
               )}
               {step === 'agent' && (
-                <AgentStep unitId={unit.id} config={config} onSaved={() => { router.refresh() }} />
+                <AgentStep unitId={unit.id} config={config} agentType={agentType} employeeName={employeeMeta.name} onSaved={() => { setAgentDone(true); router.refresh() }} />
               )}
               {step === 'done' && (
                 <ActivateStep
                   unitId={unit.id}
                   config={config}
                   alreadyActive={activeDone}
-                  onActivated={() => { router.refresh() }}
+                  onActivated={() => { setActiveDone(true); router.refresh() }}
                 />
               )}
-              {step === 'test' && <TestStep unitId={unit.id} personaName={config?.persona_name ?? 'Assistente'} />}
+              {step === 'test' && <TestStep unitId={unit.id} personaName={config?.persona_name ?? 'Assistente'} agentType={agentType} />}
             </div>
 
             {/* Navegação */}
@@ -213,10 +223,11 @@ export function OnboardingWizard({
               {stepIndex < stepMeta.length - 1 ? (
                 <button
                   onClick={() => setStep(stepMeta[stepIndex + 1]!.id)}
-                  className="flex items-center gap-2 rounded-xl px-6 py-2.5 text-sm font-black text-white"
+                  disabled={!canAdvance}
+                  className="flex items-center gap-2 rounded-xl px-6 py-2.5 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-40"
                   style={{ background: brandGradient, boxShadow: '0 4px 14px rgba(6,182,212,0.3)' }}
                 >
-                  Próximo passo
+                  {canAdvance ? 'Próximo passo' : 'Complete esta etapa'}
                   <ChevronRight size={14} />
                 </button>
               ) : (
@@ -411,7 +422,7 @@ const TONES: { id: AgentTone; label: string; emoji: string; desc: string }[] = [
   { id: 'formal', label: 'Formal', emoji: '🎩', desc: 'cortês e respeitoso' },
 ]
 
-function AgentStep({ unitId, config, onSaved }: { unitId: string; config: AgentConfig | null; onSaved: () => void }) {
+function AgentStep({ unitId, config, agentType, employeeName, onSaved }: { unitId: string; config: AgentConfig | null; agentType: WizardAgentType; employeeName: string; onSaved: () => void }) {
   const [name, setName] = useState(config?.persona_name ?? '')
   const [tone, setTone] = useState<AgentTone>(config?.persona_tone ?? 'friendly')
   const [saving, setSaving] = useState(false)
@@ -428,7 +439,7 @@ function AgentStep({ unitId, config, onSaved }: { unitId: string; config: AgentC
     const supabase = createClient()
     const payload = {
       unit_id: unitId,
-      agent_type: 'sdr',
+      agent_type: agentType,
       persona_name: name.trim(),
       persona_tone: tone,
       daily_limit: config?.daily_limit ?? 15,
@@ -451,8 +462,7 @@ function AgentStep({ unitId, config, onSaved }: { unitId: string; config: AgentC
   return (
     <div className="space-y-5">
       <p className="text-sm leading-relaxed text-slate-300">
-        Seu funcionário digital atende clientes no WhatsApp: responde dúvidas, entende o que a
-        pessoa precisa e encaminha pra você fechar. Aqui você define <strong className="text-white">como ele se apresenta</strong>.
+        Você está configurando o <strong className="text-white">{employeeName}</strong>. Aqui define como ele se apresenta e conversa com as pessoas.
       </p>
 
       <div>
@@ -519,7 +529,7 @@ function AgentStep({ unitId, config, onSaved }: { unitId: string; config: AgentC
 
 type TestMessage = { role: 'user' | 'assistant'; content: string }
 
-function TestStep({ unitId, personaName }: { unitId: string; personaName: string }) {
+function TestStep({ unitId, personaName, agentType }: { unitId: string; personaName: string; agentType: WizardAgentType }) {
   const [messages, setMessages] = useState<TestMessage[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -542,7 +552,7 @@ function TestStep({ unitId, personaName }: { unitId: string; personaName: string
       const res = await fetch('/api/agent/sandbox', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ unitId, messages: next }),
+        body: JSON.stringify({ unitId, agentType, messages: next }),
       })
       const data = await res.json()
       if (!res.ok) {

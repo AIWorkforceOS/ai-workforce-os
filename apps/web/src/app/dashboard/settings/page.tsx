@@ -86,6 +86,38 @@ export default async function SettingsPage() {
 
   const unitRows = (units ?? []) as Pick<Unit, 'id' | 'name' | 'slug' | 'intake_token' | 'manager_whatsapp_phone'>[]
 
+  let planUsage: { name: string; units: number; maxUnits: number; agents: number; maxAgents: number; leads: number; maxLeads: number } | null = null
+  if (!isSuperAdmin && appUser?.orgId) {
+    const { data: organization } = await supabase.from('organizations').select('plan_id, plan').eq('id', appUser.orgId).maybeSingle()
+    const planQuery = organization?.plan_id
+      ? supabase.from('plans').select('name, max_units, max_agents, max_leads_per_month').eq('id', organization.plan_id)
+      : supabase.from('plans').select('name, max_units, max_agents, max_leads_per_month').eq('slug', organization?.plan ?? '')
+    const monthStart = new Date()
+    monthStart.setUTCDate(1)
+    monthStart.setUTCHours(0, 0, 0, 0)
+    const unitIds = unitRows.map((unit) => unit.id)
+    const [{ data: plan }, { count: agents }, { count: leads }] = await Promise.all([
+      planQuery.maybeSingle(),
+      unitIds.length > 0
+        ? supabase.from('agent_configs').select('id', { count: 'exact', head: true }).in('unit_id', unitIds).eq('is_active', true)
+        : Promise.resolve({ count: 0 }),
+      unitIds.length > 0
+        ? supabase.from('leads').select('id', { count: 'exact', head: true }).in('unit_id', unitIds).gte('created_at', monthStart.toISOString())
+        : Promise.resolve({ count: 0 }),
+    ])
+    if (plan) {
+      planUsage = {
+        name: plan.name,
+        units: unitRows.length,
+        maxUnits: plan.max_units,
+        agents: agents ?? 0,
+        maxAgents: plan.max_agents,
+        leads: leads ?? 0,
+        maxLeads: plan.max_leads_per_month,
+      }
+    }
+  }
+
   // Cancelamento self-service não vale pra Super Admin (não representa
   // uma conta de cliente pagante) — só para org comum com orgId real.
   let billingStatus: string | null = null
@@ -140,6 +172,26 @@ export default async function SettingsPage() {
           </span>
         </div>
       </Card>
+
+      {planUsage && (
+        <Card className="p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-wider text-cyan-400">plano atual</p>
+              <h2 className="mt-1 text-sm font-black text-white">{planUsage.name}</h2>
+              <p className="mt-1 text-xs text-slate-400">Uso atualizado diretamente do servidor.</p>
+            </div>
+            <a href="mailto:suporte@alizo.com.br?subject=Upgrade%20do%20plano%20Alizo" className="rounded-xl px-4 py-2 text-xs font-black text-white" style={{ background: 'linear-gradient(135deg, #06b6d4, #4361ee)' }}>
+              Solicitar upgrade
+            </a>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <PlanUsage label="Unidades ativas" used={planUsage.units} limit={planUsage.maxUnits} />
+            <PlanUsage label="Funcionários ativos" used={planUsage.agents} limit={planUsage.maxAgents} />
+            <PlanUsage label="Contatos neste mês" used={planUsage.leads} limit={planUsage.maxLeads} />
+          </div>
+        </Card>
+      )}
 
       {/* Logo da empresa — liberada pelo super admin Alizo */}
       {canManageBranding && <BrandingCard currentLogoUrl={brandLogoUrl} />}
@@ -260,6 +312,22 @@ export default async function SettingsPage() {
 
       {/* Version */}
       <p className="text-center text-xs text-slate-500">Alizo · AI Workforce OS · v1.0 · RC0</p>
+    </div>
+  )
+}
+
+function PlanUsage({ label, used, limit }: { label: string; used: number; limit: number }) {
+  const ratio = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 100
+  const nearLimit = ratio >= 80
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-bold text-slate-300">{label}</p>
+        <p className={`text-xs font-black ${nearLimit ? 'text-amber-400' : 'text-cyan-400'}`}>{used} de {limit}</p>
+      </div>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/5">
+        <div className={`h-full rounded-full ${nearLimit ? 'bg-amber-400' : 'bg-cyan-400'}`} style={{ width: `${ratio}%` }} />
+      </div>
     </div>
   )
 }

@@ -5,7 +5,9 @@ import { computeSetupStatus, pickDefaultUnit, type UnitWhatsappChannelRow } from
 import { fetchOrganizationManagementMode } from '@/lib/organizations'
 import { OnboardingWizard } from '@/components/onboarding/wizard'
 import { KaiOnboardingChat } from '@/components/dashboard/kai-onboarding-chat'
+import { FirstEmployeeRecommendation } from '@/components/onboarding/first-employee-recommendation'
 import type { AgentConfig, Unit } from '@/lib/types'
+import { isWizardAgentType } from '@/lib/employee-wizard-meta'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,7 +28,7 @@ export default async function OnboardingPage() {
 
   const [{ data: units }, { data: configs }, { data: whatsappChannels }, managementMode] = await Promise.all([
     supabase.from('units').select('*').order('created_at', { ascending: true }),
-    supabase.from('agent_configs').select('*').eq('agent_type', 'sdr'),
+    supabase.from('agent_configs').select('*').order('created_at', { ascending: true }),
     supabase.from('unit_whatsapp_channels').select('unit_id, agent_type, whatsapp_phone'),
     // raw: o wizard precisa distinguir "ainda não escolheu" (null) de escolha feita
     fetchOrganizationManagementMode(supabase, appUser.orgId, { raw: true }),
@@ -35,13 +37,17 @@ export default async function OnboardingPage() {
   const unitRows = (units ?? []) as Unit[]
   const configRows = (configs ?? []) as AgentConfig[]
   const channelRows = (whatsappChannels ?? []) as UnitWhatsappChannelRow[]
-  const status = computeSetupStatus(unitRows, configRows, channelRows)
+  if (unitRows.length > 0 && configRows.length === 0) {
+    return <FirstEmployeeRecommendation companyName={org?.name ?? 'sua empresa'} />
+  }
 
   // Unidade "principal" do onboarding — normalmente a primeira criada no
   // checkout, mas com desempate determinístico (nunca a ordem crua da
   // query) quando há mais de uma candidata, ver pickDefaultUnit.
   const unit = pickDefaultUnit(unitRows, configRows, channelRows)
   const config = unit ? (configRows.find((c) => c.unit_id === unit.id) ?? null) : null
+  const primaryAgentType = config && isWizardAgentType(config.agent_type) ? config.agent_type : 'sdr'
+  const status = computeSetupStatus(unitRows, configRows, channelRows, primaryAgentType)
 
   return (
     <OnboardingWizard
@@ -51,6 +57,7 @@ export default async function OnboardingPage() {
       firstName={(appUser.name ?? appUser.email).split(/[\s@]/)[0] ?? 'você'}
       orgId={appUser.orgId}
       initialManagementMode={managementMode}
+      agentType={primaryAgentType}
     />
   )
 }
