@@ -130,11 +130,11 @@ async function loadAppointmentContext(
 /** Envia o texto ao cliente pelos canais disponíveis; nunca lança — falha vira system_event. */
 async function sendCustomerMessage(
   supabase: SupabaseClient,
-  params: { unit: Unit; customer: Pick<Customer, 'phone' | 'email'>; text: string; eventType: string; appointmentId: string }
-): Promise<void> {
+  params: { unit: Unit; customer: Pick<Customer, 'phone' | 'email'>; text: string; eventType: string; appointmentId: string; emailOnly?: boolean }
+): Promise<boolean> {
   const { unit, customer, text, eventType, appointmentId } = params
   try {
-    const attempts = await sendToLeadChannels({ unit, lead: customer, text })
+    const attempts = await sendToLeadChannels({ unit, lead: customer, text, emailOnly: params.emailOnly })
     if (attempts.length === 0) {
       await logSystemEvent(supabase, {
         level: 'warning',
@@ -144,7 +144,7 @@ async function sendCustomerMessage(
         orgId: unit.org_id,
         unitId: unit.id,
       })
-      return
+      return false
     }
     const failed = attempts.filter((a) => !a.ok)
     if (failed.length > 0) {
@@ -158,6 +158,7 @@ async function sendCustomerMessage(
         metadata: { failures: failed },
       })
     }
+    return attempts.some((attempt) => attempt.ok)
   } catch (error) {
     await logSystemEvent(supabase, {
       level: 'error',
@@ -167,13 +168,14 @@ async function sendCustomerMessage(
       orgId: unit.org_id,
       unitId: unit.id,
     })
+    return false
   }
 }
 
 /** Dispara ao criar um agendamento (booking). Respeita scheduling_settings.confirmation_enabled. */
 export async function handleAppointmentBooked(
   supabase: SupabaseClient,
-  params: { appointmentId: string; unit: Unit },
+  params: { appointmentId: string; unit: Unit; emailOnly?: boolean },
 ): Promise<void> {
   const { appointmentId, unit } = params
   if (!unit.org_id) return
@@ -187,24 +189,27 @@ export async function handleAppointmentBooked(
   const when = fmtMoment(ctx.appointment.starts_at, unit.timezone, locale)
   const text = bookedMessage(ctx.customer.name, unit.name, when, ctx.serviceName, locale)
 
-  await sendCustomerMessage(supabase, {
+  const delivered = await sendCustomerMessage(supabase, {
     unit,
     customer: ctx.customer,
     text,
     eventType: 'appointment_confirmation',
     appointmentId,
+    emailOnly: params.emailOnly,
   })
 
-  await supabase
-    .from('appointments')
-    .update({ confirmation_sent_at: new Date().toISOString() })
-    .eq('id', appointmentId)
+  if (delivered) {
+    await supabase
+      .from('appointments')
+      .update({ confirmation_sent_at: new Date().toISOString() })
+      .eq('id', appointmentId)
+  }
 }
 
 /** Dispara ao reagendar (starts_at/ends_at mudou). appointment-form-modal.tsx reseta rescheduled_notified_at para null a cada reagendamento. */
 export async function handleAppointmentRescheduled(
   supabase: SupabaseClient,
-  params: { appointmentId: string; unit: Unit },
+  params: { appointmentId: string; unit: Unit; emailOnly?: boolean },
 ): Promise<void> {
   const { appointmentId, unit } = params
   if (!unit.org_id) return
@@ -217,24 +222,27 @@ export async function handleAppointmentRescheduled(
   const when = fmtMoment(ctx.appointment.starts_at, unit.timezone, locale)
   const text = rescheduledMessage(ctx.customer.name, unit.name, when, ctx.serviceName, locale)
 
-  await sendCustomerMessage(supabase, {
+  const delivered = await sendCustomerMessage(supabase, {
     unit,
     customer: ctx.customer,
     text,
     eventType: 'appointment_reschedule',
     appointmentId,
+    emailOnly: params.emailOnly,
   })
 
-  await supabase
-    .from('appointments')
-    .update({ rescheduled_notified_at: new Date().toISOString() })
-    .eq('id', appointmentId)
+  if (delivered) {
+    await supabase
+      .from('appointments')
+      .update({ rescheduled_notified_at: new Date().toISOString() })
+      .eq('id', appointmentId)
+  }
 }
 
 /** Dispara quando o status vira 'cancelled'. Cancelamento é terminal na UI atual — sem reset do carimbo. */
 export async function handleAppointmentCancelled(
   supabase: SupabaseClient,
-  params: { appointmentId: string; unit: Unit },
+  params: { appointmentId: string; unit: Unit; emailOnly?: boolean },
 ): Promise<void> {
   const { appointmentId, unit } = params
   if (!unit.org_id) return
@@ -247,18 +255,21 @@ export async function handleAppointmentCancelled(
   const when = fmtMoment(ctx.appointment.starts_at, unit.timezone, locale)
   const text = cancelledMessage(ctx.customer.name, unit.name, when, ctx.serviceName, locale)
 
-  await sendCustomerMessage(supabase, {
+  const delivered = await sendCustomerMessage(supabase, {
     unit,
     customer: ctx.customer,
     text,
     eventType: 'appointment_cancellation',
     appointmentId,
+    emailOnly: params.emailOnly,
   })
 
-  await supabase
-    .from('appointments')
-    .update({ cancelled_notified_at: new Date().toISOString() })
-    .eq('id', appointmentId)
+  if (delivered) {
+    await supabase
+      .from('appointments')
+      .update({ cancelled_notified_at: new Date().toISOString() })
+      .eq('id', appointmentId)
+  }
 }
 
 /**

@@ -14,7 +14,6 @@ import {
   GraduationCap,
   Headset,
   Loader2,
-  Megaphone,
   Paperclip,
   Pause,
   Search,
@@ -59,7 +58,6 @@ export function EmployeeCatalog({
   configs,
   whatsappChannels,
   openJobs,
-  adAccounts,
   customers,
   socialAccounts,
   seoAudits,
@@ -99,7 +97,6 @@ export function EmployeeCatalog({
   const whatsappConnected = !!selectedUnit && unitHasWhatsapp(selectedUnit, whatsappChannels, 'sdr')
   const sdr = configs.find((c) => c.agent_type === 'sdr' && c.unit_id === selectedUnitId)
   const recruiter = configs.find((c) => c.agent_type === 'recruiter' && c.unit_id === selectedUnitId)
-  const traffic = configs.find((c) => c.agent_type === 'traffic_specialist' && c.unit_id === selectedUnitId)
   const receptionist = configs.find((c) => c.agent_type === 'receptionist' && c.unit_id === selectedUnitId)
   const content = configs.find((c) => c.agent_type === 'content_specialist' && c.unit_id === selectedUnitId)
   const seo = configs.find((c) => c.agent_type === 'seo_specialist' && c.unit_id === selectedUnitId)
@@ -132,11 +129,6 @@ export function EmployeeCatalog({
     { label: 'Abrir sua primeira vaga', desc: 'Conte a vaga que precisa preencher; ele cuida do resto.', done: openJobs > 0, href: '/dashboard/recruiter/jobs/new' },
   ]
 
-  const trafficSteps: Step[] = [
-    { label: 'Contratar o gestor de tráfego', desc: 'Ele te entrevista sobre orçamento, público e objetivo — e fica de prontidão.', done: !!traffic?.is_active, inline: true },
-    { label: 'Conectar suas contas de anúncio', desc: 'Você mesmo conecta pelo painel (Facebook/Instagram e Google) — testamos e confirmamos na hora.', done: adAccounts > 0, href: '/dashboard/traffic/connect' },
-    { label: 'Acompanhar as recomendações', desc: 'Ele sugere melhorias todo dia — você aprova ou recusa cada uma.', done: adAccounts > 0, href: '/dashboard/traffic' },
-  ]
 
   const receptionistSteps: Step[] = [
     { label: 'Contratar o AI Receptionist', desc: 'Escolha o nome dele e responda a entrevista de contratação — ele aprende como funciona seu atendimento.', done: !!receptionist?.is_active, inline: true },
@@ -235,26 +227,6 @@ export function EmployeeCatalog({
           trainConfigId={recruiter?.id ?? null}
           lastTrainedAt={recruiter?.last_trained_at ?? null}
           resourcesHref={`/dashboard/equipe-digital/recursos?unit=${selectedUnitId}&employee=recruiter`}
-        />
-        <EmployeeCatalogCard
-          icon={Megaphone}
-          name="Gestor de tráfego"
-          tagline="Cuida dos seus anúncios pagos"
-          bullets={[
-            'Acompanha suas campanhas do Instagram, Facebook e Google todos os dias',
-            'Sugere onde investir mais e onde cortar desperdício',
-            'Você aprova cada mudança antes de ela acontecer',
-          ]}
-          steps={trafficSteps}
-          state={traffic?.is_active ? (adAccounts > 0 ? 'working' : 'configuring') : 'available'}
-          panelHref="/dashboard/traffic"
-          personaName={null}
-          activation={{ agentType: 'traffic_specialist', config: traffic ?? null, unitId: selectedUnitId, askName: false, defaultName: 'Gestor de Tráfego', cloneSources: cloneSourcesFor('traffic_specialist'), regionHint: selectedUnit?.region_city ?? null }}
-          trainingScore={traffic ? computeTrainingCompleteness(traffic, verticalKey) : null}
-          testConfigId={traffic?.id ?? null}
-          trainConfigId={traffic?.id ?? null}
-          lastTrainedAt={traffic?.last_trained_at ?? null}
-          resourcesHref={`/dashboard/equipe-digital/recursos?unit=${selectedUnitId}&employee=traffic_specialist`}
         />
         <EmployeeCatalogCard
           icon={Headset}

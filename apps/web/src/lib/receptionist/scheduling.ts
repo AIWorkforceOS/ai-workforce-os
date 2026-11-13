@@ -2,7 +2,12 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { getAvailableSlots, zonedTimeToUtc, type AvailableSlot, type SlotEngineAppointment } from '@/lib/slot-engine'
 import { getBusinessHours, getSchedulingSettings } from '@/lib/scheduling'
 import { addDays } from '@/lib/calendar-dates'
-import { fmtMoment } from '@/lib/scheduling/appointment-notifications'
+import {
+  fmtMoment,
+  handleAppointmentBooked,
+  handleAppointmentCancelled,
+  handleAppointmentRescheduled,
+} from '@/lib/scheduling/appointment-notifications'
 import { logSystemEvent } from '@/lib/system-events'
 import type { Locale } from '@/lib/i18n/config'
 import type { AppointmentStatus, Service, Unit } from '@/lib/types'
@@ -187,7 +192,7 @@ async function logSchedulingFailure(
   })
 }
 
-/** Cancela um agendamento a pedido do cliente na própria conversa. Marca cancelled_notified_at já preenchido: a resposta da IA nesta mensagem já é o aviso, evita duplicar com o aviso automático (lib/scheduling/appointment-notifications.ts). */
+/** Cancela pela conversa e envia uma cópia por e-mail quando disponível. */
 export async function executeCancelAppointment(
   supabase: SupabaseClient,
   unit: Unit,
@@ -201,7 +206,7 @@ export async function executeCancelAppointment(
       status: 'cancelled',
       cancelled_at: now,
       cancellation_reason: 'Cliente pediu cancelamento na conversa com a recepcionista digital.',
-      cancelled_notified_at: now,
+      cancelled_notified_at: null,
     })
     .eq('id', appointment.id)
 
@@ -220,6 +225,8 @@ export async function executeCancelAppointment(
     }
   }
 
+  await handleAppointmentCancelled(supabase, { appointmentId: appointment.id, unit, emailOnly: true })
+
   const when = fmtMoment(appointment.starts_at, unit.timezone, locale)
   return {
     status: 'success',
@@ -230,7 +237,7 @@ export async function executeCancelAppointment(
   }
 }
 
-/** Remarca um agendamento existente para um novo horário já validado como livre. Mesmo raciocínio de idempotência do cancelamento acima para rescheduled_notified_at. */
+/** Remarca um agendamento existente e envia uma cópia por e-mail quando disponível. */
 export async function executeReschedule(
   supabase: SupabaseClient,
   unit: Unit,
@@ -238,10 +245,9 @@ export async function executeReschedule(
   slot: AvailableSlot,
   locale: Locale,
 ): Promise<ActionOutcome> {
-  const now = new Date().toISOString()
   const { error } = await supabase
     .from('appointments')
-    .update({ starts_at: slot.starts_at, ends_at: slot.ends_at, rescheduled_notified_at: now })
+    .update({ starts_at: slot.starts_at, ends_at: slot.ends_at, rescheduled_notified_at: null })
     .eq('id', appointment.id)
 
   // Mesma guarda contra invenção do cancelamento acima: nunca confirmar
@@ -256,6 +262,8 @@ export async function executeReschedule(
           : 'Não consegui remarcar agora — diga que vai confirmar em seguida, nunca diga que já foi remarcado.',
     }
   }
+
+  await handleAppointmentRescheduled(supabase, { appointmentId: appointment.id, unit, emailOnly: true })
 
   const when = fmtMoment(slot.starts_at, unit.timezone, locale)
   return {
@@ -283,8 +291,7 @@ export async function executeBooking(
     }
   }
 
-  const now = new Date().toISOString()
-  const { error } = await supabase.from('appointments').insert({
+  const { data, error } = await supabase.from('appointments').insert({
     org_id: unit.org_id,
     unit_id: unit.id,
     customer_id: customerId,
@@ -292,8 +299,8 @@ export async function executeBooking(
     starts_at: slot.starts_at,
     ends_at: slot.ends_at,
     source: 'receptionist_chat',
-    confirmation_sent_at: now,
-  })
+    confirmation_sent_at: null,
+  }).select('id').single()
 
   if (error) {
     await logSchedulingFailure(supabase, unit, 'booking', error)
@@ -304,6 +311,12 @@ export async function executeBooking(
           ? 'Could not complete the booking (the time may have just been taken) — say you will double-check and confirm shortly.'
           : 'Não consegui concluir o agendamento agora (o horário pode ter sido ocupado no mesmo instante) — diga que vai confirmar em seguida.',
     }
+  }
+
+
+  const appointmentId = (data as { id?: string } | null)?.id
+  if (appointmentId) {
+    await handleAppointmentBooked(supabase, { appointmentId, unit, emailOnly: true })
   }
 
   const when = fmtMoment(slot.starts_at, unit.timezone, locale)

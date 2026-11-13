@@ -226,7 +226,17 @@ describe('fail-safe', () => {
     await expect(handleAppointmentBooked(supabase, { appointmentId: 'appt-1', unit })).resolves.toBeUndefined()
     const events = (db.system_events ?? []) as Record<string, unknown>[]
     expect(events.some((e) => e.event_type === 'appointment_confirmation_error')).toBe(true)
-    // mesmo com falha de envio, o carimbo é marcado (sem retry automático nesta fase)
-    expect((db.appointments![0] as Record<string, unknown>).confirmation_sent_at).toBeTruthy()
+    // Falha não pode parecer sucesso: sem carimbo, uma nova tentativa continua possível.
+    expect((db.appointments![0] as Record<string, unknown>).confirmation_sent_at).toBeNull()
+  })
+
+  it('no fluxo da recepcionista envia somente por e-mail', async () => {
+    const { supabase } = createFakeSupabase({
+      appointments: [seedAppointment()],
+      customers: [{ ...customer, email: 'maria@example.com' }],
+      services: [service],
+    })
+    await handleAppointmentBooked(supabase, { appointmentId: 'appt-1', unit: makeUnit(), emailOnly: true })
+    expect(sendToLeadChannelsMock).toHaveBeenCalledWith(expect.objectContaining({ emailOnly: true }))
   })
 })

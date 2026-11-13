@@ -38,9 +38,9 @@ const COPY = {
       ctaDemo: 'Ver demonstração',
       techLine: 'Sempre rodando a última geração de IA de fronteira — atualizada continuamente',
       proof: [
-        { value: '4', label: 'Funcionários digitais prontos', sub: 'AI Sales Representative, RH, Tráfego Pago e Recepcionista' },
-        { value: '24/7', label: 'Disponibilidade garantida', sub: 'Sem feriados, sem férias' },
-        { value: '10 min', label: 'Para configurar e ativar', sub: 'Entrevista guiada, sem código' },
+        { value: '3', label: 'Funcionários digitais prontos', sub: 'AI Sales Representative, RH e Recepcionista' },
+        { value: '24/7', label: 'Atendimento automatizado', sub: 'Com monitoramento e transferência humana' },
+        { value: 'Guiado', label: 'Para configurar e ativar', sub: 'Entrevista passo a passo, sem código' },
       ],
     },
     demo: {
@@ -105,7 +105,7 @@ const COPY = {
     how: {
       eyebrow: 'Configuração simples',
       titleA: 'Do plano ao primeiro atendimento',
-      titleB: 'em menos de 10 minutos',
+      titleB: 'com uma trilha guiada',
       steps: [
         { title: 'Escolha seu plano', desc: 'Selecione o plano ideal para o tamanho da sua operação e pague com PIX, boleto ou cartão à vista.' },
         { title: 'Crie sua conta', desc: 'Acesso imediato. Você define sua senha e entra direto na plataforma, sem esperar e-mail.' },
@@ -136,7 +136,7 @@ const COPY = {
       members: [
         { key: 'sdr', name: 'AI Sales Representative', ready: true, desc: 'Atende no WhatsApp em segundos, qualifica leads, faz follow-up automático e prospecta empresas no Google Maps.' },
         { key: 'rh', name: 'Recrutador (RH)', ready: true, desc: 'Cria a vaga com IA, tria currículos, pontua candidatos na régua certa e entrega uma shortlist pronta para entrevista.' },
-        { key: 'traffic', name: 'Gestor de Tráfego Pago', ready: true, desc: 'Acompanha Meta Ads e Google Ads, detecta desperdício e sugere otimizações — você aprova, ele executa.' },
+        { key: 'traffic', name: 'Gestor de Tráfego Pago', ready: false, desc: 'Integração em revisão para voltar com conexão e execução confiáveis.' },
         { key: 'reception', name: 'Recepcionista', ready: true, desc: 'Primeiro contato, triagem e direcionamento — dúvidas, agendamentos e atendimento ao cliente.' },
         { key: 'admin', name: 'Assistente Administrativo', ready: false, desc: 'Rotinas administrativas, documentos, agenda e suporte operacional do dia a dia.' },
         { key: 'finance', name: 'Assistente Financeiro', ready: false, desc: 'Cobranças, conciliação e relatórios de todo o departamento financeiro da empresa.' },
@@ -227,7 +227,7 @@ const COPY = {
       title: 'Tudo que você precisa saber',
       items: [
         { q: 'De onde é a Alizo?', a: 'A Alizo é uma empresa americana de tecnologia sediada em Phoenix, Arizona, com alcance global. Nossa plataforma roda sobre os modelos de IA mais recentes do mercado e é atualizada continuamente conforme a fronteira da IA avança.' },
-        { q: 'Preciso de conhecimento técnico para configurar?', a: 'Não. Seu funcionário IA conduz uma entrevista guiada com você, passo a passo. Em menos de 10 minutos ele está ativo. Se precisar de ajuda, nossa equipe faz a configuração completa por você.' },
+        { q: 'Preciso de conhecimento técnico para configurar?', a: 'Não. Seu funcionário IA conduz uma entrevista guiada, passo a passo. A ativação só é liberada quando as informações essenciais e os canais necessários estiverem prontos. Se precisar de ajuda, nossa equipe acompanha a configuração.' },
         { q: 'Como funciona o pagamento? Aceitam PIX e boleto?', a: 'Sim. No Brasil aceitamos PIX, boleto bancário e cartão de débito ou crédito à vista (sem parcelamento no momento). Nos EUA, aceitamos cartão de débito ou crédito.' },
         { q: 'O funcionário IA responde igual a um humano?', a: 'Sim. Ele é treinado com o tom de voz da sua empresa, conhece seus produtos e serviços, e responde de forma natural. Os clientes raramente percebem que é IA — e quando percebem, adoram a velocidade.' },
         { q: 'E se eu precisar de mais unidades depois?', a: 'É só fazer upgrade do plano. Fale com a gente e a transição é feita sem interromper sua operação.' },
@@ -265,9 +265,9 @@ const COPY = {
       ctaDemo: 'Watch the demo',
       techLine: 'Always running the latest generation of frontier AI — continuously updated',
       proof: [
-        { value: '4', label: 'Digital employees ready today', sub: 'AI Sales Representative, Recruiter, Paid Ads and Receptionist' },
-        { value: '24/7', label: 'Guaranteed availability', sub: 'No holidays, no vacations' },
-        { value: '10 min', label: 'To set up and go live', sub: 'Guided interview, no code' },
+        { value: '3', label: 'Digital employees ready today', sub: 'AI Sales Representative, Recruiter and Receptionist' },
+        { value: '24/7', label: 'Automated coverage', sub: 'With monitoring and human handoff' },
+        { value: 'Guided', label: 'To set up and go live', sub: 'Step-by-step interview, no code' },
       ],
     },
     demo: {
@@ -332,7 +332,7 @@ const COPY = {
     how: {
       eyebrow: 'Simple setup',
       titleA: 'From plan to first conversation',
-      titleB: 'in under 10 minutes',
+      titleB: 'through a guided setup',
       steps: [
         { title: 'Pick your plan', desc: 'Choose the plan that fits your operation and pay with a debit or credit card.' },
         { title: 'Create your account', desc: 'Instant access. You set your password and go straight into the platform — no waiting for emails.' },
@@ -363,7 +363,7 @@ const COPY = {
       members: [
         { key: 'sdr', name: 'AI Sales Representative', ready: true, desc: 'Answers on WhatsApp in seconds, qualifies leads, follows up automatically and prospects companies on Google Maps.' },
         { key: 'rh', name: 'AI Recruiter (HR)', ready: true, desc: 'Creates the job posting with AI, screens resumes, scores candidates consistently and delivers an interview-ready shortlist.' },
-        { key: 'traffic', name: 'AI Marketing/Traffic Specialist', ready: true, desc: 'Monitors Meta Ads and Google Ads, spots wasted spend and suggests optimizations — you approve, it executes.' },
+        { key: 'traffic', name: 'AI Marketing/Traffic Specialist', ready: false, desc: 'Integration under review before it returns with reliable account connection and execution.' },
         { key: 'reception', name: 'AI Receptionist', ready: true, desc: 'First point of contact, routing and customer service for any inquiry.' },
         { key: 'admin', name: 'AI Administrative Assistant', ready: false, desc: 'Day-to-day admin work — documents, scheduling and operational support.' },
         { key: 'finance', name: 'AI Financial Assistant', ready: false, desc: 'Runs your entire finance department — billing, reconciliation and reports.' },
@@ -439,7 +439,7 @@ const COPY = {
         {
           slug: 'pro', name: 'Pro', featured: true,
           desc: 'For growing operations that need scale',
-          features: ['Up to 5 units / locations', 'Up to 3 digital employees (AI Sales Representative, HR and Ads)', 'Multi-location WhatsApp', 'Company prospecting via Google Maps', 'Full sales pipeline (CRM)', 'Priority support', 'Assisted setup by our team'],
+          features: ['Up to 5 units / locations', 'Up to 3 active digital employees', 'Multi-location WhatsApp', 'Company prospecting via Google Maps', 'Full sales pipeline (CRM)', 'Priority support', 'Assisted setup by our team'],
         },
         {
           slug: 'enterprise', name: 'Enterprise', featured: false,
@@ -454,7 +454,7 @@ const COPY = {
       title: 'Everything you need to know',
       items: [
         { q: 'Where is Alizo based?', a: 'Alizo is an American technology company headquartered in Phoenix, Arizona, built for global reach. Our platform runs on the latest AI models on the market and is continuously updated as the AI frontier advances.' },
-        { q: 'Do I need technical knowledge to set it up?', a: 'No. Your AI employee runs a guided interview with you, step by step. In under 10 minutes it goes live. If you need help, our team does the full setup for you.' },
+        { q: 'Do I need technical knowledge to set it up?', a: 'No. Your AI employee runs a guided interview step by step. Activation is released only after the essential business information and required channels are ready. If you need help, our team assists with setup.' },
         { q: 'How does payment work?', a: 'In the US we accept debit or credit card (single monthly charge, no installment plans). In Brazil we accept PIX, boleto and debit/credit card.' },
         { q: 'Does the AI employee sound human?', a: "Yes. It's trained on your company's tone of voice, knows your products and services, and replies naturally. Customers rarely notice it's AI — and when they do, they love the speed." },
         { q: 'What if I need more locations later?', a: 'Just upgrade your plan. Talk to us and the transition happens without interrupting your operation.' },

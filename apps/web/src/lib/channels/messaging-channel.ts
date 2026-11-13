@@ -282,10 +282,12 @@ export async function sendToLeadChannels(params: {
   context?: SendContext
   /** Instância Evolution dedicada ao Sales Rep (migration 051), quando existir — ver resolveWhatsappChannel em lib/evolution.ts. Omitido, cai no número compartilhado histórico da unidade. */
   evolutionConfigOverride?: EvolutionUnitConfig | null
+  /** Restringe o envio ao e-mail. Usado pela recepcionista quando a confirmação já foi entregue na própria conversa de WhatsApp. */
+  emailOnly?: boolean
 }): Promise<ChannelSendAttempt[]> {
   const attempts: ChannelSendAttempt[] = []
 
-  if (params.lead.phone) {
+  if (params.lead.phone && !params.emailOnly) {
     const channel = getMessagingChannel(params.unit, null, params.evolutionConfigOverride)
     if (channel) {
       try {
