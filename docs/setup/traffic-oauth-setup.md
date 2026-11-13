@@ -12,42 +12,50 @@ fluxo em si já está implementado (`lib/traffic/meta-ads-oauth.ts` +
 `app/api/traffic/accounts/oauth/{start,callback,finalize}/route.ts`) — o que falta é só a
 configuração no lado da Meta.
 
+## ⚠️ Achado real (2026-09-01): são DOIS apps diferentes na Meta, não um só
+
+A primeira versão deste documento assumia que o Tráfego reaproveitaria o mesmo app da Meta já
+usado pelo login do Conteúdo. **Isso estava errado** — confirmado direto no Business Manager
+(Configurações do negócio → Apps): existem dois apps separados —
+
+- **"AlizoAI Content"** — de propriedade **pessoal de Vinicius Miranda**, usado pelo login do
+  Gestor de Conteúdo (`META_APP_ID`/`META_APP_SECRET`/`META_LOGIN_CONFIG_ID`).
+- **"Alizo Trafego Ads"** (ID `1723742265568719`) — de propriedade do Business Manager **"Smarter
+  one"**, já com o caso de uso "Criar e gerenciar anúncios com a API de Marketing" configurado e
+  testado (é o mesmo app do `META_SYSTEM_USER_TOKEN`/`META_BUSINESS_MANAGER_ID` do método manual).
+
+Por isso o login OAuth de Tráfego usa credenciais **próprias**, nunca as do Conteúdo:
+
 ## O que você (Vinicius) precisa obter, uma vez só
 
-| Env var | O que é |
-|---|---|
-| `META_APP_ID` | Mesmo app da Meta já usado pelo login do Gestor de Conteúdo (`docs/setup/content-oauth-setup.md`) — não precisa criar um novo app |
-| `META_APP_SECRET` | Idem — já configurado |
-| `META_ADS_LOGIN_CONFIG_ID` | ID de uma "Configuração de Login" **separada** da do Conteúdo (ver passo abaixo) — não é secreto |
+| Env var | O que é | Status em 2026-09-01 |
+|---|---|---|
+| `META_ADS_APP_ID` | ID do app "Alizo Trafego Ads" | ✅ `1723742265568719` — já pode ir pro Vercel |
+| `META_ADS_APP_SECRET` | Chave secreta desse app (Configurações do app → Básico → Mostrar) | ⏳ exige sua senha da Meta pra revelar — a Claude nunca digita senha em nenhum campo, esse passo é só seu |
+| `META_ADS_LOGIN_CONFIG_ID` | ID da Configuração de Login já criada | ✅ `1366240232340507` — já pode ir pro Vercel |
 
-## Por que uma Configuração de Login separada (`META_ADS_LOGIN_CONFIG_ID` ≠ `META_LOGIN_CONFIG_ID`)
+## O que já foi feito (2026-09-01, direto no navegador com acesso ao seu Chrome já logado)
 
-No painel da Meta, uma Configuração de Login empacota um conjunto fixo de permissões pra um caso
-de uso específico. O caso de uso do Conteúdo ("Gerenciar tudo na sua Página"/Instagram) e o de
-Tráfego (Marketing API/`ads_management`) são categorias diferentes na Meta — mais simples (e mais
-alinhado ao que a própria Meta espera no App Review) manter duas configurações separadas dentro do
-mesmo app, cada uma só com as permissões que o respectivo fluxo realmente usa.
+1. ✅ Adicionada a URL de redirecionamento válida em Login do Facebook para Empresas →
+   Configurações → URIs de redirecionamento do OAuth válidos:
+   `https://www.alizoai.com/api/traffic/accounts/oauth/callback`
+2. ✅ Criada a Configuração de Login "Traffic Pago - contas de anunc" (variação General, token de
+   acesso do usuário, permissões `ads_management` + `ads_read` + `business_management`) — ID
+   `1366240232340507`.
+3. ⏳ **Falta só**: revelar `META_ADS_APP_SECRET` (exige senha) e colar as 3 env vars no Vercel.
+4. ⏳ Colocar o app "Alizo Trafego Ads" em modo "Live" quando for liberar geral (ver seção de App
+   Review abaixo) — hoje está "Não publicado".
 
-## Passo a passo
+## Passo a passo restante (só o que falta)
 
-1. **Usar o mesmo app da Meta já criado** (`docs/setup/content-oauth-setup.md` / `traffic-apis-setup.md`)
-   — não criar um app novo.
-2. A **URL de redirecionamento** deste fluxo é diferente da do Conteúdo — adicionar às URLs
-   válidas do Facebook Login (Facebook Login → Configurações), sem remover a do Conteúdo:
-   ```
-   https://www.alizoai.com/api/traffic/accounts/oauth/callback
-   ```
-   Tem que ser EXATAMENTE essa URL.
-3. **Adicionar as permissões ao caso de uso "Marketing API"** (Painel do app → Casos de uso →
-   Personalizar → Permissões e recursos): `ads_management`, `ads_read`, `business_management` —
-   clicar "Adicionar" em cada uma até o Status virar "Pronto para teste".
-4. **Criar uma NOVA Configuração de Login** (Login do Facebook para Empresas → Configurações →
-   Criar configuração): nome livre (ex.: "Tráfego Pago — contas de anúncio"), variação "General",
-   token "Token de acesso do usuário", e nas Permissões marcar as 3 do passo 3. A Meta mostra um
-   **"Identificação da configuração"** ao final — esse número vai em `META_ADS_LOGIN_CONFIG_ID`
-   (Vercel → Settings → Environment Variables).
-5. **Colocar o app em modo "Live"** (se ainda não estiver) — em Development, só
-   administradores/desenvolvedores/testers cadastrados no próprio app conseguem fazer login.
+1. **Revelar o App Secret**: [developers.facebook.com/apps/1723742265568719/settings/basic](https://developers.facebook.com/apps/1723742265568719/settings/basic/)
+   → campo "Chave Secreta do Aplicativo" → **Mostrar** → digite sua senha da Meta quando pedir.
+2. **Colar as 3 env vars no Vercel** (Settings → Environment Variables, Production e Preview):
+   - `META_ADS_APP_ID` = `1723742265568719`
+   - `META_ADS_APP_SECRET` = (o valor revelado no passo 1)
+   - `META_ADS_LOGIN_CONFIG_ID` = `1366240232340507`
+3. Pronto — o botão "Conectar com Facebook" em `/dashboard/traffic/connect` liga sozinho no
+   próximo request, sem precisar de novo deploy.
 
 ## ⚠️ App Review — provavelmente necessário antes de qualquer cliente real usar
 
@@ -64,8 +72,8 @@ isso).
 
 ## Testar com uma conta de teste (recomendado antes de liberar geral)
 
-1. No painel do app da Meta → Funções → confirmar que você (ou quem for testar) já está como
-   Administrador/Tester (mesmo cadastro usado pro teste do login de Conteúdo).
+1. No painel do app "Alizo Trafego Ads" → Funções do app → confirmar que você (ou quem for testar)
+   já está como Administrador/Tester.
 2. Ter uma conta de anúncio de teste (a sua própria já serve).
 3. Em `/dashboard/traffic/connect`, clicar "Conectar com Facebook", logar com essa conta, escolher
    a conta de anúncio.
@@ -76,11 +84,12 @@ isso).
 
 O método manual continua existindo (`app/api/traffic/accounts/connect/route.ts`,
 `docs/setup/traffic-apis-setup.md`) e usa `META_BUSINESS_MANAGER_ID` + `META_SYSTEM_USER_TOKEN` —
-nenhuma dessas env vars é usada pelo login OAuth, são fluxos independentes que podem coexistir. O
-login com Facebook grava o token de usuário de longa duração do próprio cliente
-(`ad_accounts.access_token`), na mesma coluna que o campo "Avançado" do método manual já usava —
-o resto do pipeline (sync de campanhas, motor de estratégia, execução de ações) é idêntico pros
-dois caminhos. Diferença em relação ao Conteúdo: `GET /me/adaccounts` não devolve um token por
-conta (diferente de `GET /me/accounts` pra Páginas) — o mesmo token de usuário acessa qualquer
-conta de anúncio que ele administra, por isso a sessão de escolha (`traffic_oauth_sessions`) guarda
-o token uma vez só, não por conta candidata (ver `lib/traffic/meta-ads-oauth.ts`).
+essas env vars pertencem ao MESMO app "Alizo Trafego Ads", mas são um fluxo tecnicamente
+independente do login OAuth (não compartilham código). O login com Facebook grava o token de
+usuário de longa duração do próprio cliente (`ad_accounts.access_token`), na mesma coluna que o
+campo "Avançado" do método manual já usava — o resto do pipeline (sync de campanhas, motor de
+estratégia, execução de ações) é idêntico pros dois caminhos. Diferença em relação ao Conteúdo:
+`GET /me/adaccounts` não devolve um token por conta (diferente de `GET /me/accounts` pra Páginas)
+— o mesmo token de usuário acessa qualquer conta de anúncio que ele administra, por isso a sessão
+de escolha (`traffic_oauth_sessions`) guarda o token uma vez só, não por conta candidata (ver
+`lib/traffic/meta-ads-oauth.ts`).

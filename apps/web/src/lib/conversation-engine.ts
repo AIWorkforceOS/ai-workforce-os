@@ -12,6 +12,7 @@ import { sendEscalationEmail, sendTechnicalAlertEmail } from '@/lib/email'
 import { logSystemEvent, shouldNotifyForEvent, type SystemEventSource } from '@/lib/system-events'
 import { isHumanInterventionActive } from '@/lib/human-intervention'
 import { syncLeadToSmarterCrm } from '@/lib/sales/smarter-crm'
+import { emitPartnerEvent } from '@/lib/partner-api/webhooks'
 import { IDENTITY_AND_HANDOFF_RULES } from '@/lib/agent-identity'
 import { buildTrainingCorrectionsContext } from '@/lib/agent-training'
 import { buildCombinedBusinessContext } from '@/lib/interview/engine'
@@ -693,6 +694,14 @@ export async function processInboundMessage(params: {
 
   const historyRows = ((history as Conversation[] | null) ?? []).reverse()
 
+  // Avisa parceiros (API de parceiro, ex.: Smarter) que o lead respondeu.
+  await emitPartnerEvent(supabase, {
+    orgId: unit.org_id,
+    unitId: unit.id,
+    type: 'lead.message.received',
+    data: { lead_id: lead.id, text: incomingText, was_audio: Boolean(wasAudioMessage) },
+  })
+
   const escalationReason = await findEscalationReason(
     incomingText,
     config,
@@ -1003,6 +1012,13 @@ export async function processInboundMessage(params: {
     return noHandoff
   }
 
+  await emitPartnerEvent(supabase, {
+    orgId: unit.org_id,
+    unitId: unit.id,
+    type: 'lead.message.sent',
+    data: { lead_id: lead.id, text: outgoingText, origin: 'sales_rep' },
+  })
+
   // Só fecha quando todos os campos ensinados para este fechamento
   // estiverem coletados (lista vazia = nada ensinado para perguntar, então
   // basta a confirmação).
@@ -1044,6 +1060,15 @@ export async function processInboundMessage(params: {
 
   if ('status' in leadUpdate) {
     await syncLeadToSmarterCrm(supabase, unit, { ...lead, ...leadUpdate } as Lead, { statusChanged: true })
+  }
+
+  if (readyToClose) {
+    await emitPartnerEvent(supabase, {
+      orgId: unit.org_id,
+      unitId: unit.id,
+      type: 'lead.deal_won',
+      data: { lead_id: lead.id, deal_profile: dealProfile, closed_at: sentAt },
+    })
   }
 
   return { dealHandoffReady: readyToClose }
