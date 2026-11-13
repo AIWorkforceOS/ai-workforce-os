@@ -38,6 +38,11 @@ describe('getVisibleNavGroups', () => {
     expect(hrefs).toContain('/dashboard/agenda')
   })
 
+  it('gestão escolar aparece apenas para organizações de cursos', () => {
+    expect(allHrefs(getVisibleNavGroups({ role: 'admin' }))).not.toContain('/dashboard/education')
+    expect(allHrefs(getVisibleNavGroups({ role: 'admin', educationEnabled: true }))).toContain('/dashboard/education')
+  })
+
   it('super_admin nunca vê Clientes/Agenda de full_management, mesmo se o campo vier setado', () => {
     const groups = getVisibleNavGroups({ role: 'super_admin', managementMode: 'full_management' })
     const hrefs = allHrefs(groups)

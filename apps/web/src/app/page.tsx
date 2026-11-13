@@ -118,6 +118,15 @@ const COPY = {
         desc: 'Antes de falar com qualquer cliente, seu funcionário IA senta com você — como numa entrevista de primeiro dia. Ele pergunta sobre seu segmento, seus serviços, seus diferenciais e sua forma de atender, e monta sozinho o próprio manual de trabalho. Quanto mais você conta, melhor ele fica.',
       },
     },
+    segments: {
+      eyebrow: 'Soluções por segmento',
+      title: 'Comece pela dor que precisa resolver hoje',
+      items: [
+        { market: 'Estados Unidos', title: 'Limpeza e manutenção', desc: 'Atenda leads, organize clientes, agende serviços, acompanhe o financeiro, publique nas redes sociais e monitore a operação em um só lugar.' },
+        { market: 'Brasil', title: 'Clínicas e empresas de serviço', desc: 'Recepção e vendas pelo WhatsApp, com agenda, cadastro de clientes e transferência segura para atendimento humano.' },
+        { market: 'Brasil', title: 'Escolas e cursos', desc: 'Atenda interessados e administre cursos, turmas, professores, alunos, presença, documentos e diplomas no mesmo sistema.' },
+      ],
+    },
     team: {
       eyebrow: 'Conheça o time',
       titleA: 'Dez funcionários digitais.',
@@ -335,6 +344,15 @@ const COPY = {
         title: 'The hiring interview',
         desc: "Before it talks to a single customer, your AI employee sits down with you — like a first-day interview. It asks about your industry, your services, your differentiators and how you like to serve customers, then writes its own playbook. The more you share, the better it gets.",
       },
+    },
+    segments: {
+      eyebrow: 'Solutions by industry',
+      title: 'Start with the outcome your business needs today',
+      items: [
+        { market: 'United States', title: 'Cleaning and maintenance', desc: 'Respond to leads, organize customers, schedule services, track finances, publish on social media and monitor operations in one place.' },
+        { market: 'Brazil', title: 'Clinics and service companies', desc: 'WhatsApp reception and sales, with scheduling, customer records and safe handoff to a human team.' },
+        { market: 'Brazil', title: 'Schools and courses', desc: 'Serve prospective students and manage programs, classes, teachers, students, attendance, documents and diplomas in one system.' },
+      ],
     },
     team: {
       eyebrow: 'Meet the team',
@@ -816,6 +834,29 @@ export default function HomePage() {
               </div>
             </div>
           </Reveal>
+        </div>
+      </section>
+
+      {/* ─── RESULTADOS POR SEGMENTO ─── */}
+      <section className="py-20">
+        <div className="mx-auto max-w-6xl px-6">
+          <Reveal>
+            <div className="mb-12 text-center">
+              <p className="text-[11px] font-black uppercase tracking-[0.2em] text-cyan-400">{t.segments.eyebrow}</p>
+              <h2 className="mt-3 text-3xl font-black md:text-4xl">{t.segments.title}</h2>
+            </div>
+          </Reveal>
+          <div className="grid gap-4 md:grid-cols-3">
+            {t.segments.items.map((item, index) => (
+              <Reveal key={item.title} delay={index * 90}>
+                <article className="h-full rounded-2xl border border-cyan-500/15 bg-cyan-500/[0.04] p-6">
+                  <p className="text-[10px] font-black uppercase tracking-[0.16em] text-cyan-400">{item.market}</p>
+                  <h3 className="mt-3 text-lg font-black text-white">{item.title}</h3>
+                  <p className="mt-3 text-sm leading-relaxed text-zinc-400">{item.desc}</p>
+                </article>
+              </Reveal>
+            ))}
+          </div>
         </div>
       </section>
 

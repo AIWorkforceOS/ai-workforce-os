@@ -28,6 +28,7 @@ import {
   Camera,
   LifeBuoy,
   ShieldCheck,
+  GraduationCap,
 } from 'lucide-react'
 import type { Locale } from '@/lib/i18n/config'
 import type { ManagementMode } from '@/lib/types'
@@ -43,6 +44,8 @@ export type NavItem = {
   fullManagementOnly?: boolean
   /** visível apenas quando organizations.facilit_integration_enabled = true (Mawi Pro, migration 083) — integração específica desse cliente */
   facilitOnly?: boolean
+  /** visível apenas para organizações do segmento escola/cursos */
+  educationOnly?: boolean
 }
 
 const EMPLOYEE_TYPE_BY_PATH: Record<string, string> = {
@@ -99,6 +102,7 @@ export const navGroups: { label: Record<Locale, string>; items: NavItem[] }[] = 
     label: { pt: 'Agenda', en: 'Schedule' },
     items: [
       { href: '/dashboard/agenda', label: { pt: 'Agenda', en: 'Schedule' }, icon: CalendarDays, fullManagementOnly: true },
+      { href: '/dashboard/education', label: { pt: 'Gestão escolar', en: 'School management' }, icon: GraduationCap, educationOnly: true },
     ],
   },
   {
@@ -151,6 +155,7 @@ export function getVisibleNavGroups({
   facilitEnabled = false,
   jobRole = null,
   contractedAgentTypes,
+  educationEnabled = false,
 }: {
   role?: string
   unitId?: string | null
@@ -161,6 +166,8 @@ export function getVisibleNavGroups({
   jobRole?: JobRole | null
   /** Tipos já contratados pela organização. Quando informado, oculta funcionários ainda não contratados. */
   contractedAgentTypes?: string[]
+  /** true somente quando organizations.vertical_key = vocational_education */
+  educationEnabled?: boolean
 }): { label: Record<Locale, string>; items: NavItem[] }[] {
   const isSuperAdmin = role === 'super_admin'
   const fullManagement = managementMode === 'full_management' && !isSuperAdmin
@@ -175,6 +182,7 @@ export function getVisibleNavGroups({
             (isSuperAdmin || !item.superOnly) &&
             (fullManagement || !item.fullManagementOnly) &&
             (facilitEnabled || !item.facilitOnly) &&
+            (educationEnabled || !item.educationOnly) &&
             (isSuperAdmin || contractedAgentTypes === undefined || !employeeType || contractedAgentTypes.includes(employeeType)) &&
             canAccessModule(jobRole, moduleForPath(item.href))
           )

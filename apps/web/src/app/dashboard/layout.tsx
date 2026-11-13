@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getAppUser, ROLE_LABEL, type AppRole } from '@/lib/app-user'
-import { fetchOrganizationManagementMode, fetchOrganizationFacilitEnabled } from '@/lib/organizations'
+import { fetchOrganizationManagementMode, fetchOrganizationFacilitEnabled, fetchOrganizationVerticalKey } from '@/lib/organizations'
 import { getLocale } from '@/lib/i18n/server'
 import { Sidebar } from '@/components/dashboard/sidebar'
 import { MobileSidebar } from '@/components/dashboard/mobile-sidebar'
@@ -90,9 +90,12 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const email = appUser.email
   const initials = email.split('@')[0]?.slice(0, 2).toUpperCase() ?? 'AW'
   // Modo de uso da org (migration 032): full_management muda a navegação.
-  const managementMode = await fetchOrganizationManagementMode(supabase, appUser.orgId)
-  // Facil-IT (360) é específico da Mawi Pro (migration 083) — nunca aparece pra outra organização.
-  const facilitEnabled = await fetchOrganizationFacilitEnabled(supabase, appUser.orgId)
+  const [managementMode, facilitEnabled, verticalKey] = await Promise.all([
+    fetchOrganizationManagementMode(supabase, appUser.orgId),
+    fetchOrganizationFacilitEnabled(supabase, appUser.orgId),
+    fetchOrganizationVerticalKey(supabase, appUser.orgId),
+  ])
+  const educationEnabled = verticalKey === 'vocational_education'
   // Logo própria da empresa (substitui a do Alizo); null = logo do Alizo. Nunca quebra a página se a leitura falhar.
   const brandLogoUrl = await getBrandLogoUrl(appUser)
   const { data: contractedAgents } = appUser.isSuperAdmin
@@ -106,7 +109,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     <div className="flex h-dvh overflow-hidden" style={{ background: '#0a0f1e' }}>
       {/* Sidebar fixa — só em desktop; em mobile vira drawer (MobileSidebar no header) */}
       <div className="hidden flex-shrink-0 lg:flex">
-        <Sidebar userEmail={email} role={appUser.role} unitId={appUser.unitId} managementMode={managementMode} facilitEnabled={facilitEnabled} jobRole={appUser.jobRole} brandLogoUrl={brandLogoUrl} contractedAgentTypes={contractedAgentTypes} />
+        <Sidebar userEmail={email} role={appUser.role} unitId={appUser.unitId} managementMode={managementMode} facilitEnabled={facilitEnabled} jobRole={appUser.jobRole} brandLogoUrl={brandLogoUrl} contractedAgentTypes={contractedAgentTypes} educationEnabled={educationEnabled} />
       </div>
 
       <div className="flex flex-1 flex-col overflow-hidden">
@@ -122,7 +125,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           }}
         >
           <div className="flex items-center gap-2">
-            <MobileSidebar userEmail={email} role={appUser.role} unitId={appUser.unitId} managementMode={managementMode} facilitEnabled={facilitEnabled} jobRole={appUser.jobRole} brandLogoUrl={brandLogoUrl} contractedAgentTypes={contractedAgentTypes} />
+            <MobileSidebar userEmail={email} role={appUser.role} unitId={appUser.unitId} managementMode={managementMode} facilitEnabled={facilitEnabled} jobRole={appUser.jobRole} brandLogoUrl={brandLogoUrl} contractedAgentTypes={contractedAgentTypes} educationEnabled={educationEnabled} />
             <HeaderBrand logoUrl={brandLogoUrl} />
             <span style={{ color: 'rgba(255,255,255,0.2)' }}>/</span>
             <span className="rounded-md px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider"

@@ -52,6 +52,7 @@ export function moduleForPath(pathname: string): AppModule {
 
   if (path.startsWith('/dashboard/receptionist/customers') || path.startsWith('/dashboard/clientes-facility')) return 'clientes'
   if (path.startsWith('/dashboard/agenda')) return 'agenda'
+  if (path.startsWith('/dashboard/education')) return 'agenda'
   if (path.startsWith('/dashboard/operacao') || path.startsWith('/dashboard/faturamento') || path.startsWith('/dashboard/financial')) return 'financeiro'
   if (path.startsWith('/dashboard/crm') || path.startsWith('/dashboard/leads') || path.startsWith('/dashboard/conversations')) return 'crm'
   for (const p of ['agents', 'recruiter', 'receptionist', 'content', 'traffic', 'seo', 'email-marketing']) {
