@@ -10,6 +10,7 @@ export type SystemEventSource =
   | 'cron'
   | 'system'
   | 'meta_ads'
+  | 'meta_whatsapp'
   | 'google_ads'
   | 'traffic'
   | 'recruiter'

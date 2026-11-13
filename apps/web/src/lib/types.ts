@@ -68,6 +68,9 @@ export type Unit = {
   evolution_instance_name: string | null
   /** economy = QR/Evolution; official_requested = aguardando onboarding Meta; official = Cloud API ativa. */
   whatsapp_connection_mode?: WhatsappConnectionMode
+  /** Identificadores da Meta Cloud API. O token nunca é persistido no banco. */
+  meta_whatsapp_phone_number_id?: string | null
+  meta_whatsapp_waba_id?: string | null
   /** Canal de mensagens escolhido pela unidade. Null = padrão histórico (whatsapp). */
   messaging_channel: MessagingChannelType | null
   twilio_account_sid: string | null

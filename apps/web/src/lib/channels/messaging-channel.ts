@@ -15,6 +15,13 @@ import { computeHumanTypingDelayMs, sleep } from '@/lib/humanized-timing'
 import { getOpenAIApiKey, synthesizeSpeech } from '@/lib/openai'
 import { logOpenAITtsUsage } from '@/lib/api-usage'
 import { logSystemEvent } from '@/lib/system-events'
+import {
+  getMetaWhatsappConfig,
+  sendMetaWhatsappAudio,
+  sendMetaWhatsappDocument,
+  sendMetaWhatsappText,
+  type MetaWhatsappConfig,
+} from '@/lib/meta-whatsapp'
 
 // Abstração de canal de mensagens (item 1): o funcionário de IA (SDR,
 // Sales Rep, Recruiter) fala com o cliente por WhatsApp (Evolution API),
@@ -155,6 +162,59 @@ class EvolutionWhatsAppChannel implements MessagingChannel {
   }
 }
 
+class MetaWhatsAppChannel implements MessagingChannel {
+  readonly type: ChannelType = 'whatsapp'
+
+  constructor(
+    private readonly config: MetaWhatsappConfig,
+    private readonly unit: Unit,
+    private readonly supabase: SupabaseClient | null,
+  ) {}
+
+  async sendMessage(phone: string, text: string, context?: SendContext): Promise<void> {
+    let sentAsVoice = false
+    if (context?.voiceReply) sentAsVoice = await this.trySendVoice(phone, text)
+    if (!sentAsVoice) {
+      await sleep(computeHumanTypingDelayMs(text))
+      await sendMetaWhatsappText(this.config, phone, text)
+    }
+    if (context?.attachment) {
+      await sendMetaWhatsappDocument(
+        this.config,
+        phone,
+        context.attachment.url,
+        context.attachment.fileName || `${context.attachment.title}.pdf`,
+        context.attachment.title,
+      ).catch(async (error) => {
+        await logSystemEvent(this.supabase, {
+          level: 'warning', source: 'meta_whatsapp', eventType: 'attachment_send_failed',
+          message: `Falha ao enviar anexo pela API oficial na unidade "${this.unit.name}": ${error instanceof Error ? error.message : String(error)}`,
+          orgId: this.unit.org_id, unitId: this.unit.id,
+        })
+      })
+    }
+  }
+
+  private async trySendVoice(phone: string, text: string): Promise<boolean> {
+    const apiKey = getOpenAIApiKey()
+    if (!apiKey) return false
+    try {
+      const audio = await synthesizeSpeech({ apiKey, text })
+      await sleep(computeHumanTypingDelayMs(text))
+      await sendMetaWhatsappAudio(this.config, phone, audio.base64Audio, audio.mimeType)
+      await logOpenAITtsUsage({ characterCount: text.length, unitId: this.unit.id, orgId: this.unit.org_id })
+      return true
+    } catch (error) {
+      await logSystemEvent(this.supabase, {
+        level: 'warning', source: 'meta_whatsapp', eventType: 'audio_synthesis_failed',
+        message: `Falha ao enviar áudio pela API oficial na unidade "${this.unit.name}": ${error instanceof Error ? error.message : String(error)}. Respondendo em texto.`,
+        orgId: this.unit.org_id, unitId: this.unit.id,
+      })
+      return false
+    }
+  }
+}
+
 class TwilioSmsChannel implements MessagingChannel {
   readonly type: ChannelType = 'sms'
 
@@ -245,6 +305,18 @@ export function getMessagingChannel(
   if (getUnitChannelType(unit) === 'sms') {
     const config = getTwilioConfig(unit)
     return config ? new TwilioSmsChannel(config) : null
+  }
+
+  const metaConfig = getMetaWhatsappConfig(unit)
+  // O número compartilhado da unidade pode operar pela API oficial enquanto
+  // um funcionário com instância Evolution realmente dedicada (ex.: Sales)
+  // continua no canal econômico. O fallback histórico de resolveWhatsappChannel
+  // devolve um override igual ao da unidade; ele não deve impedir a Meta.
+  const hasDedicatedEvolutionOverride = Boolean(
+    evolutionConfigOverride && evolutionConfigOverride.instanceName !== unit.evolution_instance_name,
+  )
+  if (metaConfig && !hasDedicatedEvolutionOverride) {
+    return new MetaWhatsAppChannel(metaConfig, unit, supabase)
   }
 
   const config = evolutionConfigOverride ?? getEvolutionConfig(unit)
