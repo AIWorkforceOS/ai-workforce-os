@@ -157,6 +157,17 @@ describe('POST /api/webhooks/whatsapp — número compartilhado, triagem para Re
           is_active: true,
         } as unknown as Record<string, unknown>,
       ],
+      employees: [
+        {
+          id: 'employee-1',
+          org_id: unit.org_id,
+          unit_id: unit.id,
+          name: 'Profissional Teste',
+          is_active: true,
+          is_schedulable: true,
+          availability: {},
+        } as unknown as Record<string, unknown>,
+      ],
     })
 
     vi.doMock('@/lib/supabase/service', () => ({
@@ -221,6 +232,7 @@ describe('POST /api/webhooks/whatsapp — número compartilhado, triagem para Re
     const appointment = db.appointments![0]!
     expect(appointment.customer_id).toBe(customer.id)
     expect(appointment.service_id).toBe('service-1')
+    expect(appointment.employee_id).toBe('employee-1')
 
     // O lead que identifica quem escreveu (Rota 3 do produto pra quem não
     // é cliente) também existe, e está linkado ao cliente promovido.

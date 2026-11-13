@@ -2,16 +2,25 @@
 
 import { Fragment, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { Employee, WeeklySchedule } from '@/lib/types'
+import type { Employee, Service, WeeklySchedule } from '@/lib/types'
 import { Card, EmptyState, TableShell, Td, Th, Tr } from '@/components/ui/dashboard-ui'
 import { WeeklyScheduleEditor } from '@/components/dashboard/weekly-schedule-editor'
 import { Users } from 'lucide-react'
 
-export function EmployeeSchedulingPanel({ initialEmployees }: { initialEmployees: Employee[] }) {
+export function EmployeeSchedulingPanel({
+  initialEmployees,
+  services,
+  initialServiceIdsByEmployee,
+}: {
+  initialEmployees: Employee[]
+  services: Service[]
+  initialServiceIdsByEmployee: Record<string, string[]>
+}) {
   const [employees, setEmployees] = useState<Employee[]>(initialEmployees)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [draftAvailability, setDraftAvailability] = useState<WeeklySchedule>({})
   const [saving, setSaving] = useState(false)
+  const [serviceIdsByEmployee, setServiceIdsByEmployee] = useState(initialServiceIdsByEmployee)
 
   async function handleToggleSchedulable(employee: Employee) {
     const supabase = createClient()
@@ -57,6 +66,18 @@ export function EmployeeSchedulingPanel({ initialEmployees }: { initialEmployees
       .eq('id', employee.id)
       .select()
       .single()
+    if (!error) {
+      const selectedIds = serviceIdsByEmployee[employee.id] ?? []
+      const { error: deleteError } = await supabase.from('employee_service_skills').delete().eq('employee_id', employee.id)
+      if (!deleteError && selectedIds.length > 0) {
+        await supabase.from('employee_service_skills').insert(selectedIds.map((serviceId) => ({
+          org_id: employee.org_id,
+          unit_id: employee.unit_id,
+          employee_id: employee.id,
+          service_id: serviceId,
+        })))
+      }
+    }
     setSaving(false)
 
     if (error || !data) return
@@ -136,6 +157,31 @@ export function EmployeeSchedulingPanel({ initialEmployees }: { initialEmployees
                         Vazio = segue o horário de funcionamento da unidade.
                       </p>
                       <WeeklyScheduleEditor value={draftAvailability} onChange={setDraftAvailability} />
+                      <div className="mt-5">
+                        <p className="mb-2 text-xs font-bold text-white">Serviços que este profissional executa</p>
+                        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                          {services.map((service) => {
+                            const selected = (serviceIdsByEmployee[employee.id] ?? []).includes(service.id)
+                            return (
+                              <label key={service.id} className="flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300">
+                                <input
+                                  type="checkbox"
+                                  checked={selected}
+                                  onChange={() => setServiceIdsByEmployee((current) => ({
+                                    ...current,
+                                    [employee.id]: selected
+                                      ? (current[employee.id] ?? []).filter((id) => id !== service.id)
+                                      : [...(current[employee.id] ?? []), service.id],
+                                  }))}
+                                  className="accent-cyan-500"
+                                />
+                                {service.name}
+                              </label>
+                            )
+                          })}
+                        </div>
+                        <p className="mt-2 text-[11px] text-slate-500">Se nenhum serviço for marcado, a REC considera que o profissional atende todos os serviços ativos.</p>
+                      </div>
                       <div className="mt-4 flex gap-3">
                         <button
                           type="button"

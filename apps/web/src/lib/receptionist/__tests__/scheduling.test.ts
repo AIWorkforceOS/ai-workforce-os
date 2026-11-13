@@ -6,6 +6,7 @@ import {
   executeBooking,
   executeCancelAppointment,
   executeReschedule,
+  computeSlotsForService,
 } from '@/lib/receptionist/scheduling'
 import { createFakeSupabase } from '@/lib/__tests__/fake-supabase'
 import type { Service, Unit } from '@/lib/types'
@@ -157,6 +158,30 @@ describe('listSlotsText', () => {
   })
 })
 
+describe('computeSlotsForService — profissional, serviço e disponibilidade real', () => {
+  it('oferece somente horário do profissional habilitado para o serviço e grava sua identidade no slot', async () => {
+    const service = makeService({ id: 'svc-1', duration_minutes: 60 })
+    const { supabase } = createFakeSupabase({
+      employees: [
+        { id: 'emp-a', unit_id: unit.id, is_active: true, is_schedulable: true, name: 'Ana', availability: { mon: [{ start: '09:00', end: '12:00' }] } },
+        { id: 'emp-b', unit_id: unit.id, is_active: true, is_schedulable: true, name: 'Bia', availability: { mon: [{ start: '13:00', end: '17:00' }] } },
+      ],
+      employee_service_skills: [{ employee_id: 'emp-b', service_id: 'svc-1' }],
+      appointments: [],
+    })
+    const configuredUnit = {
+      ...unit,
+      business_hours: { mon: [{ start: '08:00', end: '18:00' }] },
+      scheduling_settings: { max_advance_days: 365, min_notice_minutes: 0, slot_interval_minutes: 60 },
+    }
+    const slots = await computeSlotsForService(supabase, configuredUnit, service, '2027-01-04')
+    expect(slots.length).toBeGreaterThan(0)
+    expect(slots.every((slot) => slot.employee_id === 'emp-b' && slot.employee_name === 'Bia')).toBe(true)
+    expect(listSlotsText(slots, configuredUnit, 'pt')).toContain('13:00')
+    expect(listSlotsText(slots, configuredUnit, 'pt')).not.toContain('09:00')
+  })
+})
+
 // Fase 7 (guarda contra invenção, docs/ux-audit-fase1-2026-08-19.md):
 // nunca confirmar cancelamento/reagendamento sem persistência
 // bem-sucedida. Achado ao auditar os 3 irmãos de escrita em
@@ -263,9 +288,57 @@ describe('executeBooking — reage certo quando o INSERT falha (ex.: trigger de 
 
   it('quando o INSERT funciona, confirma normalmente (status "success", nada em system_events)', async () => {
     const { supabase, db } = createFakeSupabase({})
-    const result = await executeBooking(supabase, unit, 'cust-1', service, slot, 'pt')
+    const assignedSlot = { ...slot, employee_id: 'emp-1', employee_name: 'Profissional Teste' }
+    const result = await executeBooking(supabase, unit, 'cust-1', service, assignedSlot, 'pt')
     expect(result.status).toBe('success')
     expect(result.context).toMatch(/agendamento confirmado/i)
+    expect(db.appointments?.[0]?.employee_id).toBe('emp-1')
     expect(db.system_events ?? []).toHaveLength(0)
+  })
+})
+
+describe('ciclo completo da REC — serviço, profissional, agendar, remarcar e cancelar', () => {
+  it('mantém o profissional atribuído durante todo o ciclo e nunca confirma uma gravação que falhou', async () => {
+    const service = makeService({ id: 'svc-completo', name: 'Consulta completa', duration_minutes: 60 })
+    const firstSlot: AvailableSlot = {
+      starts_at: '2026-12-07T14:00:00.000Z',
+      ends_at: '2026-12-07T15:00:00.000Z',
+      employee_id: 'emp-completo',
+      employee_name: 'Profissional Completo',
+    }
+    const { supabase, db } = createFakeSupabase({
+      customers: [{ id: 'cust-completo', name: 'Cliente Teste', phone: '5511999999999', email: 'teste@example.com' }],
+      services: [service],
+    })
+
+    const booked = await executeBooking(supabase, unit, 'cust-completo', service, firstSlot, 'pt')
+    expect(booked.status).toBe('success')
+    const row = db.appointments![0] as Record<string, unknown>
+    expect(row.service_id).toBe(service.id)
+    expect(row.employee_id).toBe('emp-completo')
+    expect(row.source).toBe('receptionist_chat')
+
+    const upcoming: UpcomingAppointment = {
+      id: String(row.id),
+      starts_at: String(row.starts_at),
+      ends_at: String(row.ends_at),
+      service_id: service.id,
+      service_name: service.name,
+      employee_id: 'emp-completo',
+      address: null,
+    }
+    const secondSlot: AvailableSlot = {
+      starts_at: '2026-12-08T16:00:00.000Z',
+      ends_at: '2026-12-08T17:00:00.000Z',
+      employee_id: 'emp-completo',
+      employee_name: 'Profissional Completo',
+    }
+    expect((await executeReschedule(supabase, unit, upcoming, secondSlot, 'pt')).status).toBe('success')
+    expect(row.starts_at).toBe(secondSlot.starts_at)
+    expect(row.employee_id).toBe('emp-completo')
+
+    expect((await executeCancelAppointment(supabase, unit, { ...upcoming, starts_at: secondSlot.starts_at, ends_at: secondSlot.ends_at }, 'pt')).status).toBe('success')
+    expect(row.status).toBe('cancelled')
+    expect(row.cancelled_at).toBeTruthy()
   })
 })

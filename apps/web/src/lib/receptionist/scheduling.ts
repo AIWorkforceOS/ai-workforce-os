@@ -20,18 +20,12 @@ import type { UpcomingAppointment } from './types'
 // (lib/scheduling.ts) da tela de calendário — nunca reimplementa o
 // cálculo de disponibilidade.
 //
-// Decisão consciente de escopo (limitação, avisada ao Dispatch): sem
-// atribuição de profissional/recurso. O agendamento criado/remarcado
-// pela conversa sempre fica com employee_id/resource_id nulos —
-// campos opcionais no schema (migration 026) — e a checagem de
-// colisão/capacidade é feita por unidade+serviço (não por
-// profissional). Isso é seguro (nunca deixa dois agendamentos do
-// mesmo serviço além da capacidade configurada), mas é mais
-// conservador do que a agenda manual: se dois serviços diferentes são
-// feitos pela mesma pessoa, a IA não sabe disso e pode oferecer os
-// dois no mesmo horário. Atribuir profissional automaticamente por
-// conversa fica para quando houver um critério de escolha (rodízio,
-// preferência do cliente) — não inventado aqui.
+// A REC só oferece horários de profissionais ativos e marcados como
+// agendáveis. A grade efetiva é a interseção entre o funcionamento da
+// unidade e a disponibilidade individual. Quando existem vínculos de
+// serviço por profissional, somente quem executa aquele serviço entra
+// na seleção; sem vínculo cadastrado, preservamos compatibilidade e
+// consideramos todos os profissionais agendáveis da unidade.
 
 const ACTIVE_APPOINTMENT_STATUSES: AppointmentStatus[] = ['scheduled', 'confirmed']
 
@@ -124,25 +118,56 @@ export async function computeSlotsForService(
   const dayStartUtc = zonedTimeToUtc(dateStr, '00:00', unit.timezone).toISOString()
   const dayEndUtc = zonedTimeToUtc(addDays(dateStr, 1), '00:00', unit.timezone).toISOString()
 
-  const { data } = await supabase
+  const [{ data: employeesData }, { data: skillData }, { data: appointmentsData }] = await Promise.all([
+    supabase
+      .from('employees')
+      .select('id, name, availability')
+      .eq('unit_id', unit.id)
+      .eq('is_active', true)
+      .eq('is_schedulable', true)
+      .order('name'),
+    supabase
+      .from('employee_service_skills')
+      .select('employee_id')
+      .eq('service_id', service.id),
+    supabase
     .from('appointments')
-    .select('id, starts_at, ends_at, status')
+    .select('id, employee_id, starts_at, ends_at, status')
     .eq('unit_id', unit.id)
-    .eq('service_id', service.id)
     .gte('starts_at', dayStartUtc)
-    .lt('starts_at', dayEndUtc)
+      .lt('starts_at', dayEndUtc),
+  ])
 
-  type Row = SlotEngineAppointment & { id: string }
-  const existingAppointments = ((data as Row[] | null) ?? []).filter((a) => a.id !== excludeAppointmentId)
+  type EmployeeRow = { id: string; name: string; availability: Unit['business_hours'] }
+  type Row = SlotEngineAppointment & { id: string; employee_id: string | null }
+  const employees = (employeesData as EmployeeRow[] | null) ?? []
+  const skilledIds = new Set(((skillData as { employee_id: string }[] | null) ?? []).map((row) => row.employee_id))
+  const candidates = skilledIds.size > 0 ? employees.filter((employee) => skilledIds.has(employee.id)) : employees
+  const appointments = ((appointmentsData as Row[] | null) ?? []).filter((appointment) => appointment.id !== excludeAppointmentId)
 
-  return getAvailableSlots({
-    date: dateStr,
-    timezone: unit.timezone,
-    businessHours: getBusinessHours(unit),
-    schedulingSettings: getSchedulingSettings(unit),
-    service,
-    existingAppointments,
+  const slots = candidates.flatMap((employee) => {
+    const employeeAppointments = appointments.filter((appointment) => appointment.employee_id === employee.id)
+    return getAvailableSlots({
+      date: dateStr,
+      timezone: unit.timezone,
+      businessHours: getBusinessHours(unit),
+      schedulingSettings: getSchedulingSettings(unit),
+      service,
+      employeeAvailability: employee.availability,
+      existingAppointments: employeeAppointments,
+    }).map((slot) => ({ ...slot, employee_id: employee.id, employee_name: employee.name }))
   })
+
+  // Um horário aparece uma vez para o cliente. Se mais de um profissional
+  // estiver livre, o desempate por quantidade de compromissos distribui a
+  // agenda; nome torna o resultado determinístico em empate.
+  return [...slots]
+    .sort((a, b) => {
+      const loadA = appointments.filter((appointment) => appointment.employee_id === a.employee_id).length
+      const loadB = appointments.filter((appointment) => appointment.employee_id === b.employee_id).length
+      return a.starts_at.localeCompare(b.starts_at) || loadA - loadB || (a.employee_name ?? '').localeCompare(b.employee_name ?? '')
+    })
+    .filter((slot, index, all) => index === 0 || all[index - 1]!.starts_at !== slot.starts_at)
 }
 
 function localTimeHHMM(iso: string, unit: Unit): string {
@@ -247,7 +272,7 @@ export async function executeReschedule(
 ): Promise<ActionOutcome> {
   const { error } = await supabase
     .from('appointments')
-    .update({ starts_at: slot.starts_at, ends_at: slot.ends_at, rescheduled_notified_at: null })
+    .update({ starts_at: slot.starts_at, ends_at: slot.ends_at, employee_id: slot.employee_id ?? appointment.employee_id, rescheduled_notified_at: null })
     .eq('id', appointment.id)
 
   // Mesma guarda contra invenção do cancelamento acima: nunca confirmar
@@ -275,7 +300,7 @@ export async function executeReschedule(
   }
 }
 
-/** Cria um agendamento novo direto pela conversa. Sem profissional/recurso atribuído — ver nota de escopo no topo do arquivo. */
+/** Cria um agendamento novo direto pela conversa, já atribuído ao profissional do slot escolhido. */
 export async function executeBooking(
   supabase: SupabaseClient,
   unit: Unit,
@@ -296,6 +321,7 @@ export async function executeBooking(
     unit_id: unit.id,
     customer_id: customerId,
     service_id: service.id,
+    employee_id: slot.employee_id ?? null,
     starts_at: slot.starts_at,
     ends_at: slot.ends_at,
     source: 'receptionist_chat',

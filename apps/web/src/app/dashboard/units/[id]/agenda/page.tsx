@@ -14,11 +14,12 @@ export default async function UnitAgendaPage({ params }: { params: Promise<{ id:
   const { id } = await params
   const supabase = await createClient()
 
-  const [{ data: unit }, { data: services }, { data: resources }, { data: employees }] = await Promise.all([
+  const [{ data: unit }, { data: services }, { data: resources }, { data: employees }, { data: employeeSkills }] = await Promise.all([
     supabase.from('units').select('*').eq('id', id).single(),
     supabase.from('services').select('*').eq('unit_id', id).order('created_at', { ascending: false }),
     supabase.from('resources').select('*').eq('unit_id', id).order('created_at', { ascending: false }),
     supabase.from('employees').select('*').eq('unit_id', id).eq('is_active', true).order('name'),
+    supabase.from('employee_service_skills').select('employee_id, service_id').eq('unit_id', id),
   ])
 
   if (!unit) {
@@ -71,7 +72,11 @@ export default async function UnitAgendaPage({ params }: { params: Promise<{ id:
 
       <div className="flex flex-col gap-3">
         <SectionLabel>Profissionais e disponibilidade</SectionLabel>
-        <EmployeeSchedulingPanel initialEmployees={employeesRows} />
+        <EmployeeSchedulingPanel
+          initialEmployees={employeesRows}
+          services={servicesRows}
+          initialServiceIdsByEmployee={Object.fromEntries(employeesRows.map((employee) => [employee.id, ((employeeSkills ?? []) as { employee_id: string; service_id: string }[]).filter((row) => row.employee_id === employee.id).map((row) => row.service_id)]))}
+        />
       </div>
     </div>
   )

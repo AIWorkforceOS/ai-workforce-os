@@ -58,6 +58,10 @@
       "schedule": "0 17 * * *"
     },
     {
+      "path": "/api/cron/provider-budget-alerts",
+      "schedule": "15 17 * * *"
+    },
+    {
       "path": "/api/cron/facilit-sync",
       "schedule": "0 14 * * *"
     },

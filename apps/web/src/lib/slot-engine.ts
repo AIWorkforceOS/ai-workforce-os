@@ -23,7 +23,13 @@ const INACTIVE_STATUSES: AppointmentStatus[] = ['cancelled', 'no_show']
 
 export type SlotEngineAppointment = Pick<Appointment, 'starts_at' | 'ends_at' | 'status'>
 
-export type AvailableSlot = { starts_at: string; ends_at: string }
+export type AvailableSlot = {
+  starts_at: string
+  ends_at: string
+  /** Preenchido quando o slot foi calculado para um profissional específico. */
+  employee_id?: string
+  employee_name?: string
+}
 
 export type SlotEngineInput = {
   /** Data-calendário local (fuso da unidade), formato 'YYYY-MM-DD'. */

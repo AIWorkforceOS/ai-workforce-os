@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { AlertTriangle, CheckCircle2, HeartPulse, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ExternalLink, HeartPulse, XCircle } from 'lucide-react'
 import { getAppUser } from '@/lib/app-user'
 import { createClient } from '@/lib/supabase/server'
 import { getIntegrationsConfigStatus } from '@/lib/integrations'
@@ -32,8 +32,9 @@ export default async function SystemHealthPage() {
   const rows = (events ?? []) as EventRow[]
   const integrations = getIntegrationsConfigStatus()
   const unitRows = (units ?? []) as { id: string; name: string; whatsapp_phone: string | null }[]
-  const costs = ((usage ?? []) as { provider: string; estimated_cost_usd: number | null }[]).reduce(
-    (sum, row) => sum + Number(row.estimated_cost_usd ?? 0), 0,
+  const costsByProvider = ((usage ?? []) as { provider: string; estimated_cost_usd: number | null }[]).reduce<Record<string, number>>(
+    (sum, row) => ({ ...sum, [row.provider]: (sum[row.provider] ?? 0) + Number(row.estimated_cost_usd ?? 0) }),
+    {},
   )
   const groups = rows.reduce<Record<string, { count: number; last: EventRow }>>((acc, event) => {
     const key = event.source
@@ -57,8 +58,29 @@ export default async function SystemHealthPage() {
         <Metric label="Integrações configuradas" value={`${integrations.filter((item) => item.configured).length}/${integrations.length}`} ok={integrations.every((item) => item.configured)} />
         <Metric label="WhatsApps cadastrados" value={`${unitRows.filter((unit) => unit.whatsapp_phone).length}/${unitRows.length}`} ok={unitRows.length > 0 && unitRows.every((unit) => unit.whatsapp_phone)} />
         <Metric label="Falhas em 7 dias" value={String(rows.length)} ok={rows.length === 0} />
-        <Metric label="Custo de IA em 7 dias" value={`US$ ${costs.toFixed(2)}`} ok />
+        <Metric label="Custo de IA em 7 dias" value={`US$ ${(costsByProvider.openai ?? 0).toFixed(2)}`} ok />
+        <Metric label="Google Maps em 7 dias" value={`US$ ${(costsByProvider.google_maps ?? 0).toFixed(2)}`} ok />
       </div>
+
+      <section className="rounded-2xl border border-white/10 bg-[#141a2b] p-5">
+        <h2 className="text-sm font-black text-white">Pagamentos e saldo das integrações</h2>
+        <p className="mt-1 text-xs text-slate-400">Os valores abaixo são estimativas registradas pelo Alizo. Saldo, créditos e forma de pagamento oficiais ficam no painel de cada fornecedor.</p>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <ProviderCostCard
+            name="OpenAI — inteligência artificial"
+            value={costsByProvider.openai ?? 0}
+            href="https://platform.openai.com/settings/organization/billing/overview"
+            linkLabel="Abrir pagamentos da OpenAI"
+          />
+          <ProviderCostCard
+            name="Google Maps — prospecção"
+            value={costsByProvider.google_maps ?? 0}
+            href="https://console.cloud.google.com/billing"
+            linkLabel="Abrir pagamentos do Google Maps"
+          />
+        </div>
+        <p className="mt-3 text-[11px] text-slate-500">Avisos por e-mail são enviados quando o gasto mensal estimado atinge 80% do limite configurado no servidor.</p>
+      </section>
 
       <section className="rounded-2xl border border-white/10 bg-[#141a2b] p-5">
         <h2 className="flex items-center gap-2 text-sm font-black text-white"><HeartPulse size={16} className="text-cyan-400" /> Dependências essenciais</h2>
@@ -104,6 +126,19 @@ export default async function SystemHealthPage() {
           ))}
         </div>
       </section>
+    </div>
+  )
+}
+
+function ProviderCostCard({ name, value, href, linkLabel }: { name: string; value: number; href: string; linkLabel: string }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+      <p className="text-xs font-bold text-white">{name}</p>
+      <p className="mt-2 text-xl font-black text-cyan-300">US$ {value.toFixed(2)}</p>
+      <p className="text-[10px] text-slate-500">uso estimado nos últimos 7 dias</p>
+      <a href={href} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-cyan-400 hover:text-cyan-300">
+        {linkLabel} <ExternalLink size={12} />
+      </a>
     </div>
   )
 }
