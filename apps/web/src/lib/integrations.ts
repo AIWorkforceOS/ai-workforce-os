@@ -13,6 +13,7 @@ export type IntegrationKey =
   | 'meta_ads'
   | 'meta_business_manager'
   | 'meta_app_oauth'
+  | 'meta_whatsapp'
   | 'google_ads'
   | 'smarter_candidates'
 
@@ -96,6 +97,17 @@ export function getIntegrationsConfigStatus(): IntegrationConfigStatus[] {
       configured: has('CRON_SECRET'),
       detail: 'Protege /api/cron/follow-up (Vercel envia automaticamente quando CRON_SECRET está definido). Env: CRON_SECRET',
       testable: false,
+    },
+    {
+      key: 'meta_whatsapp',
+      label: 'Meta WhatsApp oficial',
+      configured:
+        has('META_WHATSAPP_ACCESS_TOKEN') &&
+        has('META_WHATSAPP_VERIFY_TOKEN') &&
+        has('META_WHATSAPP_APP_SECRET'),
+      detail:
+        'Canal oficial da Meta: envio, recebimento e validação segura do webhook. Env: META_WHATSAPP_ACCESS_TOKEN + META_WHATSAPP_VERIFY_TOKEN + META_WHATSAPP_APP_SECRET',
+      testable: true,
     },
     {
       key: 'meta_ads',

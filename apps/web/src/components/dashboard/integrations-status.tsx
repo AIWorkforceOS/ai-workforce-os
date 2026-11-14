@@ -15,6 +15,72 @@ const LEVEL_STYLE: Record<string, { bg: string; border: string; color: string }>
   info: { bg: 'rgba(59,130,246,0.07)', border: '1px solid rgba(59,130,246,0.15)', color: '#60a5fa' },
 }
 
+function budgetLabel(name: string): string {
+  const raw = process.env[name]?.trim()
+  if (!raw) return 'Limite mensal não definido'
+  const value = Number(raw)
+  if (!Number.isFinite(value) || value <= 0) return 'Limite mensal inválido'
+  return `Limite: US$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/mês`
+}
+
+/**
+ * Indicadores críticos no topo da home do super admin. O checklist completo
+ * continua no fim da página; aqui ficam os serviços que podem parar a operação.
+ */
+export function EssentialIntegrationsStrip() {
+  const statuses = getIntegrationsConfigStatus()
+  const wanted = ['openai', 'google_maps', 'meta_whatsapp', 'evolution'] as const
+  const byKey = new Map(statuses.map((status) => [status.key, status]))
+  const items = wanted.flatMap((key) => {
+    const status = byKey.get(key)
+    if (!status) return []
+    const sub = key === 'openai'
+      ? budgetLabel('OPENAI_MONTHLY_BUDGET_USD')
+      : key === 'google_maps'
+        ? budgetLabel('GOOGLE_MAPS_MONTHLY_BUDGET_USD')
+        : key === 'meta_whatsapp'
+          ? 'Configuração técnica; aprovação da Meta é acompanhada separadamente'
+          : 'Canal alternativo do WhatsApp'
+    return [{ ...status, sub }]
+  })
+
+  return (
+    <section aria-labelledby="essential-integrations-title">
+      <div className="mb-3 flex items-end justify-between gap-3">
+        <div>
+          <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-500">operação crítica</p>
+          <h2 id="essential-integrations-title" className="text-sm font-bold text-white">Serviços essenciais</h2>
+        </div>
+        <p className="text-[10px] text-slate-500">Sem exibir chaves ou dados sensíveis</p>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {items.map((item) => (
+          <div
+            key={item.key}
+            className="rounded-2xl p-4"
+            style={{
+              background: item.configured ? 'rgba(34,197,94,0.07)' : 'rgba(239,68,68,0.07)',
+              border: item.configured ? '1px solid rgba(34,197,94,0.2)' : '1px solid rgba(239,68,68,0.22)',
+            }}
+            title={item.detail}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <p className="truncate text-xs font-bold text-white">{item.label}</p>
+              {item.configured
+                ? <CheckCircle2 size={15} className="flex-shrink-0 text-green-400" />
+                : <XCircle size={15} className="flex-shrink-0 text-red-400" />}
+            </div>
+            <p className={`mt-2 text-[11px] font-bold ${item.configured ? 'text-green-400' : 'text-red-400'}`}>
+              {item.configured ? 'Configurado' : 'Ação necessária'}
+            </p>
+            <p className="mt-1 text-[10px] text-slate-500">{item.sub}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 /**
  * Saúde das integrações + últimos eventos de sistema.
  * - super_admin: vê o checklist de env vars da plataforma + botão de teste ao vivo

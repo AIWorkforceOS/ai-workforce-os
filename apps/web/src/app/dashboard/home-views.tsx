@@ -7,7 +7,7 @@ import { daysAgo, startOfMonth } from '@/lib/admin-metrics'
 import { loadTodayPendencies } from '@/lib/dashboard/load-pendencies'
 import { relativeTimeFromNow, type Pendency } from '@/lib/dashboard/pendencies'
 import { LeadsByDayChart } from '@/components/dashboard/leads-by-day-chart'
-import { IntegrationsStatusCard } from '@/components/dashboard/integrations-status'
+import { EssentialIntegrationsStrip, IntegrationsStatusCard } from '@/components/dashboard/integrations-status'
 import {
   AlertBanner,
   Badge,
@@ -723,6 +723,9 @@ export async function AdminHome({ firstName }: { firstName: string }) {
           <KpiCard key={label} label={label} value={value} sub={sub} gradient={grad} />
         ))}
       </div>
+
+      {/* Sempre visível no início: IA, Maps e canais do WhatsApp sustentam a operação inteira. */}
+      <EssentialIntegrationsStrip />
 
       {/* Erros de integração nas últimas 24h */}
       {errors24h > 0 && (

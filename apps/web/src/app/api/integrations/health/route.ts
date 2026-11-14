@@ -73,6 +73,7 @@ export async function POST() {
   const evolutionKey = process.env.EVOLUTION_API_KEY
   const resendKey = process.env.RESEND_API_KEY
   const googleMapsKey = process.env.GOOGLE_MAPS_API_KEY
+  const metaWhatsappToken = process.env.META_WHATSAPP_ACCESS_TOKEN
 
   const results = await Promise.all([
     check('openai', 'OpenAI', Boolean(openaiKey), () =>
@@ -91,6 +92,11 @@ export async function POST() {
       }),
     ),
     checkGoogleMaps(googleMapsKey),
+    check('meta_whatsapp', 'Meta WhatsApp oficial', Boolean(metaWhatsappToken), () =>
+      fetchWithTimeout('https://graph.facebook.com/v25.0/me?fields=id', {
+        headers: { Authorization: `Bearer ${metaWhatsappToken}` },
+      }),
+    ),
   ])
 
   return NextResponse.json({ results })
