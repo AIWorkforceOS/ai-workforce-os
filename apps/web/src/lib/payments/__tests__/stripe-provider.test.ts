@@ -42,6 +42,24 @@ describe('StripeProvider — verifyWebhookSignature', () => {
     const header = signedHeader(rawBody, 'whsec_test')
     expect(provider.verifyWebhookSignature(rawBody, new Headers({ 'stripe-signature': header }))).toBe(true)
   })
+
+  it('rejeita replay com assinatura válida fora da tolerância de cinco minutos', () => {
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test'
+    const provider = createStripeProvider('')
+    const rawBody = '{"id":"evt_antigo"}'
+    const sixMinutesAgo = Math.floor(Date.now() / 1000) - 6 * 60
+    const header = signedHeader(rawBody, 'whsec_test', sixMinutesAgo)
+    expect(provider.verifyWebhookSignature(rawBody, new Headers({ 'stripe-signature': header }))).toBe(false)
+  })
+
+  it('aceita uma assinatura válida entre múltiplas v1 durante rotação de segredo', () => {
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test'
+    const provider = createStripeProvider('')
+    const rawBody = '{"id":"evt_rotacao"}'
+    const valid = signedHeader(rawBody, 'whsec_test')
+    const header = `${valid},v1=${'0'.repeat(64)}`
+    expect(provider.verifyWebhookSignature(rawBody, new Headers({ 'stripe-signature': header }))).toBe(true)
+  })
 })
 
 describe('StripeProvider — parseWebhookEvent', () => {

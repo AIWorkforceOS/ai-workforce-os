@@ -27,27 +27,43 @@ type KaiTaskRow = {
   created_at: string
 }
 
+type ActiveAgentRow = {
+  id: string
+  unit_id: string
+  agent_type: string
+  persona_name: string
+  certification_status: string
+  certification_issues: string[] | null
+  unit: { name: string } | { name: string }[] | null
+}
+
+function relatedUnitName(unit: ActiveAgentRow['unit']): string {
+  if (Array.isArray(unit)) return unit[0]?.name ?? 'Unidade não identificada'
+  return unit?.name ?? 'Unidade não identificada'
+}
+
 export default async function SystemHealthPage() {
   const appUser = await getAppUser()
   if (!appUser?.isSuperAdmin) redirect('/dashboard')
   const supabase = await createClient()
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
-  const [{ data: events }, { data: gateways }, { data: units }, { data: usage }, { data: kaiTasks }, { data: agentConfigs }] = await Promise.all([
+  const [{ data: events }, { data: gateways }, { data: units }, { data: usage }, { data: kaiTasks, error: kaiTasksError }, { data: agentConfigs }] = await Promise.all([
     supabase.from('system_events').select('id, level, source, event_type, message, created_at').in('level', ['warning', 'error']).gte('created_at', since).order('created_at', { ascending: false }).limit(100),
     supabase.from('payment_gateway_settings').select('provider, region, is_active').order('region'),
     supabase.from('units').select('id, name, is_active, whatsapp_phone').eq('is_active', true),
     supabase.from('api_usage_events').select('provider, estimated_cost_usd').gte('created_at', since).limit(20000),
     supabase.from('kai_tasks').select('id, kind, title, description, status, priority, due_at, created_at').in('status', ['open', 'in_progress', 'waiting_human']).order('priority').order('created_at', { ascending: false }).limit(100),
-    supabase.from('agent_configs').select('id, is_active, certification_status').eq('is_active', true),
+    supabase.from('agent_configs').select('id, unit_id, agent_type, persona_name, certification_status, certification_issues, unit:units(name)').eq('is_active', true),
   ])
 
   const rows = (events ?? []) as EventRow[]
   const integrations = getIntegrationsConfigStatus()
   const unitRows = (units ?? []) as { id: string; name: string; whatsapp_phone: string | null }[]
   const taskRows = (kaiTasks ?? []) as KaiTaskRow[]
-  const activeConfigs = (agentConfigs ?? []) as { id: string; certification_status: string }[]
+  const activeConfigs = (agentConfigs ?? []) as unknown as ActiveAgentRow[]
   const certifiedConfigs = activeConfigs.filter((config) => config.certification_status === 'ready')
+  const uncertifiedConfigs = activeConfigs.filter((config) => config.certification_status !== 'ready')
   const costsByProvider = ((usage ?? []) as { provider: string; estimated_cost_usd: number | null }[]).reduce<Record<string, number>>(
     (sum, row) => ({ ...sum, [row.provider]: (sum[row.provider] ?? 0) + Number(row.estimated_cost_usd ?? 0) }),
     {},
@@ -77,14 +93,36 @@ export default async function SystemHealthPage() {
         <Metric label="Custo de IA em 7 dias" value={`US$ ${(costsByProvider.openai ?? 0).toFixed(2)}`} ok />
         <Metric label="Google Maps em 7 dias" value={`US$ ${(costsByProvider.google_maps ?? 0).toFixed(2)}`} ok />
         <Metric label="Funcionários certificados" value={`${certifiedConfigs.length}/${activeConfigs.length}`} ok={activeConfigs.length > 0 && certifiedConfigs.length === activeConfigs.length} />
-        <Metric label="Pendências da Kai" value={String(taskRows.length)} ok={taskRows.length === 0} />
+        <Metric label="Pendências da Kai" value={kaiTasksError ? 'migration pendente' : String(taskRows.length)} ok={!kaiTasksError && taskRows.length === 0} />
       </div>
+
+      <section className="rounded-2xl border border-white/10 bg-[#141a2b] p-5">
+        <h2 className="text-sm font-black text-white">Certificação dos funcionários digitais</h2>
+        <p className="mt-1 text-xs text-slate-400">Funcionários legados continuam atendendo, mas precisam concluir os cenários antes do lançamento comercial.</p>
+        <div className="mt-4 space-y-2">
+          {uncertifiedConfigs.length === 0 ? (
+            <p className="text-sm text-green-400">Todos os funcionários ativos estão certificados.</p>
+          ) : uncertifiedConfigs.map((config) => (
+            <div key={config.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-3">
+              <div>
+                <p className="text-xs font-bold text-white">{config.persona_name} · {relatedUnitName(config.unit)}</p>
+                <p className="mt-1 text-[11px] text-amber-200">{config.certification_issues?.[0] ?? 'Executar e aprovar os cenários de teste.'}</p>
+              </div>
+              <a href={`/dashboard/equipe-digital/${config.id}/testar`} className="rounded-lg bg-cyan-500/15 px-3 py-2 text-xs font-bold text-cyan-300 hover:bg-cyan-500/25">
+                Testar e certificar
+              </a>
+            </div>
+          ))}
+        </div>
+      </section>
 
       <section className="rounded-2xl border border-white/10 bg-[#141a2b] p-5">
         <h2 className="text-sm font-black text-white">Supervisão central da Kai</h2>
         <p className="mt-1 text-xs text-slate-400">Pendências operacionais abertas automaticamente, sem permitir que a IA execute reparos ou amplie permissões sozinha.</p>
         <div className="mt-4 space-y-2">
-          {taskRows.length === 0 ? (
+          {kaiTasksError ? (
+            <p className="rounded-xl border border-red-500/20 bg-red-500/[0.06] p-3 text-sm text-red-300">A fila central da Kai ainda não está instalada no banco. Aplique a migration de prontidão antes do lançamento.</p>
+          ) : taskRows.length === 0 ? (
             <p className="text-sm text-green-400">Nenhuma pendência operacional aberta.</p>
           ) : taskRows.map((task) => (
             <div key={task.id} className={`rounded-xl border p-3 ${task.priority === 'critical' ? 'border-red-500/25 bg-red-500/[0.07]' : 'border-amber-500/20 bg-amber-500/[0.06]'}`}>

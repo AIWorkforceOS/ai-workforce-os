@@ -17,6 +17,7 @@ import type { ChargeInput, ChargeResult, PaymentProvider, PaymentWebhookEvent, P
  */
 
 const STRIPE_BASE = 'https://api.stripe.com/v1'
+const STRIPE_WEBHOOK_TOLERANCE_SECONDS = 5 * 60
 
 const EVENT_MAP: Record<string, PaymentWebhookEventType> = {
   'checkout.session.completed': 'payment_success',
@@ -129,23 +130,22 @@ export function createStripeProvider(secretKey: string): PaymentProvider {
       const secret = process.env.STRIPE_WEBHOOK_SECRET
       if (!sigHeader || !secret) return false
 
-      const parts = Object.fromEntries(
-        sigHeader.split(',').map((p) => {
-          const [k, v] = p.split('=')
-          return [k, v]
-        }),
-      )
-      const timestamp = parts.t
-      const signature = parts.v1
-      if (!timestamp || !signature) return false
+      const parts = sigHeader.split(',').map((part) => part.trim().split('=', 2) as [string, string])
+      const timestamp = parts.find(([key]) => key === 't')?.[1]
+      const signatures = parts.filter(([key]) => key === 'v1').map(([, value]) => value)
+      const timestampNumber = Number(timestamp)
+      if (!timestamp || signatures.length === 0 || !Number.isFinite(timestampNumber)) return false
+      if (Math.abs(Math.floor(Date.now() / 1000) - timestampNumber) > STRIPE_WEBHOOK_TOLERANCE_SECONDS) return false
 
       const signedPayload = `${timestamp}.${rawBody}`
       const expected = createHmac('sha256', secret).update(signedPayload).digest('hex')
-      try {
-        return timingSafeEqual(Buffer.from(expected), Buffer.from(signature))
-      } catch {
-        return false
-      }
+      return signatures.some((signature) => {
+        try {
+          return timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(signature, 'hex'))
+        } catch {
+          return false
+        }
+      })
     },
 
     parseWebhookEvent(rawBody: string): PaymentWebhookEvent | null {
