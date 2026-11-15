@@ -43,7 +43,35 @@
     },
     {
       "path": "/api/cron/whatsapp-health-check",
-      "schedule": "0 14 * * *"
+      "schedule": "0 17 * * *"
+    },
+    {
+      "path": "/api/cron/manager-agenda-digest",
+      "schedule": "30 9 * * *"
+    },
+    {
+      "path": "/api/cron/receptionist-care",
+      "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/cron/provider-budget-alerts",
+      "schedule": "15 17 * * *"
+    },
+    {
+      "path": "/api/cron/facilit-sync",
+      "schedule": "0 12,14,16,18,20,22 * * *"
+    },
+    {
+      "path": "/api/cron/db-backup",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/quote-jobs",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/kai-supervisor",
+      "schedule": "*/10 * * * *"
     }
   ]
 }

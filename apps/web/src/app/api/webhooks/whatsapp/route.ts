@@ -94,14 +94,20 @@ async function analyzeInboundImage(params: {
   const apiKey = getOpenAIApiKey()
   const messagingChannel = getMessagingChannel(unit, null, evolutionConfig)
 
-  const fail = async (eventType: string, message: string) => {
+  const fail = async (
+    eventType: string,
+    message: string,
+    source: 'evolution' | 'openai' = 'openai',
+    metadata: Record<string, unknown> = {},
+  ) => {
     await logSystemEvent(supabase, {
       level: 'error',
-      source: 'openai',
+      source,
       eventType,
       message,
       orgId: unit.org_id,
       unitId: unit.id,
+      metadata: { message_id: messageId, declared_mime_type: mimeType, ...metadata },
     })
     if (messagingChannel) {
       try {
@@ -122,21 +128,35 @@ async function analyzeInboundImage(params: {
     )
   }
 
+  let media: Awaited<ReturnType<typeof getBase64FromMediaMessage>>
   try {
-    const media = await getBase64FromMediaMessage(evolutionConfig, messageId)
-    if (!media) {
-      return fail(
-        'image_analysis_failed',
-        `Imagem recebida na unidade "${unit.name}" mas a Evolution API não devolveu o conteúdo (mensagem "${messageId}").`,
-      )
-    }
+    media = await getBase64FromMediaMessage(evolutionConfig, messageId)
+  } catch (error) {
+    return fail(
+      'image_media_download_failed',
+      `A Evolution API não conseguiu entregar a imagem na unidade "${unit.name}": ${error instanceof Error ? error.message : String(error)}`,
+      'evolution',
+      { stage: 'download' },
+    )
+  }
+  if (!media) {
+    return fail(
+      'image_media_download_failed',
+      `A Evolution API não devolveu o conteúdo da imagem na unidade "${unit.name}".`,
+      'evolution',
+      { stage: 'download', empty_response: true },
+    )
+  }
 
+  try {
     const cleanBase64 = cleanMediaBase64(media.base64)
     const imageBytes = Buffer.byteLength(cleanBase64, 'base64')
     if (imageBytes <= 0 || imageBytes > MAX_INBOUND_IMAGE_BYTES) {
       return fail(
         'image_analysis_rejected',
         `Imagem recebida na unidade "${unit.name}" tem tamanho inválido para análise (${imageBytes} bytes).`,
+        'openai',
+        { stage: 'validation', image_bytes: imageBytes },
       )
     }
 
@@ -185,6 +205,8 @@ async function analyzeInboundImage(params: {
     return fail(
       'image_analysis_failed',
       `Falha ao analisar imagem na unidade "${unit.name}": ${error instanceof Error ? error.message : String(error)}`,
+      'openai',
+      { stage: 'analysis', provider_mime_type: media.mimetype ?? null },
     )
   }
 }
@@ -209,14 +231,20 @@ async function transcribeInboundAudio(params: {
   const openaiKey = getOpenAIApiKey()
   const messagingChannel = getMessagingChannel(unit, null, evolutionConfig)
 
-  const fail = async (eventType: string, message: string) => {
+  const fail = async (
+    eventType: string,
+    message: string,
+    source: 'evolution' | 'openai' = 'openai',
+    metadata: Record<string, unknown> = {},
+  ) => {
     await logSystemEvent(supabase, {
       level: 'error',
-      source: 'openai',
+      source,
       eventType,
       message,
       orgId: unit.org_id,
       unitId: unit.id,
+      metadata: { message_id: messageId, declared_mime_type: mimeType, ...metadata },
     })
     if (messagingChannel) {
       try {
@@ -237,18 +265,32 @@ async function transcribeInboundAudio(params: {
     )
   }
 
+  let media: Awaited<ReturnType<typeof getBase64FromMediaMessage>>
   try {
-    const media = await getBase64FromMediaMessage(evolutionConfig, messageId)
-    if (!media) {
-      return fail(
-        'audio_transcription_failed',
-        `Áudio recebido na unidade "${unit.name}" mas a Evolution API não devolveu o conteúdo (mensagem "${messageId}").`,
-      )
-    }
+    media = await getBase64FromMediaMessage(evolutionConfig, messageId)
+  } catch (error) {
+    return fail(
+      'audio_media_download_failed',
+      `A Evolution API não conseguiu entregar o áudio na unidade "${unit.name}": ${error instanceof Error ? error.message : String(error)}`,
+      'evolution',
+      { stage: 'download' },
+    )
+  }
+  if (!media) {
+    return fail(
+      'audio_media_download_failed',
+      `A Evolution API não devolveu o conteúdo do áudio na unidade "${unit.name}".`,
+      'evolution',
+      { stage: 'download', empty_response: true },
+    )
+  }
 
+  try {
+    const cleanBase64 = cleanMediaBase64(media.base64)
+    const audioBytes = Buffer.byteLength(cleanBase64, 'base64')
     const { text, durationSeconds } = await transcribeAudio({
       apiKey: openaiKey,
-      base64Audio: cleanMediaBase64(media.base64),
+      base64Audio: cleanBase64,
       mimeType: (media.mimetype ?? mimeType).split(';')[0] || 'audio/ogg',
     })
 
@@ -267,7 +309,7 @@ async function transcribeInboundAudio(params: {
       message: `Áudio transcrito na unidade "${unit.name}" (${durationSeconds.toFixed(1)}s).`,
       orgId: unit.org_id,
       unitId: unit.id,
-      metadata: { duration_seconds: durationSeconds },
+      metadata: { duration_seconds: durationSeconds, audio_bytes: audioBytes },
     })
 
     return text
@@ -275,6 +317,8 @@ async function transcribeInboundAudio(params: {
     return fail(
       'audio_transcription_failed',
       `Falha ao transcrever áudio na unidade "${unit.name}": ${error instanceof Error ? error.message : String(error)}`,
+      'openai',
+      { stage: 'transcription', provider_mime_type: media.mimetype ?? null },
     )
   }
 }
