@@ -28,6 +28,8 @@ revoke execute on function public.consolidate_invoices(uuid, uuid, uuid[], text,
 revoke execute on function public.generate_client_invoice(uuid, text, uuid[], text, date, text) from public, anon;
 revoke execute on function public.generate_service_records_invoice(uuid, uuid, uuid[], text, date, text, date) from public, anon;
 revoke execute on function public.register_service_record_payment(uuid, numeric, text) from public, anon;
+revoke execute on function public.quote_draft_visible_to_caller(uuid, uuid) from public, anon;
+revoke execute on function public.record_appointment_event(uuid, text, timestamptz, double precision, double precision, double precision) from public, anon;
 
 create table if not exists public.kai_tasks (
   id uuid primary key default uuid_generate_v4(),
@@ -92,7 +94,7 @@ insert into public.kai_tasks (
   org_id, unit_id, kind, title, description, status, priority, owner, dedupe_key, metadata
 )
 select
-  ac.org_id,
+  u.org_id,
   ac.unit_id,
   'agent_certification_required',
   'Funcionário ativo requer certificação',
@@ -103,6 +105,7 @@ select
   'agent_certification:' || ac.id::text,
   jsonb_build_object('agent_config_id', ac.id, 'agent_type', ac.agent_type, 'certification_status', ac.certification_status)
 from public.agent_configs ac
+join public.units u on u.id = ac.unit_id
 where ac.is_active = true
   and ac.certification_status <> 'ready'
 on conflict (dedupe_key) do nothing;

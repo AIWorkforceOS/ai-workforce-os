@@ -42,6 +42,10 @@
       "schedule": "0 20 * * *"
     },
     {
+      "path": "/api/cron/smarter-franquia-crm-sync",
+      "schedule": "0 14 * * *"
+    },
+    {
       "path": "/api/cron/whatsapp-health-check",
       "schedule": "0 17 * * *"
     },

@@ -12,10 +12,10 @@ type EventRow = {
 
 type AgentConfigRow = {
   id: string
-  org_id: string
   unit_id: string
   agent_type: string
   certification_status: string
+  unit: { org_id: string } | { org_id: string }[] | null
 }
 
 const PRIORITY_BY_EVENT: Record<string, 'high' | 'critical'> = {
@@ -60,14 +60,14 @@ export async function runKaiSupervisor(supabase: SupabaseClient, now = new Date(
 
   const { data: uncertifiedData, error: uncertifiedError } = await supabase
     .from('agent_configs')
-    .select('id,org_id,unit_id,agent_type,certification_status')
+    .select('id,unit_id,agent_type,certification_status,unit:units(org_id)')
     .eq('is_active', true)
     .in('certification_status', ['missing_information', 'requires_review'])
     .limit(500)
   if (uncertifiedError) throw new Error(`Não foi possível verificar certificações: ${uncertifiedError.message}`)
 
-  const certificationTasks = ((uncertifiedData ?? []) as AgentConfigRow[]).map((config) => ({
-    org_id: config.org_id,
+  const certificationTasks = ((uncertifiedData ?? []) as unknown as AgentConfigRow[]).map((config) => ({
+    org_id: (Array.isArray(config.unit) ? config.unit[0]?.org_id : config.unit?.org_id) ?? null,
     unit_id: config.unit_id,
     source_event_id: null,
     kind: 'agent_certification_required',

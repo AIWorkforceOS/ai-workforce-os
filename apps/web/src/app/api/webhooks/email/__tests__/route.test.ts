@@ -59,7 +59,11 @@ function buildUnit(overrides: Partial<Unit> = {}): Unit {
 }
 
 function makeRequest(body: unknown) {
-  return new Request('http://localhost/api/webhooks/email', { method: 'POST', body: JSON.stringify(body) })
+  return new Request('http://localhost/api/webhooks/email', {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: { 'svix-id': 'msg_1', 'svix-timestamp': '1', 'svix-signature': 'v1,test' },
+  })
 }
 
 describe('POST /api/webhooks/email', () => {
@@ -70,12 +74,26 @@ describe('POST /api/webhooks/email', () => {
     vi.resetModules()
     routeInboundMessage.mockClear()
     process.env.EMAIL_INBOUND_DOMAIN = 'inbound.alizoai.com'
-    delete process.env.RESEND_WEBHOOK_SECRET // caminho tolerante — já coberto/documentado; foco aqui é nas outras correções
+    process.env.RESEND_WEBHOOK_SECRET = 'whsec_test'
+    vi.doMock('svix', () => ({ Webhook: class { verify() { return {} } } }))
   })
 
   afterEach(() => {
     process.env.EMAIL_INBOUND_DOMAIN = originalInboundDomain
     process.env.RESEND_WEBHOOK_SECRET = originalWebhookSecret
+  })
+
+  it('falha fechado quando a assinatura não está configurada', async () => {
+    delete process.env.RESEND_WEBHOOK_SECRET
+    const { supabase } = createFakeSupabase({ units: [buildUnit()] })
+    vi.doMock('@/lib/supabase/service', () => ({ createServiceClient: () => supabase }))
+    vi.doMock('@/lib/inbound-router', () => ({ routeInboundMessage }))
+    const { POST } = await import('../route')
+
+    const response = await POST(makeRequest({ type: 'email.received', data: {} }))
+
+    expect(response.status).toBe(503)
+    expect(routeInboundMessage).not.toHaveBeenCalled()
   })
 
   it('email.bounced: loga system_event e não chama o roteador de mensagens', async () => {

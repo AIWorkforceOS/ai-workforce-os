@@ -16,7 +16,7 @@ export async function GET(request: Request) {
     const result = await runKaiSupervisor(supabase)
     await logSystemEvent(supabase, {
       level: 'info', source: 'system', eventType: 'kai_supervisor_run',
-      message: `Kai supervisionou ${result.scanned} eventos e criou ${result.created} tarefa(s).`,
+      message: `Kai supervisionou ${result.scanned} eventos, encontrou ${result.uncertified} funcionário(s) sem certificação e criou ${result.created} tarefa(s).`,
       metadata: result,
     })
     return NextResponse.json({ ok: true, ...result })

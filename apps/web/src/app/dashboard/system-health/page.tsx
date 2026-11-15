@@ -16,22 +16,38 @@ type EventRow = {
   created_at: string
 }
 
+type KaiTaskRow = {
+  id: string
+  kind: string
+  title: string
+  description: string
+  status: string
+  priority: string
+  due_at: string | null
+  created_at: string
+}
+
 export default async function SystemHealthPage() {
   const appUser = await getAppUser()
   if (!appUser?.isSuperAdmin) redirect('/dashboard')
   const supabase = await createClient()
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
-  const [{ data: events }, { data: gateways }, { data: units }, { data: usage }] = await Promise.all([
+  const [{ data: events }, { data: gateways }, { data: units }, { data: usage }, { data: kaiTasks }, { data: agentConfigs }] = await Promise.all([
     supabase.from('system_events').select('id, level, source, event_type, message, created_at').in('level', ['warning', 'error']).gte('created_at', since).order('created_at', { ascending: false }).limit(100),
     supabase.from('payment_gateway_settings').select('provider, region, is_active').order('region'),
     supabase.from('units').select('id, name, is_active, whatsapp_phone').eq('is_active', true),
     supabase.from('api_usage_events').select('provider, estimated_cost_usd').gte('created_at', since).limit(20000),
+    supabase.from('kai_tasks').select('id, kind, title, description, status, priority, due_at, created_at').in('status', ['open', 'in_progress', 'waiting_human']).order('priority').order('created_at', { ascending: false }).limit(100),
+    supabase.from('agent_configs').select('id, is_active, certification_status').eq('is_active', true),
   ])
 
   const rows = (events ?? []) as EventRow[]
   const integrations = getIntegrationsConfigStatus()
   const unitRows = (units ?? []) as { id: string; name: string; whatsapp_phone: string | null }[]
+  const taskRows = (kaiTasks ?? []) as KaiTaskRow[]
+  const activeConfigs = (agentConfigs ?? []) as { id: string; certification_status: string }[]
+  const certifiedConfigs = activeConfigs.filter((config) => config.certification_status === 'ready')
   const costsByProvider = ((usage ?? []) as { provider: string; estimated_cost_usd: number | null }[]).reduce<Record<string, number>>(
     (sum, row) => ({ ...sum, [row.provider]: (sum[row.provider] ?? 0) + Number(row.estimated_cost_usd ?? 0) }),
     {},
@@ -60,7 +76,32 @@ export default async function SystemHealthPage() {
         <Metric label="Falhas em 7 dias" value={String(rows.length)} ok={rows.length === 0} />
         <Metric label="Custo de IA em 7 dias" value={`US$ ${(costsByProvider.openai ?? 0).toFixed(2)}`} ok />
         <Metric label="Google Maps em 7 dias" value={`US$ ${(costsByProvider.google_maps ?? 0).toFixed(2)}`} ok />
+        <Metric label="Funcionários certificados" value={`${certifiedConfigs.length}/${activeConfigs.length}`} ok={activeConfigs.length > 0 && certifiedConfigs.length === activeConfigs.length} />
+        <Metric label="Pendências da Kai" value={String(taskRows.length)} ok={taskRows.length === 0} />
       </div>
+
+      <section className="rounded-2xl border border-white/10 bg-[#141a2b] p-5">
+        <h2 className="text-sm font-black text-white">Supervisão central da Kai</h2>
+        <p className="mt-1 text-xs text-slate-400">Pendências operacionais abertas automaticamente, sem permitir que a IA execute reparos ou amplie permissões sozinha.</p>
+        <div className="mt-4 space-y-2">
+          {taskRows.length === 0 ? (
+            <p className="text-sm text-green-400">Nenhuma pendência operacional aberta.</p>
+          ) : taskRows.map((task) => (
+            <div key={task.id} className={`rounded-xl border p-3 ${task.priority === 'critical' ? 'border-red-500/25 bg-red-500/[0.07]' : 'border-amber-500/20 bg-amber-500/[0.06]'}`}>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="text-xs font-bold text-white">{task.title}</p>
+                  <p className="mt-1 text-xs text-slate-300">{task.description}</p>
+                </div>
+                <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${task.priority === 'critical' ? 'bg-red-500/15 text-red-300' : 'bg-amber-500/15 text-amber-300'}`}>
+                  {task.priority === 'critical' ? 'crítica' : task.priority}
+                </span>
+              </div>
+              <p className="mt-2 text-[10px] text-slate-500">{task.kind} · {task.status === 'waiting_human' ? 'aguardando revisão humana' : task.status} · aberta em {new Date(task.created_at).toLocaleString('pt-BR')}</p>
+            </div>
+          ))}
+        </div>
+      </section>
 
       <section className="rounded-2xl border border-white/10 bg-[#141a2b] p-5">
         <h2 className="text-sm font-black text-white">Pagamentos e saldo das integrações</h2>

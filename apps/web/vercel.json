@@ -63,27 +63,7 @@
     },
     {
       "path": "/api/cron/facilit-sync",
-      "schedule": "0 14 * * *"
-    },
-    {
-      "path": "/api/cron/facilit-sync",
-      "schedule": "0 22 * * *"
-    },
-    {
-      "path": "/api/cron/facilit-sync",
-      "schedule": "0 12 * * *"
-    },
-    {
-      "path": "/api/cron/facilit-sync",
-      "schedule": "0 16 * * *"
-    },
-    {
-      "path": "/api/cron/facilit-sync",
-      "schedule": "0 18 * * *"
-    },
-    {
-      "path": "/api/cron/facilit-sync",
-      "schedule": "0 20 * * *"
+      "schedule": "0 12,14,16,18,20,22 * * *"
     },
     {
       "path": "/api/cron/db-backup",
@@ -92,6 +72,10 @@
     {
       "path": "/api/cron/quote-jobs",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/kai-supervisor",
+      "schedule": "*/10 * * * *"
     }
   ]
 }

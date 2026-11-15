@@ -67,19 +67,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Assinatura inválida.' }, { status: 403 })
     }
   } else {
-    // Mesma razão do webhook de e-mail (ver comentário lá): console.error
-    // sozinho fica invisível fora dos logs da Vercel — sem auth token
-    // configurado, qualquer um pode forjar mensagem de cliente por SMS
-    // pra esta unidade, e ninguém no time ficava sabendo que esse risco
-    // está ativo. logSystemEvent grava em system_events (visível no painel).
     await logSystemEvent(supabase, {
-      level: 'warning',
+      level: 'error',
       source: 'twilio',
       eventType: 'sms_webhook_unsigned',
-      message: `Sem auth token ou sem header de assinatura para a unidade "${unitRow.name}" — o webhook de SMS está processando requisições sem validar autenticidade. Configure twilio_auth_token.`,
+      message: `SMS rejeitado para a unidade "${unitRow.name}": auth token ou assinatura Twilio ausente.`,
       orgId: unitRow.org_id,
       unitId: unitRow.id,
     })
+    return NextResponse.json({ error: 'Canal de SMS ainda não está configurado com assinatura segura.' }, { status: 503 })
   }
 
   const incomingPhone = normalizePhone(from)

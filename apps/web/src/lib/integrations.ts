@@ -8,6 +8,7 @@ export type IntegrationKey =
   | 'google_maps'
   | 'resend'
   | 'resend_inbound'
+  | 'twilio_sms'
   | 'intake'
   | 'cron'
   | 'meta_ads'
@@ -78,10 +79,18 @@ export function getIntegrationsConfigStatus(): IntegrationConfigStatus[] {
     },
     {
       key: 'resend_inbound',
-      label: 'Resend Receiving (resposta do lead por e-mail)',
+      label: 'E-mail recebido (Gmail/Outlook via Resend)',
       configured: has('EMAIL_INBOUND_DOMAIN') && has('RESEND_WEBHOOK_SECRET'),
       detail:
         'Sem isso, quando um lead responde o e-mail de prospecção, a resposta NÃO chega no Sales Rep nem em ninguém (a menos que a unidade tenha um e-mail de resposta configurado manualmente). Exige MX de Receiving configurado no domínio no Resend + o webhook assinado. Env: EMAIL_INBOUND_DOMAIN + RESEND_WEBHOOK_SECRET',
+      testable: false,
+    },
+    {
+      key: 'twilio_sms',
+      label: 'SMS bidirecional (Twilio)',
+      configured: has('TWILIO_ACCOUNT_SID') && has('TWILIO_AUTH_TOKEN') && has('TWILIO_PHONE_NUMBER'),
+      detail:
+        'Envio e recebimento de SMS com validação de assinatura. Env: TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN + TWILIO_PHONE_NUMBER (ou credenciais próprias por unidade).',
       testable: false,
     },
     {

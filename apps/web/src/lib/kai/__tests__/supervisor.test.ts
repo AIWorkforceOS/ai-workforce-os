@@ -24,9 +24,10 @@ describe('runKaiSupervisor', () => {
     const { supabase, db } = createFakeSupabase({
       system_events: [],
       agent_configs: [{
-        id: 'config-1', org_id: 'org-1', unit_id: 'unit-1', agent_type: 'receptionist',
+        id: 'config-1', unit_id: 'unit-1', agent_type: 'receptionist',
         is_active: true, certification_status: 'requires_review',
       }],
+      units: [{ id: 'unit-1', org_id: 'org-1' }],
       kai_tasks: [],
     })
 
@@ -35,7 +36,7 @@ describe('runKaiSupervisor', () => {
     expect(result).toEqual({ scanned: 0, uncertified: 1, created: 1 })
     expect(db.agent_configs?.[0]?.is_active).toBe(true)
     expect(db.kai_tasks?.[0]).toMatchObject({
-      dedupe_key: 'agent_certification:config-1', status: 'waiting_human', priority: 'critical',
+      org_id: 'org-1', dedupe_key: 'agent_certification:config-1', status: 'waiting_human', priority: 'critical',
     })
   })
 })

@@ -99,20 +99,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Assinatura inválida.' }, { status: 403 })
     }
   } else {
-    // console.error sozinho ficava invisível pra qualquer um fora de quem
-    // acompanha os logs da Vercel em tempo real — sem RESEND_WEBHOOK_SECRET
-    // configurada, QUALQUER requisição pode se passar por resposta de lead
-    // (inclusive disparando handleSalesDealHandoff com dados forjados) e
-    // ninguém no time ficava sabendo que esse risco está ativo em produção.
-    // logSystemEvent grava em system_events (visível no painel) além do
-    // console.error que já existia.
     await logSystemEvent(supabase, {
-      level: 'warning',
+      level: 'error',
       source: 'resend',
       eventType: 'email_webhook_unsigned',
-      message:
-        'RESEND_WEBHOOK_SECRET não configurada — o webhook de e-mail está processando requisições sem validar autenticidade (qualquer um pode forjar resposta de lead). Configure a variável de ambiente.',
+      message: 'E-mail recebido foi rejeitado porque RESEND_WEBHOOK_SECRET não está configurada.',
     })
+    return NextResponse.json({ error: 'Recebimento de e-mail ainda não está configurado com assinatura segura.' }, { status: 503 })
   }
 
   const body = JSON.parse(rawBody) as { type?: string; created_at?: string; data?: Record<string, unknown> }
