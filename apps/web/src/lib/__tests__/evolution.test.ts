@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ensureWebhookConfigured,
   forceReconnectInstance,
+  getBase64FromMediaMessage,
   getInstanceStatus,
   resolveWhatsappChannel,
   sendWhatsAppMessage,
@@ -58,6 +59,23 @@ afterEach(() => {
 })
 
 describe('evolutionFetch — timeout', () => {
+  it('envia o WebMessageInfo completo ao baixar áudio ou imagem', async () => {
+    const webhookMessage = {
+      key: { id: 'MSG-1', remoteJid: '5511999999999@s.whatsapp.net', fromMe: false },
+      messageType: 'audioMessage',
+      message: { audioMessage: { mimetype: 'audio/ogg; codecs=opus', ptt: true } },
+    }
+    let requestBody: Record<string, unknown> | null = null
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return new Response(JSON.stringify({ base64: 'T2c=', mimetype: 'audio/ogg' }), { status: 201 })
+    }))
+
+    await getBase64FromMediaMessage(config, webhookMessage)
+
+    expect(requestBody).toMatchObject({ message: webhookMessage, convertToMp4: false })
+  })
+
   it('anexa um AbortSignal em toda chamada à Evolution API', async () => {
     let capturedSignal: AbortSignal | undefined
     vi.stubGlobal(

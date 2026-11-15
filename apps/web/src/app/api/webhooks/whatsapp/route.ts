@@ -85,11 +85,12 @@ async function analyzeInboundImage(params: {
   unit: Unit
   evolutionConfig: EvolutionUnitConfig
   messageId: string
+  webhookMessage: Record<string, unknown>
   mimeType: string
   caption: string | null
   incomingPhone: string
 }): Promise<string | null> {
-  const { supabase, unit, evolutionConfig, messageId, mimeType, caption, incomingPhone } = params
+  const { supabase, unit, evolutionConfig, messageId, webhookMessage, mimeType, caption, incomingPhone } = params
   const locale = unitDefaultLocale(unit)
   const apiKey = getOpenAIApiKey()
   const messagingChannel = getMessagingChannel(unit, null, evolutionConfig)
@@ -130,7 +131,7 @@ async function analyzeInboundImage(params: {
 
   let media: Awaited<ReturnType<typeof getBase64FromMediaMessage>>
   try {
-    media = await getBase64FromMediaMessage(evolutionConfig, messageId)
+    media = await getBase64FromMediaMessage(evolutionConfig, webhookMessage)
   } catch (error) {
     return fail(
       'image_media_download_failed',
@@ -223,10 +224,11 @@ async function transcribeInboundAudio(params: {
   unit: Unit
   evolutionConfig: EvolutionUnitConfig
   messageId: string
+  webhookMessage: Record<string, unknown>
   mimeType: string
   incomingPhone: string
 }): Promise<string | null> {
-  const { supabase, unit, evolutionConfig, messageId, mimeType, incomingPhone } = params
+  const { supabase, unit, evolutionConfig, messageId, webhookMessage, mimeType, incomingPhone } = params
   const locale = unitDefaultLocale(unit)
   const openaiKey = getOpenAIApiKey()
   const messagingChannel = getMessagingChannel(unit, null, evolutionConfig)
@@ -267,7 +269,7 @@ async function transcribeInboundAudio(params: {
 
   let media: Awaited<ReturnType<typeof getBase64FromMediaMessage>>
   try {
-    media = await getBase64FromMediaMessage(evolutionConfig, messageId)
+    media = await getBase64FromMediaMessage(evolutionConfig, webhookMessage)
   } catch (error) {
     return fail(
       'audio_media_download_failed',
@@ -537,6 +539,7 @@ export async function POST(request: Request) {
         unit: unitRow,
         evolutionConfig: resolvedChannel.config,
         messageId: extracted.messageId,
+        webhookMessage: data,
         mimeType: extracted.mimeType,
         incomingPhone,
       })
@@ -550,6 +553,7 @@ export async function POST(request: Request) {
         unit: unitRow,
         evolutionConfig: resolvedChannel.config,
         messageId: extracted.messageId,
+        webhookMessage: data,
         mimeType: extracted.mimeType,
         caption: extracted.caption,
         incomingPhone,

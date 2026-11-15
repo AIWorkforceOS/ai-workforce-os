@@ -389,7 +389,10 @@ describe('POST /api/webhooks/whatsapp — reentrega do provedor não duplica res
     expect(response.status).toBe(200)
     expect(getBase64FromMediaMessage).toHaveBeenCalledWith(
       expect.objectContaining({ instanceName: 'test-instance' }),
-      'IMAGE-MSG-1',
+      expect.objectContaining({
+        key: expect.objectContaining({ id: 'IMAGE-MSG-1' }),
+        message: expect.objectContaining({ imageMessage: expect.any(Object) }),
+      }),
     )
     expect(generateStructuredReplyFromImage).toHaveBeenCalledWith(
       expect.objectContaining({ imageUrl: expect.stringMatching(/^data:image\/jpeg;base64,/) }),

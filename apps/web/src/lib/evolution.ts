@@ -553,12 +553,20 @@ export async function sendWhatsAppDocument(
  */
 export async function getBase64FromMediaMessage(
   config: EvolutionUnitConfig,
-  messageId: string,
+  message: Record<string, unknown>,
 ): Promise<{ base64: string; mimetype: string | null } | null> {
+  const messagePayload = message.message as Record<string, unknown> | undefined
+  const inferredMessageType = Object.keys(messagePayload ?? {}).find((key) => key.endsWith('Message'))
+  const completeMessage = message.messageType || !inferredMessageType
+    ? message
+    : { ...message, messageType: inferredMessageType }
   const data = await evolutionFetch(config, `/chat/getBase64FromMediaMessage/${config.instanceName}`, {
     method: 'POST',
     body: JSON.stringify({
-      message: { key: { id: messageId } },
+      // Evolution v2/v3 exige o WebMessageInfo completo recebido no
+      // webhook (key + message + messageType). Enviar apenas key.id causa
+      // HTTP 400 e era a causa real das falhas de áudio/imagem.
+      message: completeMessage,
       convertToMp4: false,
     }),
   })
