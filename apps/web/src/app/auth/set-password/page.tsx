@@ -17,12 +17,12 @@ const COPY = {
     title: 'Defina sua senha',
     sub: 'Crie a senha de acesso ao seu painel Alizo.',
     password: 'Nova senha',
-    passwordPh: 'Mín. 8 caracteres',
+    passwordPh: 'Mín. 12 caracteres',
     confirm: 'Confirme a senha',
     confirmPh: 'Repita a senha',
     submit: 'Definir senha e entrar',
     submitting: 'Salvando...',
-    tooShort: 'A senha precisa ter pelo menos 8 caracteres.',
+    tooShort: 'A senha precisa ter pelo menos 12 caracteres.',
     mismatch: 'As senhas não coincidem.',
     genericError: 'Não foi possível definir a senha. Tente novamente.',
     doneTitle: 'Senha definida!',
@@ -36,12 +36,12 @@ const COPY = {
     title: 'Set your password',
     sub: 'Create the password for your Alizo dashboard.',
     password: 'New password',
-    passwordPh: 'Min. 8 characters',
+    passwordPh: 'Min. 12 characters',
     confirm: 'Confirm password',
     confirmPh: 'Repeat the password',
     submit: 'Set password and sign in',
     submitting: 'Saving...',
-    tooShort: 'The password must be at least 8 characters long.',
+    tooShort: 'The password must be at least 12 characters long.',
     mismatch: 'Passwords do not match.',
     genericError: 'We could not set your password. Please try again.',
     doneTitle: 'Password set!',
@@ -95,7 +95,7 @@ export default function SetPasswordPage() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
-    if (password.length < 8) {
+    if (password.length < 12) {
       setError(t.tooShort)
       return
     }

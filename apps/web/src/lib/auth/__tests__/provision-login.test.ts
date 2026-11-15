@@ -19,14 +19,14 @@ const row = { name: 'Ana', role: 'client' as const, org_id: null, unit_id: null,
 describe('provisionLogin', () => {
   it('cria login com senha e o registro de negócio', async () => {
     const f = setup()
-    const r = await provisionLogin(f.supabase, { email: ' Ana@ACME.com ', mode: { kind: 'password', password: 'Senha1234' }, row })
+    const r = await provisionLogin(f.supabase, { email: ' Ana@ACME.com ', mode: { kind: 'password', password: 'SenhaForte1234' }, row })
     expect(r).toMatchObject({ ok: true, setupLink: null })
-    expect(f.admin.createUser).toHaveBeenCalledWith({ email: 'ana@acme.com', password: 'Senha1234', email_confirm: true })
+    expect(f.admin.createUser).toHaveBeenCalledWith({ email: 'ana@acme.com', password: 'SenhaForte1234', email_confirm: true })
     expect(f.db.users![0]).toMatchObject({ email: 'ana@acme.com', role: 'client', client_company: 'ACME', is_active: true })
   })
   it('nunca assume conta que já existe (qualquer papel/empresa)', async () => {
     const f = setup([{ id: 'u0', email: 'chefe@x.com', role: 'super_admin' }])
-    const r = await provisionLogin(f.supabase, { email: 'CHEFE@x.com', mode: { kind: 'password', password: 'Senha1234' }, row })
+    const r = await provisionLogin(f.supabase, { email: 'CHEFE@x.com', mode: { kind: 'password', password: 'SenhaForte1234' }, row })
     expect(r).toMatchObject({ ok: false, status: 409 })
     expect(f.admin.createUser).not.toHaveBeenCalled()
     expect(f.db.users![0]).toMatchObject({ role: 'super_admin' })
@@ -34,14 +34,14 @@ describe('provisionLogin', () => {
   it('login já existente no Auth (sem registro de negócio): recusa e não troca a senha', async () => {
     const createUser = vi.fn(async () => ({ data: { user: null }, error: { message: 'User already registered' } }))
     const f = setup([], { createUser })
-    const r = await provisionLogin(f.supabase, { email: 'a@b.com', mode: { kind: 'password', password: 'Senha1234' }, row })
+    const r = await provisionLogin(f.supabase, { email: 'a@b.com', mode: { kind: 'password', password: 'SenhaForte1234' }, row })
     expect(r).toMatchObject({ ok: false, status: 409 })
     expect(f.admin.updateUserById).not.toHaveBeenCalled()
     expect(f.db.users).toHaveLength(0)
   })
   it('se o registro de negócio falha, apaga o login recém-criado', async () => {
     const f = setup([], {}, { users: { insert: 'boom' } })
-    const r = await provisionLogin(f.supabase, { email: 'a@b.com', mode: { kind: 'password', password: 'Senha1234' }, row })
+    const r = await provisionLogin(f.supabase, { email: 'a@b.com', mode: { kind: 'password', password: 'SenhaForte1234' }, row })
     expect(r).toMatchObject({ ok: false, status: 500 })
     expect(f.admin.deleteUser).toHaveBeenCalledWith('auth-1')
   })
@@ -62,8 +62,8 @@ describe('provisionLogin', () => {
 describe('resetLoginPassword e generateInitialPassword', () => {
   it('redefine a senha da conta', async () => {
     const f = setup()
-    expect(await resetLoginPassword(f.supabase, 'A@b.com', 'NovaSenha99')).toEqual({ ok: true })
-    expect(f.admin.updateUserById).toHaveBeenCalledWith('auth-9', { password: 'NovaSenha99', email_confirm: true })
+    expect(await resetLoginPassword(f.supabase, 'A@b.com', 'NovaSenhaForte99')).toEqual({ ok: true })
+    expect(f.admin.updateUserById).toHaveBeenCalledWith('auth-9', { password: 'NovaSenhaForte99', email_confirm: true })
     expect(await resetLoginPassword(f.supabase, 'a@b.com', 'curta')).toMatchObject({ ok: false, status: 400 })
   })
   it('gera senha do tamanho pedido sem caracteres ambíguos', () => {

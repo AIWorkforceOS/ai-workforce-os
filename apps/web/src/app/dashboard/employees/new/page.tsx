@@ -188,7 +188,7 @@ export default function NewEmployeePage() {
               </div>
               {loginKind === 'password' && (
                 <div className="flex gap-2">
-                  <Input value={password} onChange={e => setPassword(e.target.value)} placeholder="Mínimo 8 caracteres" autoComplete="new-password" />
+                  <Input value={password} onChange={e => setPassword(e.target.value)} placeholder="Mínimo 12 caracteres" autoComplete="new-password" />
                   <button type="button" onClick={() => setPassword(generateInitialPassword())} className="shrink-0 rounded-lg px-3 text-xs font-bold text-cyan-300" style={{ border: '1px solid rgba(6,182,212,0.3)' }}>Gerar</button>
                 </div>
               )}

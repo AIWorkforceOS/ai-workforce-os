@@ -44,15 +44,15 @@ describe('portal-access do cliente', () => {
 
   it('cria login do cliente com senha: role client, sem empresa, vinculado ao nome do cliente', async () => {
     const w = world()
-    const res = await (await load(adminUser, w)).POST(post({ email: 'Novo@Acme.com', name: 'Novo', login: { kind: 'password', password: 'Senha1234' } }), params)
+    const res = await (await load(adminUser, w)).POST(post({ email: 'Novo@Acme.com', name: 'Novo', login: { kind: 'password', password: 'SenhaForte1234' } }), params)
     expect(res.status).toBe(201)
     expect(w.svc.db.users!.at(-1)).toMatchObject({ email: 'novo@acme.com', role: 'client', client_company: 'ACME', org_id: null, unit_id: null })
-    expect(w.admin.createUser).toHaveBeenCalledWith({ email: 'novo@acme.com', password: 'Senha1234', email_confirm: true })
+    expect(w.admin.createUser).toHaveBeenCalledWith({ email: 'novo@acme.com', password: 'SenhaForte1234', email_confirm: true })
   })
 
   it('e-mail que já é de outra conta (inclusive super admin) é recusado sem alterar nada', async () => {
     const w = world()
-    const res = await (await load(adminUser, w)).POST(post({ email: 'boss@alizo.com', login: { kind: 'password', password: 'Senha1234' } }), params)
+    const res = await (await load(adminUser, w)).POST(post({ email: 'boss@alizo.com', login: { kind: 'password', password: 'SenhaForte1234' } }), params)
     expect(res.status).toBe(409)
     expect(w.admin.createUser).not.toHaveBeenCalled()
     expect(w.svc.db.users!.find((u) => u.id === 'u8')).toMatchObject({ role: 'super_admin' })

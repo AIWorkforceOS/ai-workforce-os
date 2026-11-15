@@ -19,7 +19,7 @@ export function LoginFields({ value, onChange }: { value: LoginChoice; onChange:
       </div>
       {value.kind === 'password' && (
         <div className="flex gap-2">
-          <Input value={value.password} onChange={(e) => onChange({ ...value, password: e.target.value })} placeholder="Mínimo 8 caracteres" autoComplete="new-password" />
+          <Input value={value.password} onChange={(e) => onChange({ ...value, password: e.target.value })} placeholder="Mínimo 12 caracteres" autoComplete="new-password" />
           <button type="button" onClick={() => onChange({ ...value, password: generateInitialPassword() })} className="shrink-0 rounded-lg px-3 text-xs font-bold text-cyan-300" style={{ border: '1px solid rgba(6,182,212,0.3)' }}>
             Gerar
           </button>

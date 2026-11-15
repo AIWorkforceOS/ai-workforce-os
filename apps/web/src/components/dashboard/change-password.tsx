@@ -16,8 +16,8 @@ export function ChangePasswordCard() {
     event.preventDefault()
     setError(null)
     setDone(false)
-    if (password.length < 8) {
-      setError('A nova senha precisa ter pelo menos 8 caracteres.')
+    if (password.length < 12) {
+      setError('A nova senha precisa ter pelo menos 12 caracteres.')
       return
     }
     if (password !== confirm) {
@@ -66,7 +66,7 @@ export function ChangePasswordCard() {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Mín. 8 caracteres"
+            placeholder="Mín. 12 caracteres"
             autoComplete="new-password"
           />
         </div>

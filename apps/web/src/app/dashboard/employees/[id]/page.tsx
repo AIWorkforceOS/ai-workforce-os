@@ -238,7 +238,7 @@ export default function EditEmployeePage() {
               minLength={8}
               value={accessPassword}
               onChange={e => setAccessPassword(e.target.value)}
-              placeholder="Mínimo 8 caracteres"
+              placeholder="Mínimo 12 caracteres"
             />
           </div>
 

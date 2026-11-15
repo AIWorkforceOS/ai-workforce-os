@@ -19,7 +19,7 @@ async function load(actor: unknown, svc: unknown) {
 }
 const req = (b: unknown) => new Request('http://x', { method: 'POST', body: JSON.stringify(b) })
 const admin = { id: 'adm', role: 'admin', isSuperAdmin: false, orgId: 'o1', unitId: null, jobRole: null }
-const pwd = { kind: 'password', password: 'Senha1234' }
+const pwd = { kind: 'password', password: 'SenhaForte1234' }
 
 describe('POST /api/admin/team/members', () => {
   beforeEach(() => vi.resetModules())

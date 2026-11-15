@@ -22,7 +22,7 @@ export type UserRowInput = {
 
 export type ProvisionResult = { ok: true; userId: string; setupLink: string | null } | { ok: false; status: number; error: string }
 
-export const MIN_PASSWORD_LENGTH = 8
+export const MIN_PASSWORD_LENGTH = 12
 
 export function validatePassword(password: unknown): string | null {
   if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) return `A senha precisa ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.`
