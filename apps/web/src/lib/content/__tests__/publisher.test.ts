@@ -112,7 +112,7 @@ describe('publishDueScheduledPosts', () => {
     expect(publishFacebookPhoto).not.toHaveBeenCalled()
   })
 
-  it('não mexe em post sem scheduled_for (fluxo avulso — publica na hora da aprovação, não aqui)', async () => {
+  it('recupera post avulso aprovado sem scheduled_for que não foi publicado na aprovação', async () => {
     const { supabase, db } = createFakeSupabase({
       content_posts: [makePost({ scheduled_for: null })],
       social_accounts: [makeAccount()],
@@ -121,8 +121,8 @@ describe('publishDueScheduledPosts', () => {
 
     const result = await publishDueScheduledPosts(supabase, { today: TODAY })
 
-    expect(result).toEqual({ published: 0, errors: 0 })
-    expect(db.content_posts?.[0]?.status).toBe('approved')
+    expect(result).toEqual({ published: 1, errors: 0 })
+    expect(db.content_posts?.[0]?.status).toBe('published')
   })
 
   it('não mexe em post que não está approved (pending_approval, published etc.)', async () => {

@@ -71,4 +71,14 @@ describe('publicação de carrossel', () => {
     const byId = Object.fromEntries((db.content_posts as { id: string; status: string }[]).map((p) => [p.id, p.status]))
     expect(byId).toEqual({ p1: 'approved', p2: 'published' })
   })
+
+  it('o cron publica carrossel avulso aprovado sem scheduled_for quando a trava está ligada', async () => {
+    process.env.CONTENT_CAROUSEL_PUBLISH = 'on'
+    const unscheduled = carouselPost({ scheduled_for: null })
+    const { supabase, db } = createFakeSupabase({ content_posts: [unscheduled], social_accounts: [account] })
+    const { publishDueScheduledPosts } = await load()
+    const out = await publishDueScheduledPosts(supabase, { today: new Date('2026-11-03T15:00:00Z') })
+    expect(out).toEqual({ published: 1, errors: 0 })
+    expect((db.content_posts as { status: string }[])[0]!.status).toBe('published')
+  })
 })

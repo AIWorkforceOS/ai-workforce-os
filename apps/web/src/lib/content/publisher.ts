@@ -106,15 +106,27 @@ export async function publishDueScheduledPosts(
   const dayStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()))
   const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000)
 
-  const { data: due } = await supabase
-    .from('content_posts')
-    .select('*')
-    .eq('status', 'approved')
-    .lt('scheduled_for', dayEnd.toISOString())
+  // Conteúdo avulso aprovado não tem scheduled_for. Antes a consulta usava
+  // apenas `lt`, que exclui NULL no Postgres, e esses posts ficavam presos
+  // para sempre. Mantemos duas consultas simples para tornar os dois grupos
+  // explícitos e evitar depender da sintaxe textual de filtros `or`.
+  const [{ data: scheduledDue }, { data: unscheduledDue }] = await Promise.all([
+    supabase
+      .from('content_posts')
+      .select('*')
+      .eq('status', 'approved')
+      .lt('scheduled_for', dayEnd.toISOString()),
+    supabase
+      .from('content_posts')
+      .select('*')
+      .eq('status', 'approved')
+      .is('scheduled_for', null),
+  ])
+  const due = [...((scheduledDue ?? []) as ContentPost[]), ...((unscheduledDue ?? []) as ContentPost[])]
   // Carrossel aprovado espera a publicação de carrossel ser ligada: não conta como erro nem é tentado todo dia.
   const carouselsOn = carouselPublishingEnabled()
   const videosOn = videoPublishingEnabled()
-  const posts = ((due ?? []) as ContentPost[]).filter((p) => (p.format !== 'carousel' || carouselsOn) && (p.format !== 'video' || videosOn))
+  const posts = due.filter((p) => (p.format !== 'carousel' || carouselsOn) && (p.format !== 'video' || videosOn))
 
   let published = 0
   let errors = 0
