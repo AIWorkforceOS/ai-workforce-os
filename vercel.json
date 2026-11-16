@@ -80,6 +80,10 @@
     {
       "path": "/api/cron/kai-supervisor",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/partner-webhooks",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

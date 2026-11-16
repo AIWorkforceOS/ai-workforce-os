@@ -13,6 +13,8 @@ import type { Unit } from '@/lib/types'
 
 export const PARTNER_SCOPES = [
   'units:read',
+  'units:write',
+  'whatsapp:manage',
   'leads:read',
   'leads:write',
   'messages:read',
@@ -23,6 +25,8 @@ export const PARTNER_SCOPES = [
   'jobs:write',
   'events:read',
   'webhooks:manage',
+  'metrics:read',
+  'template:manage',
 ] as const
 
 export type PartnerScope = (typeof PARTNER_SCOPES)[number]

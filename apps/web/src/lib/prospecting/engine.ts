@@ -38,7 +38,7 @@ function cleanList(value: unknown): string[] {
  * unidade ainda não tem perfil de segmentação utilizável (sem termos ou
  * sem nenhuma referência de região) — nesse caso o cron pula a unidade.
  */
-export function resolveProspectingTarget(config: AgentConfig, unit: Unit): ProspectingTarget | null {
+export function resolveProspectingTarget(config: AgentConfig, unit: Unit, regionOverride?: { city: string; state: string; neighborhood?: string | null }): ProspectingTarget | null {
   const profile = (config.prospecting_profile ?? {}) as ProspectingProfile
 
   let terms: string[]
@@ -50,8 +50,10 @@ export function resolveProspectingTarget(config: AgentConfig, unit: Unit): Prosp
   }
   if (terms.length === 0) return null
 
-  const region = String(profile.region ?? '').trim()
-  const locationParts = [region, unit.region_city ?? '', unit.region_state ?? '']
+  const region = String(regionOverride?.neighborhood ?? profile.region ?? '').trim()
+  const city = regionOverride?.city?.trim() || unit.region_city?.trim() || region || '—'
+  const state = regionOverride?.state?.trim() || unit.region_state?.trim() || '—'
+  const locationParts = [region, city === '—' ? '' : city, state === '—' ? '' : state]
     .map((part) => part.trim())
     .filter((part) => part.length > 0)
   if (locationParts.length === 0) return null
@@ -59,8 +61,8 @@ export function resolveProspectingTarget(config: AgentConfig, unit: Unit): Prosp
   return {
     terms,
     locationQuery: locationParts.join(', '),
-    city: unit.region_city?.trim() || region || '—',
-    state: unit.region_state?.trim() || '—',
+    city,
+    state,
   }
 }
 
@@ -120,16 +122,19 @@ export async function runProspectingForUnit(params: {
   config: AgentConfig
   apiKey: string
   deadline: number
+  region?: { city: string; state: string; neighborhood?: string | null }
+  captureLimit?: number
+  firstContact?: boolean
 }): Promise<UnitProspectingResult> {
   const { supabase, unit, config, apiKey, deadline } = params
 
-  const target = resolveProspectingTarget(config, unit)
+  const target = resolveProspectingTarget(config, unit, params.region)
   if (!target) {
     return { captured: 0, contacted: 0, skipped: 'perfil de segmentação não configurado' }
   }
 
   const capturedToday = await countCapturedToday(supabase, unit.id)
-  let remaining = Math.max(0, DAILY_CAPTURE_LIMIT - capturedToday)
+  let remaining = Math.min(Math.max(0, DAILY_CAPTURE_LIMIT - capturedToday), params.captureLimit ?? DAILY_CAPTURE_LIMIT)
   let captured = 0
 
   if (remaining > 0) {
@@ -235,6 +240,7 @@ export async function runProspectingForUnit(params: {
   }
 
   // ── Primeiro contato dos leads capturados (desta e de rodadas anteriores) ──
+  if (params.firstContact === false) return { captured, contacted: 0 }
   const sentToday = await countSentToday(supabase, unit.id)
   const messageBudget = Math.max(0, config.daily_limit - sentToday)
   let contacted = 0

@@ -14,6 +14,18 @@ export const PARTNER_EVENT_TYPES = [
   'lead.message.received',
   'lead.message.sent',
   'lead.deal_won',
+  'lead.replied',
+  'lead.status_changed',
+  'lead.opted_out',
+  'lead.invalid_number',
+  'unit.whatsapp.connected',
+  'unit.whatsapp.disconnected',
+  'unit.whatsapp.banned',
+  'candidate.interested',
+  'candidate.declined',
+  'candidate.no_response',
+  'candidate.replied',
+  'usage.limit_reached',
 ] as const
 
 export type PartnerEventType = (typeof PARTNER_EVENT_TYPES)[number]
@@ -126,14 +138,17 @@ export async function emitPartnerEvent(
       return !restricted || restricted === params.unitId
     })
 
+    let externalId: string | null = null
+    if (params.unitId) { const { data: unitRow } = await supabase.from('units').select('external_id').eq('id', params.unitId).maybeSingle(); externalId = (unitRow as { external_id?: string | null } | null)?.external_id ?? null }
     await Promise.all(
       targets.map((endpoint) =>
-        deliver(supabase, endpoint, {
+        deliverPartnerEvent(supabase, endpoint, {
           id: event.id,
           type: params.type,
           created_at: event.created_at,
           org_id: params.orgId as string,
           unit_id: params.unitId ?? null,
+          external_id: externalId,
           data: params.data,
         }),
       ),
@@ -143,10 +158,11 @@ export async function emitPartnerEvent(
   }
 }
 
-async function deliver(
+export async function deliverPartnerEvent(
   supabase: SupabaseClient,
   endpoint: EndpointRow,
   event: Record<string, unknown> & { id: string },
+  attemptCount = 1,
 ): Promise<void> {
   const body = JSON.stringify(event)
   const timestamp = Math.floor(Date.now() / 1000)
@@ -187,5 +203,8 @@ async function deliver(
     ok,
     status_code: statusCode,
     error,
+    attempt_count: attemptCount,
+    last_attempt_at: new Date().toISOString(),
+    next_attempt_at: ok || attemptCount >= 6 ? null : new Date(Date.now() + Math.min(3600_000, 60_000 * 2 ** (attemptCount - 1))).toISOString(),
   })
 }

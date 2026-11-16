@@ -42,13 +42,17 @@ export async function POST(request: Request) {
     return partnerError(409, 'Fora do horário ativo configurado para o Sales Rep desta unidade.')
   }
 
-  const result = await runProspectingForUnit({
-    supabase: ctx.supabase,
-    unit,
-    config,
-    apiKey,
-    deadline: Date.now() + 50_000,
-  })
-
-  return NextResponse.json({ ok: true, ...result })
+  const startedAt = new Date().toISOString()
+  const requestedLimit = Math.max(1, Math.min(15, Number(body?.limit) || 15))
+  const profile = config.prospecting_profile ?? {}
+  const regions = Array.isArray(profile.regions) && profile.regions.length ? profile.regions : [undefined]
+  let captured = 0; let contacted = 0
+  const deadline = Date.now() + 50_000
+  for (const region of regions) {
+    if (captured >= requestedLimit || Date.now() > deadline) break
+    const result = await runProspectingForUnit({ supabase: ctx.supabase, unit, config, apiKey, deadline, region, captureLimit: requestedLimit - captured, firstContact: body?.first_contact ?? profile.first_contact })
+    captured += result.captured; contacted += result.contacted
+  }
+  const { data: rows } = await ctx.supabase.from('leads').select('*').eq('unit_id', unit.id).eq('source', 'google_maps').gte('created_at', startedAt).order('created_at', { ascending: true }).limit(requestedLimit)
+  return NextResponse.json({ ok: true, captured, contacted, leads: (rows ?? []).map((lead) => ({ id: lead.id, name: lead.company_name, address: lead.enrichment_data?.address ?? null, city: lead.city, state: lead.state, phone: lead.phone, email: lead.email ?? lead.enrichment_data?.contact_email ?? null, website: lead.enrichment_data?.website ?? null, category: lead.sector, rating: lead.enrichment_data?.rating ?? null, maps_url: lead.google_place_id ? `https://www.google.com/maps/place/?q=place_id:${lead.google_place_id}` : null, source: lead.source, region: { city: lead.city, state: lead.state } })) })
 }

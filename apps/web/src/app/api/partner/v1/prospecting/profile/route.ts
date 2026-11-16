@@ -73,6 +73,18 @@ export async function PUT(request: Request) {
   if (body.headcount_range !== undefined) {
     profile.headcount_range = typeof body.headcount_range === 'string' ? body.headcount_range.trim().slice(0, 60) || null : null
   }
+  if (body.regions !== undefined) {
+    if (!Array.isArray(body.regions) || body.regions.length === 0 || body.regions.length > 20) return partnerError(400, 'regions deve ter entre 1 e 20 regiões.')
+    const regions = body.regions.map((r: unknown) => {
+      const item = r as Record<string, unknown>
+      return { city: String(item.city ?? '').trim().slice(0, 120), state: String(item.state ?? '').trim().slice(0, 80), neighborhood: String(item.neighborhood ?? '').trim().slice(0, 120) || null }
+    }).filter((r: { city: string; state: string }) => r.city && r.state)
+    if (!regions.length) return partnerError(400, 'Cada região precisa de city e state.')
+    profile.regions = regions
+  }
+  if (body.exclude_large !== undefined) profile.exclude_large = body.exclude_large === true
+  if (body.exclude_external_ids !== undefined) profile.exclude_external_ids = cleanStrings(body.exclude_external_ids, 500)
+  if (body.first_contact !== undefined) profile.first_contact = body.first_contact !== false
 
   const { error } = await ctx.supabase
     .from('agent_configs')

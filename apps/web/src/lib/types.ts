@@ -226,6 +226,10 @@ export type ProspectingProfile = {
   general_sector?: string | null
   /** faixa de nº de funcionários — METADADO aproximado, o Google Places não filtra por porte */
   headcount_range?: string | null
+  regions?: { city: string; state: string; neighborhood?: string | null }[]
+  exclude_large?: boolean
+  exclude_external_ids?: string[]
+  first_contact?: boolean
 }
 
 export type AgentConfig = {

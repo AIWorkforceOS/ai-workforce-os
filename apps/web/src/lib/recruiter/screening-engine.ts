@@ -16,6 +16,7 @@ import { sendToCandidate } from './messaging'
 import { logDecision, logRecruiterEvent } from './log'
 import { computeWeightedScore } from './scoring-engine'
 import { recalculateShortlist, escalateJob, getLeadForJob } from './orchestrator'
+import { emitPartnerEvent } from '@/lib/partner-api/webhooks'
 import type {
   Candidate,
   CandidateMessage,
@@ -170,6 +171,12 @@ export async function sendOutreachBatch(
         decisionType: 'skip_candidate',
         reasoning: `Não foi possível contatar: ${outcome.reason}. Chamando o próximo do ranking.`,
       })
+      await emitPartnerEvent(supabase, {
+        orgId: job.org_id,
+        unitId: job.unit_id,
+        type: 'candidate.no_response',
+        data: { job_id: job.id, candidate_id: candidate.id, reason: outcome.reason },
+      })
     }
   }
 
@@ -212,6 +219,12 @@ export async function nudgeSilentCandidates(
         orgId: job.org_id, unitId: job.unit_id, jobId: job.id, candidateId: candidate.id,
         decisionType: 'unreachable',
         reasoning: `${row.outreach_attempts} tentativas de contato sem resposta em 72h — marcado como inalcançável; próximo do ranking será chamado.`,
+      })
+      await emitPartnerEvent(supabase, {
+        orgId: job.org_id,
+        unitId: job.unit_id,
+        type: 'candidate.no_response',
+        data: { job_id: job.id, candidate_id: candidate.id, attempts: row.outreach_attempts },
       })
       continue
     }
@@ -300,6 +313,13 @@ export async function handleCandidateInbound(
   const companyName = params.lead?.company_name ?? unit.name
   const organizationProfile = await fetchOrganizationBusinessProfile(supabase, unit.org_id)
 
+  await emitPartnerEvent(supabase, {
+    orgId: job.org_id,
+    unitId: job.unit_id,
+    type: 'candidate.replied',
+    data: { job_id: job.id, candidate_id: candidate.id, stage: jc.stage },
+  })
+
   // 1. Opt-out determinístico (LGPD §18) — imediato, auditável
   if (detectsOptOut(text)) {
     await supabase.from('candidates').update({ opted_out: true }).eq('id', candidate.id)
@@ -311,6 +331,12 @@ export async function handleCandidateInbound(
       orgId: job.org_id, unitId: job.unit_id, jobId: job.id, candidateId: candidate.id,
       decisionType: 'opt_out',
       reasoning: 'Candidato pediu para não ser contatado. opted_out marcado — nunca mais será contatado por nenhuma vaga.',
+    })
+    await emitPartnerEvent(supabase, {
+      orgId: job.org_id,
+      unitId: job.unit_id,
+      type: 'candidate.declined',
+      data: { job_id: job.id, candidate_id: candidate.id, reason: 'opt_out' },
     })
     await sendToCandidate({
       supabase, unit, config,
@@ -405,6 +431,12 @@ export async function handleCandidateInbound(
       decisionType: 'disqualify',
       reasoning: `Candidato desistiu do processo: ${reason}. Motivo registrado como memória para futuras vagas.`,
     })
+    await emitPartnerEvent(supabase, {
+      orgId: job.org_id,
+      unitId: job.unit_id,
+      type: 'candidate.declined',
+      data: { job_id: job.id, candidate_id: candidate.id, reason },
+    })
     const bye = await generateChatReply({
       apiKey,
       systemPrompt: [
@@ -427,6 +459,15 @@ export async function handleCandidateInbound(
 
   const pending = pendingScreeningTopics(screeningData)
   const history = await getCandidateHistory(supabase, candidate.id, job.id)
+
+  if (screeningData.interested === true && currentData.interested !== true) {
+    await emitPartnerEvent(supabase, {
+      orgId: job.org_id,
+      unitId: job.unit_id,
+      type: 'candidate.interested',
+      data: { job_id: job.id, candidate_id: candidate.id, stage: 'in_screening' },
+    })
+  }
 
   // 7. Checklist completo → avaliação final + relatório (§9.5)
   if (pending.length === 0) {

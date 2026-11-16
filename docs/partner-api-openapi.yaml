@@ -1,0 +1,106 @@
+openapi: 3.1.0
+info:
+  title: Alizo Partner API
+  version: 1.1.0
+  description: API server-to-server para operação integral de parceiros. Nunca exponha a chave ao navegador.
+servers:
+  - url: https://www.alizoai.com/api/partner/v1
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties: { error: { type: string } }
+    UnitInput:
+      type: object
+      required: [external_id, name]
+      properties:
+        external_id: { type: string, maxLength: 160 }
+        name: { type: string }
+        city: { type: [string, 'null'] }
+        state: { type: [string, 'null'] }
+        timezone: { type: string, default: America/Sao_Paulo }
+        contact_email: { type: [string, 'null'], format: email }
+        contact_phone: { type: [string, 'null'] }
+        owner_name: { type: [string, 'null'] }
+        address: { type: [string, 'null'] }
+paths:
+  /health:
+    get: { security: [], summary: Saúde da API, responses: { '200': { description: Disponível } } }
+  /units:
+    get:
+      summary: Lista unidades, incluindo external_id
+      parameters: [{ in: query, name: external_id, schema: { type: string } }]
+      responses: { '200': { description: Lista de unidades } }
+    post:
+      summary: Cria e provisiona unidade de forma idempotente
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UnitInput' } } } }
+      responses: { '201': { description: Criada }, '200': { description: Já existente }, '400': { description: Payload inválido }, '409': { description: Referência em conflito } }
+  /units/{id}:
+    put:
+      summary: Atualiza cadastro da unidade
+      parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UnitInput' } } } }
+      responses: { '200': { description: Atualizada } }
+  /units/{id}/deactivate:
+    post: { summary: Pausa unidade e funcionários sem apagar histórico, parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }], responses: { '200': { description: Pausada } } }
+  /units/{id}/reactivate:
+    post: { summary: Reativa unidade e reaplica template, parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }], responses: { '200': { description: Reativada } } }
+  /units/{id}/whatsapp:
+    get: { summary: Estado do WhatsApp, parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }], responses: { '200': { description: Estado atual } } }
+  /units/{id}/whatsapp/connect:
+    post: { summary: Inicia pareamento e devolve QR, parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }], responses: { '200': { description: QR ou conexão } } }
+  /units/{id}/whatsapp/disconnect:
+    post: { summary: Desconecta o número, parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }], responses: { '200': { description: Desconectado } } }
+  /units/{id}/whatsapp/reconnect:
+    post: { summary: Recria a sessão e devolve novo QR, parameters: [{ in: path, name: id, required: true, schema: { type: string, format: uuid } }], responses: { '200': { description: Reconexão iniciada } } }
+  /units/{id}/agents/sales:
+    get: { summary: Lê treinamento e operação do Sales, parameters: [{ in: path, name: id, required: true, schema: { type: string } }], responses: { '200': { description: Configuração } } }
+    put: { summary: Atualiza treinamento permitido do Sales, parameters: [{ in: path, name: id, required: true, schema: { type: string } }], responses: { '200': { description: Atualizado } } }
+  /units/{id}/metrics:
+    get: { summary: Indicadores operacionais por período, parameters: [{ in: path, name: id, required: true, schema: { type: string } }, { in: query, name: from, schema: { type: string, format: date-time } }, { in: query, name: to, schema: { type: string, format: date-time } }], responses: { '200': { description: Métricas } } }
+  /leads:
+    post: { summary: Cria lead idempotente por external_id ou telefone, responses: { '201': { description: Criado }, '200': { description: Duplicado } } }
+    get: { summary: Lista leads, responses: { '200': { description: Leads } } }
+  /leads/{id}:
+    get: { summary: Consulta lead, parameters: [{ in: path, name: id, required: true, schema: { type: string } }], responses: { '200': { description: Lead } } }
+    patch: { summary: Atualiza status, notas ou responsável, parameters: [{ in: path, name: id, required: true, schema: { type: string } }], responses: { '200': { description: Atualizado } } }
+    delete: { summary: Exclui dados do contato, parameters: [{ in: path, name: id, required: true, schema: { type: string } }], responses: { '200': { description: Excluído } } }
+  /leads/{id}/pause:
+    post: { summary: Entrega conversa ao humano, parameters: [{ in: path, name: id, required: true, schema: { type: string } }], responses: { '200': { description: Pausado } } }
+  /leads/{id}/resume:
+    post: { summary: Devolve conversa ao agente, parameters: [{ in: path, name: id, required: true, schema: { type: string } }], responses: { '200': { description: Retomado } } }
+  /prospecting/profile:
+    get: { summary: Lê regiões e filtros, responses: { '200': { description: Perfil } } }
+    put: { summary: Configura regions, business_types, general_sector, exclusões e first_contact, responses: { '200': { description: Salvo } } }
+  /prospecting/run:
+    post: { summary: Executa captação e devolve empresas encontradas, responses: { '200': { description: Resultado } } }
+  /prospecting/runs:
+    get: { summary: Histórico e cota diária, responses: { '200': { description: Execuções } } }
+  /jobs:
+    post: { summary: Cria vaga, responses: { '201': { description: Criada } } }
+    get: { summary: Lista vagas, responses: { '200': { description: Vagas } } }
+  /jobs/{id}:
+    get: { summary: Consulta vaga, responses: { '200': { description: Vaga } } }
+    patch: { summary: Atualiza ou encerra vaga, responses: { '200': { description: Atualizada } } }
+    delete: { summary: Exclui vaga, responses: { '200': { description: Excluída } } }
+  /jobs/{id}/outreach:
+    post: { summary: Adiciona e convida até 50 candidatos com consentimento, responses: { '200': { description: Resultado por candidato } } }
+  /events:
+    get: { summary: Polling idempotente de eventos, responses: { '200': { description: Eventos } } }
+  /webhooks/{id}/replay:
+    post: { summary: Reenvia eventos desde o instante informado, responses: { '200': { description: Reenvio concluído } } }
+  /template:
+    get: { summary: Consulta template da rede, responses: { '200': { description: Template } } }
+    put: { summary: Cria nova versão do template, responses: { '200': { description: Template salvo } } }
+  /usage:
+    get: { summary: Consumo mensal por unidade, responses: { '200': { description: Consumo } } }
+  /optouts:
+    get: { summary: Consulta descadastros, responses: { '200': { description: Descadastros } } }
+    post: { summary: Registra descadastro, responses: { '201': { description: Registrado } } }

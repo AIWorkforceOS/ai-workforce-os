@@ -2,7 +2,9 @@
 
 Permite que um sistema externo autorizado (ex.: Sistema Smarter) use os funcionários
 digitais do Alizo por HTTP: Sales Rep (WhatsApp + prospecção Google Maps) e Recrutador.
-Migration: `20261113000003_partner_api.sql` (**ainda não aplicada** — ver "Ativação").
+Migrations: `20261113000003_partner_api.sql` e `20261116000002_partner_api_smarter_full_operation.sql`.
+
+Especificação OpenAPI: `docs/partner-api-openapi.yaml`.
 
 ## Autenticação
 
@@ -21,6 +23,8 @@ Authorization: Bearer alz_live_<prefixo>_<segredo>
 | Escopo | Permite |
 |---|---|
 | `units:read` | listar unidades |
+| `units:write` | criar, atualizar, desativar e reativar unidades |
+| `whatsapp:manage` | conectar, consultar, desconectar e reconectar WhatsApp |
 | `leads:read` / `leads:write` | listar/ler / criar leads |
 | `messages:read` / `messages:send` | ler conversa / enviar mensagem pelo Sales Rep |
 | `prospecting:run` | disparar rodada do Google Maps |
@@ -28,6 +32,8 @@ Authorization: Bearer alz_live_<prefixo>_<segredo>
 | `jobs:read` / `jobs:write` | ler / criar vagas e adicionar candidatos |
 | `events:read` | polling de eventos |
 | `webhooks:manage` | cadastrar/remover webhooks |
+| `metrics:read` | métricas e consumo por unidade |
+| `template:manage` | template versionado da rede |
 
 ## Gerenciar chaves (admin do Alizo, com sessão)
 
@@ -43,7 +49,12 @@ Ainda **não há tela** — por enquanto é via API (ou peça ao Claude para cri
 ## Endpoints
 
 ### Unidades
-`GET /units` → `{ units: [{ id, slug, name, city, state, whatsapp_phone, timezone }] }`
+`GET /units` inclui `external_id`, `template_version`, dados de contato e unidades inativas.
+
+- `POST /units` cria de forma idempotente por `external_id` e provisiona Sales + Recrutador.
+- `PUT /units/{id}` atualiza os dados espelhados.
+- `POST /units/{id}/deactivate|reactivate` pausa/retoma sem apagar histórico.
+- `GET|POST /units/{id}/whatsapp...` opera QR, status, desconexão e reconexão.
 
 ### Leads (Sales Rep + WhatsApp)
 - `POST /leads` — `{ unit_id|unit_slug, name, phone, email?, source?, notes?, external_id?, first_contact? }`
@@ -75,21 +86,21 @@ Ainda **não há tela** — por enquanto é via API (ou peça ao Claude para cri
 **Eventos:** `lead.created` (via API), `lead.message.received`, `lead.message.sent`, `lead.deal_won`.
 Leads capturados pelo Maps **não** geram `lead.created` — use `GET /leads`.
 
-**Entrega:** `POST` JSON `{ id, type, created_at, org_id, unit_id, data }` com headers
+**Entrega:** `POST` JSON `{ id, type, created_at, org_id, unit_id, external_id, data }` com headers
 `Alizo-Event`, `Alizo-Event-Id` e `Alizo-Signature: t=<unix>,v1=<hex>`, onde
 `v1 = HMAC-SHA256(secret, "<t>.<corpo bruto>")`. Valide a assinatura e rejeite `t` com mais de 5 min.
-Timeout 5 s, sem redirecionamento. **Sem retry automático** (best-effort): use `GET /events` para reconciliar. Idempotência do lado do parceiro pelo `id` do evento.
+Timeout 5 s, sem redirecionamento. Falhas recebem retry exponencial pelo cron, até 6 tentativas; `POST /webhooks/{id}/replay?since=` permite reenvio sob demanda. Idempotência pelo `id` do evento.
 
 ## Ativação (checklist)
 
-1. **Aplicar a migration 20261113000003** (Vinicius) — sem ela as rotas respondem 401/erro.
+1. Aplicar as migrations da API de parceiro.
 2. Criar a chave: `POST /api/admin/partner-keys` logado como admin, escopos mínimos necessários.
 3. Entregar a chave à Smarter por canal seguro (nunca no git/chat).
 4. Confirmar o host de produção da API e `NEXT_PUBLIC_APP_URL` (usado em `public_application_url`).
 
 ## Limitações conhecidas
 
-- Sem retry de webhook (best-effort) e sem fila; entregas rodam no mesmo request que gerou o evento (até 5 s a mais na resposta ao lead quando há endpoint).
-- Rate limit e proteção anti-SSRF são básicos (memória por instância; sem resolução de DNS).
-- Não há tela de chaves/webhooks no painel.
-- Eventos só do Sales Rep (conversation-engine). Recrutador não emite evento ainda.
+- O rate limit é best-effort em memória por instância serverless.
+- Porte/CNPJ/e-mail não são garantidos pelo Google Places; nunca são inventados.
+- A API oficial da Meta não usa QR Code; unidades nesse modo seguem o onboarding Meta.
+- Não há sandbox separado: use uma organização/unidade de teste e chave restrita.

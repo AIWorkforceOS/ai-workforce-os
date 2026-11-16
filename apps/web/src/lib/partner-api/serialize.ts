@@ -5,6 +5,7 @@ import type { Conversation, Lead, Unit } from '@/lib/types'
 // dados de cobrança da unidade.
 
 export function serializeUnit(unit: Unit) {
+  const extended = unit as Unit & { external_id?: string | null; contact_email?: string | null; contact_phone?: string | null; owner_name?: string | null; address?: string | null; template_version?: number }
   return {
     id: unit.id,
     slug: unit.slug,
@@ -13,6 +14,13 @@ export function serializeUnit(unit: Unit) {
     state: unit.region_state,
     whatsapp_phone: unit.whatsapp_phone,
     timezone: unit.timezone,
+    external_id: extended.external_id ?? null,
+    contact_email: extended.contact_email ?? null,
+    contact_phone: extended.contact_phone ?? null,
+    owner_name: extended.owner_name ?? null,
+    address: extended.address ?? null,
+    template_version: extended.template_version ?? 1,
+    is_active: unit.is_active,
   }
 }
 

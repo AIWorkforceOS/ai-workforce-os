@@ -21,7 +21,7 @@ export async function GET(request: Request) {
 
   let query = ctx.supabase
     .from('partner_events')
-    .select('id, type, unit_id, data, created_at')
+    .select('id, type, unit_id, data, created_at, units(external_id)')
     .eq('org_id', ctx.orgId)
   if (ctx.unitId) query = query.eq('unit_id', ctx.unitId)
   const type = search.get('type')
@@ -34,7 +34,7 @@ export async function GET(request: Request) {
   const { data } = await query.order('created_at', { ascending: false }).limit(limit)
   const events = (data as EventRow[] | null) ?? []
   return NextResponse.json({
-    events,
+    events: events.map((event) => ({ ...event, external_id: (event as EventRow & { units?: { external_id?: string | null } | null }).units?.external_id ?? null, units: undefined })),
     next_before: events.length === limit ? events[events.length - 1]!.created_at : null,
   })
 }

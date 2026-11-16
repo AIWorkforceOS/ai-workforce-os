@@ -1,0 +1,4 @@
+import { NextResponse } from 'next/server'
+import { authenticatePartner,isPartnerContext,listPartnerUnitIds,partnerError,resolvePartnerUnit } from '@/lib/partner-api/auth'
+import { countCapturedToday, DAILY_CAPTURE_LIMIT } from '@/lib/prospecting/engine'
+export async function GET(request:Request){const ctx=await authenticatePartner(request,'prospecting:run');if(!isPartnerContext(ctx))return ctx;const s=new URL(request.url).searchParams;let ids=await listPartnerUnitIds(ctx);if(s.get('unit_id')){const u=await resolvePartnerUnit(ctx,{unitId:s.get('unit_id')});if(!u)return partnerError(404,'Unidade não encontrada.');ids=[u.id]}const {data}=await ctx.supabase.from('prospecting_jobs').select('*').in('unit_id',ids).order('created_at',{ascending:false}).limit(200);const usage=await Promise.all(ids.map(async id=>({unit_id:id,captured_today:await countCapturedToday(ctx.supabase,id),daily_limit:DAILY_CAPTURE_LIMIT})));return NextResponse.json({runs:data??[],usage})}
