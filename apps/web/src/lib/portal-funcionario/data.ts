@@ -42,6 +42,7 @@ export type PortalAppointment = {
   service_order_material_value: number | null
   /** Estimativa de horas, preenchível independente do status (migration 057). */
   service_order_hours_needed: number | null
+  service_order_completion_summary: string | null
   service_order_photos: PortalServiceOrderPhoto[]
   /** Marcos de viagem/check-in/fim (migration 091) — só preenchidos para quem o admin marcou com check-in por GPS. */
   trip_started_at: string | null
@@ -67,7 +68,7 @@ export type EmployeePortalData = {
 
 // REGRA: o técnico nunca recebe nada do cliente (nome, cadastro, arquivo original da ordem com o cabeçalho dele): só a Mawi e a loja do atendimento.
 const APPOINTMENT_SELECT_COLUMNS =
-  'id, unit_id, starts_at, ends_at, status, address, notes, services(name), service_order_number, service_order_summary_pt, service_order_scope_en, service_order_status, service_order_signed_by, service_order_signed_at, service_order_location_name, service_order_signature_url, service_order_part_purchase_link, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_photos, trip_started_at, checked_in_at, work_ended_at'
+  'id, unit_id, starts_at, ends_at, status, address, notes, services(name), service_order_number, service_order_summary_pt, service_order_scope_en, service_order_status, service_order_signed_by, service_order_signed_at, service_order_location_name, service_order_signature_url, service_order_part_purchase_link, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_completion_summary, service_order_photos, trip_started_at, checked_in_at, work_ended_at'
 
 /**
  * Busca a agenda e o financeiro de UM funcionário (isolado por

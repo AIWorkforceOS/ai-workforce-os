@@ -71,6 +71,7 @@ function toPortalAppointment(appointment: AppointmentWithRelations): PortalAppoi
     service_order_material_description: appointment.service_order_material_description,
     service_order_material_value: appointment.service_order_material_value,
     service_order_hours_needed: appointment.service_order_hours_needed,
+    service_order_completion_summary: appointment.service_order_completion_summary,
     service_order_photos: appointment.service_order_photos,
     trip_started_at: appointment.trip_started_at,
     checked_in_at: appointment.checked_in_at,

@@ -53,6 +53,7 @@ type ServiceOrderPatch = Pick<
   | 'service_order_material_description'
   | 'service_order_material_value'
   | 'service_order_hours_needed'
+  | 'service_order_completion_summary'
   | 'service_order_photos'
 >
 
@@ -114,6 +115,7 @@ export function ServiceOrderWorkspace({
   const [hoursNeeded, setHoursNeeded] = useState(
     appt.service_order_hours_needed != null ? String(appt.service_order_hours_needed) : '',
   )
+  const [completionSummary, setCompletionSummary] = useState(appt.service_order_completion_summary ?? '')
   const [photosBefore, setPhotosBefore] = useState<File[]>([])
   const [photosAfter, setPhotosAfter] = useState<File[]>([])
   const [materialPhotos, setMaterialPhotos] = useState<File[]>([])
@@ -280,6 +282,7 @@ export function ServiceOrderWorkspace({
     materialDescription: appointment.service_order_material_description ?? '',
     materialValue: appointment.service_order_material_value != null ? String(appointment.service_order_material_value) : '',
     hoursNeeded: appointment.service_order_hours_needed != null ? String(appointment.service_order_hours_needed) : '',
+    completionSummary: appointment.service_order_completion_summary ?? '',
   }
 
   // Restaura o rascunho guardado neste aparelho (se a página foi recarregada/fechada antes de salvar).
@@ -295,6 +298,7 @@ export function ServiceOrderWorkspace({
         setMaterialDescription(f.materialDescription ?? '')
         setMaterialValue(f.materialValue ?? '')
         setHoursNeeded(f.hoursNeeded ?? '')
+        setCompletionSummary(f.completionSummary ?? '')
         const toFiles = (list: StoredFile[] | undefined) => (list ?? []).map((s) => new File([s.blob], s.name, { type: s.type }))
         setPhotosBefore(toFiles(draft.files.photosBefore))
         setPhotosAfter(toFiles(draft.files.photosAfter))
@@ -313,7 +317,7 @@ export function ServiceOrderWorkspace({
   useEffect(() => {
     if (!draftReady) return
     const timer = setTimeout(async () => {
-      const current: DraftFields = { status, signedBy, partPurchaseLink, materialDescription, materialValue, hoursNeeded }
+      const current: DraftFields = { status, signedBy, partPurchaseLink, materialDescription, materialValue, hoursNeeded, completionSummary }
       const fileCount = photosBefore.length + photosAfter.length + materialPhotos.length
       if (!isDraftWorthSaving({ current, serverValues, fileCount, hasSignature: Boolean(signatureDataUrl) })) {
         await deleteDraft(appointment.id)
@@ -329,7 +333,7 @@ export function ServiceOrderWorkspace({
       if (ok) setDraftSavedAt(updatedAt)
     }, 600)
     return () => clearTimeout(timer)
-  }, [draftReady, status, signedBy, partPurchaseLink, materialDescription, materialValue, hoursNeeded, photosBefore, photosAfter, materialPhotos, signatureDataUrl])
+  }, [draftReady, status, signedBy, partPurchaseLink, materialDescription, materialValue, hoursNeeded, completionSummary, photosBefore, photosAfter, materialPhotos, signatureDataUrl])
 
   const beforePhotoPreviews = useFilePreviews(photosBefore)
   const afterPhotoPreviews = useFilePreviews(photosAfter)
@@ -415,6 +419,10 @@ export function ServiceOrderWorkspace({
       setError('Peça para o gerente da loja assinar para finalizar.')
       return
     }
+    if (status === 'completed' && !completionSummary.trim()) {
+      setError('Descreva resumidamente o que foi executado.')
+      return
+    }
 
     if (autoGallery) {
       const copies = [...photosBefore, ...photosAfter, ...materialPhotos]
@@ -453,6 +461,7 @@ export function ServiceOrderWorkspace({
       materialDescription: status === 'quote' ? materialDescription.trim() : '',
       materialValue: status === 'quote' ? materialValue.trim() : '',
       hoursNeeded: hoursNeeded.trim(),
+      completionSummary: status === 'completed' ? completionSummary.trim() : '',
       ...endExtra,
     }
     const signatureFile = signatureDataUrl
@@ -712,6 +721,20 @@ export function ServiceOrderWorkspace({
               className="py-3 text-base"
             />
           </div>
+        </div>
+      )}
+
+      {status === 'completed' && (
+        <div className="flex flex-col gap-2 rounded-2xl p-4" style={{ background: 'rgba(6,182,212,0.06)', border: '1px solid rgba(6,182,212,0.18)' }}>
+          <Label>Resumo do que foi executado *</Label>
+          <Textarea
+            rows={4}
+            value={completionSummary}
+            onChange={(e) => setCompletionSummary(e.target.value)}
+            placeholder="Ex.: Substituímos a válvula danificada, testamos o equipamento e o funcionamento foi normalizado."
+            className="text-base"
+          />
+          <p className="text-xs text-slate-400">Esse texto aparecerá no histórico administrativo antes de abrir a ordem.</p>
         </div>
       )}
 

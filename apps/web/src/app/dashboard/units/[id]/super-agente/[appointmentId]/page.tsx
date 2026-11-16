@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { Card, CardHeader, PageHeader } from '@/components/ui/dashboard-ui'
+import { Card, CardHeader, PageHeader, StatusPill } from '@/components/ui/dashboard-ui'
 import { AdminRevisionForm, ReviewForm } from '@/components/super-agente/admin-forms'
 import { requireUnitAdmin } from '@/lib/quote-team/agent/admin-guard'
 import { listQuoteMessages } from '@/lib/quote-team/agent/messages'
@@ -16,7 +16,7 @@ export default async function SuperAgenteDetailPage({ params }: { params: Promis
   const guard = await requireUnitAdmin(id)
   if (!guard.ok) notFound()
   const { db, unit } = guard.ctx
-  const { data: apptRow } = await db.from('appointments').select('id, service_order_number, service_order_client_po, service_order_location_name, address, service_order_material_description, employee_id').eq('id', appointmentId).eq('unit_id', unit.id).maybeSingle()
+  const { data: apptRow } = await db.from('appointments').select('id, starts_at, ends_at, status, notes, address, service_order_number, service_order_client_po, service_order_location_name, service_order_summary_pt, service_order_scope_en, service_order_completion_summary, service_order_status, service_order_file_url, service_order_file_name, service_order_part_purchase_link, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_photos, service_order_signed_by, service_order_signed_at, service_order_signature_url, employee_id, customer:customers(name, client_company), employee:employees(name), service:services(name)').eq('id', appointmentId).eq('unit_id', unit.id).maybeSingle()
   const appt = apptRow as Row | null
   if (!appt) notFound()
   const job = await new SupabaseJobStore(db).findByAppointment(appointmentId)
@@ -38,14 +38,50 @@ export default async function SuperAgenteDetailPage({ params }: { params: Promis
   const suggested = aiOriginal?.labor?.man_hours ?? null
   const edited = (current?.edited_fields as string[] | null) ?? []
   const m = (v: unknown) => formatUsdFromMicros(v as number | null)
+  const photos = (Array.isArray(appt.service_order_photos) ? appt.service_order_photos : []) as { url: string; kind?: string }[]
+  const customer = appt.customer as { name?: string; client_company?: string | null } | null
+  const employee = appt.employee as { name?: string } | null
+  const service = appt.service as { name?: string } | null
+  const orderStatus = String(appt.service_order_status ?? (appt.status === 'completed' ? 'completed' : 'pending'))
+  const statusLabel = orderStatus === 'completed' ? 'Finalizada' : orderStatus === 'quote' ? 'Cotação' : 'Não atendida'
+  const statusVariant = orderStatus === 'completed' ? 'green' : orderStatus === 'quote' ? 'purple' : 'amber'
 
   return (
     <div className="flex flex-col gap-6 pb-10">
-      <PageHeader eyebrow="Super Agente — Piloto MAWI" title={`WO ${String(appt.service_order_number ?? appointmentId.slice(0, 8))}`} subtitle={`${String(appt.service_order_location_name ?? '')} · PO ${String(appt.service_order_client_po ?? '—')}`} action={<Link href={`/dashboard/units/${id}/super-agente`} className="text-sm font-bold text-cyan-300 underline">← Voltar ao painel</Link>} />
+      <PageHeader eyebrow="Histórico operacional" title={appt.service_order_number ? `WO ${String(appt.service_order_number)}` : String(service?.name ?? 'Atendimento')} subtitle={`${String(customer?.client_company || customer?.name || 'Cliente não informado')} · ${String(appt.service_order_location_name ?? appt.address ?? 'Local não informado')}`} action={<Link href={`/dashboard/units/${id}/super-agente`} className="text-sm font-bold text-cyan-300 underline">← Voltar ao painel</Link>} />
 
       <Card className="p-5">
-        <CardHeader eyebrow="Entrada do técnico" title="Descrição original" />
-        <p className="whitespace-pre-wrap text-sm text-slate-200">{String(appt.service_order_material_description ?? '—')}</p>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <StatusPill variant={statusVariant}>{statusLabel}</StatusPill>
+            <p className="mt-3 text-sm text-slate-200"><b>Profissional:</b> {employee?.name ?? 'Não definido'} · <b>Data:</b> {new Date(String(appt.starts_at)).toLocaleString('pt-BR')}</p>
+            <p className="text-sm text-slate-200"><b>PO:</b> {String(appt.service_order_client_po ?? '—')} · <b>Horas:</b> {String(appt.service_order_hours_needed ?? '—')}</p>
+          </div>
+          {appt.service_order_file_url ? <a className="rounded-xl bg-white/5 px-4 py-2 text-sm font-bold text-cyan-300" href={String(appt.service_order_file_url)} target="_blank" rel="noreferrer">Abrir ordem original</a> : null}
+        </div>
+      </Card>
+
+      <Card className="p-5">
+        <CardHeader eyebrow="Resumo rápido" title={orderStatus === 'completed' ? 'O que foi executado' : 'O que precisa ser feito'} />
+        <p className="whitespace-pre-wrap text-sm text-slate-200">{String(orderStatus === 'completed' ? appt.service_order_completion_summary ?? 'Ordem antiga sem resumo de conclusão.' : appt.service_order_summary_pt ?? appt.notes ?? 'Sem descrição registrada.')}</p>
+      </Card>
+
+      <Card className="p-5">
+        <CardHeader eyebrow="Escopo e materiais" title="Descrição completa" />
+        <p className="whitespace-pre-wrap text-sm text-slate-200">{String(appt.service_order_scope_en ?? appt.service_order_summary_pt ?? appt.notes ?? '—')}</p>
+        {appt.service_order_material_description ? <p className="mt-3 whitespace-pre-wrap text-sm text-slate-300"><b>Materiais/peça:</b> {String(appt.service_order_material_description)}</p> : null}
+        {appt.service_order_material_value != null ? <p className="mt-1 text-sm text-slate-300"><b>Valor estimado:</b> US$ {Number(appt.service_order_material_value).toFixed(2)}</p> : null}
+        {appt.service_order_part_purchase_link ? <a className="mt-2 inline-block text-sm font-bold text-cyan-300 underline" href={String(appt.service_order_part_purchase_link)} target="_blank" rel="noreferrer">Abrir link de compra da peça</a> : null}
+      </Card>
+
+      <Card className="p-5">
+        <CardHeader eyebrow="Evidências" title={`Fotos e arquivos (${photos.length})`} />
+        {photos.length === 0 ? <p className="text-sm text-slate-400">Nenhuma foto ou vídeo foi anexado.</p> : <div className="grid grid-cols-2 gap-3 md:grid-cols-4">{photos.map((photo, index) => <a key={`${photo.url}-${index}`} href={photo.url} target="_blank" rel="noreferrer" className="overflow-hidden rounded-xl bg-white/5"><img src={photo.url} alt={`Evidência ${index + 1}`} className="h-36 w-full object-cover" /><p className="px-3 py-2 text-xs font-bold text-slate-300">{photo.kind ?? 'serviço'} · abrir</p></a>)}</div>}
+      </Card>
+
+      <Card className="p-5">
+        <CardHeader eyebrow="Confirmação do cliente" title="Assinatura e sign-off" />
+        {appt.service_order_signature_url ? <div className="flex flex-wrap items-center gap-4"><img src={String(appt.service_order_signature_url)} alt="Assinatura do cliente" className="max-h-28 rounded-xl bg-white p-2" /><p className="text-sm text-slate-200">Assinado por <b>{String(appt.service_order_signed_by ?? 'cliente')}</b>{appt.service_order_signed_at ? ` em ${new Date(String(appt.service_order_signed_at)).toLocaleString('pt-BR')}` : ''}.</p></div> : <p className="text-sm text-slate-400">Ainda não há assinatura registrada.</p>}
       </Card>
 
       <Card className="p-5">

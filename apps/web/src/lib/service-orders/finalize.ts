@@ -27,6 +27,7 @@ export const ALLOWED_EMPLOYEE_UPDATE_COLUMNS = [
   'service_order_material_description',
   'service_order_material_value',
   'service_order_hours_needed',
+  'service_order_completion_summary',
   'service_order_photos',
   'updated_at',
 ] as const
@@ -38,6 +39,7 @@ export type ServiceOrderFinalizeInput = {
   materialDescription: unknown
   materialValue: unknown
   hoursNeeded: unknown
+  completionSummary?: unknown
 }
 
 export type ServiceOrderFinalizeResult =
@@ -85,6 +87,7 @@ export function buildServiceOrderUpdatePayload(
   const materialDescription = typeof input.materialDescription === 'string' ? input.materialDescription.trim() : ''
   const materialValue = parseOptionalNonNegativeNumber(input.materialValue)
   const hoursNeeded = parseOptionalNonNegativeNumber(input.hoursNeeded)
+  const completionSummary = typeof input.completionSummary === 'string' ? input.completionSummary.trim().slice(0, 4000) : ''
 
   const payload: Record<string, unknown> = {
     service_order_status: input.status,
@@ -94,6 +97,7 @@ export function buildServiceOrderUpdatePayload(
     service_order_material_value: input.status === 'quote' ? materialValue : null,
     // Horas necessárias é uma estimativa útil nos dois status — nunca é limpo por causa do status.
     service_order_hours_needed: hoursNeeded,
+    service_order_completion_summary: input.status === 'completed' ? completionSummary || null : null,
     // Assinatura desenhada: mantém a já salva se não veio uma nova neste envio (nunca é limpa por causa do status, igual às horas).
     service_order_signature_url: uploadedSignatureUrl ?? existingSignatureUrl ?? null,
   }

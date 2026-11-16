@@ -460,6 +460,8 @@ export type Appointment = {
   service_order_material_value: number | null
   /** Estimativa de horas, preenchível independente do status (migration 057). */
   service_order_hours_needed: number | null
+  /** Resumo do trabalho efetivamente executado, distinto do escopo originalmente solicitado. */
+  service_order_completion_summary: string | null
   /** Cotação estruturada por IA (migration 082, Portal 360) a partir de service_order_material_description — inglês vai pro cliente final, português é só conferência interna da 360. */
   service_order_quote_description_en: string | null
   service_order_quote_description_pt: string | null

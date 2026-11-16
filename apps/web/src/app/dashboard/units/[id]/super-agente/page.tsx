@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Card, CardHeader, KpiCard, PageHeader, StatusPill } from '@/components/ui/dashboard-ui'
 import { PilotControls, RateCardForm } from '@/components/super-agente/admin-forms'
+import { ServiceOrderHistoryBoard, type AdminOrderHistoryRow } from '@/components/super-agente/service-order-history-board'
 import { requireUnitAdmin } from '@/lib/quote-team/agent/admin-guard'
 import { loadPilotOverview, pilotEligibleEmployees, pilotStateOf, type PilotDraft, type PilotJob } from '@/lib/quote-team/agent/admin-data'
 
@@ -12,11 +13,41 @@ const STATE_VARIANT: Record<string, 'green' | 'red' | 'amber' | 'blue' | 'slate'
 const usd = (n: number | null | undefined) => (n == null ? '—' : `US$ ${n.toFixed(n < 1 ? 3 : 2)}`)
 const mins = (s: number | null) => (s == null ? '—' : s < 90 ? `${Math.round(s)} s` : `${(s / 60).toFixed(1)} min`)
 
-export default async function SuperAgentePage({ params }: { params: Promise<{ id: string }> }) {
+type SearchParams = Promise<{ tab?: string; kind?: string; status?: string; q?: string }>
+
+export default async function SuperAgentePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SearchParams }) {
   const { id } = await params
+  const search = await searchParams
   const guard = await requireUnitAdmin(id)
   if (!guard.ok) notFound()
   const { db, unit } = guard.ctx
+  const activeTab = search.tab === 'quotes' ? 'quotes' : 'orders'
+  const tabs = (
+    <div className="flex flex-wrap gap-2">
+      <Link href={`/dashboard/units/${id}/super-agente?tab=orders`} className={`rounded-xl px-4 py-2 text-sm font-bold ${activeTab === 'orders' ? 'bg-cyan-500/20 text-cyan-200' : 'bg-white/5 text-slate-300'}`}>Ordens e atendimentos</Link>
+      <Link href={`/dashboard/units/${id}/super-agente?tab=quotes`} className={`rounded-xl px-4 py-2 text-sm font-bold ${activeTab === 'quotes' ? 'bg-cyan-500/20 text-cyan-200' : 'bg-white/5 text-slate-300'}`}>Cotações com IA</Link>
+    </div>
+  )
+
+  if (activeTab === 'orders') {
+    const { data, error } = await db
+      .from('appointments')
+      .select('id, starts_at, status, notes, address, source, service_order_number, service_order_status, service_order_location_name, service_order_summary_pt, service_order_completion_summary, service_order_material_description, service_order_signed_by, service_order_signature_url, service_order_photos, customer:customers(name, client_company), employee:employees(name), service:services(name)')
+      .eq('unit_id', unit.id)
+      .order('starts_at', { ascending: false })
+      .limit(500)
+    if (error) throw error
+    const status = search.status === 'pending' || search.status === 'quote' || search.status === 'completed' ? search.status : 'all'
+    const kind = search.kind === 'services' ? 'services' : 'orders'
+    return (
+      <div className="flex flex-col gap-6 pb-10">
+        <PageHeader eyebrow="Operação e histórico" title="Ordens de serviço" subtitle={`${unit.name} · visão administrativa de serviços, cotações e execuções`} action={<Link href={`/dashboard/units/${id}/consumo-ia`} className="rounded-xl bg-cyan-500/10 px-4 py-2 text-sm font-bold text-cyan-200">Consumo de IA</Link>} />
+        {tabs}
+        <ServiceOrderHistoryBoard unitId={id} rows={(data ?? []) as unknown as AdminOrderHistoryRow[]} filter={status} kind={kind} query={search.q ?? ''} />
+      </div>
+    )
+  }
+
   const o = await loadPilotOverview(db, unit)
   const { summary: s } = o
   const { data: rate } = await db.from('quote_rate_cards').select('*').eq('org_id', unit.org_id).eq('is_active', true).or(`unit_id.eq.${unit.id},unit_id.is.null`).order('effective_from', { ascending: false }).limit(1).maybeSingle()
@@ -35,6 +66,7 @@ export default async function SuperAgentePage({ params }: { params: Promise<{ id
   return (
     <div className="flex flex-col gap-6 pb-10">
       <PageHeader eyebrow="Super Agente de Cotações" title="Super Agente — Piloto MAWI" subtitle={`${unit.name} · revisão humana obrigatória · nada é enviado automaticamente ao cliente`} action={<Link href={`/dashboard/units/${id}/consumo-ia`} className="rounded-xl px-4 py-2 text-sm font-bold text-cyan-200" style={{ background: 'rgba(6,182,212,0.12)', border: '1px solid rgba(6,182,212,0.35)' }}>Consumo de IA</Link>} />
+      {tabs}
 
       {s.alerts.length > 0 && (
         <Card className="p-4">

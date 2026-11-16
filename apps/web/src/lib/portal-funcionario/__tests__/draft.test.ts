@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { isDraftWorthSaving, type DraftFields } from '../draft'
 
-const server: DraftFields = { status: 'completed', signedBy: '', partPurchaseLink: '', materialDescription: '', materialValue: '', hoursNeeded: '' }
+const server: DraftFields = { status: 'completed', signedBy: '', partPurchaseLink: '', materialDescription: '', materialValue: '', hoursNeeded: '', completionSummary: '' }
 
 describe('isDraftWorthSaving', () => {
   it('tela recém-aberta, nada mudou: não grava rascunho vazio', () => {

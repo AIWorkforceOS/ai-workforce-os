@@ -6,6 +6,7 @@ export type DraftFields = {
   materialDescription: string
   materialValue: string
   hoursNeeded: string
+  completionSummary: string
 }
 
 /**
