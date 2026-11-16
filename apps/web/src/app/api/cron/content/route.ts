@@ -69,7 +69,9 @@ export async function GET(request: Request) {
   // Fase 1 — publica de verdade todo post do planejamento semanal já
   // aprovado (por humano ou conta autônoma) cuja data agendada é hoje.
   // Roda sempre, independente de quem usa planejamento semanal ou não.
-  const publishOutcome = await publishDueScheduledPosts(supabase)
+  // O worker dedicado roda a cada 15 minutos. Este lote pequeno mantém a
+  // compatibilidade do cron diário sem deixar a geração presa atrás de mídia.
+  const publishOutcome = await publishDueScheduledPosts(supabase, { maxPosts: 3 })
 
   const { data: configs } = await supabase
     .from('agent_configs')

@@ -168,4 +168,21 @@ describe('publishDueScheduledPosts', () => {
     expect(result).toEqual({ published: 3, errors: 0 })
     expect(db.content_posts?.every((p) => p.status === 'published')).toBe(true)
   })
+
+  it('limita o lote e deixa o restante aprovado para o próximo ciclo', async () => {
+    const { supabase, db } = createFakeSupabase({
+      content_posts: [
+        makePost({ id: 'post-1', scheduled_for: '2026-09-02T12:00:00Z' }),
+        makePost({ id: 'post-2', scheduled_for: '2026-09-05T12:00:00Z' }),
+        makePost({ id: 'post-3', scheduled_for: '2026-09-08T12:00:00Z' }),
+      ],
+      social_accounts: [makeAccount()],
+    })
+    const { publishDueScheduledPosts } = await loadModule()
+
+    const result = await publishDueScheduledPosts(supabase, { today: TODAY, maxPosts: 2 })
+
+    expect(result).toEqual({ published: 2, errors: 0 })
+    expect(db.content_posts?.filter((p) => p.status === 'approved')).toHaveLength(1)
+  })
 })

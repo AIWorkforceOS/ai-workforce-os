@@ -11,6 +11,17 @@ import type { ContentPost, SocialAccount } from './types'
 
 export type PublishOutcome = { ok: true; externalPostId: string } | { ok: false; error: string }
 
+function isRetryableMetaError(message: string): boolean {
+  const normalized = message.toLowerCase()
+  return (
+    normalized.includes('timeout aguardando processamento') ||
+    normalized.includes('temporarily unavailable') ||
+    normalized.includes('service unavailable') ||
+    normalized.includes('rate limit') ||
+    normalized.includes('try again later')
+  )
+}
+
 export async function publishContentPost(
   supabase: SupabaseClient,
   params: { post: ContentPost; account: SocialAccount },
@@ -19,6 +30,11 @@ export async function publishContentPost(
 
   async function fail(error: string): Promise<PublishOutcome> {
     await supabase.from('content_posts').update({ status: 'failed', error_message: error }).eq('id', post.id)
+    return { ok: false, error }
+  }
+
+  async function retryLater(error: string): Promise<PublishOutcome> {
+    await supabase.from('content_posts').update({ status: 'approved', error_message: error }).eq('id', post.id)
     return { ok: false, error }
   }
 
@@ -76,7 +92,8 @@ export async function publishContentPost(
 
     return { ok: true, externalPostId: result.externalPostId }
   } catch (error) {
-    return fail(error instanceof Error ? error.message : 'Falha ao publicar o post.')
+    const message = error instanceof Error ? error.message : 'Falha ao publicar o post.'
+    return isRetryableMetaError(message) ? retryLater(message) : fail(message)
   }
 }
 
@@ -100,7 +117,7 @@ export async function publishContentPost(
  */
 export async function publishDueScheduledPosts(
   supabase: SupabaseClient,
-  params: { today?: Date } = {},
+  params: { today?: Date; maxPosts?: number } = {},
 ): Promise<{ published: number; errors: number }> {
   const today = params.today ?? new Date()
   const dayStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()))
@@ -126,20 +143,27 @@ export async function publishDueScheduledPosts(
   // Carrossel aprovado espera a publicação de carrossel ser ligada: não conta como erro nem é tentado todo dia.
   const carouselsOn = carouselPublishingEnabled()
   const videosOn = videoPublishingEnabled()
-  const posts = due.filter((p) => (p.format !== 'carousel' || carouselsOn) && (p.format !== 'video' || videosOn))
+  const posts = due
+    .filter((p) => (p.format !== 'carousel' || carouselsOn) && (p.format !== 'video' || videosOn))
+    .sort((a, b) => {
+      const aDate = a.scheduled_for ? new Date(a.scheduled_for).getTime() : new Date(a.created_at).getTime()
+      const bDate = b.scheduled_for ? new Date(b.scheduled_for).getTime() : new Date(b.created_at).getTime()
+      return aDate - bDate
+    })
+    .slice(0, params.maxPosts)
 
-  let published = 0
-  let errors = 0
-  for (const post of posts) {
+  // A Meta processa contêineres de vídeo de forma assíncrona e um Reel pode
+  // levar até três minutos. Publicar o lote em paralelo mantém a execução
+  // dentro do limite da função. O cron recorrente usa maxPosts=3 para não
+  // sobrecarregar a conta e pega automaticamente o próximo lote.
+  const outcomes = await Promise.all(posts.map(async (post) => {
     const { data: account } = await supabase.from('social_accounts').select('*').eq('id', post.social_account_id).maybeSingle()
-    if (!account) {
-      errors += 1
-      continue
-    }
-    const outcome = await publishContentPost(supabase, { post, account: account as SocialAccount })
-    if (outcome.ok) published += 1
-    else errors += 1
-  }
+    if (!account) return false
+    return (await publishContentPost(supabase, { post, account: account as SocialAccount })).ok
+  }))
+
+  const published = outcomes.filter(Boolean).length
+  const errors = outcomes.length - published
   return { published, errors }
 }
 

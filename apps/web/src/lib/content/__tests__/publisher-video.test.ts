@@ -56,6 +56,19 @@ describe('publicação de vídeo', () => {
     expect(out).toEqual({ ok: false, error: 'Vídeo sem arquivo renderizado.' })
   })
 
+  it('mantém aprovado para tentar de novo quando a Meta demora para processar', async () => {
+    process.env.CONTENT_VIDEO_PUBLISH = 'on'
+    publishInstagramReel.mockRejectedValueOnce(new Error('Container de mídia do Instagram não ficou pronto a tempo (timeout aguardando processamento).'))
+    const { supabase, db } = createFakeSupabase({ content_posts: [videoPost()], social_accounts: [account] })
+    const { publishContentPost } = await load()
+    const out = await publishContentPost(supabase, { post: videoPost() as never, account: account as never })
+    expect(out.ok).toBe(false)
+    expect((db.content_posts as { status: string; error_message: string }[])[0]).toMatchObject({
+      status: 'approved',
+      error_message: expect.stringContaining('timeout'),
+    })
+  })
+
   it('o cron pula vídeo com a trava desligada e publica o resto', async () => {
     const image = { ...videoPost({ id: 'p2' }), format: 'image', video: null }
     const { supabase, db } = createFakeSupabase({ content_posts: [videoPost(), image], social_accounts: [account] })

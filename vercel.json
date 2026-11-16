@@ -26,6 +26,10 @@
       "schedule": "0 9 * * *"
     },
     {
+      "path": "/api/cron/content-publish",
+      "schedule": "*/15 * * * *"
+    },
+    {
       "path": "/api/cron/seo",
       "schedule": "0 8 * * *"
     },
