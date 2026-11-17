@@ -5,10 +5,10 @@ import type { AgentConfig, Lead, Unit } from '@/lib/types'
 // Regressão (2026-08-11): a mesma correção aplicada em fetchCustomerHistory
 // (lib/receptionist/engine.ts, commit b0b6ac9) valia também aqui — o
 // histórico da conversa era buscado com `.order('sent_at', { ascending: true
-// }).limit(20)`, o que devolve as 20 mensagens MAIS ANTIGAS de uma conversa
-// longa, não as mais recentes. Numa conversa com mais de 20 mensagens, a
+// }).limit(...)`, o que devolve as mensagens MAIS ANTIGAS de uma conversa
+// longa, não as mais recentes. Numa conversa maior que a janela, a
 // pergunta atual do lead ficava fora da janela enviada ao modelo. Este teste
-// garante que, com mais de 20 mensagens salvas, o histórico passado ao LLM
+// garante que, com mais de 40 mensagens salvas, o histórico passado ao LLM
 // contém as mensagens recentes (não as antigas) e mantém ordem cronológica.
 
 const { generateChatReplyMock } = vi.hoisted(() => ({
@@ -136,14 +136,14 @@ function buildAgentConfig(unit: Unit): AgentConfig {
 }
 
 describe('processInboundMessage — janela de histórico (regressão ascending+limit)', () => {
-  it('inclui as mensagens RECENTES (não as mais antigas) quando a conversa passa de 20 mensagens', async () => {
+  it('inclui as mensagens RECENTES (não as mais antigas) quando a conversa passa de 40 mensagens', async () => {
     const unit = buildUnit()
     const lead = buildLead(unit)
     const config = buildAgentConfig(unit)
 
-    // 30 mensagens antigas, cronologicamente as primeiras da conversa —
-    // nenhuma delas deve sobreviver à janela de 20 mais recentes.
-    const oldMessages = Array.from({ length: 30 }, (_, i) => ({
+    // 50 mensagens antigas, cronologicamente as primeiras da conversa —
+    // nenhuma delas deve sobreviver à janela de 40 mais recentes.
+    const oldMessages = Array.from({ length: 50 }, (_, i) => ({
       id: `conv-old-${i}`,
       lead_id: lead.id,
       unit_id: unit.id,
@@ -155,11 +155,11 @@ describe('processInboundMessage — janela de histórico (regressão ascending+l
       template_key: null,
     }))
 
-    // 20 mensagens recentes: a busca no banco tem limit(20) por si só,
+    // 40 mensagens recentes: a busca no banco tem limit(40) por si só,
     // ANTES de somar o incomingText desta chamada (que é anexado depois,
     // fora da query) — por isso a janela salva no banco precisa ter as
-    // 20 cheias para excluir totalmente as antigas.
-    const recentMessages = Array.from({ length: 20 }, (_, i) => ({
+    // 40 cheias para excluir totalmente as antigas.
+    const recentMessages = Array.from({ length: 40 }, (_, i) => ({
       id: `conv-recent-${i}`,
       lead_id: lead.id,
       unit_id: unit.id,
@@ -192,15 +192,48 @@ describe('processInboundMessage — janela de histórico (regressão ascending+l
     // Nenhuma mensagem antiga deve estar na janela enviada ao modelo.
     expect(history.some((m) => m.content.startsWith('mensagem antiga'))).toBe(false)
 
-    // Todas as 20 recentes + a pergunta atual devem estar presentes.
-    expect(history).toHaveLength(21)
-    for (let i = 0; i < 20; i++) {
+    // Todas as 40 recentes + a pergunta atual devem estar presentes.
+    expect(history).toHaveLength(41)
+    for (let i = 0; i < 40; i++) {
       expect(history.some((m) => m.content === `mensagem recente #${i}`)).toBe(true)
     }
     expect(history.at(-1)).toEqual({ role: 'user', content: 'pergunta atual do cliente' })
 
     // Ordem cronológica preservada dentro da janela (não invertida).
-    const recentContents = history.slice(0, 20).map((m) => m.content)
+    const recentContents = history.slice(0, 40).map((m) => m.content)
     expect(recentContents).toEqual(recentMessages.map((m) => m.content))
+  })
+
+  it('responde somente ao último turno quando a Evolution entrega uma rajada em paralelo', async () => {
+    const unit = buildUnit()
+    const lead = buildLead(unit)
+    const config = buildAgentConfig(unit)
+    const { supabase } = createFakeSupabase({
+      agent_configs: [config as unknown as Record<string, unknown>],
+      conversations: [
+        {
+          id: 'inbound-antigo', lead_id: lead.id, unit_id: unit.id,
+          channel: 'whatsapp', direction: 'inbound', content: 'Boa noite',
+          status: 'delivered', sent_at: '2026-11-16T22:16:10.000Z', created_at: '2026-11-17T00:57:27.678Z',
+        },
+        {
+          id: 'inbound-novo', lead_id: lead.id, unit_id: unit.id,
+          channel: 'whatsapp', direction: 'inbound', content: 'Me passe o valor, por favor',
+          status: 'delivered', sent_at: '2026-11-16T22:16:17.000Z', created_at: '2026-11-17T00:57:27.686Z',
+        },
+      ],
+    })
+
+    generateChatReplyMock.mockClear()
+    const { processInboundMessage } = await import('@/lib/conversation-engine')
+    await processInboundMessage({
+      supabase,
+      unit,
+      lead,
+      incomingText: 'Boa noite',
+      inboundMessageId: 'inbound-antigo',
+    })
+
+    expect(generateChatReplyMock).not.toHaveBeenCalled()
   })
 })

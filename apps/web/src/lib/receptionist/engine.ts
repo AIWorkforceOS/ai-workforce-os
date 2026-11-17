@@ -295,6 +295,7 @@ async function isInboundMessageStale(
     .eq(contactColumn, contactId)
     .eq('direction', 'inbound')
     .order('sent_at', { ascending: false })
+    .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
 

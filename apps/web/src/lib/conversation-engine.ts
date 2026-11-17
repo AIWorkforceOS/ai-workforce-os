@@ -641,10 +641,13 @@ export async function processInboundMessage(params: {
   unit: Unit
   lead: Lead
   incomingText: string
+  /** Linha inbound que disparou este processamento. Permite descartar turnos
+   * antigos quando a Evolution libera várias mensagens represadas de uma vez. */
+  inboundMessageId?: string
   /** Cliente mandou a mensagem por áudio → resposta também deve ser em áudio (item 1 do pedido de voz). */
   wasAudioMessage?: boolean
 }): Promise<ProcessInboundResult> {
-  const { supabase, unit, lead, incomingText, wasAudioMessage } = params
+  const { supabase, unit, lead, incomingText, inboundMessageId, wasAudioMessage } = params
   const noHandoff: ProcessInboundResult = { dealHandoffReady: false }
 
   const { data: agentConfig } = await supabase
@@ -673,6 +676,27 @@ export async function processInboundMessage(params: {
     return noHandoff
   }
 
+  // A Evolution/Baileys pode entregar uma rajada atrasada em paralelo. Dê
+  // uma janela curta para os demais webhooks gravarem seus inbounds e deixe
+  // somente a mensagem mais nova gerar resposta. Ela verá toda a rajada no
+  // histórico; as anteriores não devem produzir respostas concorrentes.
+  if (inboundMessageId) {
+    await new Promise((resolve) => setTimeout(resolve, 750))
+    const { data: latestInbound } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('lead_id', lead.id)
+      .eq('direction', 'inbound')
+      .order('sent_at', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if ((latestInbound as { id: string } | null)?.id !== inboundMessageId) {
+      return noHandoff
+    }
+  }
+
   // Responder mensagem RECEBIDA de um lead já em conversa é sempre
   // livre: sem checar active_hours nem daily_limit — esses guard-rails
   // valem só para disparos proativos (primeiro contato, follow-up). O
@@ -680,7 +704,7 @@ export async function processInboundMessage(params: {
   // quantas mensagens forem necessárias para fechar o negócio. A
   // escalação só ocorre por palavra-chave configurada.
 
-  // Busca as ÚLTIMAS 20 mensagens (não as primeiras): ordena por mais
+  // Busca as ÚLTIMAS 40 mensagens (não as primeiras): ordena por mais
   // recente e reverte pra ordem cronológica depois — mesmo bug corrigido
   // em fetchCustomerHistory (lib/receptionist/engine.ts): ascending+limit
   // direto devolve as mensagens MAIS ANTIGAS, deixando a pergunta atual
@@ -690,7 +714,7 @@ export async function processInboundMessage(params: {
     .select('*')
     .eq('lead_id', lead.id)
     .order('sent_at', { ascending: false })
-    .limit(20)
+    .limit(40)
 
   const historyRows = ((history as Conversation[] | null) ?? []).reverse()
 
@@ -872,7 +896,12 @@ export async function processInboundMessage(params: {
     role: row.direction === 'inbound' ? 'user' : 'assistant',
     content: row.content,
   }))
-  chatHistory.push({ role: 'user', content: incomingText })
+  // No webhook, o inbound já foi persistido antes de entrar no motor. Não
+  // repita a mesma mensagem no prompt; chamadas internas antigas, que não
+  // passam inboundMessageId, continuam anexando incomingText normalmente.
+  if (!inboundMessageId || historyRows.at(-1)?.id !== inboundMessageId) {
+    chatHistory.push({ role: 'user', content: incomingText })
+  }
 
   // Ficha da Empresa compartilhada entre todos os funcionários digitais
   // (organizations.business_profile, migration 025) — soma-se à ficha

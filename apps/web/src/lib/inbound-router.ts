@@ -1011,16 +1011,20 @@ export async function routeInboundMessage(params: InboundRouteParams): Promise<R
     return triageResult ?? { ok: true, routed: 'receptionist' }
   }
 
-  await supabase.from('conversations').insert({
-    lead_id: lead.id,
-    unit_id: unitRow.id,
-    channel,
-    direction: 'inbound',
-    content: text,
-    external_message_id: externalMessageId,
-    status: 'delivered',
-    sent_at: sentAt,
-  })
+  const { data: inboundLeadRow } = await supabase
+    .from('conversations')
+    .insert({
+      lead_id: lead.id,
+      unit_id: unitRow.id,
+      channel,
+      direction: 'inbound',
+      content: text,
+      external_message_id: externalMessageId,
+      status: 'delivered',
+      sent_at: sentAt,
+    })
+    .select('id')
+    .single()
 
   const updatedLead: Lead = {
     ...lead,
@@ -1038,6 +1042,7 @@ export async function routeInboundMessage(params: InboundRouteParams): Promise<R
     unit: unitRow,
     lead: updatedLead,
     incomingText: text,
+    inboundMessageId: (inboundLeadRow as { id: string } | null)?.id,
     wasAudioMessage,
   })
 
@@ -1107,7 +1112,15 @@ async function findOrCreateReceptionistLead(
     .select()
     .single()
 
-  return (inserted as Lead | null) ?? null
+  const created = (inserted as Lead | null) ?? null
+  if (!created) return null
+
+  // Duas primeiras mensagens podem chegar no mesmo milissegundo e ambas
+  // passarem pelo SELECT acima antes de qualquer INSERT existir. Depois do
+  // insert, convergimos deterministicamente para o registro mais antigo,
+  // evitando dividir o histórico do mesmo telefone em dois leads.
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  return (await findLeadByIdentifier(supabase, unit, incomingPhone, incomingEmail)) ?? created
 }
 
 export type ReceptionistChannelRouteParams = {
