@@ -32,9 +32,17 @@ function baseConfig(businessProfile: Record<string, unknown> = {}): AgentConfig 
 }
 
 describe('buildReceptionistSystemPrompt', () => {
+  it('torna a Recepcionista porta de entrada obrigatória e separa empresa abrindo vaga de estudante candidato', () => {
+    const prompt = buildReceptionistSystemPrompt(baseConfig(), unit)
+
+    expect(prompt).toContain('PORTA DE ENTRADA OBRIGATÓRIA')
+    expect(prompt).toContain('uma EMPRESA querendo abrir/contratar vagas de estágio')
+    expect(prompt).toContain('Não confunda com estudante procurando uma vaga')
+    expect(prompt).toContain('interesse em comprar uma franquia Smarter')
+  })
   it('define a Recepcionista como porta de entrada com transferência contextual', () => {
     const prompt = buildReceptionistSystemPrompt(baseConfig(), unit, null)
-    expect(prompt).toContain('PORTA DE ENTRADA principal')
+    expect(prompt).toContain('PORTA DE ENTRADA OBRIGATÓRIA')
     expect(prompt).toContain('não precisar repetir tudo')
   })
 

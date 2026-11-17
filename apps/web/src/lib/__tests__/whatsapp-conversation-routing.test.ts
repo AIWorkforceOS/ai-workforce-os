@@ -5,6 +5,7 @@ import {
   whatsappContactKey,
   retainReceptionistOwnership,
 } from '@/lib/whatsapp-conversation-routing'
+import { routeInboundMessage } from '@/lib/inbound-router'
 import { createFakeSupabase } from './fake-supabase'
 import type { Unit } from '@/lib/types'
 
@@ -87,6 +88,43 @@ describe('WhatsApp compartilhado — propriedade da conversa', () => {
       agent_type: 'sdr',
       previous_agent_type: 'receptionist',
       handoff_reason: 'Cliente pediu proposta',
+    })
+  })
+
+  it('uma nova mensagem volta obrigatoriamente ao Receptionist mesmo quando a conversa estava com Sales', async () => {
+    const { supabase } = createFakeSupabase({
+      agent_configs: [
+        { id: 'rec-1', unit_id: unit.id, agent_type: 'receptionist', persona_name: 'Ana', is_active: true },
+      ],
+      leads: [
+        { id: 'lead-1', unit_id: unit.id, phone: '5511999998888', email: null, company_name: 'Lead Franquia' },
+      ],
+    })
+    await assignWhatsappConversation({
+      supabase,
+      unit,
+      phone: '5511999998888',
+      email: null,
+      agentType: 'sdr',
+      reason: 'Victor estava atendendo venda de franquia',
+      summary: 'Contato pediu informações comerciais.',
+    })
+
+    const result = await routeInboundMessage({
+      supabase,
+      unit: { ...unit, name: 'Smarter Matriz' },
+      channel: 'whatsapp',
+      incomingPhone: '5511999998888',
+      incomingEmail: null,
+      text: 'Tenho mais uma dúvida sobre a franquia',
+      externalMessageId: 'msg-ana-first-1',
+      sentAt: '2026-11-17T12:00:00.000Z',
+    })
+
+    expect(result).toMatchObject({ ok: true, routed: 'receptionist_prospect' })
+    await expect(getWhatsappConversationRoute(supabase, unit.id, '5511999998888', null)).resolves.toMatchObject({
+      agent_type: 'receptionist',
+      previous_agent_type: 'sdr',
     })
   })
 })

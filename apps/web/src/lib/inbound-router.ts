@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { processInboundMessage } from '@/lib/conversation-engine'
-import { generateChatReply, generateStructuredReply, getOpenAIApiKey } from '@/lib/openai'
+import { generateChatReply, getOpenAIApiKey } from '@/lib/openai'
 import { getRecruiterConfig } from '@/lib/recruiter/guardrails'
 import { handleCandidateInbound } from '@/lib/recruiter/screening-engine'
 import { handleCompanyIntakeInbound } from '@/lib/recruiter/intake-engine'
@@ -150,7 +150,7 @@ type UnknownInboundContext = {
 }
 
 async function handleUnknownInbound(params: UnknownInboundContext): Promise<Record<string, unknown> | void> {
-  const { supabase, unit, channel, incomingPhone, incomingEmail, text, externalMessageId, sentAt, wasAudioMessage } = params
+  const { supabase, unit, channel, incomingPhone, incomingEmail, text, sentAt } = params
   const apiKey = getOpenAIApiKey()
   // Todos os setores usam a mesma instância da unidade; o agentType aqui
   // identifica apenas a função que responderá, não outro número físico.
@@ -172,424 +172,21 @@ async function handleUnknownInbound(params: UnknownInboundContext): Promise<Reco
     return
   }
 
-  // No número compartilhado, a primeira mensagem já pode trazer contexto
-  // suficiente ("quero agendar", "vim falar da proposta", "procuro uma
-  // vaga"). Classifica antes de fazer uma pergunta genérica para evitar que
-  // o cliente repita o que acabou de dizer.
-  const firstTouchIntent = await generateStructuredReply<{
-    route?: 'receptionist' | 'sales' | 'recruiting' | 'unclear'
-    reason?: string
-  }>({
-    apiKey,
-    systemPrompt: [
-      'ROTEAMENTO_COMPARTILHADO_WHATSAPP',
-      'Classifique a primeira mensagem recebida no WhatsApp único da empresa.',
-      'receptionist = suporte, atendimento, cliente atual, dúvida geral, pedido ou agendamento.',
-      'sales = proposta, orçamento comercial, compra, contratação de serviço ou resposta a prospecção.',
-      'recruiting = vaga, currículo, candidato, contratação de funcionário ou processo seletivo.',
-      'unclear = não há informação suficiente.',
-      'Responda somente JSON: {"route":"receptionist"|"sales"|"recruiting"|"unclear","reason":"resumo curto"}.',
-    ].join(' '),
-    history: [{ role: 'user', content: text }],
-    maxTokens: 120,
-  }).catch(() => ({ route: 'unclear' as const }))
-
-  // A Recepcionista é sempre a porta de entrada de um contato novo. Esta
-  // pré-classificação vira contexto de triagem, não autorização para pular
-  // direto para Sales/Recruiter. Ela responde primeiro e, se necessário,
-  // executa o handoff com histórico pelo próprio motor.
-  const initialRoute = firstTouchIntent.route ?? 'unclear'
-  if (initialRoute) {
-    await assignWhatsappConversation({
-      supabase,
-      unit,
-      phone: incomingPhone,
-      email: incomingEmail,
-      agentType: 'receptionist',
-      reason: `Recepção inicial: ${('reason' in firstTouchIntent ? firstTouchIntent.reason : null) ?? initialRoute}`,
-      summary: text.slice(0, 500),
-      lastMessageAt: sentAt,
-    })
-    return routeReceptionistChannelMessage(params)
-  }
-
-  if (firstTouchIntent.route === 'sales') {
-    const { data: insertedLead, error: leadError } = await supabase
-      .from('leads')
-      .insert({
-        unit_id: unit.id,
-        phone: incomingPhone,
-        email: incomingEmail,
-        company_name: `Contato (${incomingPhone.slice(-4)})`,
-        contact_name: null,
-        source: 'shared_whatsapp_triage',
-        status: 'replied',
-        last_contacted_at: sentAt,
-      })
-      .select()
-      .single()
-
-    if (!leadError && insertedLead) {
-      const lead = insertedLead as Lead
-      await supabase.from('conversations').insert({
-        lead_id: lead.id,
-        unit_id: unit.id,
-        channel,
-        direction: 'inbound',
-        content: text,
-        external_message_id: externalMessageId,
-        status: 'delivered',
-        sent_at: sentAt,
-      })
-      await assignWhatsappConversation({
-        supabase,
-        unit,
-        phone: incomingPhone,
-        email: incomingEmail,
-        agentType: 'sdr',
-        reason: firstTouchIntent.reason ?? 'Interesse comercial identificado na triagem',
-        summary: text.slice(0, 500),
-        lastMessageAt: sentAt,
-      })
-      const result = await processInboundMessage({ supabase, unit, lead, incomingText: text, wasAudioMessage })
-      if (result.dealHandoffReady) {
-        await handleSalesDealHandoff(supabase, { leadId: lead.id, unit }).catch(() => undefined)
-      }
-      return { ok: true, routed: 'sdr', triaged: true }
-    }
-  }
-
-  // Procura por um lead em triagem (source = 'unknown_inbound' e status = 'contacted')
-  // para este número — indica que a pergunta de triagem já foi enviada
-  const { data: screeningLeads } = await supabase
-    .from('leads')
-    .select('*')
-    .eq('unit_id', unit.id)
-    .eq('source', 'unknown_inbound')
-    .eq('status', 'contacted')
-    .order('created_at', { ascending: false })
-    .limit(5)
-
-  type ScreeningLead = Lead & { phone: string | null }
-  const existingScreeningLead = ((screeningLeads as ScreeningLead[] | null) ?? []).find(
-    (lead) => lead.phone && phonesMatch(normalizePhone(lead.phone), incomingPhone),
-  )
-
-  // ── Fase 1: Lead em triagem respondeu ──────────────────────────────
-  if (existingScreeningLead) {
-    // Interpretar resposta: é candidato ou empresa?
-    const screeningInterpretation = await generateStructuredReply<{
-      is_candidate_or_employee?: boolean
-      is_company?: boolean
-      is_existing_customer?: boolean
-      reasoning?: string
-    }>({
-      apiKey,
-      systemPrompt: [
-        'Você está analisando uma resposta a uma pergunta de triagem sobre o motivo do contato.',
-        'A pessoa poderia ser: (1) um estudante/candidato procurando vaga; (2) uma empresa procurando contratar; (3) um cliente ativo procurando outro assunto; (4) algo indeterminado.',
-        'Responda com um JSON: {"is_candidate_or_employee": boolean, "is_company": boolean, "is_existing_customer": boolean, "reasoning": string}.',
-        'Seja conciso — apenas uma dessas três flags deve ser true. Se indeterminado, todas false.',
-      ].join(' '),
-      history: [{ role: 'user', content: text }],
-      maxTokens: 200,
-    }).catch(() => ({ is_candidate_or_employee: false, is_company: false, is_existing_customer: false }))
-
-    // Registra a mensagem de resposta
-    await supabase.from('conversations').insert({
-      lead_id: existingScreeningLead.id,
-      unit_id: unit.id,
-      channel,
-      direction: 'inbound',
-      content: text,
-      external_message_id: externalMessageId,
-      status: 'delivered',
-      sent_at: sentAt,
-    })
-
-    // ── Subcaso 1: É candidato/estudante ──────────────────────────────
-    if (screeningInterpretation.is_candidate_or_employee) {
-      // Atualiza lead para indicar que é candidato (source: 'unknown_inbound_candidate')
-      // e volta para 'new' para rotar pelo Sales Rep (que vai encaminhar ao Recruiter se necessário)
-      const { data: updatedCandidateLead } = await supabase
-        .from('leads')
-        .update({
-          status: 'new',
-          source: 'unknown_inbound_candidate',
-          last_contacted_at: sentAt,
-        })
-        .eq('id', existingScreeningLead.id)
-        .select()
-        .single()
-
-      await logSystemEvent(supabase, {
-        level: 'info',
-        source: 'system',
-        eventType: 'unknown_inbound_identified_candidate',
-        message: `Número desconhecido identificado como candidato/estudante via triagem. Lead criado como fonte unknown_inbound_candidate.`,
-        orgId: unit.org_id,
-        unitId: unit.id,
-        leadId: existingScreeningLead.id,
-      })
-
-      // Sem isto, a MENSAGEM ATUAL (a que acabou de provar ser candidato)
-      // nunca recebia resposta nenhuma — o update acima só fazia efeito na
-      // PRÓXIMA mensagem da pessoa (routeInboundMessage não bate mais a
-      // condição da Rota 3 depois dele), deixando quem respondeu a
-      // triagem sem nenhuma resposta. Confirmado em produção: leads presos
-      // exatamente aqui, sem nenhum retorno depois de identificar o motivo
-      // real do contato — a raiz do "Sales nunca responde".
-      const candidateLead = (updatedCandidateLead as Lead | null) ?? {
-        ...existingScreeningLead,
-        status: 'new',
-        source: 'unknown_inbound_candidate',
-        last_contacted_at: sentAt,
-      }
-      const candidateResult = await processInboundMessage({ supabase, unit, lead: candidateLead, incomingText: text, wasAudioMessage })
-      if (candidateResult.dealHandoffReady) {
-        try {
-          await handleSalesDealHandoff(supabase, { leadId: candidateLead.id, unit })
-        } catch (error) {
-          console.error(`[inbound_router] handoff Sales→Recrutador falhou: ${error instanceof Error ? error.message : String(error)}`)
-        }
-      }
-      return
-    }
-
-    // ── Subcaso 2: É empresa/cliente procurando contratar ──────────────
-    if (screeningInterpretation.is_company) {
-      // Atualiza lead para empresa (source: 'unknown_inbound')
-      // e status normal para rotar pelo Sales Rep
-      const { data: updatedCompanyLead } = await supabase
-        .from('leads')
-        .update({
-          status: 'replied',
-          source: 'unknown_inbound',
-          last_contacted_at: sentAt,
-        })
-        .eq('id', existingScreeningLead.id)
-        .select()
-        .single()
-
-      await logSystemEvent(supabase, {
-        level: 'info',
-        source: 'system',
-        eventType: 'unknown_inbound_identified_company',
-        message: `Número desconhecido identificado como empresa/cliente procurando contratar via triagem. Lead criado como fonte unknown_inbound.`,
-        orgId: unit.org_id,
-        unitId: unit.id,
-        leadId: existingScreeningLead.id,
-      })
-
-      // Mesma razão do subcaso 1 acima: gera a resposta de vendas agora,
-      // pra mensagem atual, em vez de só deixar o lead pronto pra próxima.
-      const companyLead = (updatedCompanyLead as Lead | null) ?? {
-        ...existingScreeningLead,
-        status: 'replied',
-        source: 'unknown_inbound',
-        last_contacted_at: sentAt,
-      }
-      const companyResult = await processInboundMessage({ supabase, unit, lead: companyLead, incomingText: text, wasAudioMessage })
-      if (companyResult.dealHandoffReady) {
-        try {
-          await handleSalesDealHandoff(supabase, { leadId: companyLead.id, unit })
-        } catch (error) {
-          console.error(`[inbound_router] handoff Sales→Recrutador falhou: ${error instanceof Error ? error.message : String(error)}`)
-        }
-      }
-      return
-    }
-
-    // ── Subcaso 3: Diz que já é cliente ─────────────────────────────
-    if (screeningInterpretation.is_existing_customer) {
-      await logSystemEvent(supabase, {
-        level: 'warning',
-        source: 'system',
-        eventType: 'unknown_inbound_claims_existing_customer',
-        message: `Número desconhecido diz ser cliente ativo: ${text}. Requer revisão humana — número não bate com nenhum registro.`,
-        orgId: unit.org_id,
-        unitId: unit.id,
-        leadId: existingScreeningLead.id,
-      })
-      // Marca o lead como "paused" para não entrar em fluxo automático
-      await supabase
-        .from('leads')
-        .update({
-          status: 'paused',
-          source: 'unknown_inbound_unmatched_customer',
-          last_contacted_at: sentAt,
-        })
-        .eq('id', existingScreeningLead.id)
-
-      // Não dá pra confirmar o cadastro automaticamente (por isso o "paused"
-      // acima, aguardando revisão humana), mas a pessoa não pode ficar sem
-      // nenhuma resposta — mesma razão dos subcasos 1/2 acima.
-      const existingCustomerAck = await generateChatReply({
-        apiKey,
-        systemPrompt:
-          'Você é um assistente que recebe mensagens de números desconhecidos. A pessoa disse que já é cliente, mas o número dela não bate com nenhum cadastro nosso. Responda breve e amigável (1-2 frases) dizendo que vai conferir o cadastro dela e volta com uma resposta em breve — sem pedir desculpas nem soar robótico, e sem confirmar nada que você ainda não verificou.',
-        history: [{ role: 'user', content: text }],
-      }).catch(() => null)
-
-      if (existingCustomerAck) {
-        const { data: ackOutboundRow } = await supabase
-          .from('conversations')
-          .insert({
-            lead_id: existingScreeningLead.id,
-            unit_id: unit.id,
-            channel,
-            direction: 'outbound',
-            content: existingCustomerAck,
-            status: 'sent',
-            sent_at: new Date().toISOString(),
-          })
-          .select('id')
-          .single()
-
-        try {
-          await messagingChannel.sendMessage(incomingPhone, existingCustomerAck, { voiceReply: wasAudioMessage })
-        } catch (error) {
-          if (ackOutboundRow) {
-            await supabase.from('conversations').update({ status: 'failed' }).eq('id', ackOutboundRow.id)
-          }
-          console.error(`[inbound_router] ack de cliente não identificado falhou: ${error instanceof Error ? error.message : String(error)}`)
-        }
-      }
-      return
-    }
-
-    // ── Subcaso 4: Indeterminado — pergunta novamente ────────────────
-    const followUpQuestion = await generateChatReply({
-      apiKey,
-      systemPrompt:
-        'Você é um assistente de triagem que precisa esclarecer o motivo do contato de forma educada. ' +
-        'A pessoa respondeu algo indeterminado. Pergunte de novo, mas de forma ligeiramente diferente, ' +
-        'se ela procura uma vaga, quer oferecer oportunidade, ou se já é cliente. Mantenha breve (1-2 frases).',
-      history: [{ role: 'user', content: text }],
-    })
-
-    if (followUpQuestion) {
-      // Grava a linha outbound ANTES de enviar (não depois) — mesma razão do
-      // fix em conversation-engine.ts (processInboundMessage): a Evolution
-      // API pode entregar o eco do próprio envio quase no mesmo instante em
-      // que despacha a mensagem, antes da nossa chamada sendMessage
-      // retornar. Se o insert só acontecesse depois, esse eco chegava ao
-      // webhook antes de existir uma linha outbound para isRecentOutboundEcho
-      // comparar, e virava um inbound "novo" — o padrão que já derrubou
-      // este número de WhatsApp antes.
-      const { data: outboundRow } = await supabase
-        .from('conversations')
-        .insert({
-          lead_id: existingScreeningLead.id,
-          unit_id: unit.id,
-          channel,
-          direction: 'outbound',
-          content: followUpQuestion,
-          status: 'sent',
-          sent_at: new Date().toISOString(),
-        })
-        .select('id')
-        .single()
-
-      try {
-        await messagingChannel.sendMessage(incomingPhone, followUpQuestion, { voiceReply: wasAudioMessage })
-      } catch (error) {
-        if (outboundRow) {
-          await supabase.from('conversations').update({ status: 'failed' }).eq('id', outboundRow.id)
-        }
-        console.error(`[inbound_router] follow-up triagem falhou: ${error instanceof Error ? error.message : String(error)}`)
-      }
-    }
-    return
-  }
-
-  // ── Fase 2: Primeira mensagem — enviar pergunta de triagem ────────────
-  const triageQuestion = await generateChatReply({
-    apiKey,
-    systemPrompt:
-      'Você é um assistente de primeiro contato que recebe mensagens de números desconhecidos. ' +
-      'Responda de forma amigável e breve (1-2 frases) perguntando o motivo do contato: ' +
-      'se a pessoa procura uma vaga/oportunidade de trabalho, se representa uma empresa que quer contratar, ' +
-      'ou se já é cliente. Use linguagem conversacional e natural.',
-    history: [{ role: 'user', content: text }],
+  // A Recepcionista é a porta de entrada obrigatória. Não existe mais uma
+  // pré-triagem que possa mandar a primeira mensagem direto para Sales ou
+  // Recrutamento: ela lê a mensagem (inclusive áudio/imagem já convertido
+  // em texto), consulta o histórico e só então faz um handoff explícito.
+  await assignWhatsappConversation({
+    supabase,
+    unit,
+    phone: incomingPhone,
+    email: incomingEmail,
+    agentType: 'receptionist',
+    reason: 'Recepção obrigatória antes de qualquer encaminhamento',
+    summary: text.slice(0, 500),
+    lastMessageAt: sentAt,
   })
-
-  if (!triageQuestion) return
-
-  // Criar um lead em status "contacted" (indicando que a pergunta de triagem foi enviada)
-  const { data: insertedLead, error } = await supabase
-    .from('leads')
-    .insert({
-      unit_id: unit.id,
-      phone: incomingPhone,
-      email: incomingEmail,
-      company_name: `Contato desconhecido (${incomingPhone.slice(-4)})`,
-      contact_name: null,
-      source: 'unknown_inbound',
-      status: 'contacted',
-    })
-    .select()
-    .single()
-
-  if (error || !insertedLead) {
-    await logSystemEvent(supabase, {
-      level: 'error',
-      source: 'system',
-      eventType: 'unknown_inbound_lead_create_failed',
-      message: `Falha ao criar lead de triagem para número desconhecido ${incomingPhone}: ${error?.message ?? 'erro desconhecido'}`,
-      orgId: unit.org_id,
-      unitId: unit.id,
-    })
-    return
-  }
-
-  const leadRow = insertedLead as Lead
-
-  // Registra a primeira mensagem do cliente
-  await supabase.from('conversations').insert({
-    lead_id: leadRow.id,
-    unit_id: unit.id,
-    channel,
-    direction: 'inbound',
-    content: text,
-    external_message_id: externalMessageId,
-    status: 'delivered',
-    sent_at: sentAt,
-  })
-
-  // Envia a pergunta de triagem — grava a linha outbound ANTES de enviar
-  // (mesma razão do comentário na Fase 1 acima: fecha a corrida com o eco
-  // da Evolution API para isRecentOutboundEcho).
-  const { data: outboundRow } = await supabase
-    .from('conversations')
-    .insert({
-      lead_id: leadRow.id,
-      unit_id: unit.id,
-      channel,
-      direction: 'outbound',
-      content: triageQuestion,
-      status: 'sent',
-      sent_at: new Date().toISOString(),
-    })
-    .select('id')
-    .single()
-
-  try {
-    await messagingChannel.sendMessage(incomingPhone, triageQuestion, { voiceReply: wasAudioMessage })
-  } catch (error) {
-    if (outboundRow) {
-      await supabase.from('conversations').update({ status: 'failed' }).eq('id', outboundRow.id)
-    }
-    await logSystemEvent(supabase, {
-      level: 'error',
-      source: 'system',
-      eventType: 'unknown_inbound_triage_question_failed',
-      message: `Falha ao enviar pergunta de triagem para número desconhecido ${incomingPhone}: ${error instanceof Error ? error.message : 'erro desconhecido'}`,
-      orgId: unit.org_id,
-      unitId: unit.id,
-      leadId: leadRow.id,
-    })
-  }
+  return routeReceptionistChannelMessage(params)
 }
 
 export type InboundRouteParams = {
@@ -786,6 +383,35 @@ export async function routeInboundMessage(params: InboundRouteParams): Promise<R
       unitId: unitRow.id,
     })
     return { ok: true, routed: 'human', skipped: 'human_owner' }
+  }
+
+  // Quando a unidade tem uma Recepcionista ativa, TODA mensagem inbound
+  // passa primeiro por ela — inclusive conversas que antes pertenciam ao
+  // Sales/Recruiter. O upsert preserva o responsável anterior e o resumo
+  // do handoff; a Recepcionista relê o histórico e pode encaminhar de novo
+  // ao setor correto depois de identificar explicitamente a intenção.
+  const { data: activeReceptionist } = await supabase
+    .from('agent_configs')
+    .select('id')
+    .eq('unit_id', unitRow.id)
+    .eq('agent_type', 'receptionist')
+    .eq('is_active', true)
+    .maybeSingle()
+
+  if (activeReceptionist) {
+    await assignWhatsappConversation({
+      supabase,
+      unit: unitRow,
+      phone: incomingPhone,
+      email: incomingEmail,
+      agentType: 'receptionist',
+      reason: existingRoute
+        ? `Recepção obrigatória; conversa anteriormente com ${existingRoute.agent_type}`
+        : 'Recepção obrigatória antes de qualquer encaminhamento',
+      summary: existingRoute?.handoff_summary ?? text.slice(0, 500),
+      lastMessageAt: sentAt,
+    })
+    return routeReceptionistChannelMessage(params)
   }
 
   // Continuidade real: depois que a Recepção assume um contato, mensagens
