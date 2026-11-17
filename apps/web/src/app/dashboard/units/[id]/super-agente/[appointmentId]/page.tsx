@@ -16,7 +16,7 @@ export default async function SuperAgenteDetailPage({ params }: { params: Promis
   const guard = await requireUnitAdmin(id)
   if (!guard.ok) notFound()
   const { db, unit } = guard.ctx
-  const { data: apptRow } = await db.from('appointments').select('id, starts_at, ends_at, status, notes, address, service_order_number, service_order_client_po, service_order_location_name, service_order_summary_pt, service_order_scope_en, service_order_completion_summary, service_order_status, service_order_file_url, service_order_file_name, service_order_part_purchase_link, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_photos, service_order_signed_by, service_order_signed_at, service_order_signature_url, employee_id, customer:customers(name, client_company), employee:employees(name), service:services(name)').eq('id', appointmentId).eq('unit_id', unit.id).maybeSingle()
+  const { data: apptRow } = await db.from('appointments').select('id, starts_at, ends_at, status, notes, address, service_order_number, service_order_client_po, service_order_location_name, service_order_summary_pt, service_order_scope_en, service_order_completion_summary, service_order_status, service_order_file_url, service_order_file_name, service_order_part_purchase_link, service_order_material_description, service_order_material_value, service_order_hours_needed, service_order_photos, service_order_signed_by, service_order_signed_at, service_order_signature_url, trip_started_at, trip_start_lat, trip_start_lng, trip_start_accuracy_m, checked_in_at, checkin_lat, checkin_lng, checkin_accuracy_m, work_ended_at, work_end_lat, work_end_lng, work_end_accuracy_m, employee_id, customer:customers(name, client_company), employee:employees(name), service:services(name)').eq('id', appointmentId).eq('unit_id', unit.id).maybeSingle()
   const appt = apptRow as Row | null
   if (!appt) notFound()
   const job = await new SupabaseJobStore(db).findByAppointment(appointmentId)
@@ -46,6 +46,16 @@ export default async function SuperAgenteDetailPage({ params }: { params: Promis
   const statusLabel = orderStatus === 'completed' ? 'Finalizada' : orderStatus === 'quote' ? 'Cotação' : 'Não atendida'
   const statusVariant = orderStatus === 'completed' ? 'green' : orderStatus === 'quote' ? 'purple' : 'amber'
   const elapsedMinutes = Math.max(0, Math.round((new Date(String(appt.ends_at)).getTime() - new Date(String(appt.starts_at)).getTime()) / 60000))
+  const eventTime = (value: unknown) => value ? new Date(String(value)).toLocaleString('pt-BR') : 'Não registrado'
+  const durationBetween = (start: unknown, end: unknown) => {
+    if (!start || !end) return 'Não registrado'
+    const minutes = Math.max(0, Math.round((new Date(String(end)).getTime() - new Date(String(start)).getTime()) / 60000))
+    return minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}min` : `${minutes}min`
+  }
+  const mapLink = (lat: unknown, lng: unknown) => typeof lat === 'number' && typeof lng === 'number' ? `https://www.google.com/maps?q=${lat},${lng}` : null
+  const tripMap = mapLink(appt.trip_start_lat, appt.trip_start_lng)
+  const checkinMap = mapLink(appt.checkin_lat, appt.checkin_lng)
+  const finishMap = mapLink(appt.work_end_lat, appt.work_end_lng)
 
   return (
     <div className="flex flex-col gap-6 pb-10">
@@ -59,6 +69,22 @@ export default async function SuperAgenteDetailPage({ params }: { params: Promis
             <p className="text-sm text-slate-200"><b>PO:</b> {String(appt.service_order_client_po ?? '—')} · <b>Tempo reservado:</b> {elapsedMinutes >= 60 ? `${Math.floor(elapsedMinutes / 60)}h ${elapsedMinutes % 60}min` : `${elapsedMinutes}min`} · <b>Horas informadas pelo técnico:</b> {String(appt.service_order_hours_needed ?? '—')}</p>
           </div>
           {appt.service_order_file_url ? <a className="rounded-xl bg-white/5 px-4 py-2 text-sm font-bold text-cyan-300" href={String(appt.service_order_file_url)} target="_blank" rel="noreferrer">Abrir ordem original</a> : null}
+        </div>
+      </Card>
+
+      <Card className="p-5">
+        <CardHeader eyebrow="Execução em campo" title="Deslocamento, GPS e tempo de trabalho" />
+        <div className="grid gap-3 md:grid-cols-3">
+          {[
+            { label: 'Início da viagem', at: appt.trip_started_at, map: tripMap, accuracy: appt.trip_start_accuracy_m },
+            { label: 'Check-in no local', at: appt.checked_in_at, map: checkinMap, accuracy: appt.checkin_accuracy_m },
+            { label: 'Fim do serviço', at: appt.work_ended_at, map: finishMap, accuracy: appt.work_end_accuracy_m },
+          ].map((event) => <div key={event.label} className="rounded-xl bg-white/5 p-4"><p className="text-xs font-black uppercase tracking-wide text-slate-500">{event.label}</p><p className="mt-1 text-sm font-bold text-white">{eventTime(event.at)}</p>{event.map ? <a href={event.map} target="_blank" rel="noreferrer" className="mt-2 inline-block text-xs font-bold text-cyan-300 underline">Abrir localização no mapa{typeof event.accuracy === 'number' ? ` · precisão ${Math.round(event.accuracy)} m` : ''}</a> : <p className="mt-2 text-xs text-slate-500">Localização não registrada.</p>}</div>)}
+        </div>
+        <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-200">
+          <span className="rounded-lg bg-white/5 px-3 py-2"><b>Tempo de deslocamento:</b> {durationBetween(appt.trip_started_at, appt.checked_in_at)}</span>
+          <span className="rounded-lg bg-white/5 px-3 py-2"><b>Tempo real em serviço:</b> {durationBetween(appt.checked_in_at, appt.work_ended_at)}</span>
+          <span className="rounded-lg bg-white/5 px-3 py-2"><b>Total em campo:</b> {durationBetween(appt.trip_started_at, appt.work_ended_at)}</span>
         </div>
       </Card>
 
@@ -86,6 +112,10 @@ export default async function SuperAgenteDetailPage({ params }: { params: Promis
       <Card className="p-5">
         <CardHeader eyebrow="Confirmação do cliente" title="Assinatura e sign-off" />
         {appt.service_order_signature_url ? <div className="flex flex-wrap items-center gap-4"><img src={String(appt.service_order_signature_url)} alt="Assinatura do cliente" className="max-h-28 rounded-xl bg-white p-2" /><p className="text-sm text-slate-200">Assinado por <b>{String(appt.service_order_signed_by ?? 'cliente')}</b>{appt.service_order_signed_at ? ` em ${new Date(String(appt.service_order_signed_at)).toLocaleString('pt-BR')}` : ''}.</p></div> : <p className="text-sm text-slate-400">Ainda não há assinatura registrada.</p>}
+        <div className="mt-4 flex flex-wrap gap-3">
+          <a href={`/api/units/${id}/appointments/${appointmentId}/service-order/pdf`} className="rounded-xl bg-cyan-500/15 px-4 py-2 text-sm font-bold text-cyan-200">Baixar Sign Off completo (PDF)</a>
+          {photos.length > 0 && <a href={`/api/units/${id}/appointments/${appointmentId}/service-order/pdf?report=photos`} className="rounded-xl bg-white/5 px-4 py-2 text-sm font-bold text-slate-200">Baixar relatório fotográfico (PDF)</a>}
+        </div>
       </Card>
 
       <Card className="p-5">
