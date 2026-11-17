@@ -5,6 +5,8 @@ import { PilotControls, RateCardForm } from '@/components/super-agente/admin-for
 import { ServiceOrderHistoryBoard, type AdminOrderHistoryRow } from '@/components/super-agente/service-order-history-board'
 import { requireUnitAdmin } from '@/lib/quote-team/agent/admin-guard'
 import { loadPilotOverview, pilotEligibleEmployees, pilotStateOf, type PilotDraft, type PilotJob } from '@/lib/quote-team/agent/admin-data'
+import { currentMonthInTimezone, monthLabel, resolveMonthSelection, shiftMonth } from '@/lib/service-operations-month'
+import { zonedTimeToUtc } from '@/lib/slot-engine'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,7 +15,7 @@ const STATE_VARIANT: Record<string, 'green' | 'red' | 'amber' | 'blue' | 'slate'
 const usd = (n: number | null | undefined) => (n == null ? '—' : `US$ ${n.toFixed(n < 1 ? 3 : 2)}`)
 const mins = (s: number | null) => (s == null ? '—' : s < 90 ? `${Math.round(s)} s` : `${(s / 60).toFixed(1)} min`)
 
-type SearchParams = Promise<{ tab?: string; kind?: string; status?: string; q?: string }>
+type SearchParams = Promise<{ tab?: string; kind?: string; status?: string; q?: string; month?: string }>
 
 export default async function SuperAgentePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: SearchParams }) {
   const { id } = await params
@@ -30,20 +32,30 @@ export default async function SuperAgentePage({ params, searchParams }: { params
   )
 
   if (activeTab === 'orders') {
-    const { data, error } = await db
+    const currentMonth = currentMonthInTimezone(unit.timezone)
+    const selectedMonth = resolveMonthSelection(search.month, unit.timezone)
+    const monthOptions = Array.from({ length: 25 }, (_, index) => shiftMonth(currentMonth, -index))
+    let ordersQuery = db
       .from('appointments')
       .select('id, starts_at, status, notes, address, source, service_order_number, service_order_status, service_order_location_name, service_order_summary_pt, service_order_completion_summary, service_order_material_description, service_order_signed_by, service_order_signature_url, service_order_photos, customer:customers(name, client_company), employee:employees(name), service:services(name)')
       .eq('unit_id', unit.id)
       .order('starts_at', { ascending: false })
       .limit(500)
+    if (selectedMonth !== 'all') {
+      const nextMonth = shiftMonth(selectedMonth, 1)
+      ordersQuery = ordersQuery
+        .gte('starts_at', zonedTimeToUtc(`${selectedMonth}-01`, '00:00', unit.timezone).toISOString())
+        .lt('starts_at', zonedTimeToUtc(`${nextMonth}-01`, '00:00', unit.timezone).toISOString())
+    }
+    const { data, error } = await ordersQuery
     if (error) throw error
     const status = search.status === 'pending' || search.status === 'quote' || search.status === 'completed' ? search.status : 'all'
     const kind = search.kind === 'services' ? 'services' : 'orders'
     return (
       <div className="flex flex-col gap-6 pb-10">
-        <PageHeader eyebrow="Operação e histórico" title="Ordens de serviço" subtitle={`${unit.name} · visão administrativa de serviços, cotações e execuções`} action={<Link href={`/dashboard/units/${id}/consumo-ia`} className="rounded-xl bg-cyan-500/10 px-4 py-2 text-sm font-bold text-cyan-200">Consumo de IA</Link>} />
+        <PageHeader eyebrow="Agenda · histórico de trabalhos" title="Ordens, cotações e serviços finalizados" subtitle={`${unit.name} · visão administrativa de serviços, cotações e execuções`} action={<Link href={`/dashboard/units/${id}/agenda/calendario`} className="rounded-xl bg-cyan-500/10 px-4 py-2 text-sm font-bold text-cyan-200">Voltar ao calendário</Link>} />
         {tabs}
-        <ServiceOrderHistoryBoard unitId={id} rows={(data ?? []) as unknown as AdminOrderHistoryRow[]} filter={status} kind={kind} query={search.q ?? ''} />
+        <ServiceOrderHistoryBoard unitId={id} rows={(data ?? []) as unknown as AdminOrderHistoryRow[]} filter={status} kind={kind} query={search.q ?? ''} month={selectedMonth} monthOptions={monthOptions.map((value) => ({ value, label: monthLabel(value, 'pt-BR') }))} />
       </div>
     )
   }

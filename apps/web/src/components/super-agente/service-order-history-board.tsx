@@ -49,7 +49,7 @@ function summary(row: AdminOrderHistoryRow): string {
   return row.service_order_summary_pt?.trim() || row.notes?.trim() || 'Atendimento aguardando execução.'
 }
 
-export function ServiceOrderHistoryBoard({ unitId, rows, filter, kind, query }: { unitId: string; rows: AdminOrderHistoryRow[]; filter: Filter; kind: Kind; query: string }) {
+export function ServiceOrderHistoryBoard({ unitId, rows, filter, kind, query, month, monthOptions }: { unitId: string; rows: AdminOrderHistoryRow[]; filter: Filter; kind: Kind; query: string; month: string; monthOptions: { value: string; label: string }[] }) {
   const byKind = rows.filter((row) => (kind === 'orders' ? isWorkOrder(row) : !isWorkOrder(row)))
   const counts = {
     pending: byKind.filter((row) => effectiveStatus(row) === 'pending').length,
@@ -64,8 +64,8 @@ export function ServiceOrderHistoryBoard({ unitId, rows, filter, kind, query }: 
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(needle))
   })
-  const href = (next: Partial<{ filter: Filter; kind: Kind; q: string }>) => {
-    const p = new URLSearchParams({ tab: 'orders', kind, status: filter })
+  const href = (next: Partial<{ filter: Filter; kind: Kind; q: string; month: string }>) => {
+    const p = new URLSearchParams({ tab: 'orders', kind, status: filter, month })
     if (query) p.set('q', query)
     if (next.kind) p.set('kind', next.kind)
     if (next.filter) p.set('status', next.filter)
@@ -73,6 +73,7 @@ export function ServiceOrderHistoryBoard({ unitId, rows, filter, kind, query }: 
       if (next.q) p.set('q', next.q)
       else p.delete('q')
     }
+    if (next.month) p.set('month', next.month)
     return `?${p.toString()}`
   }
 
@@ -98,6 +99,10 @@ export function ServiceOrderHistoryBoard({ unitId, rows, filter, kind, query }: 
           ))}
           <form className="ml-auto flex min-w-[260px] items-center gap-2" method="get">
             <input type="hidden" name="tab" value="orders" /><input type="hidden" name="kind" value={kind} /><input type="hidden" name="status" value={filter} />
+            <select name="month" defaultValue={month} className="rounded-xl bg-white/5 px-3 py-2 text-sm font-bold text-slate-200 outline-none">
+              <option value="all">Todos os meses</option>
+              {monthOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
             <div className="relative flex-1"><Search className="absolute left-3 top-2.5 text-slate-500" size={14} /><input name="q" defaultValue={query} placeholder="WO, cliente, local ou técnico" className="w-full rounded-xl bg-white/5 py-2 pl-9 pr-3 text-sm text-white outline-none" /></div>
             <button className="rounded-xl bg-cyan-500/20 px-3 py-2 text-xs font-bold text-cyan-200">Buscar</button>
           </form>
@@ -137,7 +142,7 @@ export function ServiceOrderHistoryBoard({ unitId, rows, filter, kind, query }: 
           })}
         </div>
       )}
-      <p className="flex items-center gap-1 text-xs text-slate-500"><Clock3 size={12} /> Mostrando {visible.length} de {byKind.length} registros.</p>
+      <p className="flex items-center gap-1 text-xs text-slate-500"><Clock3 size={12} /> Mostrando {visible.length} de {byKind.length} registros {month === 'all' ? 'de todo o histórico' : 'do mês selecionado'}.</p>
     </div>
   )
 }

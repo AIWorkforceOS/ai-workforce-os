@@ -45,6 +45,7 @@ export default async function SuperAgenteDetailPage({ params }: { params: Promis
   const orderStatus = String(appt.service_order_status ?? (appt.status === 'completed' ? 'completed' : 'pending'))
   const statusLabel = orderStatus === 'completed' ? 'Finalizada' : orderStatus === 'quote' ? 'Cotação' : 'Não atendida'
   const statusVariant = orderStatus === 'completed' ? 'green' : orderStatus === 'quote' ? 'purple' : 'amber'
+  const elapsedMinutes = Math.max(0, Math.round((new Date(String(appt.ends_at)).getTime() - new Date(String(appt.starts_at)).getTime()) / 60000))
 
   return (
     <div className="flex flex-col gap-6 pb-10">
@@ -55,7 +56,7 @@ export default async function SuperAgenteDetailPage({ params }: { params: Promis
           <div>
             <StatusPill variant={statusVariant}>{statusLabel}</StatusPill>
             <p className="mt-3 text-sm text-slate-200"><b>Profissional:</b> {employee?.name ?? 'Não definido'} · <b>Data:</b> {new Date(String(appt.starts_at)).toLocaleString('pt-BR')}</p>
-            <p className="text-sm text-slate-200"><b>PO:</b> {String(appt.service_order_client_po ?? '—')} · <b>Horas:</b> {String(appt.service_order_hours_needed ?? '—')}</p>
+            <p className="text-sm text-slate-200"><b>PO:</b> {String(appt.service_order_client_po ?? '—')} · <b>Tempo reservado:</b> {elapsedMinutes >= 60 ? `${Math.floor(elapsedMinutes / 60)}h ${elapsedMinutes % 60}min` : `${elapsedMinutes}min`} · <b>Horas informadas pelo técnico:</b> {String(appt.service_order_hours_needed ?? '—')}</p>
           </div>
           {appt.service_order_file_url ? <a className="rounded-xl bg-white/5 px-4 py-2 text-sm font-bold text-cyan-300" href={String(appt.service_order_file_url)} target="_blank" rel="noreferrer">Abrir ordem original</a> : null}
         </div>
@@ -76,7 +77,10 @@ export default async function SuperAgenteDetailPage({ params }: { params: Promis
 
       <Card className="p-5">
         <CardHeader eyebrow="Evidências" title={`Fotos e arquivos (${photos.length})`} />
-        {photos.length === 0 ? <p className="text-sm text-slate-400">Nenhuma foto ou vídeo foi anexado.</p> : <div className="grid grid-cols-2 gap-3 md:grid-cols-4">{photos.map((photo, index) => <a key={`${photo.url}-${index}`} href={photo.url} target="_blank" rel="noreferrer" className="overflow-hidden rounded-xl bg-white/5"><img src={photo.url} alt={`Evidência ${index + 1}`} className="h-36 w-full object-cover" /><p className="px-3 py-2 text-xs font-bold text-slate-300">{photo.kind ?? 'serviço'} · abrir</p></a>)}</div>}
+        {photos.length === 0 ? <p className="text-sm text-slate-400">Nenhuma foto ou vídeo foi anexado.</p> : <div className="grid grid-cols-2 gap-3 md:grid-cols-4">{photos.map((photo, index) => {
+          const isVideo = photo.kind === 'video' || /\.(mp4|mov|webm)(\?|$)/i.test(photo.url)
+          return <a key={`${photo.url}-${index}`} href={photo.url} target="_blank" rel="noreferrer" className="overflow-hidden rounded-xl bg-white/5">{isVideo ? <video src={photo.url} controls preload="metadata" className="h-36 w-full object-cover" /> : <img src={photo.url} alt={`Evidência ${index + 1}`} className="h-36 w-full object-cover" />}<p className="px-3 py-2 text-xs font-bold text-slate-300">{isVideo ? 'Vídeo' : photo.kind ?? 'serviço'} · abrir</p></a>
+        })}</div>}
       </Card>
 
       <Card className="p-5">
