@@ -132,7 +132,9 @@ export async function authenticatePartner(
     // Prefixo não é segredo e permite diagnosticar variável antiga sem
     // registrar o token. Nunca inclua `key` ou `key_hash` neste log.
     const keyPrefix = key.split('_').slice(0, 3).join('_')
-    console.warn(`[partner_api] escopo negado key_prefix=${keyPrefix} required_scope=${requiredScope}`)
+    console.warn(
+      `[partner_api] escopo negado key_prefix=${keyPrefix} required_scope=${requiredScope} available_scopes=${scopes.join(',')}`,
+    )
     return partnerError(403, `Esta chave não tem o escopo "${requiredScope}".`)
   }
 

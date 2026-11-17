@@ -14,5 +14,13 @@ export function createServiceClient() {
 
   return createSupabaseClient(url, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
+    global: {
+      // Leituras privilegiadas incluem chaves, escopos, revogações e estado
+      // operacional. O fetch do Next pode manter respostas GET no Data Cache;
+      // isso fez a API de parceiro enxergar scopes antigos mesmo depois da
+      // atualização confirmada no Postgres. Dados service-role nunca devem
+      // ser reutilizados pelo cache de aplicação.
+      fetch: (input, init) => fetch(input, { ...init, cache: 'no-store' }),
+    },
   })
 }
