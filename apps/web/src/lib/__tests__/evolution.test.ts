@@ -3,6 +3,7 @@ import {
   ensureWebhookConfigured,
   forceReconnectInstance,
   getBase64FromMediaMessage,
+  getEvolutionConfig,
   getInstanceStatus,
   resolveWhatsappChannel,
   sendWhatsAppMessage,
@@ -55,7 +56,44 @@ describe('WhatsApp compartilhado por unidade', () => {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
   vi.restoreAllMocks()
+})
+
+describe('getEvolutionConfig — credenciais consistentes', () => {
+  it('não mistura chave parcial da unidade com a URL global', () => {
+    vi.stubEnv('EVOLUTION_API_URL', 'https://global.example.com')
+    vi.stubEnv('EVOLUTION_API_KEY', 'global-key')
+    const unit = {
+      slug: 'franquia',
+      evolution_api_url: null,
+      evolution_api_key: 'chave-antiga-sem-url',
+      evolution_instance_name: 'franquia-1',
+    } as Unit
+
+    expect(getEvolutionConfig(unit)).toEqual({
+      apiUrl: 'https://global.example.com',
+      apiKey: 'global-key',
+      instanceName: 'franquia-1',
+    })
+  })
+
+  it('prioriza o par completo configurado para a unidade', () => {
+    vi.stubEnv('EVOLUTION_API_URL', 'https://global.example.com')
+    vi.stubEnv('EVOLUTION_API_KEY', 'global-key')
+    const unit = {
+      slug: 'matriz',
+      evolution_api_url: 'https://dedicada.example.com/',
+      evolution_api_key: 'dedicated-key',
+      evolution_instance_name: 'matriz-1',
+    } as Unit
+
+    expect(getEvolutionConfig(unit)).toEqual({
+      apiUrl: 'https://dedicada.example.com',
+      apiKey: 'dedicated-key',
+      instanceName: 'matriz-1',
+    })
+  })
 })
 
 describe('evolutionFetch — timeout', () => {
@@ -128,6 +166,24 @@ describe('evolutionFetch — timeout', () => {
     await getInstanceStatus(config)
 
     expect(capturedSignal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('trata instância ainda inexistente como não configurada, sem falso erro do provedor', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ message: 'Instance not found' }), { status: 404 })),
+    )
+
+    await expect(getInstanceStatus(config)).resolves.toBe('not_configured')
+  })
+
+  it('preserva falhas reais da Evolution para o chamador tratar como indisponibilidade', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ message: 'Service unavailable' }), { status: 503 })),
+    )
+
+    await expect(getInstanceStatus(config)).rejects.toMatchObject({ status: 503 })
   })
 })
 

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { authenticatePartner, isPartnerContext, partnerError, resolvePartnerUnit } from '@/lib/partner-api/auth'
+import { authenticatePartner, isPartnerContext, partnerError } from '@/lib/partner-api/auth'
 import { serializeUnit } from '@/lib/partner-api/serialize'
 import type { Unit } from '@/lib/types'
 
@@ -9,7 +9,13 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   const ctx = await authenticatePartner(request, 'units:write')
   if (!isPartnerContext(ctx)) return ctx
   const { id } = await params
-  const unit = await resolvePartnerUnit(ctx, { unitId: id })
+  // O backfill precisa conseguir vincular external_id também em unidades
+  // antigas desativadas. Demais rotas continuam usando resolvePartnerUnit,
+  // que corretamente bloqueia operação normal em unidade inativa.
+  let unitQuery = ctx.supabase.from('units').select('*').eq('id', id).eq('org_id', ctx.orgId)
+  if (ctx.unitId) unitQuery = unitQuery.eq('id', ctx.unitId)
+  const { data: unitData } = await unitQuery.maybeSingle()
+  const unit = unitData as Unit | null
   if (!unit) return partnerError(404, 'Unidade não encontrada.')
   const body = await request.json().catch(() => null)
   if (!body || typeof body !== 'object') return partnerError(400, 'Payload inválido.')

@@ -19,8 +19,13 @@ export type EvolutionUnitConfig = {
  * mudança nenhuma.
  */
 export function getEvolutionConfig(unit: Unit, instanceNameOverride?: string): EvolutionUnitConfig | null {
-  const apiUrl = unit.evolution_api_url || process.env.EVOLUTION_API_URL
-  const apiKey = unit.evolution_api_key || process.env.EVOLUTION_API_KEY
+  // URL e chave formam um par inseparável. Algumas unidades antigas têm
+  // apenas um dos campos preenchido; misturar uma chave da unidade com a URL
+  // global (ou o contrário) produz 401/502 e impede criar o primeiro QR.
+  // Só usa configuração própria quando os dois valores existem.
+  const hasUnitCredentials = Boolean(unit.evolution_api_url && unit.evolution_api_key)
+  const apiUrl = hasUnitCredentials ? unit.evolution_api_url : process.env.EVOLUTION_API_URL
+  const apiKey = hasUnitCredentials ? unit.evolution_api_key : process.env.EVOLUTION_API_KEY
   const instanceName = instanceNameOverride || unit.evolution_instance_name || `unit-${unit.slug}`
 
   if (!apiUrl || !apiKey) return null
@@ -235,11 +240,20 @@ async function evolutionFetch(
 export type WhatsAppStatus = 'open' | 'connecting' | 'close' | 'not_configured'
 
 export async function getInstanceStatus(config: EvolutionUnitConfig): Promise<WhatsAppStatus> {
-  const data = await evolutionFetch(config, `/instance/connectionState/${config.instanceName}`)
-  const state = data?.instance?.state ?? data?.state
-  if (state === 'open') return 'open'
-  if (state === 'connecting') return 'connecting'
-  return 'close'
+  try {
+    const data = await evolutionFetch(config, `/instance/connectionState/${config.instanceName}`)
+    const state = data?.instance?.state ?? data?.state
+    if (state === 'open') return 'open'
+    if (state === 'connecting') return 'connecting'
+    return 'close'
+  } catch (error) {
+    // Uma unidade recém-provisionada ainda não possui instância na
+    // Evolution. Isso é um estado operacional normal (desconectado), não
+    // indisponibilidade do provedor. Preservamos outros erros para que
+    // timeout, autenticação ou queda real continuem visíveis como falha.
+    if (error instanceof EvolutionApiError && error.status === 404) return 'not_configured'
+    throw error
+  }
 }
 
 /**
