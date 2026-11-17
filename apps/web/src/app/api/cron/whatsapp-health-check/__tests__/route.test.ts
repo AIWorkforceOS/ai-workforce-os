@@ -79,7 +79,7 @@ describe('GET /api/cron/whatsapp-health-check', () => {
     const res = await GET(makeRequest())
     const body = await res.json()
 
-    expect(body).toEqual({ ok: true, checked: 1, webhooksVerified: 1, repairFailures: 0, disconnected: 0, alertsSent: 0, errors: 0 })
+    expect(body).toEqual({ ok: true, checked: 1, webhooksVerified: 1, repairFailures: 0, recovering: 0, disconnected: 0, alertsSent: 0, errors: 0 })
     expect(sendWhatsappDisconnectedEmail).not.toHaveBeenCalled()
     expect(db.system_events?.some((e) => e.event_type === 'whatsapp_disconnected_alert_sent')).toBe(false)
   })
@@ -95,7 +95,7 @@ describe('GET /api/cron/whatsapp-health-check', () => {
     const res = await GET(makeRequest())
     const body = await res.json()
 
-    expect(body).toEqual({ ok: true, checked: 1, webhooksVerified: 0, repairFailures: 0, disconnected: 1, alertsSent: 1, errors: 0 })
+    expect(body).toEqual({ ok: true, checked: 1, webhooksVerified: 0, repairFailures: 0, recovering: 0, disconnected: 1, alertsSent: 1, errors: 0 })
     expect(sendWhatsappDisconnectedEmail).toHaveBeenCalledWith(
       expect.objectContaining({ to: 'dono@smarter.com', unitName: 'Smarter Matriz', agentLabel: null }),
     )
@@ -122,7 +122,7 @@ describe('GET /api/cron/whatsapp-health-check', () => {
     const res = await GET(makeRequest())
     const body = await res.json()
 
-    expect(body).toEqual({ ok: true, checked: 1, webhooksVerified: 0, repairFailures: 0, disconnected: 1, alertsSent: 0, errors: 0 })
+    expect(body).toEqual({ ok: true, checked: 1, webhooksVerified: 0, repairFailures: 0, recovering: 0, disconnected: 1, alertsSent: 0, errors: 0 })
     expect(sendWhatsappDisconnectedEmail).not.toHaveBeenCalled()
     expect(db.system_events).toHaveLength(2) // o antigo + o run summary, nenhum alert_sent novo
   })
@@ -139,7 +139,7 @@ describe('GET /api/cron/whatsapp-health-check', () => {
     const res = await GET(makeRequest())
     const body = await res.json()
 
-    expect(body).toEqual({ ok: true, checked: 0, webhooksVerified: 0, repairFailures: 0, disconnected: 0, alertsSent: 0, errors: 0 })
+    expect(body).toEqual({ ok: true, checked: 0, webhooksVerified: 0, repairFailures: 0, recovering: 0, disconnected: 0, alertsSent: 0, errors: 0 })
     expect(sendWhatsappDisconnectedEmail).not.toHaveBeenCalled()
   })
 
@@ -154,7 +154,7 @@ describe('GET /api/cron/whatsapp-health-check', () => {
     const res = await GET(makeRequest())
     const body = await res.json()
 
-    expect(body).toEqual({ ok: true, checked: 0, webhooksVerified: 0, repairFailures: 0, disconnected: 0, alertsSent: 0, errors: 0 })
+    expect(body).toEqual({ ok: true, checked: 0, webhooksVerified: 0, repairFailures: 0, recovering: 0, disconnected: 0, alertsSent: 0, errors: 0 })
     expect(sendWhatsappDisconnectedEmail).not.toHaveBeenCalled()
   })
 
@@ -169,7 +169,7 @@ describe('GET /api/cron/whatsapp-health-check', () => {
     const res = await GET(makeRequest())
     const body = await res.json()
 
-    expect(body).toEqual({ ok: true, checked: 1, webhooksVerified: 0, repairFailures: 0, disconnected: 1, alertsSent: 0, errors: 0 })
+    expect(body).toEqual({ ok: true, checked: 1, webhooksVerified: 0, repairFailures: 0, recovering: 0, disconnected: 1, alertsSent: 0, errors: 0 })
     expect(sendWhatsappDisconnectedEmail).not.toHaveBeenCalled()
     expect(db.system_events?.some((e) => e.event_type === 'whatsapp_health_check_no_owner_email')).toBe(true)
   })
@@ -186,7 +186,7 @@ describe('GET /api/cron/whatsapp-health-check', () => {
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(body).toEqual({ ok: false, checked: 1, webhooksVerified: 0, repairFailures: 0, disconnected: 0, alertsSent: 0, errors: 1 })
+    expect(body).toEqual({ ok: false, checked: 1, webhooksVerified: 0, repairFailures: 0, recovering: 0, disconnected: 0, alertsSent: 0, errors: 1 })
     expect(db.system_events?.some((e) => e.event_type === 'whatsapp_health_check_status_failed')).toBe(true)
   })
 
@@ -199,6 +199,29 @@ describe('GET /api/cron/whatsapp-health-check', () => {
     const res = await GET(makeRequest())
     const body = await res.json()
 
-    expect(body).toEqual({ ok: false, checked: 1, webhooksVerified: 0, repairFailures: 1, disconnected: 0, alertsSent: 0, errors: 0 })
+    expect(body).toEqual({ ok: false, checked: 1, webhooksVerified: 0, repairFailures: 1, recovering: 0, disconnected: 0, alertsSent: 0, errors: 0 })
+  })
+
+  it('confirma uma oscilação e reconhece a recuperação sem alertar o cliente', async () => {
+    getInstanceStatus.mockResolvedValueOnce('close').mockResolvedValueOnce('open')
+    const { supabase } = createFakeSupabase({ units: [makeUnitRow()] })
+    const { GET } = await loadRoute(supabase)
+
+    const body = await (await GET(makeRequest())).json()
+
+    expect(body).toEqual({ ok: true, checked: 1, webhooksVerified: 1, repairFailures: 0, recovering: 0, disconnected: 0, alertsSent: 0, errors: 0 })
+    expect(sendWhatsappDisconnectedEmail).not.toHaveBeenCalled()
+  })
+
+  it('não trata connecting como desconectado nem apaga uma sessão em recuperação', async () => {
+    getInstanceStatus.mockResolvedValue('connecting')
+    const { supabase, db } = createFakeSupabase({ units: [makeUnitRow()] })
+    const { GET } = await loadRoute(supabase)
+
+    const body = await (await GET(makeRequest())).json()
+
+    expect(body).toEqual({ ok: true, checked: 1, webhooksVerified: 0, repairFailures: 0, recovering: 1, disconnected: 0, alertsSent: 0, errors: 0 })
+    expect(sendWhatsappDisconnectedEmail).not.toHaveBeenCalled()
+    expect(db.system_events?.some((e) => e.event_type === 'whatsapp_reconnecting')).toBe(true)
   })
 })

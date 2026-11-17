@@ -208,33 +208,72 @@ export class EvolutionApiError extends Error {
  * (tratado pelos try/catch já existentes) bem antes desse limite.
  */
 const EVOLUTION_FETCH_TIMEOUT_MS = 15000
+const EVOLUTION_READ_MAX_ATTEMPTS = 3
+const EVOLUTION_RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504])
+
+function isRetryableEvolutionFailure(error: unknown): boolean {
+  if (error instanceof EvolutionApiError) return EVOLUTION_RETRYABLE_STATUS.has(error.status)
+  if (!(error instanceof Error)) return false
+  return error.name === 'AbortError' || error.name === 'TimeoutError' || error instanceof TypeError
+}
+
+async function waitBeforeEvolutionRetry(attempt: number): Promise<void> {
+  // Pequeno backoff com jitter evita que todas as unidades pressionem o
+  // servidor ao mesmo tempo quando a Evolution volta de uma oscilação.
+  const baseMs = process.env.NODE_ENV === 'test' ? 0 : 300 * 2 ** (attempt - 1)
+  const jitterMs = process.env.NODE_ENV === 'test' ? 0 : Math.floor(Math.random() * 150)
+  await new Promise((resolve) => setTimeout(resolve, baseMs + jitterMs))
+}
 
 async function evolutionFetch(
   config: EvolutionUnitConfig,
   path: string,
   init?: RequestInit,
 ) {
-  const response = await fetch(`${config.apiUrl}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: config.apiKey,
-      ...init?.headers,
-    },
-    cache: 'no-store',
-    signal: init?.signal ?? AbortSignal.timeout(EVOLUTION_FETCH_TIMEOUT_MS),
-  })
+  const method = (init?.method ?? 'GET').toUpperCase()
+  // Nunca repetimos automaticamente envio de mensagem ou outra escrita:
+  // após um timeout o provedor pode ter concluído a operação, e repetir
+  // criaria resposta duplicada. Leituras são seguras e toleram oscilações.
+  const maxAttempts = method === 'GET' || method === 'HEAD' ? EVOLUTION_READ_MAX_ATTEMPTS : 1
 
-  const text = await response.text()
-  const data = text ? JSON.parse(text) : null
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const response = await fetch(`${config.apiUrl}${path}`, {
+        ...init,
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: config.apiKey,
+          ...init?.headers,
+        },
+        cache: 'no-store',
+        signal: init?.signal ?? AbortSignal.timeout(EVOLUTION_FETCH_TIMEOUT_MS),
+      })
 
-  if (!response.ok) {
-    const message =
-      (data && (data.message || data.error)) || `Evolution API retornou status ${response.status}`
-    throw new EvolutionApiError(Array.isArray(message) ? message.join(', ') : message, response.status)
+      const text = await response.text()
+      // A Evolution possui respostas diferentes por endpoint/versão; este
+      // adaptador valida apenas os campos comuns de erro e preserva o payload.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let data: any = null
+      try {
+        data = text ? JSON.parse(text) : null
+      } catch {
+        data = text || null
+      }
+
+      if (!response.ok) {
+        const detail = typeof data === 'object' && data ? (data.message || data.error) : null
+        const message = detail || `Evolution API retornou status ${response.status}`
+        throw new EvolutionApiError(Array.isArray(message) ? message.join(', ') : String(message), response.status)
+      }
+
+      return data
+    } catch (error) {
+      if (attempt >= maxAttempts || !isRetryableEvolutionFailure(error)) throw error
+      await waitBeforeEvolutionRetry(attempt)
+    }
   }
 
-  return data
+  throw new Error('Evolution API indisponível após novas tentativas.')
 }
 
 export type WhatsAppStatus = 'open' | 'connecting' | 'close' | 'not_configured'

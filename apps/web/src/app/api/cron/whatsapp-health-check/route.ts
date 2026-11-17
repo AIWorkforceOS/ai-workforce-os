@@ -66,6 +66,7 @@ export async function GET(request: Request) {
   let errors = 0
   let webhooksVerified = 0
   let repairFailures = 0
+  let recovering = 0
 
   for (const unit of units) {
     // Desde a migration 113 existe um único número compartilhado por unidade.
@@ -77,7 +78,14 @@ export async function GET(request: Request) {
 
     checked += 1
     try {
-      const status = await getInstanceStatus(channel.config)
+      let status = await getInstanceStatus(channel.config)
+      // Não declara queda por uma única leitura transitória. Uma sessão em
+      // `connecting` ou um primeiro `close` ganha uma segunda confirmação;
+      // isso evita alertas falsos durante reconexão normal do WhatsApp.
+      if (status === 'connecting' || status === 'close') {
+        await new Promise((resolve) => setTimeout(resolve, process.env.NODE_ENV === 'test' ? 0 : 2000))
+        status = await getInstanceStatus(channel.config)
+      }
       if (status === 'open') {
         await syncWhatsappPhoneIfConnected(supabase, unit, channel)
         const webhookOk = await ensureWebhookConfigured(channel.config, {
@@ -87,6 +95,19 @@ export async function GET(request: Request) {
         })
         if (webhookOk) webhooksVerified += 1
         else repairFailures += 1
+        continue
+      }
+
+      if (status === 'connecting') {
+        recovering += 1
+        await logSystemEvent(supabase, {
+          level: 'warning',
+          source: 'cron',
+          eventType: 'whatsapp_reconnecting',
+          message: `WhatsApp da unidade "${unit.name}" está reconectando; nenhuma sessão foi apagada e nenhum alerta de desconexão foi enviado.`,
+          orgId: unit.org_id,
+          unitId: unit.id,
+        })
         continue
       }
 
@@ -110,7 +131,7 @@ export async function GET(request: Request) {
     level: disconnected > 0 || errors > 0 || repairFailures > 0 ? 'warning' : 'info',
     source: 'cron',
     eventType: 'whatsapp_health_check_run',
-    message: `Verificação de saúde do WhatsApp executada: ${checked} canal(is) checado(s), ${webhooksVerified} webhook(s) confirmado(s), ${repairFailures} reparo(s) com falha, ${disconnected} desconectado(s), ${alertsSent} aviso(s) enviado(s), ${errors} erro(s).`,
+    message: `Verificação de saúde do WhatsApp executada: ${checked} canal(is) checado(s), ${webhooksVerified} webhook(s) confirmado(s), ${repairFailures} reparo(s) com falha, ${recovering} reconectando, ${disconnected} desconectado(s), ${alertsSent} aviso(s) enviado(s), ${errors} erro(s).`,
   })
 
   return NextResponse.json({
@@ -118,6 +139,7 @@ export async function GET(request: Request) {
     checked,
     webhooksVerified,
     repairFailures,
+    recovering,
     disconnected,
     alertsSent,
     errors,

@@ -178,12 +178,29 @@ describe('evolutionFetch — timeout', () => {
   })
 
   it('preserva falhas reais da Evolution para o chamador tratar como indisponibilidade', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response(JSON.stringify({ message: 'Service unavailable' }), { status: 503 })),
-    )
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ message: 'Service unavailable' }), { status: 503 }))
+    vi.stubGlobal('fetch', fetchMock)
 
     await expect(getInstanceStatus(config)).rejects.toMatchObject({ status: 503 })
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('recupera leitura de status depois de timeout transitório', async () => {
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new DOMException('timeout', 'TimeoutError'))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ state: 'open' }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(getInstanceStatus(config)).resolves.toBe('open')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('não repete envio após timeout para não duplicar mensagem', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new DOMException('timeout', 'TimeoutError'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(sendWhatsAppMessage(config, '5511999999999', 'oi')).rejects.toThrow()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })
 
