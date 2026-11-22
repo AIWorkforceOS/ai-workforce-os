@@ -69,6 +69,7 @@ export async function POST() {
   }
 
   const openaiKey = process.env.OPENAI_API_KEY
+  const geminiKey = process.env.GEMINI_API_KEY
   const evolutionUrl = process.env.EVOLUTION_API_URL?.replace(/\/+$/, '')
   const evolutionKey = process.env.EVOLUTION_API_KEY
   const resendKey = process.env.RESEND_API_KEY
@@ -79,6 +80,11 @@ export async function POST() {
     check('openai', 'OpenAI', Boolean(openaiKey), () =>
       fetchWithTimeout('https://api.openai.com/v1/models?limit=1', {
         headers: { Authorization: `Bearer ${openaiKey}` },
+      }),
+    ),
+    check('gemini', 'Gemini (imagens e vídeos profissionais)', Boolean(geminiKey), () =>
+      fetchWithTimeout('https://generativelanguage.googleapis.com/v1beta/models', {
+        headers: { 'x-goog-api-key': geminiKey! },
       }),
     ),
     check('evolution', 'Evolution API', Boolean(evolutionUrl && evolutionKey), () =>

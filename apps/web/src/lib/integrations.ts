@@ -4,6 +4,7 @@
 export type IntegrationKey =
   | 'supabase_service'
   | 'openai'
+  | 'gemini'
   | 'evolution'
   | 'google_maps'
   | 'resend'
@@ -54,6 +55,13 @@ export function getIntegrationsConfigStatus(): IntegrationConfigStatus[] {
       label: 'OpenAI (AI Sales Representative + chat Kai)',
       configured: has('OPENAI_API_KEY'),
       detail: 'Gera as respostas do AI Sales Representative no WhatsApp e do consultor Kai na landing page. Env: OPENAI_API_KEY',
+      testable: true,
+    },
+    {
+      key: 'gemini',
+      label: 'Gemini (Gestor de Mídias profissional)',
+      configured: has('GEMINI_API_KEY'),
+      detail: 'Nano Banana 2.1 cria imagens e Gemini Omni 1.2 cria vídeos reais. Env: GEMINI_API_KEY',
       testable: true,
     },
     {
