@@ -12,6 +12,9 @@ import { composeCaption, normalizeCarousel, type CarouselContent } from './carou
 import { normalizeVideo, type VideoContent } from './video'
 import type { AgentConfig, Unit } from '@/lib/types'
 import type { SocialPlatform } from './types'
+import { creativeDirectionBlock, directCreative } from './creative-director'
+import { generateGeminiImage, getGeminiApiKey } from './gemini-media'
+import { assessCreativeImage, assessCreativeText, qualityFeedback } from './quality-control'
 
 export type { BrandKit }
 
@@ -28,6 +31,44 @@ export type GeneratedPostContent = {
 
 /** Resumo de um post recente, usado só pra dar contexto ao gerador (evitar repetição) — ver buildRecentPostsContext. */
 export type RecentPostSummary = { pillar: string | null; caption: string; imagePrompt: string | null }
+
+async function directionFor(params: {
+  apiKey: string
+  config: AgentConfig
+  unit: Unit
+  organizationProfile: Record<string, unknown> | null
+  platform: SocialPlatform
+  format: 'image' | 'carousel' | 'video'
+  objective: string
+  recentPosts?: RecentPostSummary[]
+}): Promise<string> {
+  const companyContext = buildCombinedBusinessContext(params.organizationProfile, params.config.business_profile) || `Empresa ${params.unit.name}`
+  const kit = brandKitFrom(params.organizationProfile)
+  const profile = params.config.business_profile as Record<string, unknown> | null
+  const brandContext = [
+    kit?.primary_color ? `cor primária ${kit.primary_color}` : '',
+    kit?.secondary_color ? `cor secundária ${kit.secondary_color}` : '',
+    kit?.font_family ? `fontes ${kit.font_family}` : '',
+    kit?.visual_style ? `estilo ${kit.visual_style}` : '',
+    kit?.brand_voice ? `voz ${kit.brand_voice}` : '',
+    kit?.content_goals ? `objetivos ${kit.content_goals}` : '',
+    kit?.target_audience ? `público ${kit.target_audience}` : '',
+    kit?.approved_offers ? `ofertas permitidas ${kit.approved_offers}` : '',
+    kit?.forbidden_content ? `proibições ${kit.forbidden_content}` : '',
+    Array.isArray(profile?.before_after_pairs) && profile.before_after_pairs.length > 0 ? `${profile.before_after_pairs.length} pares reais de antes/depois disponíveis; use somente pares completos` : '',
+  ].filter(Boolean).join('; ') || 'identidade ainda incompleta; mantenha visual sóbrio e verdadeiro'
+  const recentContext = (params.recentPosts ?? []).slice(0, 6).map((post) => post.caption.slice(0, 180)).join(' | ')
+  const direction = await directCreative({
+    apiKey: params.apiKey,
+    companyContext,
+    platform: params.platform,
+    format: params.format,
+    objective: params.objective,
+    brandContext,
+    recentContext,
+  })
+  return creativeDirectionBlock(direction)
+}
 
 const RECENT_POSTS_FOR_CONTEXT = 6
 // Achado real (2026-08-28, conta AlizoAi): 100 chars só mostrava a
@@ -136,7 +177,7 @@ export function buildCaptionSystemPrompt(params: {
     // DECIDIDO em código (pickNextVisualAngle, mesmo princípio do fix de
     // pickNextPillar) e só imposto aqui — não é mais escolha livre do modelo.
     video
-      ? 'VÍDEO CURTO VERTICAL (9:16, 18 a 28 segundos, com NARRAÇÃO falada e música de fundo, mais texto curto na tela sobre fotografias em tela cheia). O vídeo conta UMA história contínua, como um comercial filmado num único dia: problema → equipe chega → solução → empresa aliviada, cada cena puxando a próxima (a headline de uma cena prepara a seguinte; nada de lista de dicas soltas). Pense como um diretor de campanha de uma empresa de serviços para empresas: cena 1 é o GANCHO (fale direto com a dor/desejo do gestor de facilities ou do dono do estabelecimento nos primeiros 3 segundos), depois 3 a 5 cenas com UMA ideia cada (headline de no máximo 8 palavras + 1 frase de apoio) e um fechamento com chamada para ação. Cada cena dura 3 a 6 segundos. O campo "script" é a NARRAÇÃO exata que será falada por uma voz, em primeira pessoa do plural (“nós”) ou impessoal, num texto corrido que acompanha as cenas na ordem, com cerca de 2 palavras por segundo do vídeo (para 24 s, uns 45 palavras), sem emojis, sem hashtags, sem listas e sem repetir a headline palavra por palavra. O campo "setting" descreve em inglês o CENÁRIO COMUM de todas as fotos (a mesma equipe de 2 técnicos de uniforme azul-marinho liso, o mesmo prédio comercial, a mesma hora do dia e luz), para as cenas parecerem do mesmo dia de filmagem. Para CADA cena (e para o fechamento) descreva em \"visual\" a FOTOGRAFIA de fundo, em inglês: quem aparece e o que faz (técnicos de manutenção de uniforme azul-marinho inspecionando painel elétrico, equipe de limpeza em um escritório amplo, gestor de facilities percorrendo um prédio comercial, técnico de ar-condicionado no telhado etc.), onde e a luz — realista, de campanha profissional, variada entre as cenas, ligada ao sentido da headline. NA DESCRIÇÃO VISUAL NUNCA peça logo, texto, placas, letreiros, nome ou marca da empresa (a marca é aplicada depois por nós; o gerador de imagem desenha logos falsos): pessoas de uniforme azul-marinho liso e sem nome. Use SOMENTE fatos que estão na ficha da empresa nos textos — nunca invente clientes, depoimentos, resultados, números ou garantias (as imagens são ilustrativas, o texto não pode afirmar nada que a ficha não diga). Não cite canais de contato (telefone, WhatsApp, e-mail, site, endereço) que não estejam na ficha da empresa: na chamada para ação use só um convite genérico (o equivalente a “entre em contato”) ou o canal que consta na ficha — SEMPRE no idioma da legenda.'
+      ? 'VÍDEO CURTO VERTICAL 9:16, com movimento real, áudio nativo e NARRAÇÃO, criado como um comercial cinematográfico contínuo de 15 segundos — nunca slideshow, montagem de fotografias ou lista de dicas. A cena inicial precisa prender atenção nos primeiros 2 segundos; as seguintes desenvolvem UMA história contínua e terminam com uma chamada para ação. Defina personagens, ambiente, figurino, iluminação e movimento de câmera estritamente a partir da ficha DESTA empresa e da direção criativa aprovada. Não presuma técnicos, uniformes, prédios, clínicas, escritórios ou qualquer segmento. O campo "setting" descreve em inglês o mundo visual coerente; cada "visual" descreve ação e movimento reais, câmera, luz e continuidade. Nunca peça texto, logo, placa ou marca dentro da cena. Use somente fatos comprovados na ficha; nunca invente clientes, depoimentos, preços, resultados, números ou garantias.'
       : carousel
       ? 'CARROSSEL: capa com gancho forte (título curto), 3 a 6 slides de conteúdo (cada um com UMA ideia: título curto + 1-2 frases), e um slide final de chamada para ação. Texto enxuto, que se lê no celular. Use SOMENTE fatos que estão na ficha da empresa — nunca invente clientes, depoimentos, resultados, números, fotos ou garantias; se faltar dado, fale do método/serviço de forma verdadeira e genérica. Não cite canais de contato (telefone, WhatsApp, e-mail, site, endereço) que não estejam na ficha da empresa: na chamada para ação use só um convite genérico (o equivalente a “entre em contato”) ou o canal que consta na ficha — SEMPRE no idioma da legenda.'
       : `FORMATO VISUAL OBRIGATÓRIO deste post (não é sugestão — não use nenhum outro formato): ${visualAngle}. O image_prompt tem que descrever a cena seguindo EXATAMENTE esse formato.`,
@@ -144,7 +185,7 @@ export function buildCaptionSystemPrompt(params: {
     attachmentsContext || null,
     instruction ? buildInstructionPromptBlock(instruction) : null,
     video && videoTheme
-      ? `TEMA OBRIGATÓRIO deste vídeo (definido pelo dono, não é sugestão e prevalece sobre qualquer pilar ou proporção citados na ficha): ${videoTheme}. Toda a história, as fotos e a chamada para ação devem ser sobre ${videoTheme} para empresas e gestores de facilities, usando só os serviços que a ficha da empresa diz que ela oferece.${nameInVideos ? ` Sempre que citar o nome da empresa (narração, textos, legenda e hashtags), use exatamente “${nameInVideos}” — nunca o nome da unidade ou da divisão.` : ''}`
+      ? `TEMA OBRIGATÓRIO deste vídeo (definido pelo dono): ${videoTheme}. Toda a história e a chamada para ação devem tratar desse tema para o público específico descrito na ficha desta empresa.${nameInVideos ? ` Sempre que citar o nome da empresa, use exatamente “${nameInVideos}”.` : ''}`
       : null,
     'A legenda deve soar humana, natural, sem parecer gerada por IA e sem clichês genéricos de marketing. Use no máximo 2 emojis, só se fizer sentido para o tom da marca.',
     'Nunca invente promoção, preço ou resultado que não esteja na ficha da empresa. Nunca mencione concorrentes. Respeite qualquer proibição registrada na ficha.',
@@ -159,7 +200,7 @@ export function buildCaptionSystemPrompt(params: {
     video
       ? '{"script": "narração falada do vídeo, texto corrido na ordem das cenas", "setting": "cenário comum das fotos, em inglês", "scenes": [{"headline": "até 8 palavras", "text": "1 frase de apoio", "seconds": 4, "visual": "descrição em inglês da fotografia desta cena: quem, fazendo o quê, onde, luz"}], "cta_title": "chamada curta", "cta_body": "1 frase dizendo como falar com a empresa", "cta_seconds": 4, "cta_visual": "descrição em inglês da fotografia do fechamento", "caption": "legenda do post com call to action", "hashtags": ["5 a 8 hashtags relevantes, sem #"], "reasoning": "1 frase curta, em português, explicando por que este vídeo faz sentido agora, para o dono da empresa entender"} — todos os textos das cenas e a legenda no idioma da legenda indicado acima.'
       : carousel
-      ? '{"cover_title": "gancho curto da capa", "cover_subtitle": "1 frase de apoio", "slides": [{"title": "título curto", "body": "1-2 frases"}], "cta_title": "chamada curta", "cta_body": "1 frase dizendo como falar com a empresa", "caption": "legenda do post com call to action", "hashtags": ["5 a 8 hashtags relevantes, sem #"], "reasoning": "1 frase curta, em português, explicando por que este carrossel faz sentido agora, para o dono da empresa entender"} — todos os textos dos slides e a legenda no idioma da legenda indicado acima.'
+      ? '{"template_family": "uma das famílias aprovadas pela direção criativa", "cover_title": "gancho curto da capa", "cover_subtitle": "1 frase de apoio", "slides": [{"title": "título curto", "body": "1-2 frases"}], "cta_title": "chamada curta", "cta_body": "1 frase dizendo como falar com a empresa", "caption": "legenda do post com call to action", "hashtags": ["5 a 8 hashtags relevantes, sem #"], "reasoning": "1 frase curta, em português, explicando por que este carrossel faz sentido agora, para o dono da empresa entender"} — todos os textos dos slides e a legenda no idioma da legenda indicado acima.'
       : '{"caption": "a legenda pronta para publicar, incluindo call to action se fizer sentido para a empresa", "image_prompt": "descrição em inglês, detalhada e visual, para gerar a imagem que acompanha o post — sem nenhum texto/letra embutido na imagem", "reasoning": "1 frase curta, em português, explicando por que este post faz sentido agora, para o dono da empresa entender"}',
   ]
     .filter(Boolean)
@@ -180,14 +221,26 @@ export async function generatePostContent(params: {
   visualAngle: string
   instruction?: ContentInstruction | null
 }): Promise<GeneratedPostContent> {
-  const systemPrompt = buildCaptionSystemPrompt(params)
-  const output = await generateStructuredReply<CaptionOutput>({
+  const direction = await directionFor({ ...params, format: 'image', objective: params.instruction?.objective || params.pillar || 'crescimento da marca' })
+  const systemPrompt = `${buildCaptionSystemPrompt(params)} ${direction}`
+  let output = await generateStructuredReply<CaptionOutput>({
     apiKey: params.apiKey,
     systemPrompt,
     history: [{ role: 'user', content: 'Gere o post agora.' }],
     maxTokens: params.instruction ? 700 : 500,
     temperature: 0.8,
   })
+  const companyContext = buildCombinedBusinessContext(params.organizationProfile, params.config.business_profile) || params.unit.name
+  const assessment = await assessCreativeText({ apiKey: params.apiKey, format: 'post de imagem', companyContext, creative: output })
+  if (!assessment.pass) {
+    output = await generateStructuredReply<CaptionOutput>({
+      apiKey: params.apiKey,
+      systemPrompt,
+      history: [{ role: 'user', content: `Refaça o post agora. ${qualityFeedback(assessment)}` }],
+      maxTokens: params.instruction ? 700 : 500,
+      temperature: 0.7,
+    })
+  }
 
   const caption = (output.caption ?? '').trim()
   const imagePrompt = (output.image_prompt ?? '').trim()
@@ -222,7 +275,18 @@ export async function generatePostImage(params: {
   imagePrompt: string
   logoUrl?: string | null
 }): Promise<{ base64Image: string }> {
-  const { base64Image } = await generateImage({ apiKey: params.apiKey, prompt: params.imagePrompt, size: '1024x1024', quality: 'medium' })
+  const geminiKey = getGeminiApiKey()
+  const useGemini = (process.env.CONTENT_IMAGE_PROVIDER || '').toLowerCase() === 'gemini' && geminiKey
+  let base64Image = useGemini
+    ? (await generateGeminiImage({ apiKey: geminiKey, prompt: params.imagePrompt })).base64
+    : (await generateImage({ apiKey: params.apiKey, prompt: params.imagePrompt, size: '1024x1024', quality: 'medium' })).base64Image
+  const visualAssessment = await assessCreativeImage({ apiKey: params.apiKey, imageBase64: base64Image, expected: params.imagePrompt })
+  if (!visualAssessment.pass) {
+    const correctedPrompt = `${params.imagePrompt}. ${qualityFeedback(visualAssessment)}. Produce a completely new professional composition.`
+    base64Image = useGemini
+      ? (await generateGeminiImage({ apiKey: geminiKey, prompt: correctedPrompt })).base64
+      : (await generateImage({ apiKey: params.apiKey, prompt: correctedPrompt, size: '1024x1024', quality: 'high' })).base64Image
+  }
   if (!params.logoUrl) return { base64Image }
   return { base64Image: await compositeLogoOntoImage(base64Image, params.logoUrl) }
 }
@@ -271,14 +335,26 @@ export async function generateCarouselContent(params: {
   attachmentsContext?: string | null
   instruction?: ContentInstruction | null
 }): Promise<GeneratedCarousel> {
-  const systemPrompt = buildCaptionSystemPrompt({ ...params, visualAngle: '', carousel: true })
-  const output = await generateStructuredReply<CarouselOutput>({
+  const direction = await directionFor({ ...params, format: 'carousel', objective: params.instruction?.objective || params.pillar || 'crescimento da marca' })
+  const systemPrompt = `${buildCaptionSystemPrompt({ ...params, visualAngle: '', carousel: true })} ${direction}`
+  let output = await generateStructuredReply<CarouselOutput>({
     apiKey: params.apiKey,
     systemPrompt,
     history: [{ role: 'user', content: 'Gere o carrossel agora.' }],
     maxTokens: 1500,
     temperature: 0.8,
   })
+  const companyContext = buildCombinedBusinessContext(params.organizationProfile, params.config.business_profile) || params.unit.name
+  const assessment = await assessCreativeText({ apiKey: params.apiKey, format: 'carrossel', companyContext, creative: output })
+  if (!assessment.pass) {
+    output = await generateStructuredReply<CarouselOutput>({
+      apiKey: params.apiKey,
+      systemPrompt,
+      history: [{ role: 'user', content: `Refaça o carrossel. ${qualityFeedback(assessment)}` }],
+      maxTokens: 1500,
+      temperature: 0.7,
+    })
+  }
   const normalized = normalizeCarousel(output)
   if (!normalized.ok) throw new Error(`A IA devolveu um carrossel inválido: ${normalized.error}`)
   const caption = (output.caption ?? '').trim()
@@ -320,14 +396,26 @@ export async function generateVideoContent(params: {
   instruction?: ContentInstruction | null
   videoTheme?: string | null
 }): Promise<GeneratedVideo> {
-  const systemPrompt = buildCaptionSystemPrompt({ ...params, visualAngle: '', video: true })
-  const output = await generateStructuredReply<CarouselOutput>({
+  const direction = await directionFor({ ...params, format: 'video', objective: params.instruction?.objective || params.videoTheme || params.pillar || 'crescimento da marca' })
+  const systemPrompt = `${buildCaptionSystemPrompt({ ...params, visualAngle: '', video: true })} ${direction}`
+  let output = await generateStructuredReply<CarouselOutput>({
     apiKey: params.apiKey,
     systemPrompt,
     history: [{ role: 'user', content: 'Gere o vídeo agora.' }],
     maxTokens: 1800,
     temperature: 0.8,
   })
+  const companyContext = buildCombinedBusinessContext(params.organizationProfile, params.config.business_profile) || params.unit.name
+  const assessment = await assessCreativeText({ apiKey: params.apiKey, format: 'vídeo', companyContext, creative: output })
+  if (!assessment.pass) {
+    output = await generateStructuredReply<CarouselOutput>({
+      apiKey: params.apiKey,
+      systemPrompt,
+      history: [{ role: 'user', content: `Refaça o roteiro do vídeo. ${qualityFeedback(assessment)}` }],
+      maxTokens: 1800,
+      temperature: 0.7,
+    })
+  }
   const normalized = normalizeVideo(output)
   if (!normalized.ok) throw new Error(`A IA devolveu um vídeo inválido: ${normalized.error}`)
   const caption = (output.caption ?? '').trim()

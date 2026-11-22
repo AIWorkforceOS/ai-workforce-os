@@ -21,6 +21,7 @@ import { VideoEditor } from '@/components/dashboard/video-editor'
 import { MediaThumb } from '@/components/dashboard/media-lightbox'
 import { mediaItemsForPost } from '@/lib/content/media-items'
 import { BrandKitForm, type BrandKitValue } from '@/components/dashboard/brand-kit-form'
+import { BrandAssetsForm, type BeforeAfterPair } from '@/components/dashboard/brand-assets-form'
 import { EmployeeHubGate } from '@/components/dashboard/employee-hub-gate'
 import { EmployeeHubTabs } from '@/components/dashboard/employee-hub-tabs'
 import { resolveEmployeeHub } from '@/lib/dashboard/employee-hub'
@@ -83,6 +84,9 @@ export default async function ContentPage() {
   ])
   const brandKit = ((org?.business_profile as { brand_kit?: BrandKitValue } | undefined)?.brand_kit as BrandKitValue | undefined) ?? null
   const postingDays = postingDaysFrom((config as AgentConfig | null)?.business_profile ?? {})
+  const beforeAfterPairs = (Array.isArray(((config as AgentConfig | null)?.business_profile as Record<string, unknown> | null)?.before_after_pairs)
+    ? (((config as AgentConfig).business_profile as Record<string, unknown>).before_after_pairs as BeforeAfterPair[])
+    : [])
 
   const now = new Date()
   const thisWeek = fullWeekDates(now)
@@ -175,6 +179,7 @@ export default async function ContentPage() {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.4fr_1fr]">
           <ContentWeekActions unitId={firstUnit.id} initialPostingDays={postingDays} />
           <BrandKitForm unitId={firstUnit.id} initial={brandKit} />
+          <BrandAssetsForm unitId={firstUnit.id} initialPairs={beforeAfterPairs} />
         </div>
       )}
 

@@ -147,6 +147,10 @@ function SlideView({ spec, brand, backgroundDataUrl }: { spec: SlideSpec; brand:
   const text = photo ? '#FFFFFF' : readableOn(base)
   const accent = photo ? brand.secondary : spec.kind === 'cta' && base === brand.secondary ? text : brand.secondary
   const muted = photo ? 'rgba(255,255,255,0.88)' : text === '#FFFFFF' ? 'rgba(255,255,255,0.85)' : 'rgba(11,18,32,0.82)'
+  const family = spec.template_family || 'editorial-premium'
+  const centered = /prova-social|oferta-elegante|produto-destaque/.test(family)
+  const topAccent = /educativo|dados|infografico|modular/.test(family)
+  const roundedPanel = /fotografia-humana|antes-depois|bastidores|storytelling/.test(family)
   return (
     <div style={{ width: SLIDE_WIDTH, height: SLIDE_HEIGHT, display: 'flex', position: 'relative', background: base, fontFamily: 'Liberation, sans-serif' }}>
       {photo && (
@@ -155,8 +159,8 @@ function SlideView({ spec, brand, backgroundDataUrl }: { spec: SlideSpec; brand:
           <div style={{ position: 'absolute', top: 0, left: 0, width: SLIDE_WIDTH, height: SLIDE_HEIGHT, background: 'rgba(5,10,20,0.62)', display: 'flex' }} />
         </>
       )}
-      <div style={{ position: 'absolute', top: 0, left: 0, width: 18, height: SLIDE_HEIGHT, background: accent, display: 'flex' }} />
-      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', width: '100%', height: '100%', padding: '84px 84px 72px 104px' }}>
+      <div style={topAccent ? { position: 'absolute', top: 0, left: 0, width: SLIDE_WIDTH, height: 18, background: accent, display: 'flex' } : { position: 'absolute', top: 0, left: 0, width: 18, height: SLIDE_HEIGHT, background: accent, display: 'flex' }} />
+      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', width: '100%', height: '100%', padding: topAccent ? '104px 84px 72px' : '84px 84px 72px 104px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           {brand.logo ? (
             <img src={logoSourceFor(brand.logo, text === '#FFFFFF')} width={brand.logo.width} height={brand.logo.height} alt="" />
@@ -166,7 +170,7 @@ function SlideView({ spec, brand, backgroundDataUrl }: { spec: SlideSpec; brand:
           <div style={{ display: 'flex', fontSize: 30, fontWeight: 700, color: muted }}>{`${String(spec.index).padStart(2, '0')}/${String(spec.total).padStart(2, '0')}`}</div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: centered ? 'center' : 'flex-start', textAlign: centered ? 'center' : 'left', padding: roundedPanel ? '52px' : '0', borderRadius: roundedPanel ? '36px' : '0', background: roundedPanel ? 'rgba(5,10,20,0.42)' : 'transparent' }}>
           {spec.kind === 'content' && <div style={{ display: 'flex', width: 120, height: 10, background: accent, marginBottom: 36 }} />}
           <div style={{ display: 'flex', fontSize: titleSize(spec.kind, spec.title), fontWeight: 700, lineHeight: 1.1, color: spec.kind === 'cover' && !photo ? text : text }}>{spec.title}</div>
           {spec.body && (

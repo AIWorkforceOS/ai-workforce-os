@@ -60,7 +60,19 @@ export async function createCarouselPostDraft(params: {
   // "Sempre com imagens de fundo" (instrução do dono): fotos reais da biblioteca primeiro; sem elas, fundos gerados por IA (custo registrado).
   let content = generated.content
   let backgrounds: 'library' | 'ai' | undefined
-  if (wantsSlideBackgrounds(params.instruction ?? null)) {
+  const pairs = Array.isArray((params.config.business_profile as Record<string, unknown> | null)?.before_after_pairs)
+    ? ((params.config.business_profile as Record<string, unknown>).before_after_pairs as { before_url?: string; after_url?: string; description?: string }[])
+    : []
+  const pair = pairs.find((item) => item.before_url && item.after_url)
+  if (/antes-depois/.test(content.template_family || '') && pair?.before_url && pair.after_url) {
+    content = {
+      ...content,
+      cover: { ...content.cover, background_url: pair.before_url },
+      slides: content.slides.map((slide, index) => ({ ...slide, background_url: index < Math.ceil(content.slides.length / 2) ? pair.before_url : pair.after_url })),
+      cta: { ...content.cta, background_url: pair.after_url },
+    }
+    backgrounds = 'library'
+  } else if (wantsSlideBackgrounds(params.instruction ?? null)) {
     const photos = await libraryPhotoUrls(supabase, params.unit)
     if (photos.length > 0) {
       content = applyBackgrounds(content, photos)

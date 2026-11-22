@@ -7,11 +7,22 @@
 
 import sharp from 'sharp'
 
-export type BrandKit = { logo_url?: string | null; primary_color?: string | null; secondary_color?: string | null }
+export type BrandKit = {
+  logo_url?: string | null
+  primary_color?: string | null
+  secondary_color?: string | null
+  font_family?: string | null
+  visual_style?: string | null
+  brand_voice?: string | null
+  content_goals?: string | null
+  target_audience?: string | null
+  approved_offers?: string | null
+  forbidden_content?: string | null
+}
 
 export function brandKitFrom(organizationProfile: Record<string, unknown> | null | undefined): BrandKit | null {
   const raw = (organizationProfile as { brand_kit?: BrandKit } | null | undefined)?.brand_kit
-  if (!raw || (!raw.logo_url && !raw.primary_color && !raw.secondary_color)) return null
+  if (!raw || !Object.values(raw).some(Boolean)) return null
   return raw
 }
 

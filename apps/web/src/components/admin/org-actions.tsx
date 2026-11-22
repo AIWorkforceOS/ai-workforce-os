@@ -5,6 +5,44 @@ import { useRouter } from 'next/navigation'
 import { AlertTriangle, KeyRound, Loader2, Power, RefreshCw, Trash2, UserPlus, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Input, Label, Select } from '@/components/ui/dashboard-ui'
+import { VIDEO_MONTHLY_LIMITS, type VideoMonthlyLimit } from '@/lib/content/media-policy'
+
+export function ContentVideoLimitForm({ orgId, currentLimit }: { orgId: string; currentLimit: VideoMonthlyLimit }) {
+  const router = useRouter()
+  const [selected, setSelected] = useState<VideoMonthlyLimit>(currentLimit)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+
+  async function save() {
+    setBusy(true)
+    setMessage(null)
+    const response = await fetch(`/api/admin/orgs/${orgId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content_video_monthly_limit: selected }),
+    })
+    const data = await response.json().catch(() => null)
+    setBusy(false)
+    if (!response.ok) return setMessage(data?.error ?? 'Não foi possível salvar a cota.')
+    setMessage(`Autorização salva: ${selected} vídeos por mês.`)
+    router.refresh()
+  }
+
+  return (
+    <div className="flex flex-wrap items-end gap-2">
+      <div>
+        <Label htmlFor="content-video-limit">Vídeos profissionais por mês</Label>
+        <Select id="content-video-limit" value={selected} onChange={(event) => setSelected(Number(event.target.value) as VideoMonthlyLimit)} className="mt-1 w-56">
+          {VIDEO_MONTHLY_LIMITS.map((limit) => <option key={limit} value={limit}>{limit} vídeos — {limit === 2 ? 'quinzenal' : limit === 4 ? 'semanal' : '2 por semana'}</option>)}
+        </Select>
+      </div>
+      <button onClick={save} disabled={busy} className="rounded-xl bg-cyan-500 px-4 py-2.5 text-xs font-black text-white disabled:opacity-50">
+        {busy ? 'Salvando…' : 'Salvar autorização'}
+      </button>
+      {message && <span className="text-xs text-slate-400">{message}</span>}
+    </div>
+  )
+}
 
 /** Liga/desliga a empresa (super admin). */
 export function ToggleOrgActive({ orgId, isActive }: { orgId: string; isActive: boolean }) {

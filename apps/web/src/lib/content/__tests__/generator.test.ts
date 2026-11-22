@@ -284,7 +284,10 @@ describe('generatePostImage — composição do logo', () => {
   it('sem logoUrl, devolve a imagem gerada sem tentar buscar nada', async () => {
     vi.resetModules()
     const baseImage = await tinyPngBase64({ r: 10, g: 20, b: 30 })
-    vi.doMock('@/lib/openai', () => ({ generateImage: async () => ({ base64Image: baseImage }) }))
+    vi.doMock('@/lib/openai', () => ({
+      generateImage: async () => ({ base64Image: baseImage }),
+      generateStructuredReplyFromImage: async () => ({ professional_quality: 100, brand_fidelity: 100, legibility: 100, factual_safety: 100, segment_fit: 100, engagement_potential: 100, pass: true, issues: [], correction: '' }),
+    }))
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
 
@@ -301,7 +304,10 @@ describe('generatePostImage — composição do logo', () => {
     const logoBuffer = await sharp({ create: { width: 20, height: 20, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } })
       .png()
       .toBuffer()
-    vi.doMock('@/lib/openai', () => ({ generateImage: async () => ({ base64Image: baseImage }) }))
+    vi.doMock('@/lib/openai', () => ({
+      generateImage: async () => ({ base64Image: baseImage }),
+      generateStructuredReplyFromImage: async () => ({ professional_quality: 100, brand_fidelity: 100, legibility: 100, factual_safety: 100, segment_fit: 100, engagement_potential: 100, pass: true, issues: [], correction: '' }),
+    }))
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, arrayBuffer: async () => logoBuffer.buffer.slice(logoBuffer.byteOffset, logoBuffer.byteOffset + logoBuffer.byteLength) })))
 
     const { generatePostImage } = await import('../generator')
@@ -316,7 +322,10 @@ describe('generatePostImage — composição do logo', () => {
   it('se o download do logo falhar, a geração falha inteira em vez de publicar sem a marca (pedido do Vinicius: nenhum post sem logo)', async () => {
     vi.resetModules()
     const baseImage = await tinyPngBase64({ r: 5, g: 5, b: 5 })
-    vi.doMock('@/lib/openai', () => ({ generateImage: async () => ({ base64Image: baseImage }) }))
+    vi.doMock('@/lib/openai', () => ({
+      generateImage: async () => ({ base64Image: baseImage }),
+      generateStructuredReplyFromImage: async () => ({ professional_quality: 100, brand_fidelity: 100, legibility: 100, factual_safety: 100, segment_fit: 100, engagement_potential: 100, pass: true, issues: [], correction: '' }),
+    }))
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404 })))
 
     const { generatePostImage } = await import('../generator')

@@ -62,6 +62,8 @@ export type StoredVideo = VideoContent & {
   /** Imagens geradas para as cenas e o custo estimado (qualidade média). */
   images_generated?: number
   image_cost_usd?: number
+  /** Motor que criou o vídeo final. `gemini_omni` é vídeo generativo real; `motion_design` é legado. */
+  provider?: 'gemini_omni' | 'motion_design'
 }
 
 function clean(value: unknown, max: number): string {

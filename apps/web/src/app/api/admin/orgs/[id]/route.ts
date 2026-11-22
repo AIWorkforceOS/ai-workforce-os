@@ -19,6 +19,26 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const supabase = await createClient()
 
+  if ([2, 4, 8].includes(Number(body?.content_video_monthly_limit))) {
+    const limit = Number(body.content_video_monthly_limit)
+    const { data: units } = await supabase.from('units').select('id').eq('org_id', id)
+    const unitIds = (units ?? []).map((unit) => unit.id)
+    if (unitIds.length === 0) return NextResponse.json({ error: 'A empresa ainda não possui unidade.' }, { status: 400 })
+    const { data: configs, error: readError } = await supabase
+      .from('agent_configs')
+      .select('id, business_profile')
+      .in('unit_id', unitIds)
+      .eq('agent_type', 'content_specialist')
+    if (readError) return NextResponse.json({ error: `Erro ao localizar o Gestor de Mídias: ${readError.message}` }, { status: 500 })
+    if (!configs?.length) return NextResponse.json({ error: 'Nenhum Gestor de Mídias foi contratado nesta empresa.' }, { status: 400 })
+    for (const config of configs) {
+      const profile = (config.business_profile ?? {}) as Record<string, unknown>
+      const { error } = await supabase.from('agent_configs').update({ business_profile: { ...profile, video_monthly_limit: limit } }).eq('id', config.id)
+      if (error) return NextResponse.json({ error: `Erro ao salvar a cota: ${error.message}` }, { status: 500 })
+    }
+    return NextResponse.json({ ok: true, updated: configs.length, video_monthly_limit: limit })
+  }
+
   if (body?.management_mode === 'digital_employees' || body?.management_mode === 'full_management') {
     const { error } = await supabase
       .from('organizations')

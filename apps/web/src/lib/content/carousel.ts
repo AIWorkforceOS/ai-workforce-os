@@ -17,6 +17,7 @@ export type CarouselSlideInput = {
 
 /** O que o dono vê e edita: capa, slides de conteúdo e fechamento com chamada para ação. */
 export type CarouselContent = {
+  template_family?: string
   cover: { title: string; subtitle: string; background_url?: string | null }
   slides: CarouselSlideInput[]
   cta: { title: string; body: string; background_url?: string | null }
@@ -33,6 +34,7 @@ export type SlideSpec = {
   title: string
   body: string
   background_url: string | null
+  template_family?: string
 }
 
 function clean(value: unknown, max: number): string {
@@ -65,6 +67,7 @@ export function normalizeCarousel(raw: unknown): { ok: true; value: CarouselCont
   return {
     ok: true,
     value: {
+      template_family: clean(r.template_family, 60) || 'editorial-premium',
       cover: { title: coverTitle, subtitle: clean(r.cover_subtitle, BODY_MAX) },
       slides,
       cta: { title: ctaTitle, body: clean(r.cta_body, BODY_MAX) },
@@ -76,7 +79,7 @@ export function normalizeCarousel(raw: unknown): { ok: true; value: CarouselCont
 /** Edição vinda do navegador: mesmas regras de tamanho/quantidade, nunca confia no cliente. */
 export function normalizeCarouselEdit(raw: unknown): { ok: true; value: CarouselContent } | { ok: false; error: string } {
   if (!raw || typeof raw !== 'object') return { ok: false, error: 'Dados inválidos.' }
-  const r = raw as { cover?: Record<string, unknown>; slides?: unknown; cta?: Record<string, unknown>; hashtags?: unknown }
+  const r = raw as { template_family?: unknown; cover?: Record<string, unknown>; slides?: unknown; cta?: Record<string, unknown>; hashtags?: unknown }
   const bg = (v: unknown) => (typeof v === 'string' && /^https:\/\//.test(v) ? v : null)
   const cover = { title: clean(r.cover?.title, TITLE_MAX), subtitle: clean(r.cover?.subtitle, BODY_MAX), background_url: bg(r.cover?.background_url) }
   const cta = { title: clean(r.cta?.title, TITLE_MAX), body: clean(r.cta?.body, BODY_MAX), background_url: bg(r.cta?.background_url) }
@@ -90,16 +93,16 @@ export function normalizeCarouselEdit(raw: unknown): { ok: true; value: Carousel
     .filter((s) => s.title || s.body)
   if (slides.length < MIN_CONTENT_SLIDES) return { ok: false, error: `Mantenha pelo menos ${MIN_CONTENT_SLIDES} slides de conteúdo.` }
   if (slides.length > MAX_CONTENT_SLIDES) return { ok: false, error: `No máximo ${MAX_CONTENT_SLIDES} slides de conteúdo.` }
-  return { ok: true, value: { cover, slides, cta, hashtags: cleanHashtags(r.hashtags) } }
+  return { ok: true, value: { template_family: clean(r.template_family, 60) || 'editorial-premium', cover, slides, cta, hashtags: cleanHashtags(r.hashtags) } }
 }
 
 /** Ordem final dos slides a desenhar/publicar: capa, conteúdo, fechamento. */
 export function buildSlideSpecs(content: CarouselContent): SlideSpec[] {
   const total = content.slides.length + 2
   return [
-    { kind: 'cover', index: 1, total, title: content.cover.title, body: content.cover.subtitle, background_url: content.cover.background_url ?? null },
-    ...content.slides.map((s, i) => ({ kind: 'content' as const, index: i + 2, total, title: s.title, body: s.body, background_url: s.background_url ?? null })),
-    { kind: 'cta', index: total, total, title: content.cta.title, body: content.cta.body, background_url: content.cta.background_url ?? null },
+    { kind: 'cover', index: 1, total, title: content.cover.title, body: content.cover.subtitle, background_url: content.cover.background_url ?? null, template_family: content.template_family },
+    ...content.slides.map((s, i) => ({ kind: 'content' as const, index: i + 2, total, title: s.title, body: s.body, background_url: s.background_url ?? null, template_family: content.template_family })),
+    { kind: 'cta', index: total, total, title: content.cta.title, body: content.cta.body, background_url: content.cta.background_url ?? null, template_family: content.template_family },
   ]
 }
 

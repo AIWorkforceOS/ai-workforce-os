@@ -18,7 +18,18 @@ import { Card, CardHeader, Label, brandGradient } from '@/components/ui/dashboar
 // que só roda em Node. As cores extraídas pré-preenchem os seletores
 // automaticamente; o usuário ainda pode ajustar à mão antes de salvar.
 
-export type BrandKitValue = { logo_url: string | null; primary_color: string | null; secondary_color: string | null }
+export type BrandKitValue = {
+  logo_url: string | null
+  primary_color: string | null
+  secondary_color: string | null
+  font_family?: string | null
+  visual_style?: string | null
+  brand_voice?: string | null
+  content_goals?: string | null
+  target_audience?: string | null
+  approved_offers?: string | null
+  forbidden_content?: string | null
+}
 
 const FILE_MAX_BYTES = 5 * 1024 * 1024
 const DEFAULT_COLOR = '#0EA5E9'
@@ -30,6 +41,15 @@ export function BrandKitForm({ unitId, initial }: { unitId: string; initial: Bra
   const [logoUrl, setLogoUrl] = useState(initial?.logo_url ?? null)
   const [primaryColor, setPrimaryColor] = useState(initial?.primary_color ?? DEFAULT_COLOR)
   const [secondaryColor, setSecondaryColor] = useState(initial?.secondary_color ?? DEFAULT_COLOR)
+  const [details, setDetails] = useState({
+    font_family: initial?.font_family ?? '',
+    visual_style: initial?.visual_style ?? '',
+    brand_voice: initial?.brand_voice ?? '',
+    content_goals: initial?.content_goals ?? '',
+    target_audience: initial?.target_audience ?? '',
+    approved_offers: initial?.approved_offers ?? '',
+    forbidden_content: initial?.forbidden_content ?? '',
+  })
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -73,7 +93,7 @@ export function BrandKitForm({ unitId, initial }: { unitId: string; initial: Bra
       const response = await fetch('/api/content/brand-kit', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ unit_id: unitId, logo_url: logoUrl, primary_color: primaryColor, secondary_color: secondaryColor }),
+        body: JSON.stringify({ unit_id: unitId, logo_url: logoUrl, primary_color: primaryColor, secondary_color: secondaryColor, ...details }),
       })
       const data = (await response.json()) as { error?: string }
       if (!response.ok) {
@@ -171,6 +191,30 @@ export function BrandKitForm({ unitId, initial }: { unitId: string; initial: Bra
               <span className="text-xs font-mono text-slate-400">{secondaryColor}</span>
             </div>
           </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          {([
+            ['font_family', 'Fontes oficiais', 'Ex.: Montserrat para títulos e Inter para textos'],
+            ['visual_style', 'Estilo visual', 'Ex.: sofisticado, humano, fotografia real, alto contraste'],
+            ['brand_voice', 'Tom da marca', 'Ex.: seguro, acolhedor, direto, sem jargão'],
+            ['content_goals', 'Objetivos do conteúdo', 'Ex.: gerar pedidos de orçamento e autoridade local'],
+            ['target_audience', 'Público prioritário', 'Quem deve ser atraído e quais dores possui'],
+            ['approved_offers', 'Ofertas autorizadas', 'Serviços, diferenciais e promoções que podem ser divulgados'],
+            ['forbidden_content', 'O que nunca usar', 'Promessas, estilos, palavras, imagens ou assuntos proibidos'],
+          ] as const).map(([field, label, placeholder]) => (
+            <div key={field} className={field === 'forbidden_content' ? 'sm:col-span-2' : ''}>
+              <Label htmlFor={`brand-${field}`}>{label}</Label>
+              <textarea
+                id={`brand-${field}`}
+                value={details[field]}
+                onChange={(event) => setDetails((current) => ({ ...current, [field]: event.target.value }))}
+                placeholder={placeholder}
+                rows={3}
+                className="mt-1.5 w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 outline-none focus:border-cyan-400/50"
+              />
+            </div>
+          ))}
         </div>
 
         {error && <p className="text-xs text-red-400">{error}</p>}

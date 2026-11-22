@@ -6,10 +6,11 @@ import { computeSetupStatus, unitHasWhatsapp, type UnitWhatsappChannelRow } from
 import { BrandingCard } from '@/components/brand/branding-card'
 import { BrandingAccessToggle } from '@/components/admin/branding-access-toggle'
 import { readOrgLogoUrl } from '@/lib/branding/server'
-import { ChangePlanForm, DeleteOrgButton, ManagementModeForm, ProvisionUserForm, ResetPasswordButton, ToggleOrgActive } from '@/components/admin/org-actions'
+import { ChangePlanForm, ContentVideoLimitForm, DeleteOrgButton, ManagementModeForm, ProvisionUserForm, ResetPasswordButton, ToggleOrgActive } from '@/components/admin/org-actions'
 import { Badge, Card, TableShell, Td, Th, Tr } from '@/components/ui/dashboard-ui'
 import { AlertTriangle, ArrowLeft, Check, CheckCircle2, WifiOff } from 'lucide-react'
 import type { AgentConfig, DashboardSummaryRow, Organization, Unit } from '@/lib/types'
+import { videoMonthlyLimitFrom } from '@/lib/content/media-policy'
 
 export const dynamic = 'force-dynamic'
 
@@ -76,6 +77,7 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ id: 
   const totalLeads = unitRows.reduce((s, u) => s + Number(leadsByUnit.get(u.id)?.total_leads ?? 0), 0)
   const totalConversations = unitRows.reduce((s, u) => s + Number(leadsByUnit.get(u.id)?.total_conversations ?? 0), 0)
   const errorEvents = eventRows.filter((e) => e.level === 'error')
+  const contentConfig = configRows.find((config) => config.agent_type === 'content_specialist')
 
   return (
     <div className="flex flex-col gap-6">
@@ -111,6 +113,14 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ id: 
           </div>
         </div>
       </div>
+
+      {contentConfig && (
+        <Card className="p-5">
+          <p className="text-[9px] font-black uppercase tracking-[0.15em] text-slate-500">Gestor de Mídias</p>
+          <h2 className="mb-3 text-sm font-bold text-white">Autorização de vídeos profissionais</h2>
+          <ContentVideoLimitForm orgId={orgRow.id} currentLimit={videoMonthlyLimitFrom(contentConfig.business_profile as Record<string, unknown> | null)} />
+        </Card>
+      )}
 
       {/* Diagnóstico rápido */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">

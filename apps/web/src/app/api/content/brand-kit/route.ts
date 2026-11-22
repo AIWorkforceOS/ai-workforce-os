@@ -25,7 +25,19 @@ export async function PATCH(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 })
 
-  let body: { unit_id?: string; logo_url?: string | null; primary_color?: string | null; secondary_color?: string | null }
+  let body: {
+    unit_id?: string
+    logo_url?: string | null
+    primary_color?: string | null
+    secondary_color?: string | null
+    font_family?: string | null
+    visual_style?: string | null
+    brand_voice?: string | null
+    content_goals?: string | null
+    target_audience?: string | null
+    approved_offers?: string | null
+    forbidden_content?: string | null
+  }
   try {
     body = await request.json()
   } catch {
@@ -53,6 +65,9 @@ export async function PATCH(request: Request) {
   if (body.logo_url !== undefined) nextBrandKit.logo_url = body.logo_url || null
   if (body.primary_color !== undefined) nextBrandKit.primary_color = body.primary_color || null
   if (body.secondary_color !== undefined) nextBrandKit.secondary_color = body.secondary_color || null
+  for (const field of ['font_family', 'visual_style', 'brand_voice', 'content_goals', 'target_audience', 'approved_offers', 'forbidden_content'] as const) {
+    if (body[field] !== undefined) nextBrandKit[field] = body[field]?.trim().slice(0, 2000) || null
+  }
 
   const { error } = await service
     .from('organizations')
