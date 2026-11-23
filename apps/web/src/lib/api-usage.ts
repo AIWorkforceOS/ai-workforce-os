@@ -11,7 +11,15 @@ import { createServiceClient } from '@/lib/supabase/service'
  * OPENAI_ADMIN_KEY estiver configurada.
  */
 
-export type ApiProvider = 'openai' | 'google_maps' | 'resend' | 'evolution' | 'twilio'
+export type ApiProvider = 'openai' | 'gemini' | 'google_maps' | 'resend' | 'evolution' | 'twilio'
+
+export const GEMINI_IMAGE_COST_USD = 0.0504
+export const GEMINI_VIDEO_15S_COST_USD = 1.04256
+
+export function getGeminiMonthlyBudgetUsd(): number {
+  const configured = Number(process.env.GEMINI_MONTHLY_BUDGET_USD ?? '20')
+  return Number.isFinite(configured) && configured > 0 ? configured : 20
+}
 
 // USD por 1M de tokens (OpenAI, tabela pública jul/2026)
 const OPENAI_PRICING_PER_1M: Record<string, { input: number; output: number }> = {
@@ -89,6 +97,36 @@ export async function logApiUsage(usage: ApiUsageInput): Promise<void> {
   } catch (err) {
     console.error(`[api_usage] falha ao gravar uso: ${err instanceof Error ? err.message : String(err)}`)
   }
+}
+
+/**
+ * Reserva o custo antes de chamar o Gemini. A função do banco serializa
+ * reservas do mês para impedir que duas gerações simultâneas ultrapassem
+ * o teto configurado. A reserva é conservadora: uma chamada iniciada é
+ * contabilizada mesmo se o fornecedor falhar depois.
+ */
+export async function reserveGeminiUsage(params: {
+  endpoint: 'images.generate' | 'videos.generate'
+  model: string
+  estimatedCostUsd: number
+  metadata?: Record<string, unknown>
+}): Promise<boolean> {
+  const service = createServiceClient()
+  if (!service) return false
+
+  const { data, error } = await service.rpc('reserve_api_usage_budget', {
+    p_provider: 'gemini',
+    p_endpoint: params.endpoint,
+    p_model: params.model,
+    p_estimated_cost_usd: params.estimatedCostUsd,
+    p_monthly_limit_usd: getGeminiMonthlyBudgetUsd(),
+    p_metadata: params.metadata ?? {},
+  })
+  if (error) {
+    console.error(`[api_usage] falha ao reservar orçamento Gemini: ${error.message}`)
+    return false
+  }
+  return data === true
 }
 
 type OpenAIUsagePayload = {

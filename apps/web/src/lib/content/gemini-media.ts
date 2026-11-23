@@ -1,3 +1,5 @@
+import { GEMINI_IMAGE_COST_USD, GEMINI_VIDEO_15S_COST_USD, reserveGeminiUsage } from '@/lib/api-usage'
+
 const INTERACTIONS_URL = 'https://generativelanguage.googleapis.com/v1beta/interactions'
 const MEDIA_TIMEOUT_MS = 180_000
 
@@ -30,6 +32,13 @@ export function getGeminiApiKey(): string | null {
 }
 
 export async function generateGeminiImage(params: { apiKey: string; prompt: string }): Promise<{ base64: string; mimeType: string }> {
+  const reserved = await reserveGeminiUsage({
+    endpoint: 'images.generate',
+    model: 'gemini-nano-banana-2.1',
+    estimatedCostUsd: GEMINI_IMAGE_COST_USD,
+    metadata: { resolution: '2K', aspect_ratio: '4:5' },
+  })
+  if (!reserved) throw new Error('O limite mensal de US$ 20 do Gemini foi atingido ou não pôde ser validado. Nenhuma geração paga foi iniciada.')
   const data = await interaction({
     apiKey: params.apiKey,
     body: {
@@ -43,6 +52,13 @@ export async function generateGeminiImage(params: { apiKey: string; prompt: stri
 }
 
 export async function generateGeminiVideo(params: { apiKey: string; prompt: string }): Promise<{ bytes: Buffer; mimeType: string; duration: number }> {
+  const reserved = await reserveGeminiUsage({
+    endpoint: 'videos.generate',
+    model: 'gemini-omni-1.2-flash',
+    estimatedCostUsd: GEMINI_VIDEO_15S_COST_USD,
+    metadata: { resolution: '720p', aspect_ratio: '9:16', duration_seconds: 15 },
+  })
+  if (!reserved) throw new Error('O limite mensal de US$ 20 do Gemini foi atingido ou não pôde ser validado. Nenhuma geração paga foi iniciada.')
   const data = await interaction({
     apiKey: params.apiKey,
     body: {

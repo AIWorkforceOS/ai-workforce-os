@@ -47,12 +47,15 @@ export default async function SystemHealthPage() {
   if (!appUser?.isSuperAdmin) redirect('/dashboard')
   const supabase = await createClient()
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+  const monthStart = new Date()
+  monthStart.setUTCDate(1)
+  monthStart.setUTCHours(0, 0, 0, 0)
 
   const [{ data: events }, { data: gateways }, { data: units }, { data: usage }, { data: kaiTasks, error: kaiTasksError }, { data: agentConfigs }] = await Promise.all([
     supabase.from('system_events').select('id, level, source, event_type, message, created_at').in('level', ['warning', 'error']).gte('created_at', since).order('created_at', { ascending: false }).limit(100),
     supabase.from('payment_gateway_settings').select('provider, region, is_active').order('region'),
     supabase.from('units').select('id, name, is_active, whatsapp_phone').eq('is_active', true),
-    supabase.from('api_usage_events').select('provider, estimated_cost_usd').gte('created_at', since).limit(20000),
+    supabase.from('api_usage_events').select('provider, estimated_cost_usd').gte('created_at', monthStart.toISOString()).limit(20000),
     supabase.from('kai_tasks').select('id, kind, title, description, status, priority, due_at, created_at').in('status', ['open', 'in_progress', 'waiting_human']).order('priority').order('created_at', { ascending: false }).limit(100),
     supabase.from('agent_configs').select('id, unit_id, agent_type, persona_name, certification_status, certification_issues, unit:units(name)').eq('is_active', true),
   ])
@@ -90,8 +93,9 @@ export default async function SystemHealthPage() {
         <Metric label="Integrações configuradas" value={`${integrations.filter((item) => item.configured).length}/${integrations.length}`} ok={integrations.every((item) => item.configured)} />
         <Metric label="WhatsApps cadastrados" value={`${unitRows.filter((unit) => unit.whatsapp_phone).length}/${unitRows.length}`} ok={unitRows.length > 0 && unitRows.every((unit) => unit.whatsapp_phone)} />
         <Metric label="Falhas em 7 dias" value={String(rows.length)} ok={rows.length === 0} />
-        <Metric label="Custo de IA em 7 dias" value={`US$ ${(costsByProvider.openai ?? 0).toFixed(2)}`} ok />
-        <Metric label="Google Maps em 7 dias" value={`US$ ${(costsByProvider.google_maps ?? 0).toFixed(2)}`} ok />
+        <Metric label="OpenAI neste mês" value={`US$ ${(costsByProvider.openai ?? 0).toFixed(2)}`} ok />
+        <Metric label="Gemini neste mês" value={`US$ ${(costsByProvider.gemini ?? 0).toFixed(2)}`} ok={(costsByProvider.gemini ?? 0) < Number(process.env.GEMINI_MONTHLY_BUDGET_USD ?? 20)} />
+        <Metric label="Google Maps neste mês" value={`US$ ${(costsByProvider.google_maps ?? 0).toFixed(2)}`} ok />
         <Metric label="Funcionários certificados" value={`${certifiedConfigs.length}/${activeConfigs.length}`} ok={activeConfigs.length > 0 && certifiedConfigs.length === activeConfigs.length} />
         <Metric label="Pendências da Kai" value={kaiTasksError ? 'migration pendente' : String(taskRows.length)} ok={!kaiTasksError && taskRows.length === 0} />
       </div>
@@ -148,15 +152,27 @@ export default async function SystemHealthPage() {
           <ProviderCostCard
             name="OpenAI — inteligência artificial"
             value={costsByProvider.openai ?? 0}
+            limit={Number(process.env.OPENAI_MONTHLY_BUDGET_USD ?? 0) || undefined}
             href="https://platform.openai.com/settings/organization/billing/overview"
             linkLabel="Abrir pagamentos da OpenAI"
           />
           <ProviderCostCard
+            name="Google Gemini — imagens e vídeos"
+            value={costsByProvider.gemini ?? 0}
+            limit={Number(process.env.GEMINI_MONTHLY_BUDGET_USD ?? 20)}
+            href="https://aistudio.google.com/usage"
+            linkLabel="Abrir uso e pagamentos do Gemini"
+          />
+          <ProviderCostCard
             name="Google Maps — prospecção"
             value={costsByProvider.google_maps ?? 0}
+            limit={Number(process.env.GOOGLE_MAPS_MONTHLY_BUDGET_USD ?? 0) || undefined}
             href="https://console.cloud.google.com/billing"
             linkLabel="Abrir pagamentos do Google Maps"
           />
+          <ProviderCostCard name="Resend — e-mails" value={costsByProvider.resend ?? 0} href="https://resend.com/overview" linkLabel="Abrir painel do Resend" />
+          <ProviderCostCard name="Twilio — SMS" value={costsByProvider.twilio ?? 0} href="https://console.twilio.com/" linkLabel="Abrir painel da Twilio" />
+          <ProviderCostCard name="Evolution — WhatsApp" value={costsByProvider.evolution ?? 0} href="https://evolution-api.com/" linkLabel="Ver provedor do WhatsApp" />
         </div>
         <p className="mt-3 text-[11px] text-slate-500">Avisos por e-mail são enviados quando o gasto mensal estimado atinge 80% do limite configurado no servidor.</p>
       </section>
@@ -209,12 +225,18 @@ export default async function SystemHealthPage() {
   )
 }
 
-function ProviderCostCard({ name, value, href, linkLabel }: { name: string; value: number; href: string; linkLabel: string }) {
+function ProviderCostCard({ name, value, limit, href, linkLabel }: { name: string; value: number; limit?: number; href: string; linkLabel: string }) {
+  const percent = limit ? Math.min(100, (value / limit) * 100) : null
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
       <p className="text-xs font-bold text-white">{name}</p>
       <p className="mt-2 text-xl font-black text-cyan-300">US$ {value.toFixed(2)}</p>
-      <p className="text-[10px] text-slate-500">uso estimado nos últimos 7 dias</p>
+      <p className="text-[10px] text-slate-500">uso estimado no mês atual{limit ? ` · limite US$ ${limit.toFixed(2)}` : ''}</p>
+      {percent !== null ? (
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+          <div className={`h-full rounded-full ${percent >= 80 ? 'bg-amber-400' : 'bg-cyan-400'}`} style={{ width: `${percent}%` }} />
+        </div>
+      ) : null}
       <a href={href} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-cyan-400 hover:text-cyan-300">
         {linkLabel} <ExternalLink size={12} />
       </a>
