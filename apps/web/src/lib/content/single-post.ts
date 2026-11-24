@@ -42,6 +42,14 @@ export async function generateSinglePostForAccount(params: {
   forceFormat?: PostFormat
 }): Promise<SinglePostResult> {
   const { supabase, apiKey, config, unit, account, recentPosts, scheduledFor } = params
+  // Fail closed: nunca permitir que identidade, treinamento ou conta social
+  // de uma empresa sejam usados para gerar conteúdo de outra.
+  if (config.unit_id !== unit.id || account.unit_id !== unit.id || account.org_id !== unit.org_id) {
+    return {
+      ok: false,
+      error: 'Geração bloqueada por segurança: unidade, empresa, funcionário e conta social não pertencem ao mesmo contexto.',
+    }
+  }
   const profile = config.business_profile ?? {}
 
   const desiredPlatforms = contentPlatformsFrom(profile)

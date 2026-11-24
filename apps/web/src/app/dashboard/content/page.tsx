@@ -68,8 +68,14 @@ function groupPostsByDay(posts: ContentPost[]): Map<string, ContentPost[]> {
 export default async function ContentPage() {
   const supabase = await createClient()
 
-  const { data: units } = await supabase.from('units').select('*').order('created_at', { ascending: true })
-  const firstUnit = (units ?? [])[0] as Unit | undefined
+  // O mesmo contexto precisa governar abas, identidade, geração, fila e
+  // histórico. Antes, o Super Admin via as abas da Mawi, mas o restante da
+  // página usava a primeira unidade global e misturava clientes.
+  const hub = await resolveEmployeeHub(supabase, 'content_specialist')
+  const { data: selectedUnitData } = hub.unitId
+    ? await supabase.from('units').select('*').eq('id', hub.unitId).maybeSingle()
+    : { data: null }
+  const firstUnit = selectedUnitData as Unit | null
 
   const [{ data: org }, { data: config }] = await Promise.all([
     firstUnit ? supabase.from('organizations').select('business_profile').eq('id', firstUnit.org_id).maybeSingle() : Promise.resolve({ data: null }),
@@ -98,21 +104,28 @@ export default async function ContentPage() {
   const calendarStart = thisWeek[0]!.toISOString()
   const calendarEnd = new Date(nextWeek[6]!.getTime() + 24 * 60 * 60 * 1000).toISOString()
 
-  const [accountsRes, postsRes, calendarRes, hub] = await Promise.all([
-    supabase.from('social_accounts').select('*').order('created_at', { ascending: false }),
-    supabase
-      .from('content_posts')
-      .select('*')
-      .gte('created_at', thirtyDaysAgo)
-      .order('created_at', { ascending: false })
-      .limit(60),
+  const [accountsRes, postsRes, calendarRes] = await Promise.all([
+    firstUnit
+      ? supabase.from('social_accounts').select('*').eq('unit_id', firstUnit.id).order('created_at', { ascending: false })
+      : Promise.resolve({ data: [] }),
+    firstUnit
+      ? supabase
+          .from('content_posts')
+          .select('*')
+          .eq('unit_id', firstUnit.id)
+          .gte('created_at', thirtyDaysAgo)
+          .order('created_at', { ascending: false })
+          .limit(60)
+      : Promise.resolve({ data: [] }),
     // Calendário: pega tanto quem tem scheduled_for no intervalo (planejamento semanal)
     // quanto quem foi criado no intervalo sem scheduled_for (fluxo avulso).
-    supabase
-      .from('content_posts')
-      .select('*')
-      .or(`and(scheduled_for.gte.${calendarStart},scheduled_for.lt.${calendarEnd}),and(scheduled_for.is.null,created_at.gte.${calendarStart},created_at.lt.${calendarEnd})`),
-    resolveEmployeeHub(supabase, 'content_specialist'),
+    firstUnit
+      ? supabase
+          .from('content_posts')
+          .select('*')
+          .eq('unit_id', firstUnit.id)
+          .or(`and(scheduled_for.gte.${calendarStart},scheduled_for.lt.${calendarEnd}),and(scheduled_for.is.null,created_at.gte.${calendarStart},created_at.lt.${calendarEnd})`)
+      : Promise.resolve({ data: [] }),
   ])
 
   const accounts = (accountsRes.data ?? []) as SocialAccount[]

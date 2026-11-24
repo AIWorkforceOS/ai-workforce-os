@@ -63,6 +63,21 @@ describe('generateSinglePostForAccount', () => {
     vi.resetModules()
   })
 
+  it('bloqueia antes de gerar quando unidade, organização, config e conta social não são do mesmo cliente', async () => {
+    const { mod, supabase, db } = await loadModule()
+    const foreignAccount = { ...account, org_id: 'org-outra' }
+
+    const result = await mod.generateSinglePostForAccount({ supabase, apiKey: 'k', config, unit, account: foreignAccount, recentPosts: [] })
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'Geração bloqueada por segurança: unidade, empresa, funcionário e conta social não pertencem ao mesmo contexto.',
+    })
+    expect(generatePostContentMock).not.toHaveBeenCalled()
+    expect(generatePostImageMock).not.toHaveBeenCalled()
+    expect(db.content_posts).toEqual([])
+  })
+
   it('sem scheduledFor (botão "criar agora"), conta autônoma publica na hora', async () => {
     const { mod, supabase } = await loadModule()
     const autonomousAccount = { ...account, publishing_mode: 'autonomous' as const }
