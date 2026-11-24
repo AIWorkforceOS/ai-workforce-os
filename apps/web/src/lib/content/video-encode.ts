@@ -13,6 +13,8 @@ import { createGunzip } from 'node:zlib'
 import sharp from 'sharp'
 import ffmpegPath from 'ffmpeg-static'
 import { musicSource } from './video-audio'
+import { removeSolidBackground } from './logo-processing'
+import { lightenDarkPixels } from './logo-light'
 import { TRANSITION_SECONDS, VIDEO_FPS, buildFilterGraph, planTimeline, type FrameSpec } from './video'
 
 const FFMPEG_TIMEOUT_MS = 240_000
@@ -94,6 +96,25 @@ async function download(source: { url: string; sha256: string }, dir: string, ta
 
 export type EncodeResult = { mp4: Buffer; durationMs: number; bytes: number }
 
+/** Normaliza a logo antes de qualquer geração paga e exige transparência real. */
+export async function prepareTransparentVideoLogo(input: Buffer): Promise<Buffer> {
+  const png = await removeSolidBackground(input)
+  const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+  let transparent = 0
+  for (let i = 3; i < data.length; i += info.channels) {
+    if (data[i]! < 16) transparent += 1
+  }
+  const total = Math.max(1, info.width * info.height)
+  if (transparent / total < 0.02) {
+    throw new Error('A logo precisa estar sem fundo. Envie um PNG ou WebP transparente antes de gerar o vídeo. Nenhum crédito foi utilizado.')
+  }
+  return sharp(png)
+    .trim({ background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .extend({ top: 8, bottom: 8, left: 8, right: 8, background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .png()
+    .toBuffer()
+}
+
 /**
  * Aplica a identidade exata depois da geração. Modelos generativos não devem
  * redesenhar logos: o arquivo original é sobreposto ao MP4 para garantir
@@ -110,26 +131,41 @@ export async function applyVideoBranding(params: {
     const input = join(dir, 'input.mp4')
     const overlay = join(dir, 'brand.png')
     const output = join(dir, 'output.mp4')
-    const logo = await sharp(params.logo).resize({ width: 132, height: 92, fit: 'inside', withoutEnlargement: true }).png().toBuffer()
+    // A logo pode ter vindo de um cadastro antigo, anterior ao tratamento do
+    // upload. Remova o fundo sólido novamente aqui: nenhum vídeo recebe placa
+    // branca, mesmo quando o arquivo original ainda a contém.
+    const transparentLogo = await prepareTransparentVideoLogo(params.logo)
+    // Versão clara é uma variação oficial sem fundo: preserva cores vivas e
+    // clareia apenas pixels escuros para não sumirem sobre vídeo/fundo azul.
+    const visibleLogo = await lightenDarkPixels(transparentLogo)
+    const logo = await sharp(visibleLogo).resize({ width: 144, height: 100, fit: 'inside', withoutEnlargement: true }).png().toBuffer()
     const logoMeta = await sharp(logo).metadata()
-    const badgeWidth = Math.max(172, (logoMeta.width ?? 132) + 40)
-    const badgeHeight = Math.max(116, (logoMeta.height ?? 92) + 24)
-    const badge = await sharp({ create: { width: badgeWidth, height: badgeHeight, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 0.9 } } })
-      .composite([{ input: logo, gravity: 'centre' }])
-      .png()
-      .toBuffer()
+    const logoWidth = logoMeta.width ?? 144
     const canvas = await sharp({ create: { width: 720, height: 1280, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
       .composite([
         { input: Buffer.from(`<svg width="720" height="1280"><rect width="720" height="8" fill="${params.primary}"/><rect y="1272" width="720" height="8" fill="${params.secondary}"/></svg>`), left: 0, top: 0 },
-        { input: badge, left: 720 - badgeWidth - 28, top: 28 },
+        { input: logo, left: 720 - logoWidth - 28, top: 28 },
       ])
       .png()
       .toBuffer()
-    await Promise.all([writeFile(input, params.mp4), writeFile(overlay, canvas)])
+    // Encerramento determinístico: os últimos 2,5 s são sempre uma tela de
+    // marca completa. Isso impede o Veo/Gemini de cortar uma ação ou terminar
+    // no meio de uma logo deformada.
+    const endCard = join(dir, 'end-card.png')
+    const endLogo = await sharp(visibleLogo).resize({ width: 390, height: 250, fit: 'inside', withoutEnlargement: true }).png().toBuffer()
+    const endMeta = await sharp(endLogo).metadata()
+    const end = await sharp({ create: { width: 720, height: 1280, channels: 4, background: params.primary } })
+      .composite([
+        { input: Buffer.from(`<svg width="720" height="1280"><rect width="720" height="1280" fill="${params.primary}"/><circle cx="650" cy="120" r="260" fill="${params.secondary}" opacity=".22"/><circle cx="50" cy="1180" r="320" fill="${params.secondary}" opacity=".14"/><rect y="1268" width="720" height="12" fill="${params.secondary}"/></svg>`), left: 0, top: 0 },
+        { input: endLogo, left: Math.round((720 - (endMeta.width ?? 390)) / 2), top: Math.round((1280 - (endMeta.height ?? 250)) / 2) },
+      ])
+      .png()
+      .toBuffer()
+    await Promise.all([writeFile(input, params.mp4), writeFile(overlay, canvas), writeFile(endCard, end)])
     const ffmpeg = await ensureFfmpeg()
     await run(ffmpeg, [
-      '-y', '-hide_banner', '-loglevel', 'error', '-i', input, '-i', overlay,
-      '-filter_complex', '[0:v][1:v]overlay=0:0:format=auto[v]',
+      '-y', '-hide_banner', '-loglevel', 'error', '-i', input, '-i', overlay, '-loop', '1', '-i', endCard,
+      '-filter_complex', '[0:v][1:v]overlay=0:0:format=auto[branded];[2:v]format=yuva420p,fade=t=in:st=0:d=0.35:alpha=1[end];[branded][end]overlay=0:0:enable=\'gte(t,12.5)\':shortest=1[v]',
       '-map', '[v]', '-map', '0:a?', '-c:v', 'libx264', '-profile:v', 'high', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p',
       '-threads', '2', '-filter_threads', '1', '-filter_complex_threads', '1', '-c:a', 'copy', '-movflags', '+faststart', output,
     ])

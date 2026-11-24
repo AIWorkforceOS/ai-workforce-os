@@ -11,7 +11,7 @@ import { brandFrom, prepareLogo } from './carousel-render'
 import { resolveContentLanguage } from './language'
 import { buildFrameSpecs, videoDuration, VIDEO_HEIGHT, VIDEO_WIDTH, type StoredVideo, type VideoContent } from './video'
 import { composePoster, renderBackgrounds, renderOverlays } from './video-render'
-import { applyVideoBranding, encodeVideo } from './video-encode'
+import { applyVideoBranding, encodeVideo, prepareTransparentVideoLogo } from './video-encode'
 import type { ContentInstruction } from './instructions'
 import type { SocialPlatform } from './types'
 import type { AgentConfig, Unit } from '@/lib/types'
@@ -100,7 +100,8 @@ export function buildProfessionalVideoPrompt(params: {
     `Closing mood: ${params.closingMood}.`,
     recent.length ? `Recent pieces to avoid repeating: ${recent.join(' | ')}. This video must use a clearly different opening shot, location composition, camera movement, action and narrative progression.` : '',
     'Natural human motion, realistic physics, intentional camera movement, professional commercial lighting, coherent people and location throughout.',
-    'No slideshow, no still-image montage, no embedded captions, no generated logos, no watermarks and no misspelled text. The exact official logo will be applied by the Alizo system after generation.',
+    'Every uniform, vehicle, tool, wall, sign and prop must be completely plain and unbranded: no letters, numbers, symbols, pseudo-logos, badges or invented markings. Never attempt to draw the business logo on clothing or inside the scene.',
+    'No slideshow, no still-image montage, no embedded captions, no generated logos, no watermarks and no misspelled text. Leave the final 2.5 seconds visually calm, with no important action, face or text: the Alizo system replaces that interval with the exact official transparent logo and a complete branded ending.',
   ].filter(Boolean).join(' ')
 }
 
@@ -138,7 +139,9 @@ export async function createVideoPostDraft(params: {
   }
   const logoResponse = await fetch(kit.logo_url, { signal: AbortSignal.timeout(15_000) })
   if (!logoResponse.ok) throw new Error(`A logo oficial não pôde ser carregada (status ${logoResponse.status}). Nenhum crédito foi utilizado.`)
-  const logoBytes = Buffer.from(await logoResponse.arrayBuffer())
+  // Valida o arquivo antes da chamada paga. O compositor valida novamente,
+  // mas esta etapa evita gastar um vídeo quando a marca ainda tem fundo.
+  const logoBytes = await prepareTransparentVideoLogo(Buffer.from(await logoResponse.arrayBuffer()))
   const sceneStory = generated.content.scenes.map((scene, index) => `Cena ${index + 1}: ${scene.visual || scene.headline}`).join(' ')
   const videoPrompt = buildProfessionalVideoPrompt({
     brandName: generated.content.brand_name || params.unit.name,

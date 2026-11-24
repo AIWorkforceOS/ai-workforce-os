@@ -6,6 +6,7 @@
 // consistente só por descrição textual.
 
 import sharp from 'sharp'
+import { removeSolidBackground } from '@/lib/content/logo-processing'
 
 export type BrandKit = {
   logo_url?: string | null
@@ -38,7 +39,8 @@ export async function compositeLogoOntoImage(baseImageBase64: string, logoUrl: s
   const baseHeight = baseMeta.height ?? 1024
 
   const targetLogoWidth = Math.round(baseWidth * 0.18)
-  const resizedLogo = await sharp(logoBuffer)
+  const transparentLogo = await removeSolidBackground(logoBuffer)
+  const resizedLogo = await sharp(transparentLogo)
     .resize({ width: targetLogoWidth, fit: 'inside', withoutEnlargement: true })
     .png()
     .toBuffer()

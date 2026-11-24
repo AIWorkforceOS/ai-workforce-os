@@ -7,7 +7,7 @@ import sharp from 'sharp'
 import { describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
 import { gzipSync } from 'node:zlib'
-import { encodeVideo, ensureFfmpeg } from '../video-encode'
+import { encodeVideo, ensureFfmpeg, prepareTransparentVideoLogo } from '../video-encode'
 
 const run = promisify(execFile)
 
@@ -66,6 +66,24 @@ describe('ensureFfmpeg', () => {
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('logo obrigatoriamente transparente no vídeo', () => {
+  it('remove fundo branco uniforme e preserva transparência no PNG final', async () => {
+    const source = await sharp({ create: { width: 200, height: 100, channels: 4, background: '#ffffff' } })
+      .composite([{ input: Buffer.from('<svg width="100" height="50"><rect width="100" height="50" fill="#0B993F"/></svg>'), left: 50, top: 25 }])
+      .png().toBuffer()
+    const result = await prepareTransparentVideoLogo(source)
+    const meta = await sharp(result).metadata()
+    const { data } = await sharp(result).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+    expect(meta.format).toBe('png')
+    expect(data.some((value, index) => index % 4 === 3 && value === 0)).toBe(true)
+  })
+
+  it('bloqueia logo sem transparência que não possui fundo sólido removível', async () => {
+    const source = await sharp({ create: { width: 80, height: 80, channels: 4, background: '#021E44' } }).png().toBuffer()
+    await expect(prepareTransparentVideoLogo(source)).rejects.toThrow(/precisa estar sem fundo/)
   })
 })
 
