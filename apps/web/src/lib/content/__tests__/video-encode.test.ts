@@ -85,6 +85,16 @@ describe('logo obrigatoriamente transparente no vídeo', () => {
     const source = await sharp({ create: { width: 80, height: 80, channels: 4, background: '#021E44' } }).png().toBuffer()
     await expect(prepareTransparentVideoLogo(source)).rejects.toThrow(/precisa estar sem fundo/)
   })
+
+  it('é idempotente: uma segunda preparação não apaga nem recolore a arte', async () => {
+    const source = await sharp({ create: { width: 200, height: 100, channels: 4, background: '#ffffff' } })
+      .composite([{ input: Buffer.from('<svg width="120" height="50"><rect width="55" height="50" fill="#0B993F"/><rect x="65" width="55" height="50" fill="#021E44"/></svg>'), left: 40, top: 25 }])
+      .png().toBuffer()
+    const once = await prepareTransparentVideoLogo(source)
+    const twice = await prepareTransparentVideoLogo(once)
+    const [a, b] = await Promise.all([sharp(once).ensureAlpha().raw().toBuffer(), sharp(twice).ensureAlpha().raw().toBuffer()])
+    expect(b.equals(a)).toBe(true)
+  })
 })
 
 describe('encodeVideo (ffmpeg de verdade, em miniatura)', () => {

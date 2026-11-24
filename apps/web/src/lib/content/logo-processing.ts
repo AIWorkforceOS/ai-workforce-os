@@ -146,6 +146,22 @@ export async function removeSolidBackground(input: Buffer): Promise<Buffer> {
   return sharp(out, { raw: { width, height, channels: 4 } }).png().toBuffer()
 }
 
+/**
+ * Uso em peças finais: se a logo já possui área transparente, preserve os
+ * pixels exatamente como foram enviados. Isso torna o processamento
+ * idempotente e impede uma segunda passagem de confundir uma cor da marca
+ * com o fundo. Só tenta remover fundo quando o arquivo ainda é opaco.
+ */
+export async function preserveTransparentLogoOrRemoveBackground(input: Buffer): Promise<Buffer> {
+  const { data, info } = await sharp(input).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+  let transparent = 0
+  for (let i = 3; i < data.length; i += info.channels) {
+    if (data[i]! < 16) transparent += 1
+  }
+  const total = Math.max(1, info.width * info.height)
+  return transparent / total >= 0.02 ? sharp(input).png().toBuffer() : removeSolidBackground(input)
+}
+
 const COLOR_BUCKET_SIZE = 24
 const MIN_SECONDARY_DISTANCE = 60
 

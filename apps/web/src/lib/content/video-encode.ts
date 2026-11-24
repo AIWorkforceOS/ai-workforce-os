@@ -13,8 +13,7 @@ import { createGunzip } from 'node:zlib'
 import sharp from 'sharp'
 import ffmpegPath from 'ffmpeg-static'
 import { musicSource } from './video-audio'
-import { removeSolidBackground } from './logo-processing'
-import { lightenDarkPixels } from './logo-light'
+import { preserveTransparentLogoOrRemoveBackground } from './logo-processing'
 import { TRANSITION_SECONDS, VIDEO_FPS, buildFilterGraph, planTimeline, type FrameSpec } from './video'
 
 const FFMPEG_TIMEOUT_MS = 240_000
@@ -98,7 +97,7 @@ export type EncodeResult = { mp4: Buffer; durationMs: number; bytes: number }
 
 /** Normaliza a logo antes de qualquer geração paga e exige transparência real. */
 export async function prepareTransparentVideoLogo(input: Buffer): Promise<Buffer> {
-  const png = await removeSolidBackground(input)
+  const png = await preserveTransparentLogoOrRemoveBackground(input)
   const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
   let transparent = 0
   for (let i = 3; i < data.length; i += info.channels) {
@@ -131,14 +130,12 @@ export async function applyVideoBranding(params: {
     const input = join(dir, 'input.mp4')
     const overlay = join(dir, 'brand.png')
     const output = join(dir, 'output.mp4')
-    // A logo pode ter vindo de um cadastro antigo, anterior ao tratamento do
-    // upload. Remova o fundo sólido novamente aqui: nenhum vídeo recebe placa
-    // branca, mesmo quando o arquivo original ainda a contém.
+    // A logo pode ter vindo de um cadastro antigo. A preparação é idempotente:
+    // remove fundo somente na primeira passagem e preserva a arte nas demais.
     const transparentLogo = await prepareTransparentVideoLogo(params.logo)
-    // Versão clara é uma variação oficial sem fundo: preserva cores vivas e
-    // clareia apenas pixels escuros para não sumirem sobre vídeo/fundo azul.
-    const visibleLogo = await lightenDarkPixels(transparentLogo)
-    const logo = await sharp(visibleLogo).resize({ width: 144, height: 100, fit: 'inside', withoutEnlargement: true }).png().toBuffer()
+    // Nunca recolora a marca. A logo sobreposta é o arquivo original, apenas
+    // recortado e redimensionado proporcionalmente.
+    const logo = await sharp(transparentLogo).resize({ width: 144, height: 100, fit: 'inside', withoutEnlargement: true }).png().toBuffer()
     const logoMeta = await sharp(logo).metadata()
     const logoWidth = logoMeta.width ?? 144
     const canvas = await sharp({ create: { width: 720, height: 1280, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
@@ -152,11 +149,11 @@ export async function applyVideoBranding(params: {
     // marca completa. Isso impede o Veo/Gemini de cortar uma ação ou terminar
     // no meio de uma logo deformada.
     const endCard = join(dir, 'end-card.png')
-    const endLogo = await sharp(visibleLogo).resize({ width: 390, height: 250, fit: 'inside', withoutEnlargement: true }).png().toBuffer()
+    const endLogo = await sharp(transparentLogo).resize({ width: 460, height: 280, fit: 'inside', withoutEnlargement: true }).png().toBuffer()
     const endMeta = await sharp(endLogo).metadata()
-    const end = await sharp({ create: { width: 720, height: 1280, channels: 4, background: params.primary } })
+    const end = await sharp({ create: { width: 720, height: 1280, channels: 4, background: '#F8FAFC' } })
       .composite([
-        { input: Buffer.from(`<svg width="720" height="1280"><rect width="720" height="1280" fill="${params.primary}"/><circle cx="650" cy="120" r="260" fill="${params.secondary}" opacity=".22"/><circle cx="50" cy="1180" r="320" fill="${params.secondary}" opacity=".14"/><rect y="1268" width="720" height="12" fill="${params.secondary}"/></svg>`), left: 0, top: 0 },
+        { input: Buffer.from(`<svg width="720" height="1280"><rect width="720" height="1280" fill="#F8FAFC"/><circle cx="650" cy="120" r="260" fill="${params.secondary}" opacity=".07"/><circle cx="50" cy="1180" r="320" fill="${params.primary}" opacity=".05"/><rect y="1268" width="720" height="12" fill="${params.secondary}"/></svg>`), left: 0, top: 0 },
         { input: endLogo, left: Math.round((720 - (endMeta.width ?? 390)) / 2), top: Math.round((1280 - (endMeta.height ?? 250)) / 2) },
       ])
       .png()

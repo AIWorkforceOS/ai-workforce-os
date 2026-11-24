@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import sharp from 'sharp'
-import { extractPaletteFromLogo, removeSolidBackground } from '../logo-processing'
+import { extractPaletteFromLogo, preserveTransparentLogoOrRemoveBackground, removeSolidBackground } from '../logo-processing'
 
 async function solidPng(width: number, height: number, color: { r: number; g: number; b: number; alpha?: number }): Promise<Buffer> {
   return sharp({ create: { width, height, channels: color.alpha !== undefined ? 4 : 3, background: color } })
@@ -56,6 +56,22 @@ describe('removeSolidBackground', () => {
 
     const result = await removeSolidBackground(buffer)
     expect(result).toBe(buffer)
+  })
+})
+
+describe('preserveTransparentLogoOrRemoveBackground', () => {
+  it('não altera as cores de uma logo que já está transparente', async () => {
+    const transparentBg = sharp({ create: { width: 60, height: 40, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    const art = await solidPng(40, 20, { r: 2, g: 30, b: 68, alpha: 1 })
+    const logo = await transparentBg.composite([{ input: art, left: 10, top: 10 }]).png().toBuffer()
+    const result = await preserveTransparentLogoOrRemoveBackground(logo)
+    expect(await pixelAt(result, 30, 20)).toEqual(await pixelAt(logo, 30, 20))
+  })
+
+  it('remove o branco quando a logo ainda é totalmente opaca', async () => {
+    const result = await preserveTransparentLogoOrRemoveBackground(await logoOnWhiteBg())
+    expect((await pixelAt(result, 0, 0)).a).toBeLessThan(10)
+    expect((await pixelAt(result, 20, 20)).a).toBeGreaterThan(200)
   })
 })
 
