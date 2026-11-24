@@ -160,6 +160,12 @@ export async function generateSinglePostForAccount(params: {
     }
     return { ok: true, post, published: false }
   } catch (error) {
+    console.error('[content/generate] geração falhou', {
+      unitId: unit.id,
+      socialAccountId: account.id,
+      format: params.forceFormat ?? 'automatic',
+      error: error instanceof Error ? error.message : String(error),
+    })
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
   }
 }

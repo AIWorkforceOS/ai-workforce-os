@@ -2,6 +2,7 @@
 // O renderizador motion-design legado permanece apenas para editar posts antigos já gravados; conteúdo novo nunca cai silenciosamente em slideshow.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import sharp from 'sharp'
 import { brandKitFrom, compositeLogoOntoImage } from '@/lib/brand-kit'
 import { countVideosThisMonth, videoRotationFrom, videoThemeFor } from './video-focus'
 import { synthesizeNarration } from './video-audio'
@@ -22,6 +23,25 @@ async function upload(supabase: SupabaseClient, unitId: string, bytes: Buffer, e
   const { error } = await supabase.storage.from('content-media').upload(path, bytes, { contentType, upsert: false })
   if (error) throw new Error(`Falha ao subir o ${ext === 'mp4' ? 'vídeo' : 'quadro de capa'}: ${error.message}`)
   return supabase.storage.from('content-media').getPublicUrl(path).data.publicUrl
+}
+
+function xml(value: string): string {
+  return value.replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&apos;', '"': '&quot;' })[character]!)
+}
+
+/** Capa local de contingência: uma falha isolada da imagem não descarta um vídeo já gerado. */
+export async function createFallbackVideoPoster(params: { brandName: string; primary?: string | null; secondary?: string | null }): Promise<Buffer> {
+  const primary = /^#[0-9a-f]{6}$/i.test(params.primary ?? '') ? params.primary! : '#0f172a'
+  const secondary = /^#[0-9a-f]{6}$/i.test(params.secondary ?? '') ? params.secondary! : '#06b6d4'
+  const name = xml(params.brandName.trim().slice(0, 70) || 'Conteúdo profissional')
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350">
+    <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${primary}"/><stop offset="1" stop-color="${secondary}"/></linearGradient></defs>
+    <rect width="1080" height="1350" fill="url(#bg)"/><circle cx="920" cy="170" r="300" fill="#fff" opacity=".08"/>
+    <circle cx="120" cy="1190" r="360" fill="#fff" opacity=".06"/><rect x="100" y="106" width="92" height="10" rx="5" fill="#fff" opacity=".9"/>
+    <text x="100" y="640" fill="#fff" font-family="Arial, sans-serif" font-size="76" font-weight="700">${name}</text>
+    <text x="100" y="720" fill="#fff" opacity=".82" font-family="Arial, sans-serif" font-size="34">Vídeo profissional</text>
+  </svg>`
+  return sharp(Buffer.from(svg)).png().toBuffer()
 }
 
 /** Desenha, codifica e sobe o vídeo (usado na geração e a cada edição). Logo cadastrado é obrigatório: se não baixar, falha. */
@@ -101,9 +121,23 @@ export async function createVideoPostDraft(params: {
   const realVideo = await generateGeminiVideo({ apiKey: geminiKey, prompt: videoPrompt })
   const mp4_url = await upload(supabase, params.unit.id, realVideo.bytes, 'mp4', realVideo.mimeType)
   const posterPrompt = `${videoPrompt} Create one polished key visual for the cover, with safe empty space for interface overlays. No text.`
-  const poster = await generateGeminiImage({ apiKey: geminiKey, prompt: posterPrompt })
-  const posterBase64 = kit?.logo_url ? await compositeLogoOntoImage(poster.base64, kit.logo_url) : poster.base64
-  const poster_url = await upload(supabase, params.unit.id, Buffer.from(posterBase64, 'base64'), 'png', 'image/png')
+  let posterBytes: Buffer
+  try {
+    const poster = await generateGeminiImage({ apiKey: geminiKey, prompt: posterPrompt })
+    const posterBase64 = kit?.logo_url ? await compositeLogoOntoImage(poster.base64, kit.logo_url) : poster.base64
+    posterBytes = Buffer.from(posterBase64, 'base64')
+  } catch (error) {
+    console.error('[content/video] capa Gemini falhou; usando capa local sem descartar o vídeo', {
+      unitId: params.unit.id,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    posterBytes = await createFallbackVideoPoster({
+      brandName: generated.content.brand_name || params.unit.name,
+      primary: kit?.primary_color,
+      secondary: kit?.secondary_color,
+    })
+  }
+  const poster_url = await upload(supabase, params.unit.id, posterBytes, 'png', 'image/png')
   const stored: StoredVideo = {
     ...generated.content,
     mp4_url,

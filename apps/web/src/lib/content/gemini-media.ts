@@ -44,7 +44,9 @@ export async function generateGeminiImage(params: { apiKey: string; prompt: stri
     body: {
       model: 'gemini-nano-banana-2.1',
       input: [{ type: 'text', text: params.prompt }],
-      response_format: { type: 'image', aspect_ratio: '4:5', resolution: '2K' },
+      // A Interactions API chama este campo de image_size. `resolution` é o
+      // campo do vídeo e faz a geração de imagem falhar com HTTP 400.
+      response_format: { type: 'image', aspect_ratio: '4:5', image_size: '2K' },
     },
   })
   const media = mediaFrom(data, 'image')
