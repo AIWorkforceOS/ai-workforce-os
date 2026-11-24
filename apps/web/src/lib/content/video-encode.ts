@@ -94,6 +94,51 @@ async function download(source: { url: string; sha256: string }, dir: string, ta
 
 export type EncodeResult = { mp4: Buffer; durationMs: number; bytes: number }
 
+/**
+ * Aplica a identidade exata depois da geração. Modelos generativos não devem
+ * redesenhar logos: o arquivo original é sobreposto ao MP4 para garantir
+ * fidelidade em todos os quadros.
+ */
+export async function applyVideoBranding(params: {
+  mp4: Buffer
+  logo: Buffer
+  primary: string
+  secondary: string
+}): Promise<Buffer> {
+  const dir = await mkdtemp(join(tmpdir(), 'alizo-video-brand-'))
+  try {
+    const input = join(dir, 'input.mp4')
+    const overlay = join(dir, 'brand.png')
+    const output = join(dir, 'output.mp4')
+    const logo = await sharp(params.logo).resize({ width: 132, height: 92, fit: 'inside', withoutEnlargement: true }).png().toBuffer()
+    const logoMeta = await sharp(logo).metadata()
+    const badgeWidth = Math.max(172, (logoMeta.width ?? 132) + 40)
+    const badgeHeight = Math.max(116, (logoMeta.height ?? 92) + 24)
+    const badge = await sharp({ create: { width: badgeWidth, height: badgeHeight, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 0.9 } } })
+      .composite([{ input: logo, gravity: 'centre' }])
+      .png()
+      .toBuffer()
+    const canvas = await sharp({ create: { width: 720, height: 1280, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+      .composite([
+        { input: Buffer.from(`<svg width="720" height="1280"><rect width="720" height="8" fill="${params.primary}"/><rect y="1272" width="720" height="8" fill="${params.secondary}"/></svg>`), left: 0, top: 0 },
+        { input: badge, left: 720 - badgeWidth - 28, top: 28 },
+      ])
+      .png()
+      .toBuffer()
+    await Promise.all([writeFile(input, params.mp4), writeFile(overlay, canvas)])
+    const ffmpeg = await ensureFfmpeg()
+    await run(ffmpeg, [
+      '-y', '-hide_banner', '-loglevel', 'error', '-i', input, '-i', overlay,
+      '-filter_complex', '[0:v][1:v]overlay=0:0:format=auto[v]',
+      '-map', '[v]', '-map', '0:a?', '-c:v', 'libx264', '-profile:v', 'high', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p',
+      '-threads', '2', '-filter_threads', '1', '-filter_complex_threads', '1', '-c:a', 'copy', '-movflags', '+faststart', output,
+    ])
+    return readFile(output)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+}
+
 /** Mixagem: narração (se houver) por cima da trilha ambiente, ambas com entrada/saída suaves. Rótulo de saída: [aout]. */
 export function buildAudioGraph(params: { total: number; voiceInput: number | null; voiceTempo?: number }): string {
   const { total, voiceInput } = params

@@ -11,7 +11,7 @@ import { brandFrom, prepareLogo } from './carousel-render'
 import { resolveContentLanguage } from './language'
 import { buildFrameSpecs, videoDuration, VIDEO_HEIGHT, VIDEO_WIDTH, type StoredVideo, type VideoContent } from './video'
 import { composePoster, renderBackgrounds, renderOverlays } from './video-render'
-import { encodeVideo } from './video-encode'
+import { applyVideoBranding, encodeVideo } from './video-encode'
 import type { ContentInstruction } from './instructions'
 import type { SocialPlatform } from './types'
 import type { AgentConfig, Unit } from '@/lib/types'
@@ -79,6 +79,31 @@ export type VideoPostDraft = {
   instructionCta?: string
 }
 
+export function buildProfessionalVideoPrompt(params: {
+  brandName: string
+  primary: string
+  secondary: string
+  visualStyle?: string | null
+  setting?: string | null
+  sceneStory: string
+  closingMood: string
+  recentPosts?: RecentPostSummary[]
+}): string {
+  const recent = (params.recentPosts ?? []).slice(0, 4).map((post) => post.caption.slice(0, 140)).filter(Boolean)
+  return [
+    'Create a premium, photorealistic vertical social media commercial in one continuous cinematic story.',
+    `Business: ${params.brandName}.`,
+    `MANDATORY brand palette: primary ${params.primary} and secondary ${params.secondary}. Use these colors visibly and tastefully in wardrobe accents, props, lighting accents, or set dressing. Do not replace them with another dominant palette.`,
+    params.visualStyle ? `Mandatory visual style: ${params.visualStyle}.` : '',
+    params.setting ? `Consistent world and people: ${params.setting}.` : '',
+    params.sceneStory,
+    `Closing mood: ${params.closingMood}.`,
+    recent.length ? `Recent pieces to avoid repeating: ${recent.join(' | ')}. This video must use a clearly different opening shot, location composition, camera movement, action and narrative progression.` : '',
+    'Natural human motion, realistic physics, intentional camera movement, professional commercial lighting, coherent people and location throughout.',
+    'No slideshow, no still-image montage, no embedded captions, no generated logos, no watermarks and no misspelled text. The exact official logo will be applied by the Alizo system after generation.',
+  ].filter(Boolean).join(' ')
+}
+
 export async function createVideoPostDraft(params: {
   supabase: SupabaseClient
   apiKey: string
@@ -108,18 +133,26 @@ export async function createVideoPostDraft(params: {
   const lang: 'pt' | 'en' =
     explicit === 'pt' || explicit === 'en' ? explicit : resolveContentLanguage(params.unit.default_conversation_language, [params.organizationProfile, params.config.business_profile])
   const kit = brandKitFrom(params.organizationProfile)
+  if (!kit?.logo_url || !kit.primary_color || !kit.secondary_color) {
+    throw new Error('Complete a identidade visual com logo, cor principal e cor secundária antes de gerar vídeos. Nenhum crédito foi utilizado.')
+  }
+  const logoResponse = await fetch(kit.logo_url, { signal: AbortSignal.timeout(15_000) })
+  if (!logoResponse.ok) throw new Error(`A logo oficial não pôde ser carregada (status ${logoResponse.status}). Nenhum crédito foi utilizado.`)
+  const logoBytes = Buffer.from(await logoResponse.arrayBuffer())
   const sceneStory = generated.content.scenes.map((scene, index) => `Cena ${index + 1}: ${scene.visual || scene.headline}`).join(' ')
-  const videoPrompt = [
-    'Create a premium, photorealistic vertical social media commercial in one continuous cinematic story.',
-    `Business: ${generated.content.brand_name || params.unit.name}.`,
-    generated.content.setting ? `Consistent world and people: ${generated.content.setting}.` : '',
+  const videoPrompt = buildProfessionalVideoPrompt({
+    brandName: generated.content.brand_name || params.unit.name,
+    primary: kit.primary_color,
+    secondary: kit.secondary_color,
+    visualStyle: kit.visual_style,
+    setting: generated.content.setting,
     sceneStory,
-    `Closing mood: ${generated.content.cta.visual || generated.content.cta.headline}.`,
-    'Natural human motion, realistic physics, intentional camera movement, professional commercial lighting, coherent people and location throughout.',
-    'No slideshow, no still-image montage, no embedded captions, no fake logos, no watermarks, no misspelled text. Keep uniforms and props unbranded.',
-  ].filter(Boolean).join(' ')
+    closingMood: generated.content.cta.visual || generated.content.cta.headline,
+    recentPosts: params.recentPosts,
+  })
   const realVideo = await generateGeminiVideo({ apiKey: geminiKey, prompt: videoPrompt })
-  const mp4_url = await upload(supabase, params.unit.id, realVideo.bytes, 'mp4', realVideo.mimeType)
+  const brandedVideo = await applyVideoBranding({ mp4: realVideo.bytes, logo: logoBytes, primary: kit.primary_color, secondary: kit.secondary_color })
+  const mp4_url = await upload(supabase, params.unit.id, brandedVideo, 'mp4', realVideo.mimeType)
   const posterPrompt = `${videoPrompt} Create one polished key visual for the cover, with safe empty space for interface overlays. No text.`
   let posterBytes: Buffer
   try {
@@ -145,7 +178,7 @@ export async function createVideoPostDraft(params: {
     duration: realVideo.duration,
     lang,
     provider: 'gemini_omni',
-    size_bytes: realVideo.bytes.byteLength,
+    size_bytes: brandedVideo.byteLength,
     images_generated: 1,
   }
   return {
